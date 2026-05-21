@@ -1,0 +1,5 @@
+# Ignore everything except the GAS backend files
+**
+!dutchie_proxy.gs
+!index.html
+!appsscript.json

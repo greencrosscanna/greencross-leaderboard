@@ -21,7 +21,7 @@
 // ── Config ────────────────────────────────────────────────────
 // Deployed URL of your dutchie_proxy.gs web app.
 // Update after deploying the GAS backend.
-const GC_PERF_WEB_APP_URL = 'REPLACE_WITH_DEPLOYED_WEB_APP_URL';
+const GC_PERF_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxXqtL-rKjuzFQkyADWnHGEoM2ZSYp9g4t1J6vhyDTgHcfkEuQocYrN9DXV7_84Masuqg/exec';
 
 // Director admin token — set this after first login via the app.
 // Needed to authenticate pushUsersToApp() calls.

@@ -17,10 +17,10 @@ window.GC = window.GC || {};
 
 GC.api = (function() {
 
-  var USE_FIXTURES = true;
+  var USE_FIXTURES = false;
 
-  // Deployed GAS web app URL. Set this when wiring real API.
-  var GAS_URL = '';
+  // Deployed GAS web app URL.
+  var GAS_URL = 'https://script.google.com/macros/s/AKfycbxXqtL-rKjuzFQkyADWnHGEoM2ZSYp9g4t1J6vhyDTgHcfkEuQocYrN9DXV7_84Masuqg/exec';
 
   // Fixtures base path (relative to index.html)
   var FX = 'src/fixtures/';

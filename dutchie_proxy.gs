@@ -237,6 +237,43 @@ function loginUser(params) {
   };
 }
 
+// ── ONE-TIME BOOTSTRAP — run from editor, then delete ─────────
+// Select bootstrapAllUsers in the function dropdown and click Run.
+function bootstrapAllUsers() {
+  setUserPassword_('sky',    'gcadmin', 'director',      null,         'Sky Pinnick',    'SP');
+  setUserPassword_('sofia',  'gc123',   'store_manager', 'baseline',   'Sofia Alvarez',  'SA');
+  setUserPassword_('maya',   'gc123',   'store_manager', 'river',      'Maya Chen',      'MC');
+  setUserPassword_('devon',  'gc123',   'store_manager', 'portland',   'Devon Reyes',    'DR');
+  setUserPassword_('priya',  'gc123',   'store_manager', 'center',     'Priya Singh',    'PS');
+  setUserPassword_('marcus', 'gc123',   'store_manager', 'commercial', 'Marcus Johnson', 'MJ');
+  setUserPassword_('tyler',  'gc123',   'store_manager', 'century',    'Tyler Brooks',   'TB');
+  Logger.log('All users bootstrapped.');
+}
+
+function bootstrapStorePlans() {
+  setStorePlans_({
+    baseline:   { monthly: 255000, daily: 8500 },
+    center:     { monthly: 246000, daily: 8200 },
+    century:    { monthly: 204000, daily: 6800 },
+    commercial: { monthly: 216000, daily: 7200 },
+    portland:   { monthly: 237000, daily: 7900 },
+    river:      { monthly: 252000, daily: 8400 },
+  });
+  Logger.log('Store plans saved.');
+}
+
+function bootstrapStoreKeys() {
+  adminSetStoreKeys({ keys: JSON.stringify({
+    'Hillsboro':   '77e157f3fcdf43d9864daf0420df8c97',
+    'Center':      '6a7e9c3187a6471d8a0a2d05cfa92023',
+    'Commercial':  'd97da3cef3f74dd087cee7d4239a851d',
+    'Bend':        'a2de33457b8f4d35972d3c47832207eb',
+    'Portland Rd': '5671f32c2c2a4756811e9513945815f4',
+    'River':       '5212417431014845a6db39bcb4ccef6b',
+  })});
+  Logger.log('Store keys saved.');
+}
+
 // ── Setup: run once from the Script Editor ────────────────────
 // Example: setUserPassword_('sky', 'gcadmin', 'director', null, 'Sky Pinnick', 'SP')
 function setUserPassword_(username, password, role, storeSlug, displayName, initials) {
