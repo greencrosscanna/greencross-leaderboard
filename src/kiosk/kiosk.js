@@ -43,8 +43,10 @@ var kiosk = (function() {
   var _lbTimer      = null;
   var _clockTimer   = null;
   var _lastTxnTs    = '';    // cursor for incremental ticker polling
+  var _seenTxnKeys  = {};    // dedup set: "ts|who|price" → true, prevents re-injection on repeat polls
   var _confettiParticles = [];
   var _confettiRunning   = false;
+  var _goalCelebrated    = false;  // true once confetti has fired for today's goal
 
   // ── Helpers ────────────────────────────────────────────
   function e(s) { return GC.esc(String(s)); }
@@ -509,6 +511,14 @@ var kiosk = (function() {
     // Seed ticker cursor from the most recent transaction timestamp
     _lastTxnTs = data.today.latestTxnTs || '';
 
+    // Seed dedup set from initial ticker so polls don't re-inject what's already shown
+    _seenTxnKeys = {};
+    (data.today.ticker || []).forEach(function(t) {
+      // Fixture tickers use {time,firstName,desc,amount}; GAS raw uses {ts,who,item,price}
+      var key = (t.ts || t.time || '') + '|' + (t.who || t.firstName || '') + '|' + (t.price || t.amount || 0);
+      _seenTxnKeys[key] = true;
+    });
+
     document.body.classList.add('kiosk-bg');
 
     startClock();
@@ -520,8 +530,9 @@ var kiosk = (function() {
     initConfetti();
     startPolling(slug);
 
-    // Confetti only if goal is already hit on load
-    if ((data.today.today.pctToGoal || 0) >= GC.THRESHOLDS.goalCelebrationAt) {
+    // Seed celebration flag — if goal is already hit on load, fire confetti once
+    _goalCelebrated = (data.today.today.pctToGoal || 0) >= GC.THRESHOLDS.goalCelebrationAt;
+    if (_goalCelebrated) {
       setTimeout(fireConfetti, 800);
     }
   }
@@ -643,11 +654,18 @@ var kiosk = (function() {
     if (!feed || !items || !items.length) return;
 
     items.forEach(function(t) {
+      // Dedup: skip items already shown (handles GAS returning same transactions on repeat polls)
+      var key = (t.ts || '') + '|' + (t.who || '') + '|' + (t.price || 0);
+      if (_seenTxnKeys[key]) return;
+      _seenTxnKeys[key] = true;
+
+      var qty     = t.qty || 0;
+      var qtyStr  = qty > 0 ? (qty + (qty === 1 ? ' item' : ' items')) : '';
       var el = document.createElement('div');
       el.className = 'ticker-item fresh';
       el.innerHTML = '<span class="t-time">' + GC.esc(fmtTxnTime(t.ts)) + '</span>'
-        + '<span class="t-who">'  + GC.esc(t.who  || '') + '</span>'
-        + '<span class="t-desc">' + GC.esc(t.item || '') + '</span>'
+        + '<span class="t-who">'  + GC.esc(t.who   || '') + '</span>'
+        + '<span class="t-desc">' + GC.esc(qtyStr)        + '</span>'
         + '<span class="t-amt">'  + GC.esc(fmtDollars(t.price || 0)) + '</span>';
       feed.insertBefore(el, feed.firstChild);
       setTimeout(function() { el.classList.remove('fresh'); }, 1800);
@@ -721,7 +739,7 @@ var kiosk = (function() {
         peakHour:     td.peakHour     || null,
         peakRevenue:  td.peakRevenue  || 0,
         latestTxnTs:  td.latestTxnTs  || '',
-        // GAS ticker: {who,item,price,ts} → {time,firstName,desc,amount}
+        // GAS ticker: {who,qty,price,ts} → {time,firstName,desc,amount}
         ticker: (td.ticker || []).map(function(t) {
           if (t.firstName !== undefined) return t; // already normalized
           // Parse time directly from local ISO string to avoid UTC offset
@@ -729,10 +747,11 @@ var kiosk = (function() {
           var h  = ts.length >= 13 ? parseInt(ts.slice(11, 13), 10) : new Date().getHours();
           var mn = ts.length >= 16 ? parseInt(ts.slice(14, 16), 10) : new Date().getMinutes();
           var hh = ((h + 11) % 12) + 1;
+          var qty = t.qty || 0;
           return {
             time:      hh + ':' + mn.toString().padStart(2, '0') + (h >= 12 ? 'p' : 'a'),
-            firstName: t.who  || '',
-            desc:      t.item || '',
+            firstName: t.who || '',
+            desc:      qty > 0 ? (qty + (qty === 1 ? ' item' : ' items')) : '',
             amount:    t.price || 0,
           };
         }),
@@ -862,6 +881,12 @@ var kiosk = (function() {
 
     // Closing push
     updateClosingBanner(td);
+
+    // Goal celebration — fire confetti the first time pctToGoal crosses the threshold
+    if (!_goalCelebrated && pctToGoal >= GC.THRESHOLDS.goalCelebrationAt) {
+      _goalCelebrated = true;
+      fireConfetti();
+    }
   }
 
   function startPolling(slug) {

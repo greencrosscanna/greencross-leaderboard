@@ -587,11 +587,24 @@ var director = (function() {
   }
 
   function doRefresh(showToast) {
+    // If we've navigated away from the director view, stop refreshing
+    var hash = window.location.hash || '#/director';
+    if (hash !== '#/director' && hash !== '#/' && hash !== '') {
+      if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
+      return;
+    }
+
     var btn = document.getElementById('btnRefresh');
     if (btn) btn.classList.add('spinning');
 
     GC.api.fetchDirectorAll(_period)
       .then(function(data) {
+        // Guard again in case route changed while the fetch was in-flight
+        var currentHash = window.location.hash || '#/director';
+        if (currentHash !== '#/director' && currentHash !== '#/' && currentHash !== '') {
+          if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
+          return;
+        }
         _data = data;
         // Re-render dynamic sections only (avoid full page flash)
         var app = document.getElementById('app');

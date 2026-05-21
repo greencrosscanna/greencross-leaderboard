@@ -874,12 +874,10 @@ function txTotal_(tx)    { return txNet_(tx); }   // alias — all revenue uses 
 function txSubtotal_(tx) { return txNet_(tx) + txDiscount_(tx); }  // gross = net + discounts
 function txDiscount_(tx) { return Number(tx.totalDiscount  || tx.discountTotal || 0); }
 function txItems_(tx) {
-  // Dutchie uses `totalItems` (flat count) and `items` (array with quantity).
-  // Prefer summing the items array for accuracy; fall back to totalItems.
+  // Count distinct line items (SKUs) — cannabis sells flower by weight (3.5g, 7g)
+  // so summing li.quantity gives fractional UPT like 7.5. Each SKU = 1 unit.
   const items = tx.items || tx.lineItems || tx.lineitemList || [];
-  if (items.length > 0) {
-    return items.reduce((sum, li) => sum + (Number(li.quantity) || 1), 0);
-  }
+  if (items.length > 0) return items.length;
   return Number(tx.totalItems) || 1;
 }
 
@@ -1469,14 +1467,10 @@ function getStoreToday(store, params) {
 
   // Helper: build a ticker item from a transaction
   function makeTicker_(tx) {
-    const emp      = txEmployee_(tx);
-    const items    = tx.lineItems || tx.lineitemList || tx.items || [];
-    const topItem  = items.length > 0
-      ? (items[0].productName || items[0].name || 'item')
-      : 'item';
+    const emp = txEmployee_(tx);
     return {
       who:   emp.name.split(' ')[0],
-      item:  topItem.slice(0, 40),
+      qty:   txItems_(tx),   // distinct SKUs — see txItems_ for cannabis UPT rationale
       price: txTotal_(tx),
       ts:    tx.transactionDateLocalTime || tx.transactionDate || '',
     };
