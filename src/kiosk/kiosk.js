@@ -36,11 +36,12 @@ GC.views.renderKiosk = function(slug) {
 var kiosk = (function() {
 
   // ── State ──────────────────────────────────────────────
-  var _slug        = null;
-  var _pollTimer   = null;
-  var _tickerTimer = null;
-  var _tickerPool  = [];
-  var _clockTimer  = null;
+  var _slug         = null;
+  var _storeName    = '';
+  var _pollTimer    = null;
+  var _lbTimer      = null;
+  var _clockTimer   = null;
+  var _lastTxnTs    = '';    // cursor for incremental ticker polling
   var _confettiParticles = [];
   var _confettiRunning   = false;
 
@@ -401,7 +402,7 @@ var kiosk = (function() {
           renderHeatmap(hourly, peakHour, peakRevenue),
           renderTicker(ticker),
         '</div>',
-        '<div class="kiosk-footer">Mock data · ' + e(store.name) + ' Store · '
+        '<div class="kiosk-footer">Live data · ' + e(store.name) + ' Store · '
           + '<span id="kioskRefresh">Last refresh ' + GC.fmtTime(new Date()) + '</span>'
           + '</div>',
       '</div>',
@@ -411,10 +412,11 @@ var kiosk = (function() {
 
   // ── init ──────────────────────────────────────────────
   function init(data, slug) {
-    _slug = slug;
+    _slug      = slug;
+    _storeName = (data.today.store && data.today.store.name) || slug || '';
 
-    // Store ticker pool for live simulation
-    _tickerPool = (data.today.tickerPool || data.today.ticker || []);
+    // Seed ticker cursor from the most recent transaction timestamp
+    _lastTxnTs = data.today.latestTxnTs || '';
 
     document.body.classList.add('kiosk-bg');
 
@@ -423,18 +425,11 @@ var kiosk = (function() {
     animateGoalArc(data.today.today.pctToGoal);
     animatePaceNeedle(data.today.today.pace);
     animateBars();
-    initTicker(data.today.ticker);
     initConfetti();
     startPolling(slug);
 
     // Welcome confetti on load
     setTimeout(fireConfetti, 800);
-
-    // Demo: show a rare drop after 5s (remove in production)
-    setTimeout(function() {
-      var sample = _tickerPool[Math.floor(Math.random() * _tickerPool.length)] || {};
-      showRareDrop(sample.firstName || 'Lina', sample.desc || 'Live resin concentrate kit', sample.amount || 420);
-    }, 5000);
   }
 
   // ── Clock ──────────────────────────────────────────────
@@ -535,33 +530,42 @@ var kiosk = (function() {
   }
 
   // ── Live ticker ────────────────────────────────────────
-  function initTicker(initialItems) {
-    clearInterval(_tickerTimer);
-    _tickerTimer = setInterval(addTickerItem, 5000);
-  }
 
-  function fmtTickerTime(d) {
-    var h  = d.getHours();
-    var m  = d.getMinutes().toString().padStart(2, '0');
+  /** Format a local-time string "2026-05-20T14:32:00" → "2:32p" */
+  function fmtTxnTime(ts) {
+    // Parse directly from string chars to avoid UTC-offset issues
+    var h  = ts && ts.length >= 13 ? parseInt(ts.slice(11, 13), 10) : new Date().getHours();
+    var mn = ts && ts.length >= 16 ? parseInt(ts.slice(14, 16), 10) : new Date().getMinutes();
     var hh = ((h + 11) % 12) + 1;
-    return hh + ':' + m + (h >= 12 ? 'p' : 'a');
+    return hh + ':' + mn.toString().padStart(2, '0') + (h >= 12 ? 'p' : 'a');
   }
 
-  function addTickerItem() {
+  /**
+   * Inject real new transactions from a delta poll response into the ticker feed.
+   * items: array of { who, item, price, ts } (GAS delta format)
+   */
+  function injectTickerItems(items) {
     var feed = document.getElementById('kioskTickerFeed');
-    if (!feed || !_tickerPool.length) return;
+    if (!feed || !items || !items.length) return;
 
-    var s    = _tickerPool[Math.floor(Math.random() * _tickerPool.length)];
-    var item = document.createElement('div');
-    item.className = 'ticker-item fresh';
-    item.innerHTML = '<span class="t-time">' + GC.esc(fmtTickerTime(new Date())) + '</span>'
-      + '<span class="t-who">'  + GC.esc(s.firstName) + '</span>'
-      + '<span class="t-desc">' + GC.esc(s.desc) + '</span>'
-      + '<span class="t-amt">'  + GC.esc(fmtDollars(s.amount)) + '</span>';
+    items.forEach(function(t) {
+      var el = document.createElement('div');
+      el.className = 'ticker-item fresh';
+      el.innerHTML = '<span class="t-time">' + GC.esc(fmtTxnTime(t.ts)) + '</span>'
+        + '<span class="t-who">'  + GC.esc(t.who  || '') + '</span>'
+        + '<span class="t-desc">' + GC.esc(t.item || '') + '</span>'
+        + '<span class="t-amt">'  + GC.esc(fmtDollars(t.price || 0)) + '</span>';
+      feed.insertBefore(el, feed.firstChild);
+      setTimeout(function() { el.classList.remove('fresh'); }, 1800);
 
-    feed.insertBefore(item, feed.firstChild);
-    while (feed.children.length > 5) feed.removeChild(feed.lastChild);
-    setTimeout(function() { item.classList.remove('fresh'); }, 1800);
+      // Trigger rare-drop overlay for high-value transactions
+      if ((t.price || 0) >= GC.THRESHOLDS.rareDropMinTransaction) {
+        showRareDrop(t.who || '', t.item || '', t.price || 0);
+      }
+    });
+
+    // Keep feed trimmed to 8 rows
+    while (feed.children.length > 8) feed.removeChild(feed.lastChild);
   }
 
   // ── Data normalizer ────────────────────────────────────────────
@@ -619,26 +623,26 @@ var kiosk = (function() {
             note:     p.note     || null,
           };
         }),
-        hourly:      td.hourly      || [],
-        peakHour:    td.peakHour    || null,
-        peakRevenue: td.peakRevenue || 0,
+        hourly:       td.hourly       || [],
+        peakHour:     td.peakHour     || null,
+        peakRevenue:  td.peakRevenue  || 0,
+        latestTxnTs:  td.latestTxnTs  || '',
         // GAS ticker: {who,item,price,ts} → {time,firstName,desc,amount}
         ticker: (td.ticker || []).map(function(t) {
           if (t.firstName !== undefined) return t; // already normalized
-          var d  = new Date(t.ts || Date.now());
-          var h  = d.getHours();
-          var mm = d.getMinutes().toString().padStart(2, '0');
+          // Parse time directly from local ISO string to avoid UTC offset
+          var ts = t.ts || '';
+          var h  = ts.length >= 13 ? parseInt(ts.slice(11, 13), 10) : new Date().getHours();
+          var mn = ts.length >= 16 ? parseInt(ts.slice(14, 16), 10) : new Date().getMinutes();
           var hh = ((h + 11) % 12) + 1;
           return {
-            time:      hh + ':' + mm + (h >= 12 ? 'p' : 'a'),
+            time:      hh + ':' + mn.toString().padStart(2, '0') + (h >= 12 ? 'p' : 'a'),
             firstName: t.who  || '',
             desc:      t.item || '',
             amount:    t.price || 0,
           };
         }),
-        tickerPool: [],
       };
-      normalizedToday.tickerPool = normalizedToday.ticker;
     }
 
     // ── staff ──
@@ -683,18 +687,92 @@ var kiosk = (function() {
   }
 
   // ── Polling ────────────────────────────────────────────
+
+  /** Soft-update the goal/pace numbers on screen without re-rendering */
+  function updateNumbers(td) {
+    var revenue   = td.revenue   || 0;
+    var pctToGoal = td.pctToGoal || 0;
+    var toGo      = td.toGo      || 0;
+
+    var soldEl = document.getElementById('kioskGoalSold');
+    if (soldEl) countUp(soldEl, revenue, 800);
+
+    var toGoEl = document.getElementById('kioskGoalToGo');
+    if (toGoEl) countUp(toGoEl, toGo, 800);
+
+    var pctEl = document.getElementById('kioskGoalPct');
+    if (pctEl) pctEl.textContent = Math.round(pctToGoal * 100) + '%';
+
+    var arc = document.getElementById('kioskGoalArc');
+    if (arc) arc.setAttribute('stroke-dashoffset', String(Math.round(283 * (1 - pctToGoal))));
+
+    var needle = document.getElementById('kioskPaceNeedle');
+    if (needle && td.pace != null) {
+      var clamped = Math.max(-0.20, Math.min(0.20, td.pace));
+      needle.style.transform = 'rotate(' + Math.round((clamped / 0.20) * 90) + 'deg)';
+    }
+  }
+
   function startPolling(slug) {
     clearInterval(_pollTimer);
+    clearInterval(_lbTimer);
+
+    // ── 30-second ticker poll ────────────────────────────
+    // Sends sinceTs cursor → GAS returns only NEW transactions + updated totals.
+    // On first poll (or fixture mode) falls back to full response handling.
     _pollTimer = setInterval(function() {
-      GC.api.fetchKioskAll(slug).then(function(rawData) {
-        var data = normalizeKioskData_(rawData);
-        // Soft-update key numbers without full re-render
-        var soldEl = document.getElementById('kioskGoalSold');
-        if (soldEl) countUp(soldEl, data.today.today.revenue || 0, 800);
-        var refreshEl = document.getElementById('kioskRefresh');
-        if (refreshEl) refreshEl.textContent = 'Last refresh ' + GC.fmtTime(new Date());
-      });
+      GC.api.fetchStoreToday(slug, { sinceTs: _lastTxnTs })
+        .then(function(resp) {
+          if (resp.isUpdate) {
+            // Delta response: inject new ticker items + update numbers
+            if (resp.newTicker && resp.newTicker.length) {
+              injectTickerItems(resp.newTicker);
+            }
+            updateNumbers(resp);
+            if (resp.latestTxnTs) _lastTxnTs = resp.latestTxnTs;
+          } else {
+            // Full response (fixture mode or first ever poll without sinceTs)
+            var data = normalizeKioskData_({
+              today:       resp,
+              leaderboard: { staff: [] },
+              badges:      { badges: [] },
+            });
+            updateNumbers(data.today.today);
+            if (resp.latestTxnTs) _lastTxnTs = resp.latestTxnTs;
+          }
+          var refreshEl = document.getElementById('kioskRefresh');
+          if (refreshEl) refreshEl.textContent = 'Last refresh ' + GC.fmtTime(new Date());
+        })
+        .catch(function(err) {
+          console.warn('[kiosk] ticker poll failed:', err);
+        });
     }, 30000);
+
+    // ── 5-minute leaderboard refresh ────────────────────
+    _lbTimer = setInterval(function() {
+      GC.api.fetchStoreLeaderboard(slug)
+        .then(function(lb) {
+          var data = normalizeKioskData_({
+            today:       {},
+            leaderboard: lb,
+            badges:      { badges: [] },
+          });
+          var staff   = data.leaderboard.staff;
+          var section = document.querySelector('.lb-section');
+          if (section) {
+            section.outerHTML = renderStaffGrid(staff, _storeName);
+            animateBars();
+            // Animate employee amounts
+            staff.forEach(function(s) {
+              var el = document.getElementById('kioskEmpAmt' + s.rank);
+              if (el) countUp(el, s.sales || 0, 1000);
+            });
+          }
+        })
+        .catch(function(err) {
+          console.warn('[kiosk] leaderboard refresh failed:', err);
+        });
+    }, 5 * 60 * 1000);
   }
 
   // ── Rare drop ──────────────────────────────────────────

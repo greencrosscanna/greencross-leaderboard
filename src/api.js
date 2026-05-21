@@ -179,9 +179,12 @@ GC.api = (function() {
   // ── Public: Store / Kiosk endpoints ───────────────────
   // (stubs for Phase 2)
 
-  function fetchStoreToday(storeSlug) {
+  function fetchStoreToday(storeSlug, opts) {
+    opts = opts || {};
     if (USE_FIXTURES) return fetchFixture('store-today-' + storeSlug);
-    return gasCall('storetoday', { store: storeSlug });
+    var extra = { store: storeSlug };
+    if (opts.sinceTs) extra.sinceTs = opts.sinceTs;
+    return gasCall('storetoday', extra);
   }
 
   function fetchStoreLeaderboard(storeSlug) {

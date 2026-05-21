@@ -25,6 +25,8 @@ const GC_SESSION_SECRET_KEY = 'GC_PERF_SESSION_SECRET';
 const GC_SESSION_TTL_MS     = 7 * 24 * 60 * 60 * 1000;
 const GC_STORE_PLANS_KEY    = 'GC_STORE_PLANS_JSON';
 const GC_STREAKS_KEY        = 'GC_STREAKS_JSON';
+const GC_EMPLOYEES_KEY      = 'GC_STORE_EMPLOYEES_JSON';
+const GC_PAY_PERIOD_ANCHOR  = 'GC_PAY_PERIOD_ANCHOR'; // stored as "YYYY-MM-DD" local date
 const DUTCHIE_BASE          = 'https://api.pos.dutchie.com';
 
 // Portland, OR: UTC-7 (PDT Apr–Oct) / UTC-8 (PST Nov–Mar)
@@ -82,13 +84,28 @@ function doGet(e) {
     // ── Director endpoints ─────────────────────────────────
     if (params.action === 'directorall') {
       requireRole_(auth, ['owner','director']);
-      // Single round-trip: fetch all 4 payloads, return combined
-      const [summary, stores, staff, alerts] = [
-        getDirectorSummary(params),
-        getDirectorStores(params),
-        getDirectorStaff(params),
-        getDirectorAlerts(),
-      ];
+      const period = params.period || 'mtd';
+      const range  = getDateRange_(period);
+      const prior  = getPriorRange_(range);
+      const todayR = getDateRange_('today');
+      // For mtd (default), byStore also serves as byStoreMTD — no 4th fetch needed.
+      const mtdR   = period === 'mtd' ? null : getDateRange_('mtd');
+
+      // ONE mega-batch: 3 (or 4) ranges × 6 stores = 18–24 parallel HTTP requests.
+      // This replaces 6 sequential fetchAll calls and cuts execution time ~3–6×.
+      const rangeList = [range, prior, todayR];
+      if (mtdR) rangeList.push(mtdR);
+
+      const fetched      = fetchAllStoresTransactionsMulti_(rangeList);
+      const byStore      = fetched[0];  // current period
+      const prevByStore  = fetched[1];  // prior period (for summary deltas)
+      const byStoreToday = fetched[2];  // today (for store pace)
+      const byStoreMTD   = mtdR ? fetched[3] : byStore; // mtd (for alerts)
+
+      const summary = getDirectorSummary(params, { byStore, prevByStore });
+      const stores  = getDirectorStores(params,  { byStore, byStoreToday });
+      const staff   = getDirectorStaff(params,   { byStore });
+      const alerts  = getDirectorAlerts(         { byStore: byStoreMTD });
       return jsonOut({ summary, stores, staff, alerts }, params.callback);
     }
     if (params.action === 'directorsummary') {
@@ -124,6 +141,12 @@ function doGet(e) {
     if (params.action === 'storebadges') {
       const store = requireStore_(auth, params.store);
       return jsonOut(getStoreBadges(store, params), params.callback);
+    }
+
+    // ── Employee roster ────────────────────────────────────
+    if (params.action === 'syncemployees') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(syncEmployeeRoster_(), params.callback);
     }
 
     // ── Plan management ────────────────────────────────────
@@ -250,7 +273,29 @@ function loginUser(params) {
 
 // ── ONE-TIME BOOTSTRAP — run from editor, then delete ─────────
 // Select bootstrapAllUsers in the function dropdown and click Run.
+// ── ONE-TIME: install daily roster refresh trigger ────────────
+// Select this function in the Script Editor dropdown and click Run.
+// Requires: Review Permissions → allow "Manage triggers" scope.
+function installRosterTrigger() {
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'syncEmployeeRoster_')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('syncEmployeeRoster_')
+    .timeBased()
+    .everyDays(1)
+    .atHour(6)
+    .create();
+  Logger.log('Daily roster trigger installed (6am PT).');
+}
+
 function bootstrapAllUsers() {
+  // Remove stale placeholder usernames from earlier development
+  const props = PropertiesService.getScriptProperties();
+  const users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}');
+  ['sofia','maya','devon','priya','marcus','tyler'].forEach(k => delete users[k]);
+  props.setProperty(GC_USERS_KEY, JSON.stringify(users));
+
+  // Set real users
   setUserPassword_('sky',     'gcadmin', 'director',      null,         'Sky Pinnick',   'SP');
   setUserPassword_('dean',    'gc123',   'store_manager', 'baseline',   'Dean Deloof',   'DD');
   setUserPassword_('tj',      'gc123',   'store_manager', 'river',      'TJ Peterson',   'TP');
@@ -352,6 +397,19 @@ function getDateRange_(period) {
       fromMs = Date.UTC(y, 0, 1);
       toMs   = todayEndMs;
       break;
+    case 'pp': {
+      // Bi-weekly pay period. Anchor date stored in ScriptProperties as "YYYY-MM-DD".
+      // Default: 2026-05-11 (the pay period start confirmed in the incentive sheet).
+      const anchorStr = PropertiesService.getScriptProperties().getProperty(GC_PAY_PERIOD_ANCHOR) || '2026-05-11';
+      const [ay, am, ad] = anchorStr.split('-').map(Number);
+      const anchorLocalMs = Date.UTC(ay, am - 1, ad); // anchor = local midnight
+      const PP_MS = 14 * 24 * 60 * 60 * 1000;
+      const daysSince = (todayStartMs - anchorLocalMs) / (24 * 60 * 60 * 1000);
+      const periodsBack = daysSince >= 0 ? Math.floor(daysSince / 14) : Math.ceil(daysSince / 14) - 1;
+      fromMs = anchorLocalMs + periodsBack * PP_MS;
+      toMs   = fromMs + PP_MS - 1;
+      break;
+    }
     case 'mtd':
     default:
       fromMs = Date.UTC(y, m, 1);
@@ -550,28 +608,83 @@ function fetchAllStoresTransactions_(range) {
   return result;
 }
 
+/**
+ * Fetch transactions for ALL stores across MULTIPLE date ranges in a single
+ * UrlFetchApp.fetchAll() call, so all (nRanges × 6) requests run in parallel.
+ *
+ * @param  {Array}  ranges  Array of { fromUTC, toUTC } range objects
+ * @return {Array}          Parallel array of byStore objects, one per input range
+ */
+function fetchAllStoresTransactionsMulti_(ranges) {
+  const nStores = STORES.length;
+  const allRequests = [];
+
+  ranges.forEach(function(range) {
+    STORES.forEach(function(store) {
+      const storeKey = getDutchieStoreKey_(store.slug);
+      const qs = [
+        'FromDateUTC='   + encodeURIComponent(range.fromUTC),
+        'ToDateUTC='     + encodeURIComponent(range.toUTC),
+        'IncludeDetail=true',
+        'Skip=0',
+        'Take=5000',
+      ].join('&');
+      allRequests.push({
+        url: DUTCHIE_BASE + '/reporting/transactions?' + qs,
+        headers: {
+          Authorization: 'Basic ' + Utilities.base64Encode(storeKey + ':'),
+          Accept: 'application/json',
+        },
+        muteHttpExceptions: true,
+      });
+    });
+  });
+
+  Logger.log('fetchAllStoresTransactionsMulti_: firing ' + allRequests.length + ' requests (' + ranges.length + ' ranges × ' + nStores + ' stores)');
+  const responses = UrlFetchApp.fetchAll(allRequests);
+
+  return ranges.map(function(range, ri) {
+    const result = {};
+    STORES.forEach(function(store, si) {
+      const resp = responses[ri * nStores + si];
+      try {
+        if (resp.getResponseCode() !== 200) {
+          Logger.log('Dutchie ' + resp.getResponseCode() + ' for ' + store.slug + ' range[' + ri + ']');
+          result[store.slug] = [];
+          return;
+        }
+        const data = JSON.parse(resp.getContentText());
+        const txns = Array.isArray(data) ? data : (data.transactions || data.data || []);
+        result[store.slug] = txns.filter(tx => tx.transactionType === 'Retail');
+      } catch(e) {
+        Logger.log('Parse error for ' + store.slug + ' range[' + ri + ']: ' + e.message);
+        result[store.slug] = [];
+      }
+    });
+    return result;
+  });
+}
+
 // ============================================================
 // TRANSACTION AGGREGATION
 // ============================================================
 
 /**
- * Extract employee info from a transaction, handling Dutchie field variants.
- * Dutchie POS may use employee.displayName, employee.firstName+lastName,
- * or top-level employeeName depending on the endpoint version.
+ * Extract employee info from a Dutchie transaction.
+ *
+ * Dutchie /reporting/transactions uses:
+ *   completedByUser  — employee display name (e.g. "Jon Juslen")
+ *   employeeId       — numeric employee ID
+ *
+ * There is no nested `employee` object on this endpoint.
  */
 function txEmployee_(tx) {
-  if (tx.employee && typeof tx.employee === 'object') {
-    const name = tx.employee.displayName
-      || ((tx.employee.firstName || '') + ' ' + (tx.employee.lastName || '')).trim()
-      || 'Unknown';
-    return {
-      id:       tx.employee.id || tx.employee.employeeId || '',
-      name:     name || 'Unknown',
-      initials: tx.employee.initials || initials_(name),
-    };
-  }
-  const name = tx.employeeName || tx.budtenderName || 'Unknown';
-  return { id: tx.employeeId || '', name, initials: initials_(name) };
+  const name = tx.completedByUser
+    || tx.employeeName || tx.budtenderName
+    || (tx.employee && (tx.employee.displayName || tx.employee.name))
+    || 'Unknown';
+  const id = String(tx.employeeId || (tx.employee && tx.employee.id) || '');
+  return { id, name, initials: initials_(name) };
 }
 
 function initials_(name) {
@@ -588,9 +701,13 @@ function txTotal_(tx)    { return Number(tx.total          || tx.netSales     ||
 function txSubtotal_(tx) { return Number(tx.subtotal       || tx.grossSales   || tx.total || 0); }
 function txDiscount_(tx) { return Number(tx.discountTotal  || tx.totalDiscount || 0); }
 function txItems_(tx) {
-  const items = tx.lineItems || tx.lineitemList || tx.items || [];
-  if (!items.length) return 1;
-  return items.reduce((sum, li) => sum + (Number(li.quantity) || 1), 0);
+  // Dutchie uses `totalItems` (flat count) and `items` (array with quantity).
+  // Prefer summing the items array for accuracy; fall back to totalItems.
+  const items = tx.items || tx.lineItems || tx.lineitemList || [];
+  if (items.length > 0) {
+    return items.reduce((sum, li) => sum + (Number(li.quantity) || 1), 0);
+  }
+  return Number(tx.totalItems) || 1;
 }
 
 /** Aggregate a transaction array → summary + per-employee breakdown. */
@@ -652,11 +769,14 @@ function aggregateTransactions_(txns) {
 function aggregateByHour_(txns) {
   const hours = {};
   txns.forEach(function(tx) {
-    // Dutchie local-time field: transactionDateLocalTime; fallback to UTC date
+    // Dutchie transactionDateLocalTime is already local time (no TZ suffix).
+    // Parsing with new Date() would treat it as UTC — extract the hour directly
+    // from the string to avoid the offset error.
     const dtStr = tx.transactionDateLocalTime || tx.transactionDate || '';
     if (!dtStr) return;
-    const h = new Date(dtStr).getHours();
-    if (h < 0 || h > 23) return;
+    // ISO string: "2026-05-20T14:00:03.817000" — hour is chars 11-12
+    const h = dtStr.length >= 13 ? parseInt(dtStr.substring(11, 13), 10) : new Date(dtStr).getHours();
+    if (isNaN(h) || h < 0 || h > 23) return;
     if (!hours[h]) hours[h] = { revenue: 0, count: 0 };
     hours[h].revenue += txTotal_(tx);
     hours[h].count   += 1;
@@ -670,17 +790,67 @@ function r1_(n) { return Math.round(n * 10)   / 10;  }
 function r3_(n) { return Math.round(n * 1000) / 1000; }
 
 // ============================================================
+// ============================================================
+// EMPLOYEE ROSTER
+// ============================================================
+
+/**
+ * Returns the cached employee roster from ScriptProperties.
+ * Shape: { "baseline": [{id, name, initials}, ...], "center": [...], ... }
+ */
+function getEmployeeRoster_() {
+  const raw = PropertiesService.getScriptProperties().getProperty(GC_EMPLOYEES_KEY);
+  return JSON.parse(raw || '{}');
+}
+
+/**
+ * Build/refresh the employee roster from the last 30 days of transactions.
+ * Employees are keyed by employeeId so duplicates are merged.
+ * Run manually via the syncemployees action, or call from a time-based trigger.
+ */
+function syncEmployeeRoster_() {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const range30 = {
+    fromUTC: thirtyDaysAgo.toISOString(),
+    toUTC:   new Date().toISOString(),
+  };
+
+  Logger.log('syncEmployeeRoster_: fetching 30-day transactions for all stores…');
+  const byStore = fetchAllStoresTransactions_(range30);
+  const roster = {};
+
+  STORES.forEach(function(store) {
+    const seen = {};
+    (byStore[store.slug] || []).forEach(function(tx) {
+      const emp = txEmployee_(tx);
+      const key = String(emp.id || emp.name);
+      if (emp.name !== 'Unknown' && !seen[key]) {
+        seen[key] = { id: emp.id, name: emp.name, initials: emp.initials };
+      }
+    });
+    roster[store.slug] = Object.values(seen)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  });
+
+  PropertiesService.getScriptProperties().setProperty(GC_EMPLOYEES_KEY, JSON.stringify(roster));
+  const counts = STORES.map(s => s.slug + ':' + (roster[s.slug] || []).length).join(', ');
+  Logger.log('Roster saved — ' + counts);
+  return { ok: true, counts: Object.fromEntries(STORES.map(s => [s.slug, (roster[s.slug] || []).length])) };
+}
+
+// ============================================================
 // DIRECTOR ENDPOINTS
 // ============================================================
 
-function getDirectorSummary(params) {
+function getDirectorSummary(params, pre) {
+  pre = pre || {};
   const period = params.period || 'mtd';
   const range  = getDateRange_(period);
   const prior  = getPriorRange_(range);
 
-  // Parallel batch: current period + prior period (2 × 6 HTTP calls)
-  const currByStore = fetchAllStoresTransactions_(range);
-  const prevByStore = fetchAllStoresTransactions_(prior);
+  // Use pre-fetched data when called from directorall, otherwise fetch independently.
+  const currByStore = pre.byStore     || fetchAllStoresTransactions_(range);
+  const prevByStore = pre.prevByStore || fetchAllStoresTransactions_(prior);
 
   const allCurr = Object.values(currByStore).flat();
   const allPrev = Object.values(prevByStore).flat();
@@ -726,15 +896,16 @@ function getDirectorSummary(params) {
   };
 }
 
-function getDirectorStores(params) {
+function getDirectorStores(params, pre) {
+  pre = pre || {};
   const period   = params.period || 'mtd';
   const range    = getDateRange_(period);
   const todayR   = period === 'today' ? range : getDateRange_('today');
   const plans    = getStorePlans_();
 
-  // Batch: period data + today data (parallel)
-  const byStore      = fetchAllStoresTransactions_(range);
-  const byStoreToday = period === 'today' ? byStore : fetchAllStoresTransactions_(todayR);
+  // Use pre-fetched data when called from directorall, otherwise fetch independently.
+  const byStore      = pre.byStore      || fetchAllStoresTransactions_(range);
+  const byStoreToday = pre.byStoreToday || (period === 'today' ? byStore : fetchAllStoresTransactions_(todayR));
 
   // Look up user records once for manager info
   const users = JSON.parse(
@@ -806,10 +977,12 @@ function getDirectorStores(params) {
   };
 }
 
-function getDirectorStaff(params) {
+function getDirectorStaff(params, pre) {
+  pre = pre || {};
   const period  = params.period || 'mtd';
   const range   = getDateRange_(period);
-  const byStore = fetchAllStoresTransactions_(range);
+  // Use pre-fetched data when called from directorall, otherwise fetch independently.
+  const byStore = pre.byStore || fetchAllStoresTransactions_(range);
 
   // Aggregate employees globally across all stores
   const globalEmps = {};
@@ -881,8 +1054,8 @@ function getDirectorStaff(params) {
 }
 
 /** Same as getDirectorStaff but shaped for the /leaderboard view. */
-function getLeaderboardStaff(params) {
-  const data = getDirectorStaff(params);
+function getLeaderboardStaff(params, pre) {
+  const data = getDirectorStaff(params, pre);
   return {
     period:     data.period,
     totalStaff: data.totalActive,
@@ -907,9 +1080,11 @@ function getLeaderboardStaff(params) {
   };
 }
 
-function getDirectorAlerts() {
+function getDirectorAlerts(pre) {
+  pre = pre || {};
   const range     = getDateRange_('mtd');
-  const byStore   = fetchAllStoresTransactions_(range);
+  // Use pre-fetched data when called from directorall, otherwise fetch independently.
+  const byStore   = pre.byStore || fetchAllStoresTransactions_(range);
   const plans     = getStorePlans_();
   const alerts    = [];
   const discWatch = [];
@@ -1038,8 +1213,9 @@ function getStoreToday(store, params) {
     });
   }
 
-  // On-shift: staff with ≥1 transaction today (sorted by sales desc)
-  const onShift = Object.values(agg.byEmployee)
+  // Build shift strip: active employees (have transactions today) + known
+  // roster employees who haven't transacted yet (shown as off-shift).
+  const activeEmps = Object.values(agg.byEmployee)
     .sort((a, b) => b.sales - a.sales)
     .map(emp => ({
       initials: emp.initials,
@@ -1049,12 +1225,31 @@ function getStoreToday(store, params) {
       note:     null,
     }));
 
-  // Ticker seed: last 8 transactions in reverse chronological order
-  const recentTxns = txns.slice().reverse().slice(0, 8);
-  const ticker = recentTxns.map(function(tx) {
-    const emp   = txEmployee_(tx);
-    const items = tx.lineItems || tx.lineitemList || tx.items || [];
-    const topItem = items.length > 0
+  const activeIds = new Set(
+    Object.values(agg.byEmployee).map(e => String(e.id)).filter(Boolean)
+  );
+  const activeNames = new Set(
+    Object.values(agg.byEmployee).map(e => e.name.toLowerCase())
+  );
+
+  // Pull in roster employees not yet seen today
+  const rosterEmps = (getEmployeeRoster_()[store.slug] || [])
+    .filter(e => !activeIds.has(String(e.id)) && !activeNames.has(e.name.toLowerCase()))
+    .map(e => ({
+      initials: e.initials,
+      name:     e.name,
+      status:   'off',
+      sales:    0,
+      note:     null,
+    }));
+
+  const onShift = activeEmps.concat(rosterEmps);
+
+  // Helper: build a ticker item from a transaction
+  function makeTicker_(tx) {
+    const emp      = txEmployee_(tx);
+    const items    = tx.lineItems || tx.lineitemList || tx.items || [];
+    const topItem  = items.length > 0
       ? (items[0].productName || items[0].name || 'item')
       : 'item';
     return {
@@ -1063,7 +1258,36 @@ function getStoreToday(store, params) {
       price: txTotal_(tx),
       ts:    tx.transactionDateLocalTime || tx.transactionDate || '',
     };
-  });
+  }
+
+  // Latest transaction timestamp — used as cursor for incremental polls
+  const latestTxnTs = txns.length > 0
+    ? (txns[txns.length - 1].transactionDateLocalTime || txns[txns.length - 1].transactionDate || '')
+    : '';
+
+  // sinceTs: lightweight delta response (only new transactions + updated totals)
+  const sinceTs = params && params.sinceTs;
+  if (sinceTs) {
+    const newTxns = txns
+      .filter(tx => (tx.transactionDateLocalTime || tx.transactionDate || '') > sinceTs)
+      .reverse();   // newest first for ticker display
+    return {
+      isUpdate:         true,
+      revenue:          agg.sales,
+      transactions:     agg.transactions,
+      avgOrderValue:    agg.avgOrderValue,
+      pctToGoal:        pctToGoal,
+      pace:             pace,
+      projectedRevenue: projectedRevenue,
+      toGo:             Math.max(0, dailyGoal - agg.sales),
+      latestTxnTs:      latestTxnTs,
+      newTicker:        newTxns.map(makeTicker_),
+    };
+  }
+
+  // Full response: ticker seed = last 8 transactions newest-first
+  const recentTxns = txns.slice().reverse().slice(0, 8);
+  const ticker = recentTxns.map(makeTicker_);
 
   return {
     storeSlug:          store.slug,
@@ -1080,7 +1304,7 @@ function getStoreToday(store, params) {
     onShift:            onShift,
     hourly:             hourly,
     ticker:             ticker,
-    tickerPool:         [],   // client polls every 30s; new txns arrive via fresh fetch
+    latestTxnTs:        latestTxnTs,
     lastUpdated:        new Date().toISOString(),
   };
 }
