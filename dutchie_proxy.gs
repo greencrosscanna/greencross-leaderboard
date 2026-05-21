@@ -27,6 +27,9 @@ const GC_STORE_PLANS_KEY    = 'GC_STORE_PLANS_JSON';
 const GC_STREAKS_KEY        = 'GC_STREAKS_JSON';
 const GC_EMPLOYEES_KEY      = 'GC_STORE_EMPLOYEES_JSON';
 const GC_PAY_PERIOD_ANCHOR  = 'GC_PAY_PERIOD_ANCHOR'; // stored as "YYYY-MM-DD" local date
+const GC_TARGET_CACHE_KEY   = 'GC_ROLLING_TARGET_CACHE_JSON';
+const PP_DAYS                = 14;   // pay-period length in days
+const TARGET_LOOKBACK_MONTHS = 6;    // rolling lookback for target calculation
 const DUTCHIE_BASE          = 'https://api.pos.dutchie.com';
 
 // Portland, OR: UTC-7 (PDT Apr–Oct) / UTC-8 (PST Nov–Mar)
@@ -147,6 +150,11 @@ function doGet(e) {
     if (params.action === 'syncemployees') {
       requireRole_(auth, ['owner','director']);
       return jsonOut(syncEmployeeRoster_(), params.callback);
+    }
+
+    if (params.action === 'refreshtargets') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(refreshTargetsAll(), params.callback);
     }
 
     // ── Plan management ────────────────────────────────────
@@ -477,19 +485,126 @@ function getStorePlans_() {
 }
 
 /** Returns the daily revenue goal for a store (0 if not set). */
+/**
+ * Daily revenue goal derived from the 6-month rolling pay-period target.
+ * Falls back to static plan if no target has been computed yet.
+ */
 function getDailyGoal_(slug) {
+  const pp = getPayPeriodTarget_(slug);
+  if (pp > 0) return Math.round(pp / PP_DAYS);
   const plan = (getStorePlans_())[slug] || {};
-  if (plan.daily) return plan.daily;
+  if (plan.daily)   return plan.daily;
   if (plan.monthly) return Math.round(plan.monthly / 30.4);
   return 0;
 }
 
-/** Returns the monthly revenue goal for a store (0 if not set). */
+/** Monthly goal derived from pay-period target (pp × 30.4/14). */
 function getMonthlyGoal_(slug) {
+  const pp = getPayPeriodTarget_(slug);
+  if (pp > 0) return Math.round(pp * 30.4 / PP_DAYS);
   const plan = (getStorePlans_())[slug] || {};
   if (plan.monthly) return plan.monthly;
-  if (plan.daily) return Math.round(plan.daily * 30.4);
+  if (plan.daily)   return Math.round(plan.daily * 30.4);
   return 0;
+}
+
+/**
+ * Returns the cached 14-day (pay-period) net sales target for a store.
+ * Populated by refreshTargetsAll() which runs nightly via trigger.
+ */
+function getPayPeriodTarget_(slug) {
+  const props = PropertiesService.getScriptProperties();
+  const cache = JSON.parse(props.getProperty(GC_TARGET_CACHE_KEY) || '{}');
+  return (cache[slug] && cache[slug].ppTarget) || 0;
+}
+
+/**
+ * Returns the prorated revenue goal for a given period based on rolling daily avg.
+ *   'today' → one day's target
+ *   'pp'    → 14-day pay-period target
+ *   others  → dailyAvg × range.daysElapsed
+ */
+function getPeriodGoal_(slug, period, range) {
+  const pp = getPayPeriodTarget_(slug);
+  if (!pp) return 0;
+  const daily = pp / PP_DAYS;
+  if (period === 'today') return Math.round(daily);
+  if (period === 'pp')    return Math.round(pp);
+  const elapsed = (range && range.daysElapsed) || 0;
+  return Math.round(daily * elapsed);
+}
+
+/**
+ * Compute and cache 14-day pay-period targets for all stores.
+ * Fetches TARGET_LOOKBACK_MONTHS monthly chunks in parallel
+ * (6 months × 6 stores = 36 parallel HTTP requests via fetchAll).
+ *
+ * Run nightly via installTargetRefreshTrigger(), or on-demand via
+ * ?action=refreshtargets (director auth required).
+ *
+ * Formula: (net_sales over 6 months) / (actual days) × 14
+ */
+function refreshTargetsAll() {
+  const props = PropertiesService.getScriptProperties();
+  const now   = new Date();
+
+  // Build monthly ranges: current month + prior (TARGET_LOOKBACK_MONTHS-1) months
+  const ranges = [];
+  for (let i = TARGET_LOOKBACK_MONTHS - 1; i >= 0; i--) {
+    // new Date(year, month-offset, 1) on GAS UTC servers gives correct UTC date
+    const first = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const last  = new Date(now.getFullYear(), now.getMonth() - i + 1, 0); // day 0 = last of month
+    ranges.push({
+      fromUTC: first.toISOString().slice(0,10) + 'T00:00:00.000Z',
+      toUTC:   (i === 0
+        ? now.toISOString().slice(0,10)        // current month: up to today
+        : last.toISOString().slice(0,10)       // prior months: full month
+      ) + 'T23:59:59.999Z',
+    });
+  }
+
+  // One mega-batch: 6 months × 6 stores = 36 parallel HTTP requests
+  const fetched = fetchAllStoresTransactionsMulti_(ranges);
+
+  // Sum net sales per store across all months
+  const netBySlug = {};
+  STORES.forEach(s => { netBySlug[s.slug] = 0; });
+  fetched.forEach(byStore => {
+    STORES.forEach(s => {
+      (byStore[s.slug] || []).forEach(tx => { netBySlug[s.slug] += txNet_(tx); });
+    });
+  });
+
+  // Lookback: first day of oldest month → today (actual calendar days)
+  const firstDay    = new Date(now.getFullYear(), now.getMonth() - (TARGET_LOOKBACK_MONTHS - 1), 1);
+  const lookbackMs  = now.getTime() - firstDay.getTime();
+  const lookbackDays = Math.max(1, Math.round(lookbackMs / (24 * 60 * 60 * 1000)));
+
+  const cache  = {};
+  const report = {};
+  STORES.forEach(s => {
+    const ppTarget = Math.round(netBySlug[s.slug] / lookbackDays * PP_DAYS);
+    cache[s.slug]  = { ppTarget, computedAt: now.toISOString() };
+    report[s.slug] = ppTarget;
+    Logger.log('[targets] ' + s.slug + ': net=' + Math.round(netBySlug[s.slug])
+      + ' / ' + lookbackDays + 'd × 14 → pp=$' + ppTarget);
+  });
+
+  props.setProperty(GC_TARGET_CACHE_KEY, JSON.stringify(cache));
+  return { ok: true, lookbackDays, targets: report };
+}
+
+/**
+ * Install a daily 3 AM trigger for target refresh.
+ * Run once from Script Editor — do NOT call via HTTP.
+ */
+function installTargetRefreshTrigger() {
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'refreshTargetsAll')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('refreshTargetsAll')
+    .timeBased().atHour(3).everyDays(1).create();
+  Logger.log('Daily target refresh trigger installed (3 AM).');
 }
 
 // ── Setup helper (run from editor) ────────────────────────────
@@ -922,12 +1037,9 @@ function getDirectorStores(params, pre) {
     const agg       = aggregateTransactions_(txns);
     const aggToday  = aggregateTransactions_(txnsToday);
 
-    const monthlyGoal  = getMonthlyGoal_(store.slug);
-    const dailyGoal    = getDailyGoal_(store.slug);
-    const proratedGoal = monthlyGoal > 0
-      ? monthlyGoal * (range.daysElapsed / (range.totalDays || 30))
-      : 0;
-    const vsplan = proratedGoal > 0 ? r3_((agg.sales - proratedGoal) / proratedGoal) : 0;
+    const dailyGoal  = getDailyGoal_(store.slug);
+    const periodGoal = getPeriodGoal_(store.slug, period, range);
+    const vsplan     = periodGoal > 0 ? r3_((agg.sales - periodGoal) / periodGoal) : 0;
 
     // Pace for today: (revenue / goal) at current time fraction
     const now          = new Date();
@@ -956,6 +1068,7 @@ function getDirectorStores(params, pre) {
       manager:       { name: mgr.displayName || '', initials: mgr.initials || '', role: 'store_manager' },
       rank:          0,  // assigned after sort
       sales:         agg.sales,
+      goal:          periodGoal,
       vsplan:        vsplan,
       transactions:  agg.transactions,
       avgOrderValue: agg.avgOrderValue,
