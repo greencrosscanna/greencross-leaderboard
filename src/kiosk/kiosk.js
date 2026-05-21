@@ -520,8 +520,10 @@ var kiosk = (function() {
     initConfetti();
     startPolling(slug);
 
-    // Welcome confetti on load
-    setTimeout(fireConfetti, 800);
+    // Confetti only if goal is already hit on load
+    if ((data.today.today.pctToGoal || 0) >= GC.THRESHOLDS.goalCelebrationAt) {
+      setTimeout(fireConfetti, 800);
+    }
   }
 
   // ── Clock ──────────────────────────────────────────────
