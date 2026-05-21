@@ -1570,6 +1570,7 @@ function getStoreLeaderboard(store, params) {
     sales:         emp.sales,
     transactions:  emp.transactions,
     avgOrderValue: emp.avgOrderValue,
+    avgUPT:        emp.avgUPT || 0,
     discountRate:  emp.discountRate,
     streakDays:    emp._streak || 1,
     note:          null,

@@ -740,7 +740,7 @@ var kiosk = (function() {
     }
 
     // ── staff ──
-    // GAS: avgOrderValue, transactions, streakDays (no role, no upt, no streakType)
+    // GAS: avgOrderValue, avgUPT, transactions, streakDays (no role, no streakType)
     // Fixture: aov, txns, streak, streakType, role, upt
     var normalizedStaff = (lb.staff || []).map(function(s) {
       var streak = s.streak != null ? s.streak : (s.streakDays || 0);
