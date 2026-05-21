@@ -696,10 +696,14 @@ function initials_(name) {
     .slice(0, 2);
 }
 
-// Safely extract numeric fields from a transaction
-function txTotal_(tx)    { return Number(tx.total          || tx.netSales     || 0); }
-function txSubtotal_(tx) { return Number(tx.subtotal       || tx.grossSales   || tx.total || 0); }
-function txDiscount_(tx) { return Number(tx.discountTotal  || tx.totalDiscount || 0); }
+// Safely extract numeric fields from a transaction.
+// Net sales = post-discount, pre-tax  (matches greencross-dashboard convention)
+//   Dutchie field: totalBeforeTax → subtotal → total (fallback)
+// Gross sales = net + discounts (pre-discount, pre-tax)
+function txNet_(tx)      { return Number(tx.totalBeforeTax || tx.subtotal || tx.total || 0); }
+function txTotal_(tx)    { return txNet_(tx); }   // alias — all revenue uses net
+function txSubtotal_(tx) { return txNet_(tx) + txDiscount_(tx); }  // gross = net + discounts
+function txDiscount_(tx) { return Number(tx.totalDiscount  || tx.discountTotal || 0); }
 function txItems_(tx) {
   // Dutchie uses `totalItems` (flat count) and `items` (array with quantity).
   // Prefer summing the items array for accuracy; fall back to totalItems.
