@@ -192,6 +192,16 @@ GC.api = (function() {
     return gasCall('storebadges', { store: storeSlug, period: period });
   }
 
+  function fetchKioskAll(storeSlug) {
+    return Promise.all([
+      fetchStoreToday(storeSlug),
+      fetchStoreLeaderboard(storeSlug),
+      fetchStoreBadges(storeSlug, 'week'),
+    ]).then(function(results) {
+      return { today: results[0], leaderboard: results[1], badges: results[2] };
+    });
+  }
+
   return {
     USE_FIXTURES: USE_FIXTURES,
     GAS_URL: GAS_URL,
@@ -204,5 +214,6 @@ GC.api = (function() {
     fetchStoreToday:      fetchStoreToday,
     fetchStoreLeaderboard:fetchStoreLeaderboard,
     fetchStoreBadges:     fetchStoreBadges,
+    fetchKioskAll:        fetchKioskAll,
   };
 })();

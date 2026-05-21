@@ -16,7 +16,7 @@
 
   <!-- View-specific styles (load all; each is small) -->
   <link rel="stylesheet" href="src/director/director.css">
-  <!-- src/kiosk/kiosk.css goes here when built -->
+  <link rel="stylesheet" href="src/kiosk/kiosk.css">
   <!-- src/leaderboard/leaderboard.css goes here when built -->
 </head>
 <body>
@@ -38,7 +38,7 @@
 
 <!-- ── View modules ───────────────────────────────────────── -->
 <script src="src/director/director.js"></script>
-<!-- src/kiosk/kiosk.js goes here when built -->
+<script src="src/kiosk/kiosk.js"></script>
 <!-- src/leaderboard/leaderboard.js goes here when built -->
 
 <!-- ── Login view (inline — no separate file needed) ──────── -->
@@ -121,26 +121,7 @@ GC.views.renderLogin = function() {
   setTimeout(function() { userInput.focus(); }, 50);
 };
 
-// Stub views for not-yet-built routes (prevents console errors)
-GC.views.renderKiosk = function(slug) {
-  document.getElementById('app').innerHTML = [
-    '<div class="app-page">',
-    '  <header class="director-header">',
-    '    <div class="gc-logo"><span class="green">GREEN</span>CROSS</div>',
-    '    <span class="view-badge">' + GC.esc(slug ? slug.charAt(0).toUpperCase() + slug.slice(1) : 'Store') + ' · Kiosk</span>',
-    '    <div class="header-right">',
-    '      <button class="btn-ghost" onclick="GC.router.navigate(\'#/director\')">← Director</button>',
-    '      <button class="btn-ghost" onclick="GC.auth.clear(); GC.router.navigate(\'#/login\')">Sign out</button>',
-    '    </div>',
-    '  </header>',
-    '  <div class="empty-state" style="padding:80px 20px">',
-    '    <div style="font-size:48px;margin-bottom:16px">🏗️</div>',
-    '    <div style="color:var(--text-dim);font-size:16px;font-weight:600;margin-bottom:8px">Kiosk view coming next</div>',
-    '    <div style="color:var(--text-mute)">Store: ' + GC.esc(slug) + ' · Task 2 in the build sequence</div>',
-    '  </div>',
-    '</div>',
-  ].join('\n');
-};
+// renderKiosk is registered by src/kiosk/kiosk.js (loaded above)
 
 GC.views.renderLeaderboard = function() {
   document.getElementById('app').innerHTML = [

@@ -1,0 +1,36 @@
+{
+  "store": "baseline",
+  "period": "today",
+  "staff": [
+    {
+      "rank": 1, "initials": "LP", "name": "Lina Park",     "firstName": "Lina",
+      "role": "Budtender",  "sales": 1420, "txns": 17, "aov": 83.53, "upt": 2.6,
+      "streak": 5, "streakType": "fire", "personalBestPct": null, "note": null
+    },
+    {
+      "rank": 2, "initials": "SA", "name": "Sofia Alvarez", "firstName": "Sofia",
+      "role": "Store Mgr",  "sales": 1380, "txns": 18, "aov": 76.67, "upt": 2.4,
+      "streak": 3, "streakType": "fire", "personalBestPct": null, "note": null
+    },
+    {
+      "rank": 3, "initials": "AL", "name": "Avery Liu",     "firstName": "Avery",
+      "role": "Asst Mgr",   "sales": 1210, "txns": 16, "aov": 75.63, "upt": 2.3,
+      "streak": 2, "streakType": null,   "personalBestPct": null, "note": null
+    },
+    {
+      "rank": 4, "initials": "TB", "name": "Theo Bennett",  "firstName": "Theo",
+      "role": "Budtender",  "sales": 980,  "txns": 13, "aov": 75.38, "upt": 2.2,
+      "streak": 0, "streakType": null,   "personalBestPct": 0.92, "note": null
+    },
+    {
+      "rank": 5, "initials": "MC", "name": "Marcus Chen",   "firstName": "Marcus",
+      "role": "Budtender",  "sales": 945,  "txns": 12, "aov": 78.75, "upt": 2.4,
+      "streak": 0, "streakType": null,   "personalBestPct": null, "note": "Back at 8p"
+    },
+    {
+      "rank": 6, "initials": "RS", "name": "Riley Sato",    "firstName": "Riley",
+      "role": "Budtender",  "sales": 0,    "txns": 0,  "aov": null,  "upt": null,
+      "streak": 0, "streakType": null,   "personalBestPct": null, "note": "Off today"
+    }
+  ]
+}

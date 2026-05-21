@@ -1,0 +1,68 @@
+{
+  "store": {
+    "id": "baseline",
+    "name": "Baseline",
+    "slug": "baseline",
+    "address": "SW 5th · Portland",
+    "color": "#4ade80"
+  },
+  "today": {
+    "date": "2026-05-20",
+    "goal": 8500,
+    "revenue": 6840,
+    "transactions": 88,
+    "avgOrderValue": 77.73,
+    "avgUPT": 2.4,
+    "discountRate": 0.042,
+    "hoursOpen": 8,
+    "hoursRemaining": 2.22,
+    "timeRemainingLabel": "2h 13m",
+    "pctToGoal": 0.805,
+    "vsplan": 0.08,
+    "pace": 0.08,
+    "projectedRevenue": 9180,
+    "toGo": 1660
+  },
+  "onShift": [
+    { "initials": "SA", "name": "Sofia Alvarez", "role": "Store Mgr",  "status": "on"                   },
+    { "initials": "AL", "name": "Avery Liu",     "role": "Asst Mgr",   "status": "on"                   },
+    { "initials": "LP", "name": "Lina Park",     "role": "Budtender",  "status": "on"                   },
+    { "initials": "TB", "name": "Theo Bennett",  "role": "Budtender",  "status": "on"                   },
+    { "initials": "MC", "name": "Marcus Chen",   "role": "Budtender",  "status": "later", "note": "Back at 8p" },
+    { "initials": "RS", "name": "Riley Sato",    "role": "Budtender",  "status": "off",   "note": "Off today"  }
+  ],
+  "hourly": [
+    { "hour": "11a", "pct": 18,  "current": false, "projected": false },
+    { "hour": "12p", "pct": 32,  "current": false, "projected": false },
+    { "hour": "1p",  "pct": 45,  "current": false, "projected": false },
+    { "hour": "2p",  "pct": 58,  "current": false, "projected": false },
+    { "hour": "3p",  "pct": 68,  "current": false, "projected": false },
+    { "hour": "4p",  "pct": 86,  "current": false, "projected": false },
+    { "hour": "5p",  "pct": 100, "current": false, "projected": false },
+    { "hour": "6p",  "pct": 90,  "current": true,  "projected": false },
+    { "hour": "7p",  "pct": 60,  "current": false, "projected": true  },
+    { "hour": "8p",  "pct": 40,  "current": false, "projected": true  },
+    { "hour": "9p",  "pct": 22,  "current": false, "projected": true  }
+  ],
+  "peakHour": "5p",
+  "peakRevenue": 2340,
+  "ticker": [
+    { "time": "6:42p", "firstName": "Lina",  "desc": "Premium vape combo",  "amount": 187 },
+    { "time": "6:38p", "firstName": "Sofia", "desc": "Edible 4-pack",        "amount": 94  },
+    { "time": "6:35p", "firstName": "Theo",  "desc": "Pre-roll bundle",      "amount": 156 },
+    { "time": "6:31p", "firstName": "Avery", "desc": "Concentrate kit",      "amount": 215 },
+    { "time": "6:28p", "firstName": "Lina",  "desc": "Top-shelf eighth",     "amount": 78  }
+  ],
+  "tickerPool": [
+    { "firstName": "Lina",  "desc": "Top-shelf eighth",     "amount": 78  },
+    { "firstName": "Theo",  "desc": "Vape cart",            "amount": 52  },
+    { "firstName": "Sofia", "desc": "Pre-roll 5-pack",      "amount": 65  },
+    { "firstName": "Avery", "desc": "Edible variety pack",  "amount": 88  },
+    { "firstName": "Lina",  "desc": "Concentrate gram",     "amount": 95  },
+    { "firstName": "Theo",  "desc": "CBD tincture",         "amount": 42  },
+    { "firstName": "Sofia", "desc": "Premium flower 1/8",   "amount": 124 },
+    { "firstName": "Avery", "desc": "Glass + grinder",      "amount": 71  },
+    { "firstName": "Lina",  "desc": "Live resin gram",      "amount": 110 },
+    { "firstName": "Theo",  "desc": "Disposable vape",      "amount": 58  }
+  ]
+}

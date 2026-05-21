@@ -1,0 +1,12 @@
+{
+  "store": "baseline",
+  "period": "week",
+  "badges": [
+    { "id": "aov",    "type": "b-aov",    "icon": "💰", "title": "AOV Avenger",      "holder": "Riley Sato",    "stat": "$82.27" },
+    { "id": "upt",    "type": "b-upt",    "icon": "📈", "title": "Upsell King",       "holder": "Lina Park",     "stat": "2.6"    },
+    { "id": "clean",  "type": "b-clean",  "icon": "🧼", "title": "Cleanest Receipts", "holder": "Theo Bennett",  "stat": "2.1%"   },
+    { "id": "new",    "type": "b-new",    "icon": "🤝", "title": "Welcome Wagon",     "holder": "Sofia Alvarez", "stat": "28"     },
+    { "id": "close",  "type": "b-close",  "icon": "⏰", "title": "The Closer",        "holder": "Avery Liu",     "stat": "$3.1k"  },
+    { "id": "streak", "type": "b-streak", "icon": "🔥", "title": "Streak Master",     "holder": "Lina Park",     "stat": "5d"     }
+  ]
+}
