@@ -1,0 +1,1160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Green Cross — Director · All Stores</title>
+<style>
+  :root {
+    --bg: #0a0e0d;
+    --surface: #121715;
+    --surface-2: #161c1a;
+    --surface-3: #1a221f;
+    --border: #232a27;
+    --border-strong: #2e3733;
+    --text: #e6ece9;
+    --text-dim: #8a958f;
+    --text-mute: #5e6864;
+    --green: #4ade80;
+    --green-soft: rgba(74, 222, 128, 0.10);
+    --red: #ef4444;
+    --orange: #f97316;
+    --amber: #eab308;
+    --yellow: #facc15;
+    --blue: #60a5fa;
+    --purple: #a78bfa;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { padding: 14px 24px 40px; max-width: 1720px; margin: 0 auto; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ========= HEADER ========= */
+  header {
+    display: flex; align-items: center; gap: 22px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo { font-weight: 900; font-size: 22px; letter-spacing: 0.5px; }
+  .logo .green { color: var(--green); }
+  .view-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 12px;
+    border: 1px solid var(--border-strong);
+    color: var(--text-dim);
+    background: var(--surface-2);
+    border-radius: 999px;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 1.4px; text-transform: uppercase;
+  }
+  .view-badge::before {
+    content: "";
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--blue);
+    box-shadow: 0 0 6px var(--blue);
+  }
+  .breadcrumb { color: var(--text-mute); font-size: 12px; }
+  .breadcrumb b { color: var(--text); font-weight: 600; }
+  .header-right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+  .clock-mini { text-align: right; line-height: 1.2; margin-right: 4px; }
+  .clock-mini .t { font-weight: 700; font-size: 14px; }
+  .clock-mini .d { color: var(--text-mute); font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase; }
+  .btn-ghost {
+    background: transparent; color: var(--text-dim);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px; padding: 6px 12px;
+    font-size: 13px; cursor: pointer;
+  }
+  .btn-ghost:hover { color: var(--text); }
+  .user-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 12px 4px 4px;
+    font-size: 12px;
+  }
+  .user-chip .av {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: linear-gradient(135deg, #4ade80, #1e6a45);
+    color: #0a0e0d; font-weight: 800; font-size: 11px;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ========= STORE STATUS STRIP ========= */
+  .status-strip {
+    margin-top: 14px;
+    display: flex; align-items: center; gap: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 6px;
+  }
+  .status-strip .label {
+    font-size: 10px; letter-spacing: 1.2px; color: var(--text-mute);
+    text-transform: uppercase; font-weight: 700;
+    padding: 6px 14px;
+    border-right: 1px solid var(--border);
+    margin-right: 6px;
+  }
+  .ss-store {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .ss-store:hover { background: var(--surface-2); }
+  .ss-store .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 8px currentColor;
+  }
+  .ss-store .dot.green  { background: var(--green); color: var(--green); }
+  .ss-store .dot.amber  { background: var(--amber); color: var(--amber); }
+  .ss-store .dot.red    { background: var(--red);   color: var(--red); }
+  .ss-store .info { display: flex; flex-direction: column; line-height: 1.2; }
+  .ss-store .info .n { font-weight: 600; font-size: 12px; }
+  .ss-store .info .s { font-size: 10px; color: var(--text-mute); font-variant-numeric: tabular-nums; }
+  .ss-store .pct { margin-left: auto; font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .ss-store .pct.up   { color: var(--green); }
+  .ss-store .pct.flat { color: var(--text-dim); }
+  .ss-store .pct.down { color: var(--red); }
+
+  /* ========= KPI rows ========= */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .kpi-row.small {
+    grid-template-columns: repeat(6, 1fr);
+    margin-top: 8px;
+  }
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+  }
+  .kpi .label {
+    font-size: 10px; letter-spacing: 1.1px;
+    color: var(--text-mute); text-transform: uppercase;
+    font-weight: 600; margin-bottom: 6px;
+  }
+  .kpi .value {
+    font-size: 28px; font-weight: 800; letter-spacing: -0.5px;
+  }
+  .kpi.small .value { font-size: 22px; }
+  .kpi .delta {
+    font-size: 11px;
+    margin-top: 4px;
+    font-weight: 600;
+    color: var(--text-mute);
+  }
+  .kpi .delta.up   { color: var(--green); }
+  .kpi .delta.down { color: var(--red); }
+  .v-green { color: var(--green); }
+  .v-red { color: var(--red); }
+  .v-amber { color: var(--amber); }
+  .v-yellow { color: var(--yellow); }
+
+  /* ========= filter pills ========= */
+  .filter-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 18px; flex-wrap: wrap;
+  }
+  .filter-right { margin-left: auto; display: flex; gap: 8px; }
+  .pill {
+    border: 1px solid var(--border-strong);
+    color: var(--text-dim);
+    background: transparent;
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .pill.active {
+    border-color: var(--green);
+    color: var(--green);
+    background: var(--green-soft);
+  }
+  .pill.flag.active {
+    border-color: var(--red);
+    color: var(--red);
+    background: rgba(239,68,68,0.08);
+  }
+
+  /* ========= controls ========= */
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 160px 160px 160px 160px 40px;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .controls input, .controls select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 8px 12px;
+    font-size: 13px;
+    width: 100%;
+    appearance: none;
+  }
+  .controls select {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a958f' stroke-width='2'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 28px;
+  }
+  .btn-icon {
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    color: var(--text-dim);
+    width: 100%;
+    height: 36px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  /* ========= section headers ========= */
+  .section-head {
+    display: flex; align-items: baseline; gap: 12px;
+    margin: 22px 0 10px;
+  }
+  .section-head h2 {
+    margin: 0; font-size: 11px; letter-spacing: 1.4px;
+    text-transform: uppercase; color: var(--text-dim);
+    font-weight: 700;
+  }
+  .section-head .sep { color: var(--border-strong); }
+  .section-head .meta { font-size: 11px; color: var(--text-mute); }
+  .section-head a { color: var(--text-dim); font-size: 11px; margin-left: auto; text-decoration: none; }
+  .section-head a:hover { color: var(--text); }
+
+  /* ========= store table ========= */
+  table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  thead th {
+    text-align: left;
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 1.1px;
+    color: var(--text-mute);
+    text-transform: uppercase;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 14px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+    font-size: 13px;
+  }
+  tbody tr {
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  tbody tr:hover { background: rgba(74, 222, 128, 0.03); }
+  tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--green); }
+
+  /* rank pills */
+  .rank-pill {
+    border: 1px solid var(--green);
+    color: var(--green);
+    background: rgba(74,222,128,0.06);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .rank-pill.mid {
+    border-color: var(--border-strong);
+    color: var(--text-dim);
+    background: transparent;
+  }
+  .rank-pill.bad {
+    border-color: var(--red);
+    color: var(--red);
+    background: rgba(239,68,68,0.06);
+  }
+
+  .store-cell {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .store-cell .sdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .store-cell .meta { line-height: 1.25; }
+  .store-cell .n { font-weight: 600; }
+  .store-cell .m { font-size: 11px; color: var(--text-mute); }
+
+  /* store dot colors */
+  .sd-baseline   { background: #4ade80; }
+  .sd-center     { background: #60a5fa; }
+  .sd-century    { background: #f97316; }
+  .sd-commercial { background: #facc15; }
+  .sd-portland   { background: #a78bfa; }
+  .sd-river      { background: #ef4444; }
+
+  .sales-cell { display: flex; flex-direction: column; gap: 4px; min-width: 120px; }
+  .sales-cell .amt { font-weight: 700; }
+  .bar-track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--green); border-radius: 2px; }
+
+  /* vs-plan chip */
+  .vs-plan {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .vs-plan.up   { color: var(--green); }
+  .vs-plan.flat { color: var(--text-dim); }
+  .vs-plan.down { color: var(--red); }
+  .vs-plan .arrow { font-size: 10px; }
+
+  /* discount */
+  .disc { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+  .disc-bar { width: 38px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .disc-bar > span { display: block; height: 100%; }
+  .disc.lo  { color: var(--green); }   .disc.lo  .disc-bar > span { background: var(--green); }
+  .disc.mid { color: var(--amber); }   .disc.mid .disc-bar > span { background: var(--amber); }
+  .disc.hi  { color: var(--red); }     .disc.hi  .disc-bar > span { background: var(--red); }
+
+  /* tag chips */
+  .tags { display: inline-flex; gap: 6px; margin-left: 8px; flex-wrap: wrap; }
+  .tag {
+    font-size: 9.5px; font-weight: 700;
+    padding: 2px 6px; border-radius: 3px;
+    letter-spacing: 0.6px; text-transform: uppercase;
+    border: 1px solid; line-height: 1.4;
+  }
+  .tag.top    { color: var(--green);  border-color: rgba(74,222,128,0.35);  background: rgba(74,222,128,0.07); }
+  .tag.hot    { color: var(--orange); border-color: rgba(249,115,22,0.4);   background: rgba(249,115,22,0.08); }
+  .tag.rising { color: var(--blue);   border-color: rgba(96,165,250,0.4);   background: rgba(96,165,250,0.08); }
+  .tag.watch  { color: var(--yellow); border-color: rgba(250,204,21,0.4);   background: rgba(250,204,21,0.08); }
+  .tag.flag   { color: var(--red);    border-color: rgba(239,68,68,0.4);    background: rgba(239,68,68,0.08); }
+  .tag.new    { color: var(--purple); border-color: rgba(167,139,250,0.4);  background: rgba(167,139,250,0.08); }
+
+  /* trend cell */
+  .trend { display: flex; align-items: center; gap: 8px; }
+  .trend .delta { font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  .trend .delta.up   { color: var(--green); }
+  .trend .delta.down { color: var(--red); }
+
+  /* employee avatars in cross-store table */
+  .who { display: flex; align-items: center; gap: 10px; }
+  .avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: linear-gradient(135deg, #3a5a4a, #1e2a26);
+    color: var(--text);
+    font-weight: 700; font-size: 11px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border-strong);
+    flex-shrink: 0;
+  }
+  .who .name { font-weight: 600; }
+  .who .role { font-size: 11px; color: var(--text-mute); }
+
+  /* ========= two-column lower area ========= */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 14px;
+    margin-top: 22px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .card h3 {
+    margin: 0 0 4px;
+    font-size: 11px; letter-spacing: 1.2px;
+    text-transform: uppercase; color: var(--text-dim);
+    font-weight: 700;
+  }
+  .card .sub {
+    color: var(--text-mute);
+    font-size: 12px;
+    margin-bottom: 14px;
+  }
+
+  /* alerts feed */
+  .alerts { display: flex; flex-direction: column; gap: 8px; }
+  .alert-item {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 10px 12px;
+    border: 1px solid var(--border-strong);
+    border-left-width: 3px;
+    border-radius: 6px;
+    background: var(--surface-2);
+  }
+  .alert-item.sev-hi    { border-left-color: var(--red); }
+  .alert-item.sev-mid   { border-left-color: var(--amber); }
+  .alert-item.sev-info  { border-left-color: var(--blue); }
+  .alert-item .icon {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    background: var(--surface-3);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .alert-item .body { flex: 1; }
+  .alert-item .title { font-weight: 600; font-size: 13px; }
+  .alert-item .desc { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .alert-item .when { font-size: 10px; color: var(--text-mute); margin-top: 4px; letter-spacing: 0.6px; text-transform: uppercase; }
+  .alert-item .cta {
+    align-self: center;
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    color: var(--text-dim);
+    padding: 4px 10px;
+    font-size: 11px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .alert-item .cta:hover { color: var(--text); }
+
+  /* watch list (discount) */
+  .watch-list { display: flex; flex-direction: column; gap: 8px; }
+  .watch-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--surface-2);
+  }
+  .watch-row .who { flex: 1; }
+  .watch-row .store-tag {
+    font-size: 10px;
+    color: var(--text-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    padding: 2px 8px;
+  }
+  .watch-row .pct {
+    font-weight: 700; font-variant-numeric: tabular-nums;
+    color: var(--red); font-size: 14px;
+  }
+
+  /* footer */
+  .footer-note {
+    margin-top: 28px;
+    color: var(--text-mute);
+    font-size: 11px;
+    text-align: center;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ HEADER ============ -->
+  <header>
+    <div class="logo"><span class="green">GREEN</span>CROSS</div>
+    <span class="view-badge">Director · All Stores</span>
+    <span class="breadcrumb">Period: <b>Month-to-Date</b> · May 1 – 15, 2026</span>
+    <div class="header-right">
+      <div class="clock-mini">
+        <div class="t" id="clockTime">6:47 PM</div>
+        <div class="d">Fri · May 15</div>
+      </div>
+      <button class="btn-ghost">↻ Refresh</button>
+      <button class="btn-ghost">⤓ Export</button>
+      <span class="user-chip"><span class="av">SP</span> Sky Pinnick</span>
+    </div>
+  </header>
+
+  <!-- ============ STORE STATUS STRIP ============ -->
+  <div class="status-strip">
+    <div class="label">Today</div>
+    <div class="ss-store">
+      <span class="dot green" title="On pace"></span>
+      <div class="info"><span class="n">River</span><span class="s">$8,920 / $8,400</span></div>
+      <span class="pct up">+6%</span>
+    </div>
+    <div class="ss-store">
+      <span class="dot green"></span>
+      <div class="info"><span class="n">Center</span><span class="s">$8,460 / $8,200</span></div>
+      <span class="pct up">+3%</span>
+    </div>
+    <div class="ss-store">
+      <span class="dot green"></span>
+      <div class="info"><span class="n">Portland</span><span class="s">$7,940 / $7,900</span></div>
+      <span class="pct up">+1%</span>
+    </div>
+    <div class="ss-store">
+      <span class="dot amber"></span>
+      <div class="info"><span class="n">Baseline</span><span class="s">$6,840 / $8,500</span></div>
+      <span class="pct flat">−2%</span>
+    </div>
+    <div class="ss-store">
+      <span class="dot amber"></span>
+      <div class="info"><span class="n">Commercial</span><span class="s">$6,240 / $7,200</span></div>
+      <span class="pct down">−5%</span>
+    </div>
+    <div class="ss-store">
+      <span class="dot red"></span>
+      <div class="info"><span class="n">Century</span><span class="s">$4,810 / $6,800</span></div>
+      <span class="pct down">−12%</span>
+    </div>
+  </div>
+
+  <!-- ============ KPI ROW (big) ============ -->
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="label">Total Sales · MTD</div>
+      <div class="value">$646.1k</div>
+      <div class="delta up">▲ +4.2% vs. last month</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Transactions</div>
+      <div class="value">8,247</div>
+      <div class="delta up">▲ +312 vs. last month</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Avg Order Value</div>
+      <div class="value v-green">$78.34</div>
+      <div class="delta up">▲ +$1.18</div>
+    </div>
+  </div>
+
+  <!-- ============ KPI ROW (small) ============ -->
+  <div class="kpi-row small">
+    <div class="kpi small">
+      <div class="label">Avg UPT</div>
+      <div class="value">2.4</div>
+      <div class="delta up">▲ +0.1</div>
+    </div>
+    <div class="kpi small">
+      <div class="label">Total Discounts</div>
+      <div class="value v-amber">$42.3k</div>
+      <div class="delta down">▼ +$3.1k</div>
+    </div>
+    <div class="kpi small">
+      <div class="label">Discount Rate</div>
+      <div class="value v-amber">6.1%</div>
+      <div class="delta down">▼ +0.4 pts</div>
+    </div>
+    <div class="kpi small">
+      <div class="label">Flagged Staff</div>
+      <div class="value v-red">3</div>
+      <div class="delta">2 repeat · 1 new</div>
+    </div>
+    <div class="kpi small">
+      <div class="label">Active Staff</div>
+      <div class="value">36</div>
+      <div class="delta">across 6 stores</div>
+    </div>
+    <div class="kpi small">
+      <div class="label">Sales / Hour</div>
+      <div class="value">$312</div>
+      <div class="delta up">▲ +$14</div>
+    </div>
+  </div>
+
+  <!-- ============ FILTERS ============ -->
+  <div class="filter-row">
+    <button class="pill active">All Stores</button>
+    <button class="pill">Baseline</button>
+    <button class="pill">Center</button>
+    <button class="pill">Century</button>
+    <button class="pill">Commercial</button>
+    <button class="pill">Portland</button>
+    <button class="pill">River</button>
+    <div class="filter-right">
+      <button class="pill">Top 10</button>
+      <button class="pill">Rising</button>
+      <button class="pill">Watch</button>
+      <button class="pill flag active">Flagged · 3</button>
+    </div>
+  </div>
+
+  <!-- ============ CONTROLS ============ -->
+  <div class="controls">
+    <input type="text" placeholder="Search staff, store, or SKU…" />
+    <select><option>Period: MTD</option><option>Today</option><option>WTD</option><option>QTD</option><option>YTD</option><option>Last 30 days</option></select>
+    <select><option>All Roles</option><option>Store Mgr</option><option>Asst Mgr</option><option>Budtender</option></select>
+    <select><option>All Shifts</option><option>Open</option><option>Mid</option><option>Close</option></select>
+    <select><option>Sort: Sales ↓</option><option>vs. Plan ↓</option><option>AOV ↓</option><option>Discount % ↑</option></select>
+    <button class="btn-icon" title="Column settings">⚙</button>
+  </div>
+
+  <!-- ============ STORE LEADERBOARD ============ -->
+  <div class="section-head">
+    <h2>Store Leaderboard · MTD</h2>
+    <span class="sep">/</span>
+    <span class="meta">Click any store to drill down</span>
+    <a href="#">Configure plan targets →</a>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:60px;">Rank</th>
+        <th>Store</th>
+        <th>Manager</th>
+        <th>Sales</th>
+        <th>vs. Plan</th>
+        <th>Txns</th>
+        <th>AOV</th>
+        <th>UPT</th>
+        <th>Discount</th>
+        <th>Trend · 30d</th>
+        <th>Flags</th>
+      </tr>
+    </thead>
+    <tbody>
+
+      <tr>
+        <td><span class="rank-pill">#1</span></td>
+        <td>
+          <div class="store-cell">
+            <span class="sdot sd-river"></span>
+            <div class="meta"><div class="n">River</div><div class="m">SE 39th · 6 staff</div></div>
+          </div>
+        </td>
+        <td>
+          <div class="who">
+            <div class="avatar">MC</div>
+            <div><div class="name">Maya Chen</div><div class="role">Store Mgr</div></div>
+          </div>
+        </td>
+        <td>
+          <div class="sales-cell">
+            <span class="amt num">$128,420</span>
+            <div class="bar-track"><div class="bar-fill" style="width:100%;"></div></div>
+          </div>
+        </td>
+        <td><span class="vs-plan up"><span class="arrow">▲</span>+6.2%</span></td>
+        <td class="num">1,612</td>
+        <td class="num v-green">$79.66</td>
+        <td class="num">2.6</td>
+        <td>
+          <span class="disc mid">
+            <span class="disc-bar"><span style="width:64%"></span></span>
+            6.4%
+          </span>
+        </td>
+        <td>
+          <div class="trend">
+            <svg width="80" height="22" viewBox="0 0 80 22">
+              <polyline fill="none" stroke="#4ade80" stroke-width="1.5"
+                points="0,14 8,13 16,12 24,11 32,12 40,10 48,8 56,9 64,6 72,5 80,4"/>
+            </svg>
+            <span class="delta up">+12%</span>
+          </div>
+        </td>
+        <td><span class="tags"><span class="tag top">Top Store</span></span></td>
+      </tr>
+
+      <tr>
+        <td><span class="rank-pill">#2</span></td>
+        <td>
+          <div class="store-cell">
+            <span class="sdot sd-center"></span>
+            <div class="meta"><div class="n">Center</div><div class="m">Downtown · 6 staff</div></div>
+          </div>
+        </td>
+        <td>
+          <div class="who">
+            <div class="avatar">PS</div>
+            <div><div class="name">Priya Singh</div><div class="role">Store Mgr</div></div>
+          </div>
+        </td>
+        <td>
+          <div class="sales-cell">
+            <span class="amt num">$122,140</span>
+            <div class="bar-track"><div class="bar-fill" style="width:95%;"></div></div>
+          </div>
+        </td>
+        <td><span class="vs-plan up"><span class="arrow">▲</span>+4.1%</span></td>
+        <td class="num">1,540</td>
+        <td class="num v-green">$79.31</td>
+        <td class="num">2.6</td>
+        <td>
+          <span class="disc mid">
+            <span class="disc-bar"><span style="width:52%"></span></span>
+            5.2%
+          </span>
+        </td>
+        <td>
+          <div class="trend">
+            <svg width="80" height="22" viewBox="0 0 80 22">
+              <polyline fill="none" stroke="#4ade80" stroke-width="1.5"
+                points="0,12 8,11 16,12 24,10 32,11 40,9 48,10 56,8 64,7 72,6 80,5"/>
+            </svg>
+            <span class="delta up">+8%</span>
+          </div>
+        </td>
+        <td><span class="tags"><span class="tag rising">Rising</span></span></td>
+      </tr>
+
+      <tr>
+        <td><span class="rank-pill">#3</span></td>
+        <td>
+          <div class="store-cell">
+            <span class="sdot sd-portland"></span>
+            <div class="meta"><div class="n">Portland</div><div class="m">NW 23rd · 6 staff</div></div>
+          </div>
+        </td>
+        <td>
+          <div class="who">
+            <div class="avatar">DR</div>
+            <div><div class="name">Devon Reyes</div><div class="role">Store Mgr</div></div>
+          </div>
+        </td>
+        <td>
+          <div class="sales-cell">
+            <span class="amt num">$115,820</span>
+            <div class="bar-track"><div class="bar-fill" style="width:90%;"></div></div>
+          </div>
+        </td>
+        <td><span class="vs-plan up"><span class="arrow">▲</span>+1.4%</span></td>
+        <td class="num">1,478</td>
+        <td class="num">$78.36</td>
+        <td class="num">2.5</td>
+        <td>
+          <span class="disc mid">
+            <span class="disc-bar"><span style="width:58%"></span></span>
+            5.8%
+          </span>
+        </td>
+        <td>
+          <div class="trend">
+            <svg width="80" height="22" viewBox="0 0 80 22">
+              <polyline fill="none" stroke="#8a958f" stroke-width="1.5"
+                points="0,11 8,12 16,10 24,11 32,12 40,10 48,11 56,10 64,11 72,10 80,9"/>
+            </svg>
+            <span class="delta">+1%</span>
+          </div>
+        </td>
+        <td></td>
+      </tr>
+
+      <tr>
+        <td><span class="rank-pill mid">#4</span></td>
+        <td>
+          <div class="store-cell">
+            <span class="sdot sd-baseline"></span>
+            <div class="meta"><div class="n">Baseline</div><div class="m">SW 5th · 6 staff</div></div>
+          </div>
+        </td>
+        <td>
+          <div class="who">
+            <div class="avatar">SA</div>
+            <div><div class="name">Sofia Alvarez</div><div class="role">Store Mgr</div></div>
+          </div>
+        </td>
+        <td>
+          <div class="sales-cell">
+            <span class="amt num">$103,940</span>
+            <div class="bar-track"><div class="bar-fill" style="width:81%;"></div></div>
+          </div>
+        </td>
+        <td><span class="vs-plan down"><span class="arrow">▼</span>−2.1%</span></td>
+        <td class="num">1,346</td>
+        <td class="num">$77.22</td>
+        <td class="num">2.4</td>
+        <td>
+          <span class="disc lo">
+            <span class="disc-bar"><span style="width:41%"></span></span>
+            4.1%
+          </span>
+        </td>
+        <td>
+          <div class="trend">
+            <svg width="80" height="22" viewBox="0 0 80 22">
+              <polyline fill="none" stroke="#8a958f" stroke-width="1.5"
+                points="0,10 8,11 16,12 24,10 32,11 40,12 48,11 56,12 64,11 72,12 80,12"/>
+            </svg>
+            <span class="delta">−1%</span>
+          </div>
+        </td>
+        <td><span class="tags"><span class="tag top">Cleanest discount</span></span></td>
+      </tr>
+
+      <tr>
+        <td><span class="rank-pill mid">#5</span></td>
+        <td>
+          <div class="store-cell">
+            <span class="sdot sd-commercial"></span>
+            <div class="meta"><div class="n">Commercial</div><div class="m">N Mississippi · 6 staff</div></div>
+          </div>
+        </td>
+        <td>
+          <div class="who">
+            <div class="avatar">MJ</div>
+            <div><div class="name">Marcus Johnson</div><div class="role">Store Mgr</div></div>
+          </div>
+        </td>
+        <td>
+          <div class="sales-cell">
+            <span class="amt num">$94,620</span>
+            <div class="bar-track"><div class="bar-fill" style="width:74%;"></div></div>
+          </div>
+        </td>
+        <td><span class="vs-plan down"><span class="arrow">▼</span>−5.3%</span></td>
+        <td class="num">1,268</td>
+        <td class="num">$74.62</td>
+        <td class="num">2.3</td>
+        <td>
+          <span class="disc hi">
+            <span class="disc-bar"><span style="width:70%"></span></span>
+            7.0%
+          </span>
+        </td>
+        <td>
+          <div class="trend">
+            <svg width="80" height="22" viewBox="0 0 80 22">
+              <polyline fill="none" stroke="#ef4444" stroke-width="1.5"
+                points="0,8 8,9 16,10 24,11 32,12 40,13 48,12 56,14 64,15 72,16 80,17"/>
+            </svg>
+            <span class="delta down">−6%</span>
+          </div>
+        </td>
+        <td><span class="tags"><span class="tag watch">Watch</span></span></td>
+      </tr>
+
+      <tr>
+        <td><span class="rank-pill bad">#6</span></td>
+        <td>
+          <div class="store-cell">
+            <span class="sdot sd-century"></span>
+            <div class="meta"><div class="n">Century</div><div class="m">SE Powell · 6 staff</div></div>
+          </div>
+        </td>
+        <td>
+          <div class="who">
+            <div class="avatar">TB</div>
+            <div><div class="name">Tyler Brooks</div><div class="role">Store Mgr</div></div>
+          </div>
+        </td>
+        <td>
+          <div class="sales-cell">
+            <span class="amt num">$81,260</span>
+            <div class="bar-track"><div class="bar-fill" style="width:63%;"></div></div>
+          </div>
+        </td>
+        <td><span class="vs-plan down"><span class="arrow">▼</span>−12.4%</span></td>
+        <td class="num">1,103</td>
+        <td class="num v-red">$73.67</td>
+        <td class="num">2.2</td>
+        <td>
+          <span class="disc hi">
+            <span class="disc-bar"><span style="width:81%"></span></span>
+            8.1%
+          </span>
+        </td>
+        <td>
+          <div class="trend">
+            <svg width="80" height="22" viewBox="0 0 80 22">
+              <polyline fill="none" stroke="#ef4444" stroke-width="1.5"
+                points="0,7 8,8 16,10 24,11 32,13 40,14 48,15 56,16 64,17 72,18 80,19"/>
+            </svg>
+            <span class="delta down">−14%</span>
+          </div>
+        </td>
+        <td><span class="tags"><span class="tag flag">3 flags</span><span class="tag watch">Watch</span></span></td>
+      </tr>
+
+    </tbody>
+  </table>
+
+  <!-- ============ CROSS-STORE TOP PERFORMERS ============ -->
+  <div class="section-head">
+    <h2>Top Performers · All Stores · MTD</h2>
+    <span class="sep">/</span>
+    <span class="meta">Across 36 active staff</span>
+    <a href="#">View full leaderboard →</a>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:60px;">Rank</th>
+        <th>Staff</th>
+        <th>Store</th>
+        <th>Role</th>
+        <th>Sales</th>
+        <th>Txns</th>
+        <th>AOV</th>
+        <th>UPT</th>
+        <th>Discount</th>
+        <th>Trend · 30d</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="rank-pill">#1</span></td>
+        <td><div class="who"><div class="avatar">MC</div><div><div class="name">Maya Chen</div><div class="role">142h MTD</div></div></div></td>
+        <td><div class="store-cell"><span class="sdot sd-river"></span><span>River</span></div></td>
+        <td>Store Mgr</td>
+        <td class="num">$48,210</td>
+        <td class="num">612</td>
+        <td class="num v-green">$78.76</td>
+        <td class="num">2.6</td>
+        <td><span class="disc lo"><span class="disc-bar"><span style="width:42%"></span></span>4.2%</span></td>
+        <td>
+          <div class="trend">
+            <svg width="80" height="22" viewBox="0 0 80 22"><polyline fill="none" stroke="#4ade80" stroke-width="1.5" points="0,16 8,14 16,15 24,11 32,12 40,8 48,9 56,6 64,7 72,4 80,3"/></svg>
+            <span class="delta up">+18%</span>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="rank-pill">#2</span></td>
+        <td><div class="who"><div class="avatar">DR</div><div><div class="name">Devon Reyes</div><div class="role">138h MTD</div></div></div></td>
+        <td><div class="store-cell"><span class="sdot sd-portland"></span><span>Portland</span></div></td>
+        <td>Store Mgr</td>
+        <td class="num">$44,820</td>
+        <td class="num">580</td>
+        <td class="num">$77.28</td>
+        <td class="num">2.5</td>
+        <td><span class="disc mid"><span class="disc-bar"><span style="width:51%"></span></span>5.1%</span></td>
+        <td>
+          <div class="trend">
+            <svg width="80" height="22" viewBox="0 0 80 22"><polyline fill="none" stroke="#8a958f" stroke-width="1.5" points="0,11 8,12 16,10 24,11 32,9 40,12 48,10 56,11 64,9 72,10 80,11"/></svg>
+            <span class="delta">+2%</span>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="rank-pill">#3</span></td>
+        <td><div class="who"><div class="avatar">PS</div><div><div class="name">Priya Singh</div><div class="role">128h MTD</div></div></div></td>
+        <td><div class="store-cell"><span class="sdot sd-center"></span><span>Center</span></div></td>
+        <td>Store Mgr</td>
+        <td class="num">$42,110</td>
+        <td class="num">510</td>
+        <td class="num v-green">$82.55</td>
+        <td class="num v-green">2.7</td>
+        <td><span class="disc lo"><span class="disc-bar"><span style="width:38%"></span></span>3.8%</span></td>
+        <td>
+          <div class="trend">
+            <svg width="80" height="22" viewBox="0 0 80 22"><polyline fill="none" stroke="#4ade80" stroke-width="1.5" points="0,17 8,15 16,14 24,12 32,13 40,10 48,8 56,9 64,6 72,5 80,3"/></svg>
+            <span class="delta up">+24%</span>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="rank-pill mid">#4</span></td>
+        <td><div class="who"><div class="avatar">LP</div><div><div class="name">Lina Park <span class="tags"><span class="tag rising">Rising</span></span></div><div class="role">122h MTD</div></div></div></td>
+        <td><div class="store-cell"><span class="sdot sd-baseline"></span><span>Baseline</span></div></td>
+        <td>Budtender</td>
+        <td class="num">$40,840</td>
+        <td class="num">487</td>
+        <td class="num v-green">$83.86</td>
+        <td class="num v-green">2.6</td>
+        <td><span class="disc lo"><span class="disc-bar"><span style="width:39%"></span></span>3.9%</span></td>
+        <td>
+          <div class="trend">
+            <svg width="80" height="22" viewBox="0 0 80 22"><polyline fill="none" stroke="#4ade80" stroke-width="1.5" points="0,18 8,17 16,14 24,12 32,11 40,9 48,8 56,7 64,5 72,4 80,2"/></svg>
+            <span class="delta up">+34%</span>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="rank-pill mid">#5</span></td>
+        <td><div class="who"><div class="avatar">MJ</div><div><div class="name">Marcus Johnson <span class="tags"><span class="tag flag">Discount Flag</span></span></div><div class="role">140h MTD</div></div></div></td>
+        <td><div class="store-cell"><span class="sdot sd-commercial"></span><span>Commercial</span></div></td>
+        <td>Store Mgr</td>
+        <td class="num">$39,440</td>
+        <td class="num">528</td>
+        <td class="num">$74.70</td>
+        <td class="num">2.3</td>
+        <td><span class="disc hi"><span class="disc-bar"><span style="width:72%"></span></span>7.2%</span></td>
+        <td>
+          <div class="trend">
+            <svg width="80" height="22" viewBox="0 0 80 22"><polyline fill="none" stroke="#ef4444" stroke-width="1.5" points="0,4 8,5 16,7 24,8 32,9 40,11 48,12 56,13 64,15 72,16 80,18"/></svg>
+            <span class="delta down">−11%</span>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="rank-pill mid">#6</span></td>
+        <td><div class="who"><div class="avatar">SA</div><div><div class="name">Sofia Alvarez</div><div class="role">144h MTD</div></div></div></td>
+        <td><div class="store-cell"><span class="sdot sd-baseline"></span><span>Baseline</span></div></td>
+        <td>Store Mgr</td>
+        <td class="num">$37,910</td>
+        <td class="num">489</td>
+        <td class="num">$77.53</td>
+        <td class="num">2.4</td>
+        <td><span class="disc mid"><span class="disc-bar"><span style="width:48%"></span></span>4.8%</span></td>
+        <td>
+          <div class="trend">
+            <svg width="80" height="22" viewBox="0 0 80 22"><polyline fill="none" stroke="#8a958f" stroke-width="1.5" points="0,12 8,11 16,13 24,10 32,12 40,11 48,10 56,12 64,11 72,10 80,11"/></svg>
+            <span class="delta">+1%</span>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="rank-pill bad">#7</span></td>
+        <td><div class="who"><div class="avatar">TB</div><div><div class="name">Tyler Brooks <span class="tags"><span class="tag flag">Discount Flag</span><span class="tag watch">Watch</span></span></div><div class="role">132h MTD</div></div></div></td>
+        <td><div class="store-cell"><span class="sdot sd-century"></span><span>Century</span></div></td>
+        <td>Store Mgr</td>
+        <td class="num">$36,210</td>
+        <td class="num">502</td>
+        <td class="num v-red">$72.13</td>
+        <td class="num">2.2</td>
+        <td><span class="disc hi"><span class="disc-bar"><span style="width:89%"></span></span>8.9%</span></td>
+        <td>
+          <div class="trend">
+            <svg width="80" height="22" viewBox="0 0 80 22"><polyline fill="none" stroke="#ef4444" stroke-width="1.5" points="0,6 8,7 16,8 24,10 32,11 40,13 48,14 56,15 64,17 72,17 80,19"/></svg>
+            <span class="delta down">−18%</span>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="rank-pill mid">#8</span></td>
+        <td><div class="who"><div class="avatar">JP</div><div><div class="name">Jamie Park <span class="tags"><span class="tag new">New</span></span></div><div class="role">96h MTD</div></div></div></td>
+        <td><div class="store-cell"><span class="sdot sd-river"></span><span>River</span></div></td>
+        <td>Budtender</td>
+        <td class="num">$34,710</td>
+        <td class="num">445</td>
+        <td class="num">$77.98</td>
+        <td class="num">2.5</td>
+        <td><span class="disc lo"><span class="disc-bar"><span style="width:44%"></span></span>4.4%</span></td>
+        <td>
+          <div class="trend">
+            <svg width="80" height="22" viewBox="0 0 80 22"><polyline fill="none" stroke="#4ade80" stroke-width="1.5" points="0,18 8,16 16,15 24,14 32,12 40,11 48,9 56,8 64,7 72,5 80,4"/></svg>
+            <span class="delta up">+31%</span>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ============ LOWER GRID: ALERTS + DISCOUNT WATCH ============ -->
+  <div class="grid-2">
+
+    <div class="card">
+      <h3>Needs Attention</h3>
+      <div class="sub">Auto-flagged across all stores · last 14 days</div>
+      <div class="alerts">
+
+        <div class="alert-item sev-hi">
+          <div class="icon">📉</div>
+          <div class="body">
+            <div class="title">Century is −12.4% vs. plan MTD</div>
+            <div class="desc">Trailing for 9 consecutive days. Avg ticket down $4.20 vs. chain. Manager Tyler Brooks also on Discount Watch.</div>
+            <div class="when">Updated 8 min ago</div>
+          </div>
+          <button class="cta">Open store →</button>
+        </div>
+
+        <div class="alert-item sev-hi">
+          <div class="icon">⚠️</div>
+          <div class="body">
+            <div class="title">3 staff exceeded 6.5% discount threshold</div>
+            <div class="desc">Tyler Brooks (8.9%), Marcus Johnson (7.2%), Riley Sato (7.0%). Common reasons: "veteran" comp, "manager comp", "loyalty stack."</div>
+            <div class="when">Rolling 14-day</div>
+          </div>
+          <button class="cta">Review →</button>
+        </div>
+
+        <div class="alert-item sev-mid">
+          <div class="icon">📦</div>
+          <div class="body">
+            <div class="title">OOS spike at River</div>
+            <div class="desc">16 SKUs out of stock (up from 4 yesterday). 11 are top-50 movers. Likely lost revenue today: ~$1,840.</div>
+            <div class="when">Pulled from Inventory · 12 min ago</div>
+          </div>
+          <button class="cta">Inventory →</button>
+        </div>
+
+        <div class="alert-item sev-info">
+          <div class="icon">🌱</div>
+          <div class="body">
+            <div class="title">New-hire ramp tracker</div>
+            <div class="desc">Jamie Park (River) hitting 34% above cohort target by week 3 — eligible for early promotion review. 2 others below 50% target.</div>
+            <div class="when">Cohort: April hires</div>
+          </div>
+          <button class="cta">Cohort →</button>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Discount Watch</h3>
+      <div class="sub">Staff above the 6.5% chain benchmark, 14-day rolling</div>
+      <div class="watch-list">
+
+        <div class="watch-row">
+          <div class="who">
+            <div class="avatar">TB</div>
+            <div><div class="name">Tyler Brooks</div><div class="role">23 orders &gt;15% off · "veteran" (11 w/o ID scan)</div></div>
+          </div>
+          <span class="store-tag">Century</span>
+          <span class="pct">8.9%</span>
+        </div>
+
+        <div class="watch-row">
+          <div class="who">
+            <div class="avatar">MJ</div>
+            <div><div class="name">Marcus Johnson</div><div class="role">18 orders &gt;15% off · "manager comp"</div></div>
+          </div>
+          <span class="store-tag">Commercial</span>
+          <span class="pct">7.2%</span>
+        </div>
+
+        <div class="watch-row">
+          <div class="who">
+            <div class="avatar">RS</div>
+            <div><div class="name">Riley Sato</div><div class="role">14 orders &gt;15% off · "loyalty stack"</div></div>
+          </div>
+          <span class="store-tag">Baseline</span>
+          <span class="pct">7.0%</span>
+        </div>
+
+        <div class="watch-row" style="border-style: dashed; border-color: var(--border);">
+          <div class="who">
+            <div class="avatar" style="opacity:0.6;">+0</div>
+            <div><div class="name" style="color: var(--text-dim)">No others over threshold</div><div class="role">Avg discount rate this week: 5.8%</div></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer-note">
+    Mock data · Director · All Stores · Sky Pinnick · Last refresh 2 min ago
+  </div>
+</div>
+
+<script>
+  // Mini clock tick
+  let simulated = new Date();
+  simulated.setHours(18, 47, 12);
+  setInterval(() => {
+    simulated = new Date(simulated.getTime() + 1000);
+    const h = simulated.getHours();
+    const m = simulated.getMinutes().toString().padStart(2, '0');
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const hh = ((h + 11) % 12) + 1;
+    document.getElementById('clockTime').textContent = `${hh}:${m} ${ampm}`;
+  }, 1000);
+</script>
+</body>
+</html>

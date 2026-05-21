@@ -1,0 +1,81 @@
+{
+  "alerts": [
+    {
+      "id": "a1",
+      "severity": "hi",
+      "icon": "📉",
+      "title": "Century is −12.4% vs. plan MTD",
+      "description": "Trailing for 9 consecutive days. Avg ticket down $4.20 vs. chain. Manager Tyler Brooks also on Discount Watch.",
+      "when": "Updated 8 min ago",
+      "ctaLabel": "Open store →",
+      "ctaTarget": "store:century"
+    },
+    {
+      "id": "a2",
+      "severity": "hi",
+      "icon": "⚠️",
+      "title": "3 staff exceeded 6.5% discount threshold",
+      "description": "Tyler Brooks (8.9%), Marcus Johnson (7.2%), Riley Sato (7.0%). Common reasons: \"veteran\" comp, \"manager comp\", \"loyalty stack.\"",
+      "when": "Rolling 14-day",
+      "ctaLabel": "Review →",
+      "ctaTarget": "discount-watch"
+    },
+    {
+      "id": "a3",
+      "severity": "mid",
+      "icon": "📦",
+      "title": "OOS spike at River",
+      "description": "16 SKUs out of stock (up from 4 yesterday). 11 are top-50 movers. Likely lost revenue today: ~$1,840.",
+      "when": "Pulled from Inventory · 12 min ago",
+      "ctaLabel": "Inventory →",
+      "ctaTarget": "external:inventory"
+    },
+    {
+      "id": "a4",
+      "severity": "info",
+      "icon": "🌱",
+      "title": "New-hire ramp tracker",
+      "description": "Jamie Park (River) hitting 34% above cohort target by week 3 — eligible for early promotion review. 2 others below 50% target.",
+      "when": "Cohort: April hires",
+      "ctaLabel": "Cohort →",
+      "ctaTarget": "cohort"
+    }
+  ],
+  "discountWatch": [
+    {
+      "employeeId": "e4",
+      "name": "Tyler Brooks",
+      "initials": "TB",
+      "storeSlug": "century",
+      "storeName": "Century",
+      "discountRate": 0.089,
+      "ordersOver15Pct": 23,
+      "topReason": "veteran",
+      "reasonNote": "11 w/o ID scan"
+    },
+    {
+      "employeeId": "e5",
+      "name": "Marcus Johnson",
+      "initials": "MJ",
+      "storeSlug": "commercial",
+      "storeName": "Commercial",
+      "discountRate": 0.072,
+      "ordersOver15Pct": 18,
+      "topReason": "manager_comp",
+      "reasonNote": null
+    },
+    {
+      "employeeId": "e9",
+      "name": "Riley Sato",
+      "initials": "RS",
+      "storeSlug": "baseline",
+      "storeName": "Baseline",
+      "discountRate": 0.070,
+      "ordersOver15Pct": 14,
+      "topReason": "loyalty",
+      "reasonNote": null
+    }
+  ],
+  "chainAvgDiscountRate": 0.058,
+  "lastUpdated": "2026-05-15T18:39:00-07:00"
+}

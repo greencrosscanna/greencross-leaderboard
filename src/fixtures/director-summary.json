@@ -1,0 +1,25 @@
+{
+  "period": "mtd",
+  "dateRange": { "from": "2026-05-01", "to": "2026-05-15" },
+  "totalSales": 646100,
+  "transactions": 8247,
+  "avgOrderValue": 78.34,
+  "avgUPT": 2.4,
+  "totalDiscounts": 42300,
+  "discountRate": 0.061,
+  "flaggedStaff": 3,
+  "flaggedStaffBreakdown": { "repeat": 2, "new": 1 },
+  "activeStaff": 36,
+  "storeCount": 6,
+  "salesPerHour": 312,
+  "deltas": {
+    "totalSalesPct": 0.042,
+    "transactions": 312,
+    "avgOrderValue": 1.18,
+    "avgUPT": 0.1,
+    "totalDiscounts": 3100,
+    "discountRatePts": 0.004,
+    "salesPerHour": 14
+  },
+  "lastUpdated": "2026-05-15T18:39:00-07:00"
+}

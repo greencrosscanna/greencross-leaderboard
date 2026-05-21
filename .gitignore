@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Claude local settings (machine-specific)
+.claude/settings.local.json
+
+# clasp credentials (never commit secrets)
+.clasprc.json
+
+# Netlify generated
+.netlify/state.json

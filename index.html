@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Green Cross — Performance</title>
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="apple-touch-icon.png">
+  <link rel="shortcut icon" href="apple-touch-icon.png">
+
+  <!-- Design tokens (must be first) -->
+  <link rel="stylesheet" href="src/tokens.css">
+
+  <!-- Shared primitives -->
+  <link rel="stylesheet" href="src/primitives.css">
+
+  <!-- View-specific styles (load all; each is small) -->
+  <link rel="stylesheet" href="src/director/director.css">
+  <!-- src/kiosk/kiosk.css goes here when built -->
+  <!-- src/leaderboard/leaderboard.css goes here when built -->
+</head>
+<body>
+
+<!-- Router renders into this container -->
+<main id="app">
+  <!-- Initial paint: login screen rendered immediately by JS below,
+       before any async data. This prevents a flash of empty background. -->
+</main>
+
+<!-- Toast container (always present, outside router scope) -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ── Foundation layer (load order matters) ──────────────── -->
+<script src="src/utils.js"></script>
+<script src="src/auth.js"></script>
+<script src="src/api.js"></script>
+<script src="src/router.js"></script>
+
+<!-- ── View modules ───────────────────────────────────────── -->
+<script src="src/director/director.js"></script>
+<!-- src/kiosk/kiosk.js goes here when built -->
+<!-- src/leaderboard/leaderboard.js goes here when built -->
+
+<!-- ── Login view (inline — no separate file needed) ──────── -->
+<script>
+GC.views.renderLogin = function() {
+  var app = document.getElementById('app');
+  if (!app) return;
+
+  app.innerHTML = [
+    '<div class="login-screen">',
+    '  <div class="login-card">',
+    '    <div class="login-logo">',
+    '      <span class="gc-logo"><span class="green">GREEN</span>CROSS</span>',
+    '    </div>',
+    '    <div class="login-tagline">Sales Performance</div>',
+    '    <label class="login-label" for="loginUser">Username</label>',
+    '    <input class="login-input" type="text" id="loginUser" placeholder="your username" autocomplete="username" autocapitalize="none">',
+    '    <label class="login-label" for="loginPass">Password</label>',
+    '    <input class="login-input" type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password">',
+    '    <button class="login-submit" id="loginBtn">Sign in</button>',
+    '    <div class="login-error" id="loginError"></div>',
+    '    <div class="login-hint">',
+    '      Dev accounts: <code>sky / gcadmin</code> → Director &nbsp;|&nbsp; <code>sofia / gc123</code> → Baseline kiosk',
+    '    </div>',
+    '  </div>',
+    '</div>',
+  ].join('\n');
+
+  // Wire login form
+  var userInput = document.getElementById('loginUser');
+  var passInput = document.getElementById('loginPass');
+  var loginBtn  = document.getElementById('loginBtn');
+  var errorEl   = document.getElementById('loginError');
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.classList.add('visible');
+  }
+  function clearError() {
+    errorEl.classList.remove('visible');
+  }
+
+  function doLogin() {
+    clearError();
+    var user = (userInput.value || '').trim();
+    var pass = passInput.value || '';
+    if (!user || !pass) { showError('Please enter your username and password.'); return; }
+
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'Signing in…';
+
+    GC.api.login(user, pass)
+      .then(function(result) {
+        if (!result.ok) {
+          showError(result.error || 'Invalid username or password.');
+          loginBtn.disabled = false;
+          loginBtn.textContent = 'Sign in';
+          return;
+        }
+        // Save session and route home
+        GC.auth.save(result);
+        GC.router.navigate(GC.auth.homeRoute());
+      })
+      .catch(function(err) {
+        showError('Sign-in failed. Please try again.');
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Sign in';
+      });
+  }
+
+  loginBtn.addEventListener('click', doLogin);
+  passInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doLogin();
+  });
+  userInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') passInput.focus();
+  });
+
+  // Auto-focus username
+  setTimeout(function() { userInput.focus(); }, 50);
+};
+
+// Stub views for not-yet-built routes (prevents console errors)
+GC.views.renderKiosk = function(slug) {
+  document.getElementById('app').innerHTML = [
+    '<div class="app-page">',
+    '  <header class="director-header">',
+    '    <div class="gc-logo"><span class="green">GREEN</span>CROSS</div>',
+    '    <span class="view-badge">' + GC.esc(slug ? slug.charAt(0).toUpperCase() + slug.slice(1) : 'Store') + ' · Kiosk</span>',
+    '    <div class="header-right">',
+    '      <button class="btn-ghost" onclick="GC.router.navigate(\'#/director\')">← Director</button>',
+    '      <button class="btn-ghost" onclick="GC.auth.clear(); GC.router.navigate(\'#/login\')">Sign out</button>',
+    '    </div>',
+    '  </header>',
+    '  <div class="empty-state" style="padding:80px 20px">',
+    '    <div style="font-size:48px;margin-bottom:16px">🏗️</div>',
+    '    <div style="color:var(--text-dim);font-size:16px;font-weight:600;margin-bottom:8px">Kiosk view coming next</div>',
+    '    <div style="color:var(--text-mute)">Store: ' + GC.esc(slug) + ' · Task 2 in the build sequence</div>',
+    '  </div>',
+    '</div>',
+  ].join('\n');
+};
+
+GC.views.renderLeaderboard = function() {
+  document.getElementById('app').innerHTML = [
+    '<div class="app-page">',
+    '  <header class="director-header">',
+    '    <div class="gc-logo"><span class="green">GREEN</span>CROSS</div>',
+    '    <span class="view-badge">Performance · All Staff</span>',
+    '    <div class="header-right">',
+    '      <button class="btn-ghost" onclick="GC.router.navigate(\'#/director\')">← Director</button>',
+    '    </div>',
+    '  </header>',
+    '  <div class="empty-state" style="padding:80px 20px">',
+    '    <div style="font-size:48px;margin-bottom:16px">🏗️</div>',
+    '    <div style="color:var(--text-dim);font-size:16px;font-weight:600;margin-bottom:8px">Leaderboard view coming next</div>',
+    '    <div style="color:var(--text-mute)">Task 3 in the build sequence</div>',
+    '  </div>',
+    '</div>',
+  ].join('\n');
+};
+</script>
+
+<!-- ── Boot ────────────────────────────────────────────────── -->
+<script>
+// Kick off the router once the DOM is ready.
+// All GC.views.render* functions must be registered before this.
+document.addEventListener('DOMContentLoaded', function() {
+  GC.router.init();
+});
+</script>
+
+</body>
+</html>

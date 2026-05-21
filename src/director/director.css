@@ -1,0 +1,131 @@
+/* ============================================================
+   Green Cross — Director View Layout
+   ============================================================ */
+
+/* ── Header ──────────────────────────────────────────────── */
+.director-header {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.director-header .breadcrumb {
+  color: var(--text-mute);
+  font-size: 12px;
+}
+.director-header .breadcrumb b {
+  color: var(--text);
+  font-weight: 600;
+}
+.director-header .header-right {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* ── Store Status Strip ───────────────────────────────────── */
+.status-strip {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 6px;
+  overflow-x: auto;
+}
+.status-strip .ss-label {
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-right: 1px solid var(--border);
+  margin-right: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.ss-store {
+  flex: 1;
+  min-width: 120px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.ss-store:hover { background: var(--surface-2); }
+.ss-store .ss-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 8px currentColor;
+}
+.ss-store .ss-dot.green  { background: var(--green); color: var(--green); }
+.ss-store .ss-dot.amber  { background: var(--amber); color: var(--amber); }
+.ss-store .ss-dot.red    { background: var(--red);   color: var(--red); }
+.ss-store .ss-info { display: flex; flex-direction: column; line-height: 1.2; flex: 1; min-width: 0; }
+.ss-store .ss-name { font-weight: 600; font-size: 12px; white-space: nowrap; }
+.ss-store .ss-sub  { font-size: 10px; color: var(--text-mute); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ss-store .ss-pct  { margin-left: auto; font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 8px; }
+.ss-store .ss-pct.up   { color: var(--green); }
+.ss-store .ss-pct.flat { color: var(--text-dim); }
+.ss-store .ss-pct.down { color: var(--red); }
+
+/* ── KPI Rows ────────────────────────────────────────────── */
+.kpi-row {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+.kpi-row.large { grid-template-columns: repeat(3, 1fr); }
+.kpi-row.small { grid-template-columns: repeat(6, 1fr); margin-top: 8px; }
+
+@media (max-width: 1200px) {
+  .kpi-row.small { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* ── Lower Panel Grid (Alerts + Watch) ───────────────────── */
+.director-lower {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 14px;
+  margin-top: 22px;
+}
+.alerts-list { display: flex; flex-direction: column; gap: 8px; }
+.watch-list  { display: flex; flex-direction: column; gap: 8px; }
+
+/* Watch row "no others" placeholder */
+.watch-row.empty {
+  border-style: dashed;
+  border-color: var(--border);
+  background: transparent;
+}
+.watch-row.empty .watch-who .who-name { color: var(--text-dim); }
+
+/* ── Refresh indicator ───────────────────────────────────── */
+.refresh-indicator {
+  font-size: 11px;
+  color: var(--text-mute);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.refresh-indicator.spinning svg {
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Director footer ─────────────────────────────────────── */
+.director-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}

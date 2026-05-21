@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Green Cross — Baseline · Today</title>
+<style>
+  :root {
+    --bg: #0a0e0d;
+    --surface: #121715;
+    --surface-2: #161c1a;
+    --surface-3: #1a221f;
+    --border: #232a27;
+    --border-strong: #2e3733;
+    --text: #e6ece9;
+    --text-dim: #8a958f;
+    --text-mute: #5e6864;
+    --green: #4ade80;
+    --green-soft: rgba(74, 222, 128, 0.12);
+    --green-dim: #2f8a52;
+    --red: #ef4444;
+    --orange: #f97316;
+    --amber: #eab308;
+    --yellow: #facc15;
+    --blue: #60a5fa;
+    --purple: #a78bfa;
+    --pink: #f472b6;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  body {
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(74,222,128,0.04), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(96,165,250,0.03), transparent 60%),
+      var(--bg);
+    min-height: 100vh;
+  }
+  .app { padding: 18px 28px 28px; max-width: 1700px; margin: 0 auto; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ========= HEADER ========= */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    font-weight: 900;
+    font-size: 22px;
+    letter-spacing: 0.5px;
+  }
+  .logo .green { color: var(--green); }
+  .store-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    border: 1px solid var(--green);
+    color: var(--green);
+    background: var(--green-soft);
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .store-badge::before {
+    content: "";
+    width: 7px; height: 7px;
+    background: var(--green);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .clock {
+    margin-left: auto;
+    text-align: right;
+  }
+  .clock .time {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .clock .date {
+    font-size: 11px;
+    color: var(--text-mute);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* ========= ON-SHIFT STRIP ========= */
+  .shift-strip {
+    margin-top: 14px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 16px;
+  }
+  .shift-label {
+    font-size: 10px;
+    letter-spacing: 1.2px;
+    color: var(--text-mute);
+    text-transform: uppercase;
+    font-weight: 700;
+    border-right: 1px solid var(--border);
+    padding-right: 14px;
+  }
+  .shift-avatars { display: flex; gap: 14px; flex: 1; }
+  .shift-avatar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .shift-avatar .ring {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #3a5a4a, #1e2a26);
+    color: var(--text);
+    font-weight: 700;
+    font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--green);
+    flex-shrink: 0;
+    box-shadow: 0 0 0 0 rgba(74,222,128,0.6);
+    animation: pulse-ring 2.2s ease-out infinite;
+  }
+  .shift-avatar.off .ring {
+    border-color: var(--border-strong);
+    color: var(--text-mute);
+    animation: none;
+    background: var(--surface-2);
+  }
+  @keyframes pulse-ring {
+    0%   { box-shadow: 0 0 0 0 rgba(74,222,128,0.55); }
+    70%  { box-shadow: 0 0 0 10px rgba(74,222,128,0); }
+    100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
+  }
+  .shift-avatar .meta { display: flex; flex-direction: column; }
+  .shift-avatar .name { font-size: 12px; font-weight: 600; }
+  .shift-avatar .role { font-size: 10px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.8px; }
+  .shift-avatar.off .name { color: var(--text-mute); }
+
+  /* ========= HERO ROW ========= */
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr;
+    gap: 14px;
+    margin-top: 14px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .card-label {
+    font-size: 10px;
+    letter-spacing: 1.2px;
+    color: var(--text-mute);
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+
+  /* Leader card */
+  .leader {
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(400px 200px at 90% -20%, rgba(74,222,128,0.10), transparent 60%),
+      var(--surface);
+  }
+  .leader .row { display: flex; align-items: center; gap: 18px; }
+  .leader .avatar-xl {
+    width: 86px; height: 86px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4ade80, #1e6a45);
+    color: #0a0e0d;
+    font-weight: 900;
+    font-size: 30px;
+    display: flex; align-items: center; justify-content: center;
+    border: 3px solid var(--green);
+    box-shadow: 0 0 24px rgba(74,222,128,0.35);
+    flex-shrink: 0;
+    position: relative;
+  }
+  .leader .crown {
+    position: absolute;
+    top: -16px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 22px;
+    filter: drop-shadow(0 2px 6px rgba(250,204,21,0.5));
+  }
+  .leader .name { font-size: 28px; font-weight: 800; letter-spacing: -0.3px; }
+  .leader .role { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 4px; }
+  .leader .amount {
+    font-size: 44px;
+    font-weight: 800;
+    color: var(--green);
+    letter-spacing: -1px;
+    margin-top: 10px;
+    line-height: 1;
+  }
+  .leader .sub { color: var(--text-dim); font-size: 12px; margin-top: 6px; }
+  .leader .streak { color: var(--orange); font-weight: 600; }
+
+  /* Goal thermometer */
+  .goal-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .gauge-wrap {
+    position: relative;
+    width: 220px;
+    height: 130px;
+    margin: 4px auto 0;
+  }
+  .gauge-pct {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    text-align: center;
+  }
+  .gauge-pct .big { font-size: 38px; font-weight: 800; letter-spacing: -1px; }
+  .gauge-pct .small { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+  .goal-stats {
+    display: flex;
+    justify-content: space-around;
+    width: 100%;
+    margin-top: 10px;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+  }
+  .goal-stat .v { font-size: 16px; font-weight: 700; }
+  .goal-stat .l { font-size: 10px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+
+  /* Pace dial */
+  .pace-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .pace-svg { width: 220px; height: 130px; }
+  .pace-readout { text-align: center; margin-top: 4px; }
+  .pace-readout .delta { font-size: 30px; font-weight: 800; color: var(--green); letter-spacing: -0.5px; }
+  .pace-readout .label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+  .pace-projection {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    width: 100%;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .pace-projection .v { color: var(--text); font-weight: 700; }
+
+  /* ========= LEADERBOARD GRID ========= */
+  .lb-section {
+    margin-top: 14px;
+  }
+  .lb-head {
+    display: flex; align-items: baseline; gap: 12px;
+    margin-bottom: 10px;
+  }
+  .lb-head h2 {
+    margin: 0; font-size: 11px; letter-spacing: 1.4px;
+    text-transform: uppercase; color: var(--text-dim);
+    font-weight: 700;
+  }
+  .lb-head .sep { color: var(--border-strong); }
+  .lb-head .meta { font-size: 11px; color: var(--text-mute); }
+  .lb-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 10px;
+  }
+  .emp-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .emp-card.leading {
+    border-color: var(--green);
+    background:
+      linear-gradient(180deg, rgba(74,222,128,0.07), transparent 60%),
+      var(--surface);
+  }
+  .emp-card .rank {
+    position: absolute;
+    top: 10px; right: 12px;
+    font-size: 11px;
+    color: var(--text-mute);
+    font-weight: 700;
+    letter-spacing: 0.8px;
+  }
+  .emp-card.leading .rank { color: var(--green); }
+  .emp-head { display: flex; align-items: center; gap: 10px; }
+  .emp-avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #3a5a4a, #1e2a26);
+    color: var(--text);
+    font-weight: 700;
+    font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border-strong);
+    flex-shrink: 0;
+  }
+  .emp-card.leading .emp-avatar {
+    background: linear-gradient(135deg, #4ade80, #1e6a45);
+    color: #0a0e0d;
+    border-color: var(--green);
+  }
+  .emp-name { font-weight: 600; font-size: 13px; }
+  .emp-role { font-size: 10px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.6px; margin-top: 1px; }
+  .emp-amt {
+    font-size: 24px;
+    font-weight: 800;
+    margin-top: 12px;
+    letter-spacing: -0.5px;
+  }
+  .emp-card.leading .emp-amt { color: var(--green); }
+  .emp-bar {
+    height: 4px; background: var(--border); border-radius: 2px;
+    overflow: hidden; margin-top: 6px;
+  }
+  .emp-bar > span {
+    display: block; height: 100%;
+    background: var(--green);
+    border-radius: 2px;
+    transition: width 1s ease-out;
+  }
+  .emp-card:not(.leading) .emp-bar > span { background: var(--text-dim); }
+  .emp-stats {
+    display: flex; gap: 12px;
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .emp-stats b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .emp-streak {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--orange);
+    font-weight: 600;
+  }
+
+  /* ========= LOWER ROW ========= */
+  .lower-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr 1fr;
+    gap: 14px;
+    margin-top: 14px;
+  }
+
+  /* Achievement badges */
+  .badges {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 4px;
+  }
+  .badge {
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 10px;
+    background: var(--surface-2);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: relative;
+  }
+  .badge-icon {
+    width: 34px; height: 34px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px;
+    flex-shrink: 0;
+    background: rgba(250,204,21,0.08);
+    border: 1px solid rgba(250,204,21,0.3);
+  }
+  .badge.b-aov   .badge-icon { background: rgba(74,222,128,0.10);  border-color: rgba(74,222,128,0.4); }
+  .badge.b-upt   .badge-icon { background: rgba(96,165,250,0.10);  border-color: rgba(96,165,250,0.4); }
+  .badge.b-clean .badge-icon { background: rgba(167,139,250,0.10); border-color: rgba(167,139,250,0.4); }
+  .badge.b-new   .badge-icon { background: rgba(244,114,182,0.10); border-color: rgba(244,114,182,0.4); }
+  .badge.b-close .badge-icon { background: rgba(249,115,22,0.10);  border-color: rgba(249,115,22,0.4); }
+  .badge.b-streak .badge-icon { background: rgba(239,68,68,0.10); border-color: rgba(239,68,68,0.4); }
+  .badge .title { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text); }
+  .badge .holder { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .badge .stat { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* Heatmap */
+  .heatmap {
+    display: flex;
+    gap: 5px;
+    margin-top: 6px;
+    align-items: flex-end;
+  }
+  .hm-cell {
+    flex: 1;
+    aspect-ratio: 1 / 1.4;
+    border-radius: 4px;
+    background: var(--border);
+    position: relative;
+    border: 1px solid transparent;
+    transition: transform 0.2s;
+  }
+  .hm-cell.now { border-color: var(--green); box-shadow: 0 0 10px rgba(74,222,128,0.3); }
+  .hm-cell::after {
+    content: attr(data-hour);
+    position: absolute;
+    bottom: -16px; left: 0; right: 0;
+    text-align: center;
+    font-size: 9px;
+    color: var(--text-mute);
+    letter-spacing: 0.4px;
+  }
+  .hm-legend {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 26px;
+    font-size: 11px;
+    color: var(--text-mute);
+  }
+  .hm-legend .peak { color: var(--green); font-weight: 600; }
+
+  /* Live ticker */
+  .ticker-card { display: flex; flex-direction: column; }
+  .ticker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .ticker-live {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--green); font-size: 10px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase;
+  }
+  .ticker-live::before {
+    content: "";
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    animation: pulse-dot 1.5s ease-in-out infinite;
+  }
+  .ticker-feed {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 200px;
+    max-height: 240px;
+    overflow: hidden;
+    position: relative;
+  }
+  .ticker-item {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--green);
+    border-radius: 6px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    animation: slide-in 0.5s ease-out;
+  }
+  .ticker-item.fresh { border-left-color: var(--yellow); }
+  @keyframes slide-in {
+    0%   { transform: translateY(-8px); opacity: 0; }
+    100% { transform: translateY(0); opacity: 1; }
+  }
+  .ticker-item .t-time { color: var(--text-mute); font-size: 10px; font-variant-numeric: tabular-nums; min-width: 44px; }
+  .ticker-item .t-who  { font-weight: 600; min-width: 60px; }
+  .ticker-item .t-amt  { color: var(--green); font-weight: 700; font-variant-numeric: tabular-nums; margin-left: auto; }
+  .ticker-item .t-desc { color: var(--text-dim); font-size: 11px; }
+
+  /* Rare drop dialog */
+  .raredrop-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(10,14,13,0.75);
+    backdrop-filter: blur(4px);
+    z-index: 10;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    animation: fade-in 0.3s ease-out;
+  }
+  .raredrop-backdrop.show { display: flex; }
+  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+  .raredrop {
+    width: 480px;
+    background:
+      radial-gradient(400px 200px at 50% -20%, rgba(167,139,250,0.25), transparent 60%),
+      var(--surface);
+    border: 2px solid var(--purple);
+    border-radius: 14px;
+    padding: 28px;
+    text-align: center;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6), 0 0 60px rgba(167,139,250,0.25);
+    animation: pop 0.5s cubic-bezier(.2,.9,.3,1.2);
+  }
+  @keyframes pop {
+    0% { transform: scale(0.85); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .raredrop .gem { font-size: 56px; line-height: 1; filter: drop-shadow(0 0 24px rgba(167,139,250,0.7)); }
+  .raredrop .kicker { color: var(--purple); font-size: 11px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; margin-top: 10px; }
+  .raredrop .who { font-size: 26px; font-weight: 800; margin-top: 8px; letter-spacing: -0.3px; }
+  .raredrop .item { color: var(--text-dim); margin-top: 4px; font-size: 13px; }
+  .raredrop .price { color: var(--green); font-size: 30px; font-weight: 800; margin-top: 14px; letter-spacing: -0.5px; }
+  .raredrop .close-btn {
+    margin-top: 18px;
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    padding: 8px 22px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+  }
+  .raredrop .close-btn:hover { background: var(--surface-2); }
+
+  /* Confetti canvas */
+  #confetti {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 9;
+  }
+
+  /* Goal-hit banner */
+  .goal-banner {
+    position: fixed;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(135deg, #4ade80, #2f8a52);
+    color: #0a0e0d;
+    padding: 12px 24px;
+    border-radius: 999px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    box-shadow: 0 8px 30px rgba(74,222,128,0.5);
+    z-index: 11;
+    display: none;
+    animation: drop-in 0.6s cubic-bezier(.2,.9,.3,1.2);
+  }
+  .goal-banner.show { display: block; }
+  @keyframes drop-in {
+    0%   { transform: translate(-50%, -40px); opacity: 0; }
+    100% { transform: translate(-50%, 0); opacity: 1; }
+  }
+
+  /* Footer */
+  .footer-note {
+    margin-top: 24px;
+    color: var(--text-mute);
+    font-size: 11px;
+    text-align: center;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+  }
+  .footer-note button {
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    color: var(--text-dim);
+    padding: 4px 12px;
+    border-radius: 4px;
+    margin-left: 6px;
+    cursor: pointer;
+    font-size: 11px;
+  }
+  .footer-note button:hover { color: var(--text); }
+</style>
+</head>
+<body>
+
+<canvas id="confetti"></canvas>
+
+<div class="goal-banner" id="goalBanner">🎯 80% TO DAILY GOAL · GO TEAM BASELINE</div>
+
+<div class="app">
+
+  <!-- ============ HEADER ============ -->
+  <header>
+    <div class="logo"><span class="green">GREEN</span>CROSS</div>
+    <span class="store-badge">Baseline</span>
+    <div class="clock">
+      <div class="time" id="clockTime">6:47 PM</div>
+      <div class="date" id="clockDate">Fri · May 15 · 2026</div>
+    </div>
+  </header>
+
+  <!-- ============ ON-SHIFT STRIP ============ -->
+  <div class="shift-strip">
+    <div class="shift-label">On shift now</div>
+    <div class="shift-avatars">
+      <div class="shift-avatar"><div class="ring">SA</div><div class="meta"><span class="name">Sofia Alvarez</span><span class="role">Store Mgr</span></div></div>
+      <div class="shift-avatar"><div class="ring">AL</div><div class="meta"><span class="name">Avery Liu</span><span class="role">Asst Mgr</span></div></div>
+      <div class="shift-avatar"><div class="ring">LP</div><div class="meta"><span class="name">Lina Park</span><span class="role">Budtender</span></div></div>
+      <div class="shift-avatar"><div class="ring">TB</div><div class="meta"><span class="name">Theo Bennett</span><span class="role">Budtender</span></div></div>
+      <div class="shift-avatar off"><div class="ring">MC</div><div class="meta"><span class="name">Marcus Chen</span><span class="role">Off · Back at 8p</span></div></div>
+      <div class="shift-avatar off"><div class="ring">RS</div><div class="meta"><span class="name">Riley Sato</span><span class="role">Off today</span></div></div>
+    </div>
+  </div>
+
+  <!-- ============ HERO ROW ============ -->
+  <div class="hero-grid">
+
+    <!-- Leader -->
+    <div class="card leader">
+      <div class="card-label">Today's Leader</div>
+      <div class="row">
+        <div class="avatar-xl">
+          <span class="crown">👑</span>
+          LP
+        </div>
+        <div>
+          <div class="name">Lina Park</div>
+          <div class="role">Budtender</div>
+          <div class="amount num" data-target="1420">$0</div>
+          <div class="sub">17 txns · $83.53 AOV · 2.6 UPT · <span class="streak">🔥 5-day streak</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Goal thermometer -->
+    <div class="card goal-card">
+      <div class="card-label">Daily Goal · $8,500</div>
+      <div class="gauge-wrap">
+        <svg width="220" height="130" viewBox="0 0 220 130">
+          <!-- background arc -->
+          <path d="M 20 120 A 90 90 0 0 1 200 120"
+                stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="round"/>
+          <!-- progress arc (80.5% of 180deg = ~145deg) -->
+          <path id="goalArc"
+                d="M 20 120 A 90 90 0 0 1 200 120"
+                stroke="url(#goalGrad)" stroke-width="14" fill="none" stroke-linecap="round"
+                stroke-dasharray="283" stroke-dashoffset="283"
+                style="transition: stroke-dashoffset 1.6s cubic-bezier(.2,.7,.3,1);"/>
+          <defs>
+            <linearGradient id="goalGrad" x1="0" x2="1" y1="0" y2="0">
+              <stop offset="0%" stop-color="#2f8a52"/>
+              <stop offset="100%" stop-color="#4ade80"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <div class="gauge-pct">
+          <div class="big num" id="goalPct">80%</div>
+          <div class="small">to goal</div>
+        </div>
+      </div>
+      <div class="goal-stats">
+        <div class="goal-stat"><div class="v num" data-target="6840">$0</div><div class="l">Sold</div></div>
+        <div class="goal-stat"><div class="v num" data-target="1660">$0</div><div class="l">To Go</div></div>
+        <div class="goal-stat"><div class="v">2h 13m</div><div class="l">Left</div></div>
+      </div>
+    </div>
+
+    <!-- Pace dial -->
+    <div class="card pace-card">
+      <div class="card-label">Pace · vs. Plan</div>
+      <svg class="pace-svg" viewBox="0 0 220 130">
+        <!-- arc background segments -->
+        <path d="M 20 120 A 90 90 0 0 1 73 41"  stroke="#ef4444" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.55"/>
+        <path d="M 73 41 A 90 90 0 0 1 147 41"  stroke="#eab308" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.55"/>
+        <path d="M 147 41 A 90 90 0 0 1 200 120" stroke="#4ade80" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.55"/>
+        <!-- tick marks -->
+        <g stroke="#5e6864" stroke-width="1">
+          <line x1="20" y1="120" x2="28" y2="116"/>
+          <line x1="200" y1="120" x2="192" y2="116"/>
+          <line x1="110" y1="30" x2="110" y2="40"/>
+        </g>
+        <text x="20"  y="135" fill="#5e6864" font-size="9" text-anchor="start">−20%</text>
+        <text x="200" y="135" fill="#5e6864" font-size="9" text-anchor="end">+20%</text>
+        <text x="110" y="25"  fill="#5e6864" font-size="9" text-anchor="middle">PLAN</text>
+        <!-- needle (pointing ~+8% = ~108deg from left, just past plan into green) -->
+        <g id="paceNeedle" style="transform-origin: 110px 120px; transform: rotate(-90deg); transition: transform 1.4s cubic-bezier(.2,.7,.3,1);">
+          <line x1="110" y1="120" x2="110" y2="42" stroke="#e6ece9" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="110" cy="120" r="6" fill="#e6ece9" stroke="#0a0e0d" stroke-width="2"/>
+        </g>
+      </svg>
+      <div class="pace-readout">
+        <div class="delta">+8%</div>
+        <div class="label">ahead of plan</div>
+      </div>
+      <div class="pace-projection">
+        Projected close: <span class="v num">$9,180</span> · <span style="color:var(--green)">▲ $680 over goal</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============ LEADERBOARD ============ -->
+  <section class="lb-section">
+    <div class="lb-head">
+      <h2>Today · Baseline Team</h2>
+      <span class="sep">/</span>
+      <span class="meta">Live · refreshes every 30 seconds</span>
+    </div>
+    <div class="lb-grid">
+
+      <div class="emp-card leading">
+        <span class="rank">#1</span>
+        <div class="emp-head">
+          <div class="emp-avatar">LP</div>
+          <div>
+            <div class="emp-name">Lina Park</div>
+            <div class="emp-role">Budtender</div>
+          </div>
+        </div>
+        <div class="emp-amt num" data-target="1420">$0</div>
+        <div class="emp-bar"><span style="width: 100%"></span></div>
+        <div class="emp-stats"><span>AOV <b>$83.53</b></span><span>UPT <b>2.6</b></span></div>
+        <div class="emp-streak">🔥 5-day streak</div>
+      </div>
+
+      <div class="emp-card">
+        <span class="rank">#2</span>
+        <div class="emp-head">
+          <div class="emp-avatar">SA</div>
+          <div>
+            <div class="emp-name">Sofia Alvarez</div>
+            <div class="emp-role">Store Mgr</div>
+          </div>
+        </div>
+        <div class="emp-amt num" data-target="1380">$0</div>
+        <div class="emp-bar"><span style="width: 97%"></span></div>
+        <div class="emp-stats"><span>AOV <b>$76.67</b></span><span>UPT <b>2.4</b></span></div>
+        <div class="emp-streak">🔥 3-day streak</div>
+      </div>
+
+      <div class="emp-card">
+        <span class="rank">#3</span>
+        <div class="emp-head">
+          <div class="emp-avatar">AL</div>
+          <div>
+            <div class="emp-name">Avery Liu</div>
+            <div class="emp-role">Asst Mgr</div>
+          </div>
+        </div>
+        <div class="emp-amt num" data-target="1210">$0</div>
+        <div class="emp-bar"><span style="width: 85%"></span></div>
+        <div class="emp-stats"><span>AOV <b>$75.63</b></span><span>UPT <b>2.3</b></span></div>
+        <div class="emp-streak" style="color:var(--text-mute); font-weight:500">2-day streak</div>
+      </div>
+
+      <div class="emp-card">
+        <span class="rank">#4</span>
+        <div class="emp-head">
+          <div class="emp-avatar">TB</div>
+          <div>
+            <div class="emp-name">Theo Bennett</div>
+            <div class="emp-role">Budtender</div>
+          </div>
+        </div>
+        <div class="emp-amt num" data-target="980">$0</div>
+        <div class="emp-bar"><span style="width: 69%"></span></div>
+        <div class="emp-stats"><span>AOV <b>$75.38</b></span><span>UPT <b>2.2</b></span></div>
+        <div class="emp-streak" style="color:var(--blue)">⚡ Personal best in sight</div>
+      </div>
+
+      <div class="emp-card">
+        <span class="rank">#5</span>
+        <div class="emp-head">
+          <div class="emp-avatar">MC</div>
+          <div>
+            <div class="emp-name">Marcus Chen</div>
+            <div class="emp-role">Budtender</div>
+          </div>
+        </div>
+        <div class="emp-amt num" data-target="945">$0</div>
+        <div class="emp-bar"><span style="width: 66%"></span></div>
+        <div class="emp-stats"><span>AOV <b>$78.75</b></span><span>UPT <b>2.4</b></span></div>
+        <div class="emp-streak" style="color:var(--text-mute); font-weight:500">Back on at 8 PM</div>
+      </div>
+
+      <div class="emp-card">
+        <span class="rank">#6</span>
+        <div class="emp-head">
+          <div class="emp-avatar">RS</div>
+          <div>
+            <div class="emp-name">Riley Sato</div>
+            <div class="emp-role">Budtender</div>
+          </div>
+        </div>
+        <div class="emp-amt num" data-target="0">$0</div>
+        <div class="emp-bar"><span style="width: 0%"></span></div>
+        <div class="emp-stats"><span>AOV <b>—</b></span><span>UPT <b>—</b></span></div>
+        <div class="emp-streak" style="color:var(--text-mute); font-weight:500">Off today</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ LOWER ROW ============ -->
+  <div class="lower-grid">
+
+    <!-- Weekly badges -->
+    <div class="card">
+      <div class="card-label">This Week's Trophies</div>
+      <div class="badges">
+        <div class="badge b-aov">
+          <div class="badge-icon">💰</div>
+          <div>
+            <div class="title">AOV Avenger</div>
+            <div class="holder">Riley Sato</div>
+          </div>
+          <div class="stat">$82.27</div>
+        </div>
+        <div class="badge b-upt">
+          <div class="badge-icon">📈</div>
+          <div>
+            <div class="title">Upsell King</div>
+            <div class="holder">Lina Park</div>
+          </div>
+          <div class="stat">2.6</div>
+        </div>
+        <div class="badge b-clean">
+          <div class="badge-icon">🧼</div>
+          <div>
+            <div class="title">Cleanest Receipts</div>
+            <div class="holder">Theo Bennett</div>
+          </div>
+          <div class="stat">2.1%</div>
+        </div>
+        <div class="badge b-new">
+          <div class="badge-icon">🤝</div>
+          <div>
+            <div class="title">Welcome Wagon</div>
+            <div class="holder">Sofia Alvarez</div>
+          </div>
+          <div class="stat">28</div>
+        </div>
+        <div class="badge b-close">
+          <div class="badge-icon">⏰</div>
+          <div>
+            <div class="title">The Closer</div>
+            <div class="holder">Avery Liu</div>
+          </div>
+          <div class="stat">$3.1k</div>
+        </div>
+        <div class="badge b-streak">
+          <div class="badge-icon">🔥</div>
+          <div>
+            <div class="title">Streak Master</div>
+            <div class="holder">Lina Park</div>
+          </div>
+          <div class="stat">5d</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Heatmap -->
+    <div class="card">
+      <div class="card-label">Today by Hour</div>
+      <div class="heatmap">
+        <div class="hm-cell" data-hour="11a" style="background: #1a3525; height: 18%;"></div>
+        <div class="hm-cell" data-hour="12p" style="background: #245a3a; height: 32%;"></div>
+        <div class="hm-cell" data-hour="1p"  style="background: #2f7e4d; height: 45%;"></div>
+        <div class="hm-cell" data-hour="2p"  style="background: #3a9a5e; height: 58%;"></div>
+        <div class="hm-cell" data-hour="3p"  style="background: #43b76e; height: 68%;"></div>
+        <div class="hm-cell" data-hour="4p"  style="background: #4ade80; height: 86%;"></div>
+        <div class="hm-cell" data-hour="5p"  style="background: #5ee68d; height: 100%;"></div>
+        <div class="hm-cell now" data-hour="6p" style="background: #4ade80; height: 90%;"></div>
+        <div class="hm-cell" data-hour="7p"  style="background: #232a27; height: 60%; opacity: 0.45;"></div>
+        <div class="hm-cell" data-hour="8p"  style="background: #232a27; height: 40%; opacity: 0.45;"></div>
+        <div class="hm-cell" data-hour="9p"  style="background: #232a27; height: 22%; opacity: 0.45;"></div>
+      </div>
+      <div class="hm-legend">
+        <span>Open</span>
+        <span class="peak">Peak · 5 PM · $1,340</span>
+        <span>Close</span>
+      </div>
+    </div>
+
+    <!-- Live ticker -->
+    <div class="card ticker-card">
+      <div class="ticker-header">
+        <div class="card-label" style="margin-bottom:0">Live Sales</div>
+        <span class="ticker-live">Live</span>
+      </div>
+      <div class="ticker-feed" id="tickerFeed">
+        <div class="ticker-item"><span class="t-time">6:42p</span><span class="t-who">Lina</span><span class="t-desc">Premium vape combo</span><span class="t-amt">$187</span></div>
+        <div class="ticker-item"><span class="t-time">6:38p</span><span class="t-who">Sofia</span><span class="t-desc">Edible 4-pack</span><span class="t-amt">$94</span></div>
+        <div class="ticker-item"><span class="t-time">6:35p</span><span class="t-who">Theo</span><span class="t-desc">Pre-roll bundle</span><span class="t-amt">$156</span></div>
+        <div class="ticker-item"><span class="t-time">6:31p</span><span class="t-who">Avery</span><span class="t-desc">Concentrate kit</span><span class="t-amt">$215</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer-note">
+    Mock data · Designed for store kiosk display
+    <button onclick="fireConfetti()">🎉 Replay goal celebration</button>
+    <button onclick="showRareDrop()">💎 Replay rare drop</button>
+  </div>
+</div>
+
+<!-- ============ RARE DROP DIALOG ============ -->
+<div class="raredrop-backdrop" id="rareBackdrop" onclick="hideRareDrop(event)">
+  <div class="raredrop" onclick="event.stopPropagation()">
+    <div class="gem">💎</div>
+    <div class="kicker">Rare Drop</div>
+    <div class="who">Lina Park</div>
+    <div class="item">just moved a Live Resin concentrate kit · Punch Edibles tray</div>
+    <div class="price">$420</div>
+    <button class="close-btn" onclick="hideRareDrop()">Nice 🔥</button>
+  </div>
+</div>
+
+<script>
+  // -------- Animated number counters --------
+  function animateNumber(el, target, duration = 1400) {
+    const start = performance.now();
+    function frame(now) {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const val = Math.round(target * eased);
+      el.textContent = '$' + val.toLocaleString();
+      if (t < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+  document.querySelectorAll('[data-target]').forEach(el => {
+    const target = parseInt(el.getAttribute('data-target'), 10);
+    animateNumber(el, target);
+  });
+
+  // -------- Goal arc fill (80% of 180deg arc; pathLen ~283) --------
+  setTimeout(() => {
+    const arc = document.getElementById('goalArc');
+    const pct = 0.805;
+    arc.setAttribute('stroke-dashoffset', 283 * (1 - pct));
+  }, 250);
+
+  // -------- Pace needle to +8% --------
+  setTimeout(() => {
+    const needle = document.getElementById('paceNeedle');
+    // gauge spans -90deg to +90deg; +8% of +20% scale = +36deg
+    needle.style.transform = 'rotate(36deg)';
+  }, 350);
+
+  // -------- Live clock (frozen at simulated time, but ticks seconds) --------
+  let simulated = new Date();
+  simulated.setHours(18, 47, 12);
+  function tickClock() {
+    simulated = new Date(simulated.getTime() + 1000);
+    const h = simulated.getHours();
+    const m = simulated.getMinutes().toString().padStart(2, '0');
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const hh = ((h + 11) % 12) + 1;
+    document.getElementById('clockTime').textContent = `${hh}:${m} ${ampm}`;
+  }
+  setInterval(tickClock, 1000);
+
+  // -------- Live ticker feed --------
+  const sampleSales = [
+    { who: 'Lina',  desc: 'Top-shelf eighth',    amt: 78  },
+    { who: 'Theo',  desc: 'Vape cart',           amt: 52  },
+    { who: 'Sofia', desc: 'Pre-roll 5-pack',     amt: 65  },
+    { who: 'Avery', desc: 'Edible variety pack', amt: 88  },
+    { who: 'Lina',  desc: 'Concentrate gram',    amt: 95  },
+    { who: 'Theo',  desc: 'CBD tincture',        amt: 42  },
+    { who: 'Sofia', desc: 'Premium flower 1/8',  amt: 124 },
+    { who: 'Avery', desc: 'Glass + grinder',     amt: 71  },
+  ];
+  function fmtTime() {
+    const h = simulated.getHours();
+    const m = simulated.getMinutes().toString().padStart(2, '0');
+    const hh = ((h + 11) % 12) + 1;
+    return `${hh}:${m}${h >= 12 ? 'p' : 'a'}`;
+  }
+  function addTickerSale() {
+    const s = sampleSales[Math.floor(Math.random() * sampleSales.length)];
+    const feed = document.getElementById('tickerFeed');
+    const item = document.createElement('div');
+    item.className = 'ticker-item fresh';
+    item.innerHTML = `
+      <span class="t-time">${fmtTime()}</span>
+      <span class="t-who">${s.who}</span>
+      <span class="t-desc">${s.desc}</span>
+      <span class="t-amt">$${s.amt}</span>
+    `;
+    feed.insertBefore(item, feed.firstChild);
+    // remove old items beyond 5
+    while (feed.children.length > 5) feed.removeChild(feed.lastChild);
+    // unfresh after a beat
+    setTimeout(() => item.classList.remove('fresh'), 1800);
+  }
+  setInterval(addTickerSale, 4500);
+
+  // -------- Rare drop overlay --------
+  function showRareDrop()  { document.getElementById('rareBackdrop').classList.add('show'); }
+  function hideRareDrop(e) { document.getElementById('rareBackdrop').classList.remove('show'); }
+  setTimeout(showRareDrop, 4000);
+
+  // -------- Confetti (canvas particle burst) --------
+  const cv = document.getElementById('confetti');
+  const ctx = cv.getContext('2d');
+  function resize() { cv.width = innerWidth; cv.height = innerHeight; }
+  addEventListener('resize', resize); resize();
+  const colors = ['#4ade80', '#60a5fa', '#facc15', '#f472b6', '#a78bfa', '#f97316'];
+  let particles = [];
+  function fireConfetti() {
+    document.getElementById('goalBanner').classList.add('show');
+    setTimeout(() => document.getElementById('goalBanner').classList.remove('show'), 2400);
+    const cx = innerWidth / 2;
+    const cy = innerHeight * 0.42;
+    for (let i = 0; i < 140; i++) {
+      particles.push({
+        x: cx + (Math.random() - 0.5) * 60,
+        y: cy,
+        vx: (Math.random() - 0.5) * 9,
+        vy: -Math.random() * 11 - 4,
+        size: Math.random() * 6 + 3,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rot: Math.random() * Math.PI * 2,
+        vrot: (Math.random() - 0.5) * 0.3,
+        life: 0,
+        maxLife: 140 + Math.random() * 80,
+      });
+    }
+  }
+  function tick() {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    particles = particles.filter(p => p.life < p.maxLife);
+    particles.forEach(p => {
+      p.vy += 0.22;
+      p.vx *= 0.995;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.rot += p.vrot;
+      p.life++;
+      const alpha = 1 - (p.life / p.maxLife);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.size/2, -p.size/4, p.size, p.size/2);
+      ctx.restore();
+    });
+    requestAnimationFrame(tick);
+  }
+  tick();
+
+  // Fire once on load as a welcome
+  setTimeout(fireConfetti, 800);
+</script>
+</body>
+</html>
