@@ -80,6 +80,17 @@ function doGet(e) {
     if (!auth.ok) return jsonOut(auth, params.callback);
 
     // ── Director endpoints ─────────────────────────────────
+    if (params.action === 'directorall') {
+      requireRole_(auth, ['owner','director']);
+      // Single round-trip: fetch all 4 payloads, return combined
+      const [summary, stores, staff, alerts] = [
+        getDirectorSummary(params),
+        getDirectorStores(params),
+        getDirectorStaff(params),
+        getDirectorAlerts(),
+      ];
+      return jsonOut({ summary, stores, staff, alerts }, params.callback);
+    }
     if (params.action === 'directorsummary') {
       requireRole_(auth, ['owner','director']);
       return jsonOut(getDirectorSummary(params), params.callback);

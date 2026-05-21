@@ -33,7 +33,7 @@ GC.api = (function() {
       var timeout = setTimeout(function() {
         delete window[cbName];
         reject(new Error('JSONP timeout: ' + url));
-      }, 15000);
+      }, 45000);
 
       window[cbName] = function(data) {
         clearTimeout(timeout);
@@ -156,21 +156,24 @@ GC.api = (function() {
     return gasCall('directoralerts');
   }
 
-  // Convenience: fetch all four director payloads in parallel
+  // Convenience: single GAS round-trip returning all four director payloads
   function fetchDirectorAll(period) {
-    return Promise.all([
-      fetchDirectorSummary(period),
-      fetchDirectorStores(period),
-      fetchDirectorStaff(period),
-      fetchDirectorAlerts(),
-    ]).then(function(results) {
-      return {
-        summary: results[0],
-        stores:  results[1],
-        staff:   results[2],
-        alerts:  results[3],
-      };
-    });
+    period = period || 'mtd';
+    if (USE_FIXTURES) {
+      return Promise.all([
+        fetchFixture('director-summary'),
+        fetchFixture('director-stores'),
+        fetchFixture('director-staff'),
+        fetchFixture('director-alerts'),
+      ]).then(function(results) {
+        return { summary: results[0], stores: results[1], staff: results[2], alerts: results[3] };
+      });
+    }
+    return gasCall('directorall', { period: period })
+      .then(function(r) {
+        // GAS returns { summary, stores, staff, alerts } in one call
+        return r;
+      });
   }
 
   // ── Public: Store / Kiosk endpoints ───────────────────
