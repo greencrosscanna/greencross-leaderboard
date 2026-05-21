@@ -49,12 +49,12 @@ const DISCOUNT_WATCH_THRESHOLD = 0.080;
 // and the frontend GC.STORES registry in utils.js.
 // dutchieName = the key used in DUTCHIE_STORE_KEYS_JSON ScriptProperty.
 // Confirmed from GX2 Dashboard STORE_KEYS (May 2026):
-//   Bend       → Century  (341 SW Century Dr, Bend OR)
-//   Hillsboro  → Baseline (Hillsboro OR)
+//   Bend       → Baseline
+//   Hillsboro  → Century
 const STORES = [
-  { slug: 'baseline',   name: 'Baseline',   dutchieName: 'Hillsboro'   },
+  { slug: 'baseline',   name: 'Baseline',   dutchieName: 'Bend'        },
   { slug: 'center',     name: 'Center',     dutchieName: 'Center'      },
-  { slug: 'century',    name: 'Century',    dutchieName: 'Bend'        },
+  { slug: 'century',    name: 'Century',    dutchieName: 'Hillsboro'   },
   { slug: 'commercial', name: 'Commercial', dutchieName: 'Commercial'  },
   { slug: 'portland',   name: 'Portland',   dutchieName: 'Portland Rd' },
   { slug: 'river',      name: 'River',      dutchieName: 'River'       },
