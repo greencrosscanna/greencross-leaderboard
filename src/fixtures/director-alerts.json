@@ -5,7 +5,7 @@
       "severity": "hi",
       "icon": "📉",
       "title": "Century is −12.4% vs. plan MTD",
-      "description": "Trailing for 9 consecutive days. Avg ticket down $4.20 vs. chain. Manager Tyler Brooks also on Discount Watch.",
+      "description": "Trailing for 9 consecutive days. Avg ticket down $4.20 vs. chain. Manager Chris Carney also on Discount Watch.",
       "when": "Updated 8 min ago",
       "ctaLabel": "Open store →",
       "ctaTarget": "store:century"
@@ -15,7 +15,7 @@
       "severity": "hi",
       "icon": "⚠️",
       "title": "3 staff exceeded 6.5% discount threshold",
-      "description": "Tyler Brooks (8.9%), Marcus Johnson (7.2%), Riley Sato (7.0%). Common reasons: \"veteran\" comp, \"manager comp\", \"loyalty stack.\"",
+      "description": "Chris Carney (8.9%), Mariana Moxie (7.2%), Riley Sato (7.0%). Common reasons: \"veteran\" comp, \"manager comp\", \"loyalty stack.\"",
       "when": "Rolling 14-day",
       "ctaLabel": "Review →",
       "ctaTarget": "discount-watch"
@@ -44,8 +44,8 @@
   "discountWatch": [
     {
       "employeeId": "e4",
-      "name": "Tyler Brooks",
-      "initials": "TB",
+      "name": "Chris Carney",
+      "initials": "CC",
       "storeSlug": "century",
       "storeName": "Century",
       "discountRate": 0.089,
@@ -55,8 +55,8 @@
     },
     {
       "employeeId": "e5",
-      "name": "Marcus Johnson",
-      "initials": "MJ",
+      "name": "Mariana Moxie",
+      "initials": "MM",
       "storeSlug": "commercial",
       "storeName": "Commercial",
       "discountRate": 0.072,

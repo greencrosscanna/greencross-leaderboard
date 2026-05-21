@@ -24,11 +24,11 @@
     "toGo": 1660
   },
   "onShift": [
-    { "initials": "SA", "name": "Sofia Alvarez", "role": "Store Mgr",  "status": "on"                   },
+    { "initials": "DD", "name": "Dean Deloof", "role": "Store Mgr",  "status": "on"                   },
     { "initials": "AL", "name": "Avery Liu",     "role": "Asst Mgr",   "status": "on"                   },
     { "initials": "LP", "name": "Lina Park",     "role": "Budtender",  "status": "on"                   },
-    { "initials": "TB", "name": "Theo Bennett",  "role": "Budtender",  "status": "on"                   },
-    { "initials": "MC", "name": "Marcus Chen",   "role": "Budtender",  "status": "later", "note": "Back at 8p" },
+    { "initials": "CC", "name": "Theo Bennett",  "role": "Budtender",  "status": "on"                   },
+    { "initials": "TP", "name": "Marcus Chen",   "role": "Budtender",  "status": "later", "note": "Back at 8p" },
     { "initials": "RS", "name": "Riley Sato",    "role": "Budtender",  "status": "off",   "note": "Off today"  }
   ],
   "hourly": [

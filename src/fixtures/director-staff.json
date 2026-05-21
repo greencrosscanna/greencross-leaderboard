@@ -5,8 +5,8 @@
   "staff": [
     {
       "id": "e1",
-      "name": "Maya Chen",
-      "initials": "MC",
+      "name": "TJ Peterson",
+      "initials": "TP",
       "role": "store_manager",
       "roleLabel": "Store Mgr",
       "storeSlug": "river",
@@ -25,8 +25,8 @@
     },
     {
       "id": "e2",
-      "name": "Devon Reyes",
-      "initials": "DR",
+      "name": "Scott Penner",
+      "initials": "SP",
       "role": "store_manager",
       "roleLabel": "Store Mgr",
       "storeSlug": "portland",
@@ -45,8 +45,8 @@
     },
     {
       "id": "e3",
-      "name": "Priya Singh",
-      "initials": "PS",
+      "name": "Tyson Farris",
+      "initials": "TF",
       "role": "store_manager",
       "roleLabel": "Store Mgr",
       "storeSlug": "center",
@@ -85,8 +85,8 @@
     },
     {
       "id": "e5",
-      "name": "Marcus Johnson",
-      "initials": "MJ",
+      "name": "Mariana Moxie",
+      "initials": "MM",
       "role": "store_manager",
       "roleLabel": "Store Mgr",
       "storeSlug": "commercial",
@@ -105,8 +105,8 @@
     },
     {
       "id": "e6",
-      "name": "Sofia Alvarez",
-      "initials": "SA",
+      "name": "Dean Deloof",
+      "initials": "DD",
       "role": "store_manager",
       "roleLabel": "Store Mgr",
       "storeSlug": "baseline",
@@ -125,8 +125,8 @@
     },
     {
       "id": "e4",
-      "name": "Tyler Brooks",
-      "initials": "TB",
+      "name": "Chris Carney",
+      "initials": "CC",
       "role": "store_manager",
       "roleLabel": "Store Mgr",
       "storeSlug": "century",

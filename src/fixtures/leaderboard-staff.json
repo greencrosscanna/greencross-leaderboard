@@ -4,7 +4,7 @@
   "showing": 12,
   "staff": [
     {
-      "rank": 1,  "initials": "MC", "name": "Maya Chen",       "role": "Store Mgr",  "hours": 142,
+      "rank": 1,  "initials": "TP", "name": "TJ Peterson",       "role": "Store Mgr",  "hours": 142,
       "storeSlug": "river",      "storeName": "River",
       "sales": 48210, "transactions": 612, "avgOrderValue": 78.76, "avgUPT": 2.6,
       "discountRate": 0.042, "trendPct": 0.18,
@@ -12,7 +12,7 @@
       "tags": ["top","rising"]
     },
     {
-      "rank": 2,  "initials": "DR", "name": "Devon Reyes",     "role": "Store Mgr",  "hours": 138,
+      "rank": 2,  "initials": "SP", "name": "Scott Penner",     "role": "Store Mgr",  "hours": 138,
       "storeSlug": "portland",   "storeName": "Portland",
       "sales": 44820, "transactions": 580, "avgOrderValue": 77.28, "avgUPT": 2.5,
       "discountRate": 0.051, "trendPct": 0.02,
@@ -20,7 +20,7 @@
       "tags": []
     },
     {
-      "rank": 3,  "initials": "PS", "name": "Priya Singh",     "role": "Store Mgr",  "hours": 128,
+      "rank": 3,  "initials": "TF", "name": "Tyson Farris",     "role": "Store Mgr",  "hours": 128,
       "storeSlug": "center",     "storeName": "Center",
       "sales": 42110, "transactions": 510, "avgOrderValue": 82.55, "avgUPT": 2.7,
       "discountRate": 0.038, "trendPct": 0.24,
@@ -36,7 +36,7 @@
       "tags": ["rising"]
     },
     {
-      "rank": 5,  "initials": "MJ", "name": "Marcus Johnson",  "role": "Store Mgr",  "hours": 140,
+      "rank": 5,  "initials": "MM", "name": "Mariana Moxie",  "role": "Store Mgr",  "hours": 140,
       "storeSlug": "commercial", "storeName": "Commercial",
       "sales": 39440, "transactions": 528, "avgOrderValue": 74.70, "avgUPT": 2.3,
       "discountRate": 0.072, "trendPct": -0.11,
@@ -44,7 +44,7 @@
       "tags": ["flag"]
     },
     {
-      "rank": 6,  "initials": "SA", "name": "Sofia Alvarez",   "role": "Store Mgr",  "hours": 144,
+      "rank": 6,  "initials": "DD", "name": "Dean Deloof",   "role": "Store Mgr",  "hours": 144,
       "storeSlug": "baseline",   "storeName": "Baseline",
       "sales": 37910, "transactions": 489, "avgOrderValue": 77.53, "avgUPT": 2.4,
       "discountRate": 0.058, "trendPct": 0.01,
@@ -52,7 +52,7 @@
       "tags": []
     },
     {
-      "rank": 7,  "initials": "TB", "name": "Tyler Brooks",    "role": "Store Mgr",  "hours": 132,
+      "rank": 7,  "initials": "CC", "name": "Chris Carney",    "role": "Store Mgr",  "hours": 132,
       "storeSlug": "century",    "storeName": "Century",
       "sales": 36210, "transactions": 502, "avgOrderValue": 72.13, "avgUPT": 2.2,
       "discountRate": 0.089, "trendPct": -0.18,
