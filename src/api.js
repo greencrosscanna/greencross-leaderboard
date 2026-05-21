@@ -71,7 +71,7 @@ GC.api = (function() {
 
   // ── Fixture fetch ──────────────────────────────────────
   function fetchFixture(filename) {
-    return fetch(FX + filename + '.json')
+    return fetch(FX + filename + '.json', { cache: 'no-store' })
       .then(function(r) {
         if (!r.ok) throw new Error('Fixture not found: ' + filename);
         return r.json();

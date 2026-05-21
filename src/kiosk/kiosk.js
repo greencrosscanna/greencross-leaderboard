@@ -761,7 +761,9 @@ var kiosk = (function() {
     // ── badges ──
     // GAS: label, winner, detail, type='gold'/'silver', id='aov-avenger' etc.
     // Fixture: title, holder, stat, type='b-aov' etc.
-    // Map GAS id → CSS class so icon circles get their colored backgrounds.
+    // Map GAS id → CSS class + emoji icon.
+    // Icons are hardcoded here (not trusted from GAS) because emoji come
+    // through JSONP with encoding corruption on some GAS deployments.
     var BADGE_TYPE_MAP = {
       'aov-avenger': 'b-aov',
       'upsell-king': 'b-upt',
@@ -771,10 +773,19 @@ var kiosk = (function() {
       'streak':      'b-streak',
       'new-hire':    'b-new',
     };
+    var BADGE_ICON_MAP = {
+      'aov-avenger': '💰',  // 💰
+      'upsell-king': '👑',  // 👑
+      'cleanest':    '🧼',  // 🧼
+      'top-sales':   '🔥',  // 🔥
+      'the-closer':  '🤝',  // 🤝
+      'streak':      '⚡',        // ⚡
+      'new-hire':    '🌱',  // 🌱
+    };
     var normalizedBadges = (bg.badges || []).map(function(b) {
       return {
         id:     b.id     || '',
-        icon:   b.icon   || '',
+        icon:   BADGE_ICON_MAP[b.id] || b.icon || '',
         title:  b.label  || b.title  || '',
         holder: b.winner || b.holder || '',
         stat:   b.detail || b.stat   || '',
