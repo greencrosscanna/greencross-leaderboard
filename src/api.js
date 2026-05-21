@@ -192,6 +192,11 @@ GC.api = (function() {
     return gasCall('storebadges', { store: storeSlug, period: period });
   }
 
+  function fetchLeaderboardStaff(period) {
+    if (USE_FIXTURES) return fetchFixture('leaderboard-staff');
+    return gasCall('leaderboardstaff', { period: period || 'mtd' });
+  }
+
   function fetchKioskAll(storeSlug) {
     return Promise.all([
       fetchStoreToday(storeSlug),
@@ -215,5 +220,6 @@ GC.api = (function() {
     fetchStoreLeaderboard:fetchStoreLeaderboard,
     fetchStoreBadges:     fetchStoreBadges,
     fetchKioskAll:        fetchKioskAll,
+    fetchLeaderboardStaff: fetchLeaderboardStaff,
   };
 })();

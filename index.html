@@ -17,7 +17,7 @@
   <!-- View-specific styles (load all; each is small) -->
   <link rel="stylesheet" href="src/director/director.css">
   <link rel="stylesheet" href="src/kiosk/kiosk.css">
-  <!-- src/leaderboard/leaderboard.css goes here when built -->
+  <link rel="stylesheet" href="src/leaderboard/leaderboard.css">
 </head>
 <body>
 
@@ -39,7 +39,7 @@
 <!-- ── View modules ───────────────────────────────────────── -->
 <script src="src/director/director.js"></script>
 <script src="src/kiosk/kiosk.js"></script>
-<!-- src/leaderboard/leaderboard.js goes here when built -->
+<script src="src/leaderboard/leaderboard.js"></script>
 
 <!-- ── Login view (inline — no separate file needed) ──────── -->
 <script>
@@ -123,24 +123,7 @@ GC.views.renderLogin = function() {
 
 // renderKiosk is registered by src/kiosk/kiosk.js (loaded above)
 
-GC.views.renderLeaderboard = function() {
-  document.getElementById('app').innerHTML = [
-    '<div class="app-page">',
-    '  <header class="director-header">',
-    '    <div class="gc-logo"><span class="green">GREEN</span>CROSS</div>',
-    '    <span class="view-badge">Performance · All Staff</span>',
-    '    <div class="header-right">',
-    '      <button class="btn-ghost" onclick="GC.router.navigate(\'#/director\')">← Director</button>',
-    '    </div>',
-    '  </header>',
-    '  <div class="empty-state" style="padding:80px 20px">',
-    '    <div style="font-size:48px;margin-bottom:16px">🏗️</div>',
-    '    <div style="color:var(--text-dim);font-size:16px;font-weight:600;margin-bottom:8px">Leaderboard view coming next</div>',
-    '    <div style="color:var(--text-mute)">Task 3 in the build sequence</div>',
-    '  </div>',
-    '</div>',
-  ].join('\n');
-};
+// renderLeaderboard is registered by src/leaderboard/leaderboard.js (loaded above)
 </script>
 
 <!-- ── Boot ────────────────────────────────────────────────── -->
