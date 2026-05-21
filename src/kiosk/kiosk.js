@@ -19,7 +19,10 @@ GC.views.renderKiosk = function(slug) {
   app.innerHTML = kiosk.renderLoading(slug);
 
   GC.api.fetchKioskAll(slug)
-    .then(function(data) {
+    .then(function(rawData) {
+      // Normalize GAS flat shape → fixture-compatible nested shape before any
+      // render/init code touches it. Both shapes work after normalization.
+      var data = kiosk.normalize(rawData);
       app.innerHTML = kiosk.render(data, slug);
       kiosk.init(data, slug);
     })
@@ -555,11 +558,130 @@ var kiosk = (function() {
     setTimeout(function() { item.classList.remove('fresh'); }, 1800);
   }
 
+  // ── Data normalizer ────────────────────────────────────────────
+  // Converts GAS flat shape OR fixture nested shape into the canonical
+  // nested shape that render / init / runCountUps expect.
+  //
+  // GAS flat today: { storeSlug, storeName, goal, revenue, pctToGoal, pace,
+  //                   projectedRevenue, toGo, timeRemainingLabel,
+  //                   onShift, hourly, ticker:[{who,item,price,ts}] }
+  // Fixture today:  { store:{id,name,slug}, today:{goal,revenue,pctToGoal,...},
+  //                   onShift, hourly, ticker:[{time,firstName,desc,amount}] }
+  //
+  // Staff: GAS uses avgOrderValue/transactions/streakDays
+  //        Fixture uses aov/txns/streak + streakType
+  // Badges: GAS uses label/winner/detail; fixture uses title/holder/stat
+  function normalizeKioskData_(rawData) {
+    var td = rawData.today       || {};
+    var lb = rawData.leaderboard || {};
+    var bg = rawData.badges      || {};
+
+    // ── today block ──
+    var normalizedToday;
+    if (td.store && td.today) {
+      // Fixture shape — pass through with onShift roles defaulted
+      normalizedToday = Object.assign({}, td, {
+        onShift: (td.onShift || []).map(function(p) {
+          return Object.assign({ role: '', note: null }, p);
+        }),
+      });
+    } else {
+      // GAS flat shape → convert to fixture-compatible nested shape
+      normalizedToday = {
+        store: {
+          id:   td.storeSlug || '',
+          name: td.storeName || td.storeSlug || '',
+          slug: td.storeSlug || '',
+        },
+        today: {
+          goal:               td.goal               || 0,
+          revenue:            td.revenue             || 0,
+          transactions:       td.transactions        || 0,
+          avgOrderValue:      td.avgOrderValue       || 0,
+          pctToGoal:          td.pctToGoal           || 0,
+          pace:               td.pace                || 0,
+          projectedRevenue:   td.projectedRevenue    || 0,
+          toGo:               td.toGo                || 0,
+          timeRemainingLabel: td.timeRemainingLabel  || '',
+        },
+        onShift: (td.onShift || []).map(function(p) {
+          return {
+            initials: p.initials || '',
+            name:     p.name     || '',
+            role:     p.role     || '',
+            status:   p.status   || 'on',
+            note:     p.note     || null,
+          };
+        }),
+        hourly:      td.hourly      || [],
+        peakHour:    td.peakHour    || null,
+        peakRevenue: td.peakRevenue || 0,
+        // GAS ticker: {who,item,price,ts} → {time,firstName,desc,amount}
+        ticker: (td.ticker || []).map(function(t) {
+          if (t.firstName !== undefined) return t; // already normalized
+          var d  = new Date(t.ts || Date.now());
+          var h  = d.getHours();
+          var mm = d.getMinutes().toString().padStart(2, '0');
+          var hh = ((h + 11) % 12) + 1;
+          return {
+            time:      hh + ':' + mm + (h >= 12 ? 'p' : 'a'),
+            firstName: t.who  || '',
+            desc:      t.item || '',
+            amount:    t.price || 0,
+          };
+        }),
+        tickerPool: [],
+      };
+      normalizedToday.tickerPool = normalizedToday.ticker;
+    }
+
+    // ── staff ──
+    // GAS: avgOrderValue, transactions, streakDays (no role, no upt, no streakType)
+    // Fixture: aov, txns, streak, streakType, role, upt
+    var normalizedStaff = (lb.staff || []).map(function(s) {
+      var streak = s.streak != null ? s.streak : (s.streakDays || 0);
+      return {
+        rank:            s.rank           || 0,
+        initials:        s.initials       || '',
+        name:            s.name           || '',
+        role:            s.role           || s.roleLabel || '',
+        sales:           s.sales          || 0,
+        txns:            s.txns  != null  ? s.txns  : (s.transactions || 0),
+        aov:             s.aov   != null  ? s.aov   : (s.avgOrderValue || 0),
+        upt:             s.upt   != null  ? s.upt   : (s.avgUPT        || 0),
+        streak:          streak,
+        streakType:      s.streakType     || (streak > 2 ? 'fire' : ''),
+        personalBestPct: s.personalBestPct || null,
+        note:            s.note           || null,
+      };
+    });
+
+    // ── badges ──
+    // GAS: label, winner, detail — fixture: title, holder, stat
+    var normalizedBadges = (bg.badges || []).map(function(b) {
+      return {
+        id:     b.id     || '',
+        icon:   b.icon   || '',
+        title:  b.label  || b.title  || '',
+        holder: b.winner || b.holder || '',
+        stat:   b.detail || b.stat   || '',
+        type:   b.type   || '',
+      };
+    });
+
+    return {
+      today:       normalizedToday,
+      leaderboard: { staff: normalizedStaff },
+      badges:      { badges: normalizedBadges },
+    };
+  }
+
   // ── Polling ────────────────────────────────────────────
   function startPolling(slug) {
     clearInterval(_pollTimer);
     _pollTimer = setInterval(function() {
-      GC.api.fetchKioskAll(slug).then(function(data) {
+      GC.api.fetchKioskAll(slug).then(function(rawData) {
+        var data = normalizeKioskData_(rawData);
         // Soft-update key numbers without full re-render
         var soldEl = document.getElementById('kioskGoalSold');
         if (soldEl) countUp(soldEl, data.today.today.revenue || 0, 800);
@@ -657,6 +779,7 @@ var kiosk = (function() {
     render:        render,
     renderLoading: renderLoading,
     init:          init,
+    normalize:     normalizeKioskData_,
     _hideRareDrop: _hideRareDrop,
   };
 
