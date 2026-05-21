@@ -467,8 +467,8 @@ var director = (function() {
       + renderHeader(data)
       + renderStatusStrip(stores)
       + renderKPIs(sum)
-      + renderFilterPills()
       + renderStoreTable(stores)
+      + renderFilterPills()
       + renderStaffControls()
       + renderStaffTable(staff)
       + '<div class="director-lower">'
