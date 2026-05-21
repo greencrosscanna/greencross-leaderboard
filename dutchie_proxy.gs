@@ -41,14 +41,18 @@ const DISCOUNT_FLAG_THRESHOLD  = 0.065;
 const DISCOUNT_WATCH_THRESHOLD = 0.080;
 
 // Canonical store list — slugs must match src/fixtures/ filenames
-// and the frontend GC.STORES registry in utils.js
+// and the frontend GC.STORES registry in utils.js.
+// dutchieName = the key used in DUTCHIE_STORE_KEYS_JSON ScriptProperty.
+// Confirmed from GX2 Dashboard STORE_KEYS (May 2026):
+//   Bend       → Century  (341 SW Century Dr, Bend OR)
+//   Hillsboro  → Baseline (Hillsboro OR)
 const STORES = [
-  { slug: 'baseline',   name: 'Baseline',   dutchieName: 'Baseline' },
-  { slug: 'center',     name: 'Center',     dutchieName: 'Center' },
-  { slug: 'century',    name: 'Century',    dutchieName: 'Century' },
-  { slug: 'commercial', name: 'Commercial', dutchieName: 'Commercial' },
+  { slug: 'baseline',   name: 'Baseline',   dutchieName: 'Hillsboro'   },
+  { slug: 'center',     name: 'Center',     dutchieName: 'Center'      },
+  { slug: 'century',    name: 'Century',    dutchieName: 'Bend'        },
+  { slug: 'commercial', name: 'Commercial', dutchieName: 'Commercial'  },
   { slug: 'portland',   name: 'Portland',   dutchieName: 'Portland Rd' },
-  { slug: 'river',      name: 'River',      dutchieName: 'River Rd' },
+  { slug: 'river',      name: 'River',      dutchieName: 'River'       },
 ];
 
 // ── Router ────────────────────────────────────────────────────
@@ -115,6 +119,16 @@ function doGet(e) {
     if (params.action === 'setplan') {
       requireRole_(auth, ['owner','director']);
       return jsonOut(setStorePlan(params), params.callback);
+    }
+
+    // ── Admin: user & key management (director only) ───────
+    if (params.action === 'setuser') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(adminSetUser(params), params.callback);
+    }
+    if (params.action === 'setstorekeys') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(adminSetStoreKeys(params), params.callback);
     }
 
     return jsonOut({ ok: false, error: 'Unknown action: ' + params.action }, params.callback);
@@ -1177,6 +1191,56 @@ function setStorePlan(params) {
   PropertiesService.getScriptProperties().setProperty(GC_STORE_PLANS_KEY, JSON.stringify(plans));
   Logger.log('Plan updated: ' + params.store + ' → ' + JSON.stringify(plans[params.store]));
   return { ok: true, store: params.store, plan: plans[params.store] };
+}
+
+// ============================================================
+// ADMIN ENDPOINTS (called by user_admin.gs Sheet)
+// ============================================================
+
+/**
+ * Create or update a user account.
+ * Params: username, password, role, storeSlug, displayName, initials
+ * Auth:   director token required
+ */
+function adminSetUser(params) {
+  if (!params.username) return { ok: false, error: 'username required' };
+  if (!params.password) return { ok: false, error: 'password required' };
+  if (!params.role)     return { ok: false, error: 'role required' };
+
+  const validRoles = ['director', 'store_manager', 'budtender', 'owner'];
+  if (!validRoles.includes(params.role)) {
+    return { ok: false, error: 'Invalid role: ' + params.role };
+  }
+
+  return setUserPassword_(
+    params.username,
+    params.password,
+    params.role,
+    params.storeSlug || null,
+    params.displayName || params.username,
+    params.initials || ''
+  );
+}
+
+/**
+ * Write DUTCHIE_STORE_KEYS_JSON to ScriptProperties.
+ * Params: keys — JSON string of { dutchieName: apiKey, ... }
+ * Auth:   director token required
+ */
+function adminSetStoreKeys(params) {
+  if (!params.keys) return { ok: false, error: 'keys param required' };
+  let parsed;
+  try {
+    parsed = JSON.parse(params.keys);
+  } catch(e) {
+    return { ok: false, error: 'keys must be valid JSON: ' + e.message };
+  }
+  if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, error: 'keys must be a JSON object' };
+  }
+  PropertiesService.getScriptProperties().setProperty('DUTCHIE_STORE_KEYS_JSON', JSON.stringify(parsed));
+  Logger.log('Store keys updated: ' + Object.keys(parsed).join(', '));
+  return { ok: true, stores: Object.keys(parsed) };
 }
 
 // ============================================================
