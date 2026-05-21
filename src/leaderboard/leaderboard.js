@@ -6,24 +6,23 @@
 
 window.GC = window.GC || {};
 
-GC.views.renderLeaderboard = function() {
+GC.views.renderLeaderboard = function(period) {
   var app = document.getElementById('app');
   if (!app) return;
+  period = period || 'mtd';
   app.innerHTML = '<div style="padding:60px;text-align:center;color:var(--text-dim)">Loading leaderboard…</div>';
 
-  Promise.all([
-    GC.api.fetchDirectorSummary('mtd'),
-    GC.api.fetchDirectorAlerts(),
-    GC.api.fetchLeaderboardStaff('mtd'),
-  ]).then(function(results) {
-    var data = { summary: results[0], alerts: results[2], staff: results[2] };
-    // results[2] is leaderboard staff JSON
-    app.innerHTML = lb.render(results[0], results[1], results[2]);
-    lb.init();
-  }).catch(function(err) {
-    console.error('[leaderboard] fetch failed:', err);
-    app.innerHTML = '<div style="padding:40px;color:var(--text-dim)">Failed to load leaderboard.</div>';
-  });
+  // Single round-trip reusing the directorall mega-batch
+  GC.api.fetchDirectorAll(period)
+    .then(function(data) {
+      var lbData = lb.normalizeStaff(data.staff);
+      app.innerHTML = lb.render(data.summary, data.alerts, lbData, period);
+      lb.init(period);
+    })
+    .catch(function(err) {
+      console.error('[leaderboard] fetch failed:', err);
+      app.innerHTML = '<div style="padding:40px;color:var(--text-dim)">Failed to load leaderboard.</div>';
+    });
 };
 
 // ── Private module ──────────────────────────────────────────
@@ -106,11 +105,16 @@ var lb = (function() {
   }
 
   // ── Render: Filters + controls ───────────────────────────
-  function renderFilters() {
+  function renderFilters(period) {
+    period = period || 'mtd';
     var stores = ['Baseline','Center','Century','Commercial','Portland','River'];
     var storePills = stores.map(function(s) {
       return '<button class="pill store-pill" data-slug="' + s.toLowerCase() + '">' + e(s) + '</button>';
     }).join('');
+
+    function opt(val, label) {
+      return '<option value="' + val + '"' + (period === val ? ' selected' : '') + '>' + label + '</option>';
+    }
 
     return '<div class="filter-row">'
       + '<button class="pill active" id="lbAllStores" data-slug="all">All Stores</button>'
@@ -125,11 +129,11 @@ var lb = (function() {
       + '<div class="controls">'
       + '  <input type="text" id="lbSearch" placeholder="Search staff or store…" />'
       + '  <select id="lbPeriod">'
-      + '    <option value="mtd">Period: Month-to-Date</option>'
-      + '    <option value="today">Period: Today</option>'
-      + '    <option value="wtd">Period: Week-to-Date</option>'
-      + '    <option value="qtd">Period: Quarter-to-Date</option>'
-      + '    <option value="ytd">Period: Year-to-Date</option>'
+      + opt('mtd',   'Period: Month-to-Date')
+      + opt('today', 'Period: Today')
+      + opt('wtd',   'Period: Week-to-Date')
+      + opt('qtd',   'Period: Quarter-to-Date')
+      + opt('ytd',   'Period: Year-to-Date')
       + '  </select>'
       + '  <select id="lbRole">'
       + '    <option value="">All Roles</option>'
@@ -282,12 +286,16 @@ var lb = (function() {
     if (_tagFilter) {
       result = result.filter(function(s) { return (s.tags || []).indexOf(_tagFilter) !== -1; });
     }
+    if (_roleFilter) {
+      var rq = _roleFilter.toLowerCase();
+      result = result.filter(function(s) { return (s.role || '').toLowerCase().indexOf(rq) !== -1; });
+    }
     if (_search) {
       var q = _search.toLowerCase();
       result = result.filter(function(s) {
         return s.name.toLowerCase().indexOf(q) !== -1
-          || s.storeName.toLowerCase().indexOf(q) !== -1
-          || s.role.toLowerCase().indexOf(q) !== -1;
+          || (s.storeName || '').toLowerCase().indexOf(q) !== -1
+          || (s.role || '').toLowerCase().indexOf(q) !== -1;
       });
     }
 
@@ -303,19 +311,54 @@ var lb = (function() {
     return result;
   }
 
+  // ── Normalize: directorall.staff → leaderboard shape ────────
+  // directorall returns staff with totalActive / hoursWorked / roleLabel.
+  // The table expects totalStaff / hours / role.
+  function normalizeStaff(staffData) {
+    if (!staffData) return { totalStaff: 0, showing: 0, staff: [] };
+    var staff = (staffData.staff || []).map(function(s) {
+      return {
+        rank:          s.rank          || 0,
+        initials:      s.initials      || '',
+        name:          s.name          || '',
+        role:          s.roleLabel     || s.role || '',
+        hours:         s.hoursWorked   || s.hours || 0,
+        storeSlug:     s.storeSlug     || '',
+        storeName:     s.storeName     || '',
+        sales:         s.sales         || 0,
+        transactions:  s.transactions  || 0,
+        avgOrderValue: s.avgOrderValue || 0,
+        avgUPT:        s.avgUPT        || 0,
+        discountRate:  s.discountRate  || 0,
+        trendPct:      s.trendPct      || 0,
+        trend30d:      s.trend30d      || [],
+        tags:          s.tags          || [],
+      };
+    });
+    return {
+      totalStaff: staffData.totalActive || staffData.totalStaff || staff.length,
+      showing:    staff.length,
+      staff:      staff,
+    };
+  }
+
   // ── Full render ──────────────────────────────────────────
-  function render(summary, alerts, lbData) {
+  function render(summary, alerts, lbData, period) {
     _summary = summary;
     _alerts  = alerts;
     _lbData  = lbData;
+    _period  = period || 'mtd';
+
+    var periodLabels = { today: 'Today', wtd: 'WTD', mtd: 'MTD', qtd: 'QTD', ytd: 'YTD' };
+    var periodLabel  = periodLabels[_period] || _period.toUpperCase();
 
     return '<div class="lb-page">'
       + renderNav()
       + renderKPIs(summary)
-      + renderFilters()
+      + renderFilters(_period)
       + '<div id="lbTableWrap">' + renderTable(lbData) + '</div>'
       + renderWatchPanel(alerts)
-      + '<div class="lb-footer">Mock data · All Stores · MTD · '
+      + '<div class="lb-footer">Live data · All Stores · ' + e(periodLabel) + ' · '
       + '<span id="lbFooterRefresh">Last refresh ' + GC.fmtTime(new Date()) + '</span>'
       + '</div>'
       + '</div>';
@@ -327,20 +370,48 @@ var lb = (function() {
     if (wrap && _lbData) wrap.innerHTML = renderTable(_lbData);
   }
 
+  var _roleFilter = '';
+
   // ── init ─────────────────────────────────────────────────
-  function init() {
-    // Refresh button
+  function init(period) {
+    _period = period || 'mtd';
+
+    // Refresh button — full reload via directorall
     var refreshBtn = document.getElementById('lbRefreshBtn');
     if (refreshBtn) {
       refreshBtn.addEventListener('click', function() {
+        refreshBtn.disabled = true;
         refreshBtn.textContent = '↻ Refreshing…';
-        GC.api.fetchLeaderboardStaff(_period).then(function(data) {
-          _lbData = data;
+        GC.api.fetchDirectorAll(_period).then(function(data) {
+          _lbData   = normalizeStaff(data.staff);
+          _summary  = data.summary;
+          _alerts   = data.alerts;
           refreshTable();
+          refreshBtn.disabled = false;
           refreshBtn.textContent = '↻ Refresh';
           var el = document.getElementById('lbFooterRefresh');
           if (el) el.textContent = 'Last refresh ' + GC.fmtTime(new Date());
+        }).catch(function() {
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = '↻ Refresh';
         });
+      });
+    }
+
+    // Period change — full page reload with new period
+    var periodEl = document.getElementById('lbPeriod');
+    if (periodEl) {
+      periodEl.addEventListener('change', function() {
+        GC.views.renderLeaderboard(periodEl.value);
+      });
+    }
+
+    // Role filter
+    var roleEl = document.getElementById('lbRole');
+    if (roleEl) {
+      roleEl.addEventListener('change', function() {
+        _roleFilter = roleEl.value;
+        refreshTable();
       });
     }
 
@@ -393,6 +464,6 @@ var lb = (function() {
     }
   }
 
-  return { render: render, init: init };
+  return { render: render, init: init, normalizeStaff: normalizeStaff };
 
 })();

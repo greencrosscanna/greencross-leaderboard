@@ -608,6 +608,15 @@ var director = (function() {
     var lr = document.getElementById('lastRefreshed');
     if (lr) lr.textContent = 'Last refresh ' + GC.fmtTime(new Date());
 
+    // Period select — change triggers full data reload
+    var periodSelect = document.getElementById('periodSelect');
+    if (periodSelect) {
+      periodSelect.addEventListener('change', function() {
+        _period = periodSelect.value;
+        doRefresh(false);
+      });
+    }
+
     // Refresh button
     var btnRefresh = document.getElementById('btnRefresh');
     if (btnRefresh) btnRefresh.addEventListener('click', function() { doRefresh(true); });
