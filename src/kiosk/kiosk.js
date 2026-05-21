@@ -38,6 +38,7 @@ var kiosk = (function() {
   // ── State ──────────────────────────────────────────────
   var _slug         = null;
   var _storeName    = '';
+  var _offShift     = [];    // roster employees not yet on shift today
   var _pollTimer    = null;
   var _lbTimer      = null;
   var _clockTimer   = null;
@@ -232,10 +233,12 @@ var kiosk = (function() {
   }
 
   // ── Render: Staff leaderboard grid ────────────────────
-  function renderStaffGrid(staff, storeName) {
+  // offShift: array of { initials, name, role } for roster employees
+  //           not yet active today — rendered as dimmed ghost cards
+  function renderStaffGrid(staff, storeName, offShift) {
     var maxSales = staff.length > 0 ? (staff[0].sales || 1) : 1;
 
-    var cards = staff.map(function(s) {
+    var activeCards = staff.map(function(s) {
       var isLeading = s.rank === 1;
       var barPct    = maxSales > 0 ? Math.round((s.sales / maxSales) * 100) : 0;
       var aovStr    = s.aov  ? '$' + s.aov.toFixed(2) : '—';
@@ -252,7 +255,6 @@ var kiosk = (function() {
         extraHtml = '<div class="emp-extra muted">' + e(s.streak) + '-day streak</div>';
       }
 
-      // Count-up target for employee amount
       var amtId = 'kioskEmpAmt' + s.rank;
 
       return '<div class="emp-card' + (isLeading ? ' leading' : '') + '">'
@@ -271,13 +273,25 @@ var kiosk = (function() {
         + '</div>';
     }).join('');
 
+    // Off-shift ghost cards — dimmed, no sales data
+    var ghostCards = (offShift || []).map(function(p) {
+      return '<div class="emp-card off-shift">'
+        + '<div class="emp-head">'
+        + '  <div class="emp-av">' + e(p.initials) + '</div>'
+        + '  <div><div class="emp-n">' + e(p.name.split(' ')[0]) + '</div>'
+        + '  <div class="emp-r">' + e(p.role || '') + '</div></div>'
+        + '</div>'
+        + '<div class="emp-amt off-shift-label">Off shift</div>'
+        + '</div>';
+    }).join('');
+
     return '<section class="lb-section">'
       + '<div class="lb-head">'
       + '  <h2>Today · ' + e(storeName || '') + ' Team</h2>'
       + '  <span class="lb-sep">/</span>'
       + '  <span class="lb-meta">Live · refreshes every 30 seconds</span>'
       + '</div>'
-      + '<div class="lb-grid">' + cards + '</div>'
+      + '<div class="lb-grid">' + activeCards + ghostCards + '</div>'
       + '</section>';
   }
 
@@ -376,7 +390,7 @@ var kiosk = (function() {
     var storeData    = data.today;
     var store        = storeData.store;
     var today        = storeData.today;
-    var onShift      = storeData.onShift;
+    var onShift      = storeData.onShift || [];
     var hourly       = storeData.hourly;
     var peakHour     = storeData.peakHour;
     var peakRevenue  = storeData.peakRevenue;
@@ -384,19 +398,20 @@ var kiosk = (function() {
     var staff        = data.leaderboard.staff;
     var badges       = data.badges.badges;
     var leader       = staff[0] || {};
+    // Employees in roster but not yet active today → ghost cards
+    var offShift     = onShift.filter(function(p) { return p.status !== 'on'; });
 
     return [
       '<canvas id="kioskConfetti"></canvas>',
       '<div id="kioskGoalBanner">🎯 DAILY GOAL HIT! · ' + e(store.name.toUpperCase()) + ' TEAM!</div>',
       '<div class="kiosk-wrap">',
         renderHeader(store),
-        renderShiftStrip(onShift),
         '<div class="hero-grid">',
           renderLeaderCard(leader),
           renderGoalCard(today),
           renderPaceCard(today),
         '</div>',
-        renderStaffGrid(staff, store.name),
+        renderStaffGrid(staff, store.name, offShift),
         '<div class="lower-grid">',
           renderBadges(badges),
           renderHeatmap(hourly, peakHour, peakRevenue),
@@ -414,6 +429,9 @@ var kiosk = (function() {
   function init(data, slug) {
     _slug      = slug;
     _storeName = (data.today.store && data.today.store.name) || slug || '';
+
+    // Roster employees not active yet today (used in staff grid and 5-min refresh)
+    _offShift = (data.today.onShift || []).filter(function(p) { return p.status !== 'on'; });
 
     // Seed ticker cursor from the most recent transaction timestamp
     _lastTxnTs = data.today.latestTxnTs || '';
@@ -760,7 +778,7 @@ var kiosk = (function() {
           var staff   = data.leaderboard.staff;
           var section = document.querySelector('.lb-section');
           if (section) {
-            section.outerHTML = renderStaffGrid(staff, _storeName);
+            section.outerHTML = renderStaffGrid(staff, _storeName, _offShift);
             animateBars();
             // Animate employee amounts
             staff.forEach(function(s) {

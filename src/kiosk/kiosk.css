@@ -364,6 +364,26 @@ body.kiosk-bg {
 .emp-extra.pb        { color: var(--blue); }
 .emp-extra.muted     { color: var(--text-mute); font-weight: 500; }
 
+/* ── Off-shift ghost cards ── */
+.emp-card.off-shift {
+  opacity: 0.32;
+  border-style: dashed;
+  pointer-events: none;
+}
+.emp-card.off-shift .emp-av {
+  background: var(--surface-2);
+  color: var(--text-mute);
+  border-color: var(--border);
+}
+.off-shift-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-top: 12px;
+}
+
 /* ── Lower grid ── */
 .lower-grid {
   display: grid;
