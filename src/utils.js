@@ -207,6 +207,7 @@ GC.periodLabel = function(period) {
     today: 'Today',
     wtd:   'Week-to-Date',
     mtd:   'Month-to-Date',
+    pp:    'Pay Period (2-wk)',
     qtd:   'Quarter-to-Date',
     ytd:   'Year-to-Date',
   };

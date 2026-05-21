@@ -253,7 +253,7 @@ var director = (function() {
       + '<div class="controls">'
       + '<input type="text" id="staffSearch" placeholder="Search staff, store, or SKU…" value="' + e(_staffSearch) + '">'
       + '<select id="periodSelect">'
-      + ['mtd','today','wtd','qtd','ytd'].map(function(p) {
+      + ['pp','mtd','today','wtd','qtd','ytd'].map(function(p) {
           return '<option value="' + p + '"' + (p === _period ? ' selected' : '') + '>Period: ' + GC.periodLabel(p) + '</option>';
         }).join('')
       + '</select>'

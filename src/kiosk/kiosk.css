@@ -27,6 +27,19 @@ body.kiosk-bg {
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border);
 }
+.kiosk-back-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.kiosk-back-btn:hover { background: var(--surface-2); color: var(--text); }
+
 .kiosk-logo {
   font-weight: 900;
   font-size: 22px;

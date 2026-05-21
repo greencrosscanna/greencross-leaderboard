@@ -129,6 +129,7 @@ var lb = (function() {
       + '<div class="controls">'
       + '  <input type="text" id="lbSearch" placeholder="Search staff or store…" />'
       + '  <select id="lbPeriod">'
+      + opt('pp',    'Period: Pay Period (2-wk)')
       + opt('mtd',   'Period: Month-to-Date')
       + opt('today', 'Period: Today')
       + opt('wtd',   'Period: Week-to-Date')

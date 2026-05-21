@@ -68,7 +68,13 @@ var kiosk = (function() {
 
   // ── Render: Header ─────────────────────────────────────
   function renderHeader(store) {
+    var sess = GC.auth.load() || {};
+    var isDirector = sess.role === 'director' || sess.role === 'owner';
+    var backBtn = isDirector
+      ? '<button class="kiosk-back-btn" onclick="GC.router.navigate(\'#/director\')">← Director</button>'
+      : '';
     return '<header class="kiosk-header">'
+      + backBtn
       + '<div class="kiosk-logo"><span class="gc-green">GREEN</span>CROSS</div>'
       + '<span class="store-live-badge">' + e(store.name) + '</span>'
       + '<div class="kiosk-clock">'
