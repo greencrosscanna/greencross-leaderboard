@@ -240,13 +240,13 @@ function loginUser(params) {
 // ── ONE-TIME BOOTSTRAP — run from editor, then delete ─────────
 // Select bootstrapAllUsers in the function dropdown and click Run.
 function bootstrapAllUsers() {
-  setUserPassword_('sky',    'gcadmin', 'director',      null,         'Sky Pinnick',    'SP');
-  setUserPassword_('sofia',  'gc123',   'store_manager', 'baseline',   'Sofia Alvarez',  'SA');
-  setUserPassword_('maya',   'gc123',   'store_manager', 'river',      'Maya Chen',      'MC');
-  setUserPassword_('devon',  'gc123',   'store_manager', 'portland',   'Devon Reyes',    'DR');
-  setUserPassword_('priya',  'gc123',   'store_manager', 'center',     'Priya Singh',    'PS');
-  setUserPassword_('marcus', 'gc123',   'store_manager', 'commercial', 'Marcus Johnson', 'MJ');
-  setUserPassword_('tyler',  'gc123',   'store_manager', 'century',    'Tyler Brooks',   'TB');
+  setUserPassword_('sky',     'gcadmin', 'director',      null,         'Sky Pinnick',   'SP');
+  setUserPassword_('dean',    'gc123',   'store_manager', 'baseline',   'Dean Deloof',   'DD');
+  setUserPassword_('tj',      'gc123',   'store_manager', 'river',      'TJ Peterson',   'TP');
+  setUserPassword_('scott',   'gc123',   'store_manager', 'portland',   'Scott Penner',  'SP');
+  setUserPassword_('tyson',   'gc123',   'store_manager', 'center',     'Tyson Farris',  'TF');
+  setUserPassword_('mariana', 'gc123',   'store_manager', 'commercial', 'Mariana Moxie', 'MM');
+  setUserPassword_('chris',   'gc123',   'store_manager', 'century',    'Chris Carney',  'CC');
   Logger.log('All users bootstrapped.');
 }
 

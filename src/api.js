@@ -90,13 +90,13 @@ GC.api = (function() {
   //  marcus / gc123      → store_manager, commercial
   //  tyler / gc123       → store_manager, century
   var FIXTURE_USERS = {
-    'sky':    { role: 'director',      storeSlug: null,         storeName: null,         initials: 'SP', displayName: 'Sky Pinnick' },
-    'sofia':  { role: 'store_manager', storeSlug: 'baseline',   storeName: 'Baseline',   initials: 'SA', displayName: 'Sofia Alvarez' },
-    'maya':   { role: 'store_manager', storeSlug: 'river',      storeName: 'River',      initials: 'MC', displayName: 'Maya Chen' },
-    'devon':  { role: 'store_manager', storeSlug: 'portland',   storeName: 'Portland',   initials: 'DR', displayName: 'Devon Reyes' },
-    'priya':  { role: 'store_manager', storeSlug: 'center',     storeName: 'Center',     initials: 'PS', displayName: 'Priya Singh' },
-    'marcus': { role: 'store_manager', storeSlug: 'commercial', storeName: 'Commercial', initials: 'MJ', displayName: 'Marcus Johnson' },
-    'tyler':  { role: 'store_manager', storeSlug: 'century',    storeName: 'Century',    initials: 'TB', displayName: 'Tyler Brooks' },
+    'sky':     { role: 'director',      storeSlug: null,         storeName: null,         initials: 'SP', displayName: 'Sky Pinnick' },
+    'dean':    { role: 'store_manager', storeSlug: 'baseline',   storeName: 'Baseline',   initials: 'DD', displayName: 'Dean Deloof' },
+    'tj':      { role: 'store_manager', storeSlug: 'river',      storeName: 'River',      initials: 'TP', displayName: 'TJ Peterson' },
+    'scott':   { role: 'store_manager', storeSlug: 'portland',   storeName: 'Portland',   initials: 'SP', displayName: 'Scott Penner' },
+    'tyson':   { role: 'store_manager', storeSlug: 'center',     storeName: 'Center',     initials: 'TF', displayName: 'Tyson Farris' },
+    'mariana': { role: 'store_manager', storeSlug: 'commercial', storeName: 'Commercial', initials: 'MM', displayName: 'Mariana Moxie' },
+    'chris':   { role: 'store_manager', storeSlug: 'century',    storeName: 'Century',    initials: 'CC', displayName: 'Chris Carney' },
   };
   var FIXTURE_PASSWORD = 'gc123';
   var DIRECTOR_PASSWORD = 'gcadmin';
