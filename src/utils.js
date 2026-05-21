@@ -173,32 +173,49 @@ GC.trendStroke = function(cls) {
   return '#8a958f';
 };
 
+// ── Timezone: always display/compute in Pacific Time ─────────────────────────
+// Uses IANA 'America/Los_Angeles' so PDT/PST transitions are handled
+// automatically by the browser, regardless of where the viewer is located.
+
+GC.PT_TZ = 'America/Los_Angeles';
+
+/** Returns PT 'YYYY-MM-DD' for a given Date (or today).
+ *  en-CA locale produces YYYY-MM-DD format natively. */
+GC._ptDateStr = function(d) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: GC.PT_TZ }).format(d || new Date());
+};
+
 // ── Date / Period Helpers ─────────────────────────────────
 
-/** Returns 'YYYY-MM-DD' for today */
+/** Returns 'YYYY-MM-DD' for today in PT */
 GC.todayStr = function() {
-  return new Date().toISOString().slice(0, 10);
+  return GC._ptDateStr(new Date());
 };
 
-/** Returns 'YYYY-MM-DD' for n days ago */
+/** Returns 'YYYY-MM-DD' for n days ago in PT */
 GC.daysAgoStr = function(n) {
-  const d = new Date(Date.now() - n * 86400_000);
-  return d.toISOString().slice(0, 10);
+  return GC._ptDateStr(new Date(Date.now() - n * 86400_000));
 };
 
-/** Returns { from: 'YYYY-MM-01', to: 'YYYY-MM-DD today' } for MTD */
+/** Returns { from: 'YYYY-MM-01', to: PT today } for MTD */
 GC.mtdRange = function() {
-  const t = new Date();
-  const from = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2,'0') + '-01';
-  return { from: from, to: GC.todayStr() };
+  const today = GC.todayStr();
+  return { from: today.slice(0, 7) + '-01', to: today };
 };
 
-/** Returns { from, to } for current week (Mon–today) */
+/** Returns { from: Mon, to: today } for current week in PT */
 GC.wtdRange = function() {
-  const t = new Date();
-  const day = t.getDay() || 7;   // 1=Mon … 7=Sun
-  const mon = new Date(t.getTime() - (day - 1) * 86400_000);
-  return { from: mon.toISOString().slice(0,10), to: GC.todayStr() };
+  const d     = new Date();
+  const today = GC.todayStr();
+  const parts = {};
+  new Intl.DateTimeFormat('en-US', {
+    timeZone: GC.PT_TZ, weekday: 'short',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(d).forEach(function(p) { parts[p.type] = p.value; });
+  var dowMap   = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  var daysToMon = (dowMap[parts.weekday] || 0) === 0 ? 6 : (dowMap[parts.weekday] - 1);
+  var mon = new Date(d.getTime() - daysToMon * 86400_000);
+  return { from: GC._ptDateStr(mon), to: today };
 };
 
 /** Period label for display */
@@ -216,21 +233,20 @@ GC.periodLabel = function(period) {
 
 // ── Clock ─────────────────────────────────────────────────
 
-/** Format a Date → "6:47 PM" */
+/** Format a Date → "6:47 PM" in PT (DST-aware, viewer-timezone-independent) */
 GC.fmtTime = function(d) {
-  d = d || new Date();
-  const h = d.getHours();
-  const m = d.getMinutes().toString().padStart(2, '0');
-  const hh = ((h + 11) % 12) + 1;
-  return hh + ':' + m + ' ' + (h >= 12 ? 'PM' : 'AM');
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: GC.PT_TZ, hour: 'numeric', minute: '2-digit', hour12: true
+  }).format(d || new Date());
 };
 
-/** Format a Date → "Fri · May 15" */
+/** Format a Date → "Fri · May 15" in PT */
 GC.fmtDateShort = function(d) {
-  d = d || new Date();
-  const days  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return days[d.getDay()] + ' · ' + months[d.getMonth()] + ' ' + d.getDate();
+  const parts = {};
+  new Intl.DateTimeFormat('en-US', {
+    timeZone: GC.PT_TZ, weekday: 'short', month: 'short', day: 'numeric'
+  }).formatToParts(d || new Date()).forEach(function(p) { parts[p.type] = p.value; });
+  return parts.weekday + ' · ' + parts.month + ' ' + parts.day;
 };
 
 /** Format a Date → "May 1 – 15, 2026" for period range */

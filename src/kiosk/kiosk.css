@@ -235,6 +235,17 @@ body.kiosk-bg {
   align-items: center;
   text-align: center;
 }
+/* After 10 pm: store is closed — dim the card slightly */
+.goal-card.store-closed {
+  opacity: 0.72;
+}
+.store-closed-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 .gauge-wrap {
   position: relative;
   width: 220px;
@@ -612,4 +623,47 @@ body.kiosk-bg {
   text-align: center;
   border-top: 1px solid var(--border);
   padding-top: 14px;
+}
+
+/* ── Closing Push Banner ── */
+.closing-push {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: linear-gradient(135deg, rgba(26,44,33,0.9), rgba(45,26,10,0.7));
+  border: 1.5px solid #f97316;
+  border-radius: 12px;
+  padding: 16px 24px;
+  margin: 0 0 20px;
+  animation: cp-pulse 2.8s ease-in-out infinite;
+}
+
+@keyframes cp-pulse {
+  0%,  100% { border-color: #f97316; box-shadow: 0 0 0 0 rgba(249,115,22,0); }
+  50%       { border-color: #fb923c; box-shadow: 0 0 20px 4px rgba(249,115,22,0.18); }
+}
+
+.cp-icon {
+  font-size: 30px;
+  flex-shrink: 0;
+}
+
+.cp-headline {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  color: #fb923c;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.cp-detail {
+  font-size: 15px;
+  color: var(--text-dim);
+}
+
+.cp-need {
+  color: #4ade80;
+  font-weight: 700;
+  font-size: 16px;
 }

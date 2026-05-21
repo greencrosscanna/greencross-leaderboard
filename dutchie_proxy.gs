@@ -32,14 +32,58 @@ const PP_DAYS                = 14;   // pay-period length in days
 const TARGET_LOOKBACK_MONTHS = 6;    // rolling lookback for target calculation
 const DUTCHIE_BASE          = 'https://api.pos.dutchie.com';
 
-// Portland, OR: UTC-7 (PDT Apr–Oct) / UTC-8 (PST Nov–Mar)
-// Update STORE_TZ_OFFSET_MS in November.
-const STORE_TZ_OFFSET_MS = 7 * 60 * 60 * 1000; // PDT
+// IANA timezone — handles PDT/PST DST transitions automatically.
+const STORE_TZ = 'America/Los_Angeles';
 
-// Store open/close hours (local time, 24-hour)
-const STORE_OPEN_HOUR  = 9;
-const STORE_CLOSE_HOUR = 22; // 10 pm
-const STORE_HOURS      = STORE_CLOSE_HOUR - STORE_OPEN_HOUR; // 13
+// Store open/close hours (PT, 24-hour)
+const STORE_OPEN_HOUR  = 8;   // 8 am
+const STORE_CLOSE_HOUR = 22;  // 10 pm
+const STORE_HOURS      = STORE_CLOSE_HOUR - STORE_OPEN_HOUR; // 14
+
+// ── PT timezone helpers ──────────────────────────────────────────────────────
+
+/**
+ * Get current date/time parts in PT (DST-aware via Utilities.formatDate).
+ * Returns { year, month (0-indexed), day, hour, minute, dow (0=Sun), dateStr }
+ */
+function ptNow_() {
+  const now = new Date();
+  const str = Utilities.formatDate(now, STORE_TZ, 'yyyy-MM-dd HH:mm:ss');
+  // u = ISO weekday: 1=Mon … 7=Sun.  % 7 makes Sun=0, Mon=1 … Sat=6.
+  const dow = parseInt(Utilities.formatDate(now, STORE_TZ, 'u'), 10) % 7;
+  return {
+    year:    parseInt(str.slice(0, 4), 10),
+    month:   parseInt(str.slice(5, 7), 10) - 1,   // 0-indexed
+    day:     parseInt(str.slice(8, 10), 10),
+    hour:    parseInt(str.slice(11, 13), 10),
+    minute:  parseInt(str.slice(14, 16), 10),
+    dow,
+    dateStr: str.slice(0, 10),   // 'YYYY-MM-DD'
+  };
+}
+
+/**
+ * Convert a PT date string ('YYYY-MM-DD') to UTC milliseconds for midnight PT
+ * on that date. Correct for both PDT (UTC-7) and PST (UTC-8).
+ */
+function ptDateToUtcMs_(ptDateStr) {
+  const [y, mo, d] = ptDateStr.split('-').map(Number);
+  // Probe at noon UTC — avoids any ambiguity around midnight or DST transitions.
+  const noon  = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0));
+  const ptH   = parseInt(Utilities.formatDate(noon, STORE_TZ, 'H'), 10);
+  const offMs = (12 - ptH) * 3600000;   // PDT → 7h, PST → 8h
+  // PT midnight = Date.UTC(y,mo-1,d,0,0,0) + offset
+  return Date.UTC(y, mo - 1, d) + offMs;
+}
+
+/**
+ * Get PT hour + minute right now (DST-aware).
+ * Returns { hour, minute }
+ */
+function ptHourNow_() {
+  const str = Utilities.formatDate(new Date(), STORE_TZ, 'HH:mm');
+  return { hour: parseInt(str.slice(0, 2), 10), minute: parseInt(str.slice(3, 5), 10) };
+}
 
 // Discount flag threshold
 const DISCOUNT_FLAG_THRESHOLD  = 0.065;
@@ -94,20 +138,24 @@ function doGet(e) {
       // For mtd (default), byStore also serves as byStoreMTD — no 4th fetch needed.
       const mtdR   = period === 'mtd' ? null : getDateRange_('mtd');
 
-      // ONE mega-batch: 3 (or 4) ranges × 6 stores = 18–24 parallel HTTP requests.
+      // ONE mega-batch: 4 (or 5) ranges × 6 stores = 24–30 parallel HTTP requests.
       // This replaces 6 sequential fetchAll calls and cuts execution time ~3–6×.
+      // Ranges: [0] current period, [1] prior period, [2] today, [3?] mtd, [last] 30-day window
+      const range30d = getDateRange_('30d');
       const rangeList = [range, prior, todayR];
       if (mtdR) rangeList.push(mtdR);
+      rangeList.push(range30d); // always last
 
       const fetched      = fetchAllStoresTransactionsMulti_(rangeList);
       const byStore      = fetched[0];  // current period
       const prevByStore  = fetched[1];  // prior period (for summary deltas)
       const byStoreToday = fetched[2];  // today (for store pace)
       const byStoreMTD   = mtdR ? fetched[3] : byStore; // mtd (for alerts)
+      const byStore30d   = fetched[rangeList.length - 1]; // 30-day window (for trends)
 
       const summary = getDirectorSummary(params, { byStore, prevByStore });
-      const stores  = getDirectorStores(params,  { byStore, byStoreToday });
-      const staff   = getDirectorStaff(params,   { byStore });
+      const stores  = getDirectorStores(params,  { byStore, byStoreToday, byStore30d });
+      const staff   = getDirectorStaff(params,   { byStore, byStore30d });
       const alerts  = getDirectorAlerts(         { byStore: byStoreMTD });
       return jsonOut({ summary, stores, staff, alerts }, params.callback);
     }
@@ -370,16 +418,11 @@ function setUserPassword_(username, password, role, storeSlug, displayName, init
  * @return {Object} { fromUTC, toUTC, fromLocal, toLocal, daysElapsed, totalDays, period }
  */
 function getDateRange_(period) {
-  const nowUTC     = new Date();
-  // Convert "now" to local calendar time using fixed UTC offset
-  const nowLocalMs = nowUTC.getTime() - STORE_TZ_OFFSET_MS;
-  const nowLocal   = new Date(nowLocalMs);
-  const y = nowLocal.getUTCFullYear();
-  const m = nowLocal.getUTCMonth();   // 0-indexed
-  const d = nowLocal.getUTCDate();
+  const pt = ptNow_();
+  const { year: y, month: m, day: d, dateStr: todayStr } = pt;
 
-  // Start/end of today in local time, expressed as UTC ms
-  const todayStartMs = Date.UTC(y, m, d);
+  // PT midnight today → UTC ms (DST-correct)
+  const todayStartMs = ptDateToUtcMs_(todayStr);
   const todayEndMs   = todayStartMs + 24 * 60 * 60 * 1000 - 1;
 
   let fromMs, toMs;
@@ -390,50 +433,56 @@ function getDateRange_(period) {
       toMs   = todayEndMs;
       break;
     case 'wtd': {
-      const dow = nowLocal.getUTCDay(); // 0 = Sunday
-      fromMs = todayStartMs - dow * 24 * 60 * 60 * 1000;
+      // Go back to Monday (PT)
+      const daysToMon = pt.dow === 0 ? 6 : pt.dow - 1;
+      fromMs = todayStartMs - daysToMon * 24 * 60 * 60 * 1000;
       toMs   = todayEndMs;
       break;
     }
     case 'qtd': {
       const qStartMonth = Math.floor(m / 3) * 3;
-      fromMs = Date.UTC(y, qStartMonth, 1);
+      const qStr = y + '-' + String(qStartMonth + 1).padStart(2, '0') + '-01';
+      fromMs = ptDateToUtcMs_(qStr);
       toMs   = todayEndMs;
       break;
     }
-    case 'ytd':
-      fromMs = Date.UTC(y, 0, 1);
+    case 'ytd': {
+      fromMs = ptDateToUtcMs_(y + '-01-01');
       toMs   = todayEndMs;
       break;
+    }
     case 'pp': {
       // Bi-weekly pay period. Anchor date stored in ScriptProperties as "YYYY-MM-DD".
       // Default: 2026-05-11 (the pay period start confirmed in the incentive sheet).
-      const anchorStr = PropertiesService.getScriptProperties().getProperty(GC_PAY_PERIOD_ANCHOR) || '2026-05-11';
-      const [ay, am, ad] = anchorStr.split('-').map(Number);
-      const anchorLocalMs = Date.UTC(ay, am - 1, ad); // anchor = local midnight
-      const PP_MS = 14 * 24 * 60 * 60 * 1000;
-      const daysSince = (todayStartMs - anchorLocalMs) / (24 * 60 * 60 * 1000);
-      const periodsBack = daysSince >= 0 ? Math.floor(daysSince / 14) : Math.ceil(daysSince / 14) - 1;
-      fromMs = anchorLocalMs + periodsBack * PP_MS;
+      const anchorStr    = PropertiesService.getScriptProperties().getProperty(GC_PAY_PERIOD_ANCHOR) || '2026-05-11';
+      const anchorMs     = ptDateToUtcMs_(anchorStr);
+      const PP_MS        = 14 * 24 * 60 * 60 * 1000;
+      const daysSince    = (todayStartMs - anchorMs) / (24 * 60 * 60 * 1000);
+      const periodsBack  = daysSince >= 0 ? Math.floor(daysSince / 14) : Math.ceil(daysSince / 14) - 1;
+      fromMs = anchorMs + periodsBack * PP_MS;
       toMs   = fromMs + PP_MS - 1;
       break;
     }
-    case 'mtd':
-    default:
-      fromMs = Date.UTC(y, m, 1);
+    case '30d': {
+      fromMs = todayStartMs - 29 * 24 * 60 * 60 * 1000; // last 30 days incl. today
       toMs   = todayEndMs;
       break;
+    }
+    case 'mtd':
+    default: {
+      const mtdStr = y + '-' + String(m + 1).padStart(2, '0') + '-01';
+      fromMs = ptDateToUtcMs_(mtdStr);
+      toMs   = todayEndMs;
+      break;
+    }
   }
 
-  // Convert local → UTC for API (add offset back)
-  const fromUTC = new Date(fromMs + STORE_TZ_OFFSET_MS);
-  const toUTC   = new Date(toMs   + STORE_TZ_OFFSET_MS);
+  // fromMs / toMs are already UTC ms — no further offset needed
+  const fromUTC = new Date(fromMs);
+  const toUTC   = new Date(toMs);
 
   function fmtDate(ms) {
-    const dt = new Date(ms);
-    return dt.getUTCFullYear() + '-'
-      + String(dt.getUTCMonth() + 1).padStart(2, '0') + '-'
-      + String(dt.getUTCDate()).padStart(2, '0');
+    return Utilities.formatDate(new Date(ms), STORE_TZ, 'yyyy-MM-dd');
   }
 
   const DAY_MS      = 24 * 60 * 60 * 1000;
@@ -546,20 +595,23 @@ function getPeriodGoal_(slug, period, range) {
  */
 function refreshTargetsAll() {
   const props = PropertiesService.getScriptProperties();
-  const now   = new Date();
+  // Use PT date so that a run at e.g. 11 pm PT (= midnight UTC) uses the correct PT month.
+  const pt = ptNow_();
+  const y  = pt.year;
+  const m  = pt.month;   // 0-indexed
 
   // Build monthly ranges: current month + prior (TARGET_LOOKBACK_MONTHS-1) months
   const ranges = [];
   for (let i = TARGET_LOOKBACK_MONTHS - 1; i >= 0; i--) {
-    // new Date(year, month-offset, 1) on GAS UTC servers gives correct UTC date
-    const first = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const last  = new Date(now.getFullYear(), now.getMonth() - i + 1, 0); // day 0 = last of month
+    const rYear  = m - i < 0 ? y - 1 : y;
+    const rMonth = ((m - i) % 12 + 12) % 12;   // 0-indexed, wraps correctly
+    const firstStr = rYear + '-' + String(rMonth + 1).padStart(2, '0') + '-01';
+    // last day of the month: day 0 of next month
+    const lastDate = new Date(Date.UTC(rYear, rMonth + 1, 0));
+    const lastStr  = Utilities.formatDate(lastDate, STORE_TZ, 'yyyy-MM-dd');
     ranges.push({
-      fromUTC: first.toISOString().slice(0,10) + 'T00:00:00.000Z',
-      toUTC:   (i === 0
-        ? now.toISOString().slice(0,10)        // current month: up to today
-        : last.toISOString().slice(0,10)       // prior months: full month
-      ) + 'T23:59:59.999Z',
+      fromUTC: new Date(ptDateToUtcMs_(firstStr)).toISOString(),
+      toUTC:   new Date(ptDateToUtcMs_(i === 0 ? pt.dateStr : lastStr) + 24 * 60 * 60 * 1000 - 1).toISOString(),
     });
   }
 
@@ -575,9 +627,11 @@ function refreshTargetsAll() {
     });
   });
 
-  // Lookback: first day of oldest month → today (actual calendar days)
-  const firstDay    = new Date(now.getFullYear(), now.getMonth() - (TARGET_LOOKBACK_MONTHS - 1), 1);
-  const lookbackMs  = now.getTime() - firstDay.getTime();
+  // Lookback: PT first day of oldest month → PT today (actual calendar days)
+  const oldestYear  = m - (TARGET_LOOKBACK_MONTHS - 1) < 0 ? y - 1 : y;
+  const oldestMonth = ((m - (TARGET_LOOKBACK_MONTHS - 1)) % 12 + 12) % 12;
+  const firstDayStr  = oldestYear + '-' + String(oldestMonth + 1).padStart(2, '0') + '-01';
+  const lookbackMs   = ptDateToUtcMs_(pt.dateStr) - ptDateToUtcMs_(firstDayStr);
   const lookbackDays = Math.max(1, Math.round(lookbackMs / (24 * 60 * 60 * 1000)));
 
   const cache  = {};
@@ -908,6 +962,39 @@ function r2_(n) { return Math.round(n * 100)  / 100; }
 function r1_(n) { return Math.round(n * 10)   / 10;  }
 function r3_(n) { return Math.round(n * 1000) / 1000; }
 
+/**
+ * Buckets transactions by local date string (YYYY-MM-DD).
+ * Returns { 'YYYY-MM-DD': netRevenue, ... }
+ */
+function aggregateByDay_(txns) {
+  const byDay = {};
+  txns.forEach(function(tx) {
+    const ts  = tx.transactionDateLocalTime || tx.transactionDate || '';
+    const day = ts.slice(0, 10);
+    if (!day || day.length < 10) return;
+    byDay[day] = (byDay[day] || 0) + txTotal_(tx);
+  });
+  return byDay;
+}
+
+/**
+ * From a { date: revenue } map, compute:
+ *   trend30d  — ordered array of daily revenue values (oldest → newest)
+ *   trendPct  — (last-7d avg − prior-7d avg) / prior-7d avg, clamped to 3 decimals
+ */
+function trendFromByDay_(byDay) {
+  const days     = Object.keys(byDay).sort();
+  const trend30d = days.map(function(d) { return Math.round(byDay[d]); });
+  const n        = days.length;
+  if (n < 7) return { trend30d: trend30d, trendPct: 0 };
+  const last7    = days.slice(Math.max(0, n - 7)).reduce(function(s, d) { return s + byDay[d]; }, 0);
+  const prior    = days.slice(Math.max(0, n - 14), Math.max(0, n - 7));
+  if (prior.length === 0) return { trend30d: trend30d, trendPct: 0 };
+  const prior7   = prior.reduce(function(s, d) { return s + byDay[d]; }, 0);
+  const trendPct = prior7 > 0 ? r3_((last7 - prior7) / prior7) : 0;
+  return { trend30d: trend30d, trendPct: trendPct };
+}
+
 // ============================================================
 // ============================================================
 // EMPLOYEE ROSTER
@@ -1025,6 +1112,7 @@ function getDirectorStores(params, pre) {
   // Use pre-fetched data when called from directorall, otherwise fetch independently.
   const byStore      = pre.byStore      || fetchAllStoresTransactions_(range);
   const byStoreToday = pre.byStoreToday || (period === 'today' ? byStore : fetchAllStoresTransactions_(todayR));
+  const byStore30d   = pre.byStore30d   || null;  // 30-day window for trends (pre-fetched by directorall)
 
   // Look up user records once for manager info
   const users = JSON.parse(
@@ -1041,9 +1129,8 @@ function getDirectorStores(params, pre) {
     const periodGoal = getPeriodGoal_(store.slug, period, range);
     const vsplan     = periodGoal > 0 ? r3_((agg.sales - periodGoal) / periodGoal) : 0;
 
-    // Pace for today: (revenue / goal) at current time fraction
-    const now          = new Date();
-    const nowLocalHour = new Date(now.getTime() - STORE_TZ_OFFSET_MS).getUTCHours();
+    // Pace for today: (revenue / goal) at current time fraction (PT, DST-aware)
+    const nowLocalHour = ptHourNow_().hour;
     const elapsed      = Math.max(0, Math.min(nowLocalHour - STORE_OPEN_HOUR, STORE_HOURS));
     const dayFrac      = elapsed / STORE_HOURS;
     const paceGoal     = dailyGoal * dayFrac;
@@ -1055,11 +1142,11 @@ function getDirectorStores(params, pre) {
     // Flagged employees
     const flaggedEmps = Object.values(agg.byEmployee).filter(e => e.discountRate > DISCOUNT_FLAG_THRESHOLD);
 
-    // Tags
+    // Tags: top / watch / flag (mutually exclusive, escalating severity)
     const tags = [];
-    if (vsplan >  0.05)  tags.push('top');
-    if (vsplan < -0.08)  { tags.push('flag'); tags.push('watch'); }
-    else if (vsplan < 0) tags.push('watch');
+    if (vsplan >  0.05) tags.push('top');
+    else if (vsplan < -0.08) tags.push('flag');   // ≥8% behind plan → flag
+    else if (vsplan <  0)    tags.push('watch');  // any behind plan  → watch
 
     return {
       slug:          store.slug,
@@ -1074,8 +1161,7 @@ function getDirectorStores(params, pre) {
       avgOrderValue: agg.avgOrderValue,
       avgUPT:        agg.avgUPT,
       discountRate:  agg.discountRate,
-      trendPct:      0,    // requires multi-day bucketing (TODO)
-      trend30d:      [],   // requires 30-day query (TODO)
+      ...trendFromByDay_(byStore30d ? aggregateByDay_(byStore30d[store.slug] || []) : {}),
       tags:          tags,
       today:         { revenue: aggToday.sales, goal: dailyGoal, pace: todayPace },
       flagCount:     flaggedEmps.length,
@@ -1096,10 +1182,27 @@ function getDirectorStores(params, pre) {
 
 function getDirectorStaff(params, pre) {
   pre = pre || {};
-  const period  = params.period || 'mtd';
-  const range   = getDateRange_(period);
+  const period    = params.period || 'mtd';
+  const range     = getDateRange_(period);
   // Use pre-fetched data when called from directorall, otherwise fetch independently.
-  const byStore = pre.byStore || fetchAllStoresTransactions_(range);
+  const byStore   = pre.byStore   || fetchAllStoresTransactions_(range);
+  const byStore30d = pre.byStore30d || null;
+
+  // Build per-employee daily revenue buckets from the 30d window (for trend lines).
+  const empDailyBuckets = {}; // { empKey: { 'YYYY-MM-DD': revenue } }
+  if (byStore30d) {
+    STORES.forEach(function(store) {
+      (byStore30d[store.slug] || []).forEach(function(tx) {
+        const emp = txEmployee_(tx);
+        const key = emp.name.toLowerCase().replace(/\s+/g, '_');
+        const ts  = tx.transactionDateLocalTime || tx.transactionDate || '';
+        const day = ts.slice(0, 10);
+        if (!day || day.length < 10) return;
+        if (!empDailyBuckets[key]) empDailyBuckets[key] = {};
+        empDailyBuckets[key][day] = (empDailyBuckets[key][day] || 0) + txTotal_(tx);
+      });
+    });
+  }
 
   // Aggregate employees globally across all stores
   const globalEmps = {};
@@ -1127,13 +1230,15 @@ function getDirectorStaff(params, pre) {
 
   // Re-derive metrics and apply tags
   const staffList = Object.values(globalEmps).map(function(emp) {
-    const aov  = emp.transactions > 0 ? r2_(emp.sales / emp.transactions) : 0;
-    const upt  = emp.transactions > 0 ? r1_(emp.items / emp.transactions)  : 0;
-    const disc = emp.subtotal     > 0 ? r3_(emp.discounts / emp.subtotal)   : 0;
+    const aov    = emp.transactions > 0 ? r2_(emp.sales / emp.transactions) : 0;
+    const upt    = emp.transactions > 0 ? r1_(emp.items / emp.transactions)  : 0;
+    const disc   = emp.subtotal     > 0 ? r3_(emp.discounts / emp.subtotal)   : 0;
+    const empKey = emp.name.toLowerCase().replace(/\s+/g, '_');
+    const trend  = trendFromByDay_(empDailyBuckets[empKey] || {});
 
     const tags = [];
-    if (disc > DISCOUNT_FLAG_THRESHOLD)  tags.push('flag');
-    if (disc > DISCOUNT_WATCH_THRESHOLD) tags.push('watch');
+    if      (disc > DISCOUNT_WATCH_THRESHOLD) tags.push('flag');   // >8%       → flag (serious)
+    else if (disc > DISCOUNT_FLAG_THRESHOLD)  tags.push('watch');  // 6.5–8%   → watch (mild)
 
     return {
       initials:      emp.initials,
@@ -1148,8 +1253,8 @@ function getDirectorStaff(params, pre) {
       avgOrderValue: aov,
       avgUPT:        upt,
       discountRate:  disc,
-      trendPct:      0,   // requires prior-period comparison (see getDirectorSummary pattern)
-      trend30d:      [],  // requires 30 daily data points (TODO)
+      trendPct:      trend.trendPct,
+      trend30d:      trend.trend30d,
       tags:          tags,
     };
   });
@@ -1293,27 +1398,27 @@ function getStoreToday(store, params) {
 
   const dailyGoal = getDailyGoal_(store.slug);
 
-  // Pace: how far ahead/behind goal given elapsed store time
-  const now          = new Date();
-  const nowLocal     = new Date(now.getTime() - STORE_TZ_OFFSET_MS);
-  const nowHour      = nowLocal.getUTCHours();
-  const nowMinute    = nowLocal.getUTCMinutes();
+  // Pace: how far ahead/behind goal given elapsed store time (PT, DST-aware)
+  const { hour: nowHour, minute: nowMinute } = ptHourNow_();
   const elapsedHours = Math.max(0, Math.min(nowHour + nowMinute / 60 - STORE_OPEN_HOUR, STORE_HOURS));
   const dayFrac      = STORE_HOURS > 0 ? elapsedHours / STORE_HOURS : 0;
   const paceGoal     = dailyGoal * dayFrac;
   const pace         = paceGoal > 0.5 ? r3_((agg.sales - paceGoal) / paceGoal) : 0;
   const pctToGoal    = dailyGoal > 0  ? r3_(agg.sales / dailyGoal)              : 0;
 
-  // Project EOD revenue (straight-line projection)
-  const projectedRevenue = dayFrac > 0.05
-    ? Math.round(agg.sales / dayFrac)
-    : agg.sales;
+  // Time remaining (PT, store hours 8 am – 10 pm)
+  const minutesLeft  = STORE_CLOSE_HOUR * 60 - (nowHour * 60 + nowMinute);
+  const storeClosed  = minutesLeft <= 0;
+  const timeRemainingLabel =
+    storeClosed         ? 'Store closed'     // past 10 pm
+    : minutesLeft <= 60 ? 'Closing soon'     // last hour
+    : minutesLeft <= 120 ? '~1h remaining'   // second-to-last hour
+    : Math.floor(minutesLeft / 60) + 'h remaining';
 
-  // Time remaining label
-  const hoursLeft = Math.max(0, STORE_CLOSE_HOUR - nowHour);
-  const timeRemainingLabel = hoursLeft > 1 ? hoursLeft + 'h remaining'
-    : hoursLeft === 1 ? '~1h remaining'
-    : 'Closing soon';
+  // Project EOD revenue (straight-line); after close it's the actual final number
+  const projectedRevenue = storeClosed
+    ? agg.sales
+    : (dayFrac > 0.05 ? Math.round(agg.sales / dayFrac) : agg.sales);
 
   // Hourly bar chart
   const maxRevenue = Math.max(1, ...Object.values(hourMap).map(h => h.revenue));
@@ -1396,7 +1501,7 @@ function getStoreToday(store, params) {
       pctToGoal:        pctToGoal,
       pace:             pace,
       projectedRevenue: projectedRevenue,
-      toGo:             Math.max(0, dailyGoal - agg.sales),
+      toGo:             storeClosed ? 0 : Math.max(0, dailyGoal - agg.sales),
       latestTxnTs:      latestTxnTs,
       newTicker:        newTxns.map(makeTicker_),
     };

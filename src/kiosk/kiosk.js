@@ -140,12 +140,13 @@ var kiosk = (function() {
 
   // ── Render: Goal arc card ──────────────────────────────
   function renderGoalCard(today) {
-    var pct     = today.pctToGoal || 0;
-    var pctDisp = Math.round(pct * 100) + '%';
+    var pct      = today.pctToGoal || 0;
+    var pctDisp  = Math.round(pct * 100) + '%';
+    var closed   = today.timeRemainingLabel === 'Store closed';
     // Arc total length for "M 20 120 A 90 90 0 0 1 200 120" ≈ 283
-    var ARC_LEN = 283;
+    var ARC_LEN  = 283;
 
-    return '<div class="goal-card">'
+    return '<div class="goal-card' + (closed ? ' store-closed' : '') + '">'
       + '<div class="kcard-label">Daily Goal · ' + e(fmtDollars(today.goal)) + '</div>'
       + '<div class="gauge-wrap">'
       + '  <svg width="220" height="130" viewBox="0 0 220 130">'
@@ -166,7 +167,7 @@ var kiosk = (function() {
       + '  </svg>'
       + '  <div class="gauge-pct">'
       + '    <div class="gp-big num" id="kioskGoalPct">0%</div>'
-      + '    <div class="gp-small">to goal</div>'
+      + '    <div class="gp-small">' + (closed ? 'final' : 'to goal') + '</div>'
       + '  </div>'
       + '</div>'
       + '<div class="goal-stats">'
@@ -175,12 +176,14 @@ var kiosk = (function() {
       + '    <div class="gs-l">Sold</div>'
       + '  </div>'
       + '  <div class="goal-stat">'
-      + '    <div class="gs-v num" id="kioskGoalToGo" data-target="' + (today.toGo || 0) + '">' + fmtDollars(0) + '</div>'
-      + '    <div class="gs-l">To Go</div>'
+      + (closed
+          ? '<div class="gs-v store-closed-label" id="kioskGoalToGo">Closed</div>'
+          : '<div class="gs-v num" id="kioskGoalToGo" data-target="' + (today.toGo || 0) + '">' + fmtDollars(0) + '</div>')
+      + '    <div class="gs-l" id="kioskToGoLabel">' + (closed ? '10 pm' : 'To Go') + '</div>'
       + '  </div>'
       + '  <div class="goal-stat">'
-      + '    <div class="gs-v">' + e(today.timeRemainingLabel || '—') + '</div>'
-      + '    <div class="gs-l">Left</div>'
+      + '    <div class="gs-v' + (closed ? ' store-closed-label' : '') + '" id="kioskTimeRemaining">' + e(today.timeRemainingLabel || '—') + '</div>'
+      + '    <div class="gs-l">Status</div>'
       + '  </div>'
       + '</div>'
       + '</div>';
@@ -371,6 +374,75 @@ var kiosk = (function() {
       + '</div>';
   }
 
+  // ── Closing push helpers ───────────────────────────────
+
+  /** Returns minutes left until store close (10pm PT), using client-side PT time. */
+  function getMinutesLeftPT_() {
+    try {
+      var parts = {};
+      new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Los_Angeles', hour: 'numeric', minute: 'numeric', hour12: false
+      }).formatToParts(new Date()).forEach(function(p) { parts[p.type] = parseInt(p.value, 10) || 0; });
+      return 22 * 60 - (parts.hour * 60 + parts.minute);
+    } catch(err) {
+      return 999;
+    }
+  }
+
+  // ── Render: Closing push banner ────────────────────────
+  function renderClosingBanner() {
+    return '<div id="kioskClosingPush" class="closing-push" style="display:none">'
+      + '<div class="cp-icon">⏳</div>'
+      + '<div class="cp-body">'
+      + '  <div class="cp-headline">CLOSING PUSH &nbsp;·&nbsp; <span id="cpTimeLeft">—</span></div>'
+      + '  <div class="cp-detail">'
+      + '    Need <span class="cp-need num" id="cpNeed">—</span> to hit today\'s goal'
+      + '    <span class="cp-txns"> · ≈<span id="cpTxns">—</span> more sales at <span id="cpAov">—</span> avg</span>'
+      + '  </div>'
+      + '</div>'
+      + '</div>';
+  }
+
+  /** Show/hide/update the closing push banner based on current time + remaining goal. */
+  function updateClosingBanner(td) {
+    var banner = document.getElementById('kioskClosingPush');
+    if (!banner) return;
+
+    var toGo  = td.toGo           || 0;
+    var aov   = td.avgOrderValue  || 0;
+    var mins  = getMinutesLeftPT_();
+
+    // Show when store is open, ≤ 2h left, and goal not yet hit
+    var show = mins > 0 && mins <= 120 && toGo > 0;
+    banner.style.display = show ? 'flex' : 'none';
+    if (!show) return;
+
+    var h      = Math.floor(mins / 60);
+    var m      = mins % 60;
+    var tStr   = h > 0
+      ? h + 'h ' + (m > 0 ? m + 'm' : '') + ' left'
+      : m + ' min left';
+
+    var txns   = aov > 0 ? Math.ceil(toGo / aov) : null;
+    var aovStr = aov > 0 ? ('$' + Math.round(aov).toLocaleString()) : null;
+
+    var timeEl = document.getElementById('cpTimeLeft');
+    var needEl = document.getElementById('cpNeed');
+    var txnsEl = document.getElementById('cpTxns');
+    var aovEl  = document.getElementById('cpAov');
+    var txnsWrap = banner.querySelector('.cp-txns');
+
+    if (timeEl) timeEl.textContent = tStr;
+    if (needEl) needEl.textContent = '$' + Math.round(toGo).toLocaleString();
+    if (txns !== null) {
+      if (txnsEl) txnsEl.textContent = txns;
+      if (aovEl)  aovEl.textContent  = aovStr;
+      if (txnsWrap) txnsWrap.style.display = '';
+    } else {
+      if (txnsWrap) txnsWrap.style.display = 'none';
+    }
+  }
+
   // ── Render: Rare drop overlay ──────────────────────────
   function renderRareDrop() {
     return '<div id="kioskRareDrop" onclick="kiosk._hideRareDrop(event)">'
@@ -411,6 +483,7 @@ var kiosk = (function() {
           renderGoalCard(today),
           renderPaceCard(today),
         '</div>',
+        renderClosingBanner(),
         renderStaffGrid(staff, store.name, offShift),
         '<div class="lower-grid">',
           renderBadges(badges),
@@ -443,6 +516,7 @@ var kiosk = (function() {
     animateGoalArc(data.today.today.pctToGoal);
     animatePaceNeedle(data.today.today.pace);
     animateBars();
+    updateClosingBanner(data.today.today);
     initConfetti();
     startPolling(slug);
 
@@ -685,7 +759,18 @@ var kiosk = (function() {
     });
 
     // ── badges ──
-    // GAS: label, winner, detail — fixture: title, holder, stat
+    // GAS: label, winner, detail, type='gold'/'silver', id='aov-avenger' etc.
+    // Fixture: title, holder, stat, type='b-aov' etc.
+    // Map GAS id → CSS class so icon circles get their colored backgrounds.
+    var BADGE_TYPE_MAP = {
+      'aov-avenger': 'b-aov',
+      'upsell-king': 'b-upt',
+      'cleanest':    'b-clean',
+      'top-sales':   'b-streak',
+      'the-closer':  'b-close',
+      'streak':      'b-streak',
+      'new-hire':    'b-new',
+    };
     var normalizedBadges = (bg.badges || []).map(function(b) {
       return {
         id:     b.id     || '',
@@ -693,7 +778,7 @@ var kiosk = (function() {
         title:  b.label  || b.title  || '',
         holder: b.winner || b.holder || '',
         stat:   b.detail || b.stat   || '',
-        type:   b.type   || '',
+        type:   BADGE_TYPE_MAP[b.id] || b.type || '',
       };
     });
 
@@ -711,24 +796,59 @@ var kiosk = (function() {
     var revenue   = td.revenue   || 0;
     var pctToGoal = td.pctToGoal || 0;
     var toGo      = td.toGo      || 0;
+    var label     = td.timeRemainingLabel || '';
+    var closed    = label === 'Store closed';
 
     var soldEl = document.getElementById('kioskGoalSold');
     if (soldEl) countUp(soldEl, revenue, 800);
 
+    // To-Go slot: animates normally while open; shows "Closed" text after 10 pm
     var toGoEl = document.getElementById('kioskGoalToGo');
-    if (toGoEl) countUp(toGoEl, toGo, 800);
+    if (toGoEl) {
+      if (closed) {
+        toGoEl.classList.add('store-closed-label');
+        toGoEl.classList.remove('num');
+        toGoEl.textContent = 'Closed';
+      } else {
+        toGoEl.classList.remove('store-closed-label');
+        toGoEl.classList.add('num');
+        countUp(toGoEl, toGo, 800);
+      }
+    }
+    var toGoLblEl = document.getElementById('kioskToGoLabel');
+    if (toGoLblEl) toGoLblEl.textContent = closed ? '10 pm' : 'To Go';
 
     var pctEl = document.getElementById('kioskGoalPct');
     if (pctEl) pctEl.textContent = Math.round(pctToGoal * 100) + '%';
 
+    // sub-label under the arc: "to goal" while open, "final" after close
+    var subEl = pctEl && pctEl.nextElementSibling;
+    if (subEl && subEl.classList.contains('gp-small')) {
+      subEl.textContent = closed ? 'final' : 'to goal';
+    }
+
     var arc = document.getElementById('kioskGoalArc');
     if (arc) arc.setAttribute('stroke-dashoffset', String(Math.round(283 * (1 - pctToGoal))));
+
+    // Dim the card when store is closed
+    var card = arc && arc.closest('.goal-card');
+    if (card) card.classList.toggle('store-closed', closed);
+
+    // Update the status label
+    var lblEl = document.getElementById('kioskTimeRemaining');
+    if (lblEl) {
+      lblEl.textContent = label || '—';
+      lblEl.classList.toggle('store-closed-label', closed);
+    }
 
     var needle = document.getElementById('kioskPaceNeedle');
     if (needle && td.pace != null) {
       var clamped = Math.max(-0.20, Math.min(0.20, td.pace));
       needle.style.transform = 'rotate(' + Math.round((clamped / 0.20) * 90) + 'deg)';
     }
+
+    // Closing push
+    updateClosingBanner(td);
   }
 
   function startPolling(slug) {

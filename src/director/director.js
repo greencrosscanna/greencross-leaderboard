@@ -234,8 +234,8 @@ var director = (function() {
     return bigRow + smallRow;
   }
 
-  // ── Render: Filter + Controls ──────────────────────────
-  function renderControls() {
+  // ── Render: Store filter pills (above store table) ────
+  function renderFilterPills() {
     return '<div class="filter-row" id="filterRow">'
       + ['All Stores','Baseline','Center','Century','Commercial','Portland','River']
           .map(function(s, i) {
@@ -249,9 +249,13 @@ var director = (function() {
       + '<button class="pill" data-tag="watch">Watch</button>'
       + '<button class="pill' + (_tagFilter === 'flag' ? ' active-red' : '') + '" data-tag="flag" id="flagPill">Flagged · ' + (_data ? _data.alerts.discountWatch.length : 0) + '</button>'
       + '</div>'
-      + '</div>'
-      + '<div class="controls">'
-      + '<input type="text" id="staffSearch" placeholder="Search staff, store, or SKU…" value="' + e(_staffSearch) + '">'
+      + '</div>';
+  }
+
+  // ── Render: Staff controls (between store table and staff table) ──
+  function renderStaffControls() {
+    return '<div class="controls" id="staffControls">'
+      + '<input type="text" id="staffSearch" placeholder="Search staff by name, store, or role…" value="' + e(_staffSearch) + '">'
       + '<select id="periodSelect">'
       + ['pp','mtd','today','wtd','qtd','ytd'].map(function(p) {
           return '<option value="' + p + '"' + (p === _period ? ' selected' : '') + '>Period: ' + GC.periodLabel(p) + '</option>';
@@ -402,7 +406,11 @@ var director = (function() {
 
   // ── Render: Discount Watch ─────────────────────────────
   function renderDiscountWatch(alertsData) {
-    var rows = alertsData.discountWatch.map(function(w) {
+    // Sort worst (highest discount rate) to top
+    var sorted = alertsData.discountWatch.slice().sort(function(a, b) {
+      return b.discountRate - a.discountRate;
+    });
+    var rows = sorted.map(function(w) {
       var reasonMap = {
         veteran: '"veteran" comp',
         manager_comp: '"manager comp"',
@@ -426,7 +434,7 @@ var director = (function() {
 
     var chainAvg = alertsData.chainAvgDiscountRate;
     var emptyRow = '';
-    if (alertsData.discountWatch.length === 0) {
+    if (sorted.length === 0) {
       emptyRow = '<div class="watch-row empty">'
         + '<div class="watch-who"><div class="who-name">No staff over threshold</div>'
         + '<div class="who-sub">Chain avg: ' + GC.fmtPct(chainAvg) + ' this week</div></div>'
@@ -459,8 +467,9 @@ var director = (function() {
       + renderHeader(data)
       + renderStatusStrip(stores)
       + renderKPIs(sum)
-      + renderControls()
+      + renderFilterPills()
       + renderStoreTable(stores)
+      + renderStaffControls()
       + renderStaffTable(staff)
       + '<div class="director-lower">'
       + renderAlerts(alerts)
