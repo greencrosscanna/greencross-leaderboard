@@ -345,8 +345,19 @@ var kiosk = (function() {
         return p.status !== 'on' && !staffNames[(p.name || '').toLowerCase()];
       })
       .map(function(p) {
-        var pillCls = p.status === 'later' ? 'status-later' : 'status-off';
-        var pillTxt = p.note || (p.status === 'later' ? 'Later today' : 'Off today');
+        var pillCls  = p.status === 'later' ? 'status-later' : 'status-off';
+        var pillTxt  = p.note || (p.status === 'later' ? 'Later today' : 'Off today');
+        var nameKey  = (p.name || '').toLowerCase();
+        var fn       = (p.name || '').split(' ')[0].toLowerCase();
+        var fnUnique = firstNameCount[fn] === 1;
+        var myBadges = badgeMap[nameKey] || (fnUnique ? badgeMap[fn] : null) || [];
+        var badgesHtml = myBadges.length > 0
+          ? '<div class="emp-badges">'
+              + myBadges.map(function(b) {
+                  return '<span class="emp-badge-chip" title="' + e(b.title) + '">' + b.icon + '</span>';
+                }).join('')
+            + '</div>'
+          : '';
         return '<div class="emp-card off-shift">'
           + '<div class="emp-head">'
           + '  <div class="emp-av">' + e(p.initials || '') + '</div>'
@@ -355,6 +366,7 @@ var kiosk = (function() {
           + '    <div class="emp-r">' + e(p.role || '') + '</div>'
           + '  </div>'
           + '</div>'
+          + badgesHtml
           + '<div class="emp-status-pill ' + e(pillCls) + '">' + e(pillTxt) + '</div>'
           + '</div>';
       }).join('');
