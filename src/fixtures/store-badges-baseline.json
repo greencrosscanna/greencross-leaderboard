@@ -7,6 +7,7 @@
     { "id": "clean",  "type": "b-clean",  "icon": "🧼", "title": "Cleanest Receipts", "holder": "Theo Bennett",  "stat": "2.1%"   },
     { "id": "new",    "type": "b-new",    "icon": "🤝", "title": "Welcome Wagon",     "holder": "Dean Deloof", "stat": "28"     },
     { "id": "close",  "type": "b-close",  "icon": "⏰", "title": "The Closer",        "holder": "Avery Liu",     "stat": "$3.1k"  },
-    { "id": "streak", "type": "b-streak", "icon": "🔥", "title": "Streak Master",     "holder": "Lina Park",     "stat": "5d"     }
+    { "id": "streak", "type": "b-streak", "icon": "🔥", "title": "Streak Master",     "holder": "Lina Park",     "stat": "5d"     },
+    { "id": "txn-king", "type": "b-txn", "icon": "🎯", "title": "Transaction King",  "holder": "Dean Deloof",   "stat": "18"     }
   ]
 }

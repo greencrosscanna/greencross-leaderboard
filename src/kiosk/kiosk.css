@@ -361,7 +361,7 @@ body.kiosk-bg {
   color: #0a0e0d;
   border-color: var(--green);
 }
-.emp-n    { font-weight: 600; font-size: 13px; }
+.emp-n    { font-weight: 800; font-size: 17px; letter-spacing: -0.2px; }
 .emp-r    { font-size: 10px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.6px; margin-top: 1px; }
 .emp-amt  { font-size: 24px; font-weight: 800; margin-top: 12px; letter-spacing: -0.5px; }
 .emp-card.leading .emp-amt { color: var(--green); }
@@ -375,30 +375,57 @@ body.kiosk-bg {
 .emp-extra.pb        { color: var(--blue); }
 .emp-extra.muted     { color: var(--text-mute); font-weight: 500; }
 
-/* ── Off-shift ghost cards ── */
+/* ── Off-shift cards — visible enough to create competition ── */
 .emp-card.off-shift {
-  opacity: 0.32;
+  opacity: 0.65;
   border-style: dashed;
-  pointer-events: none;
 }
 .emp-card.off-shift .emp-av {
   background: var(--surface-2);
   color: var(--text-mute);
   border-color: var(--border);
 }
-.off-shift-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-mute);
+
+/* Off-shift status pills */
+.emp-status-pill {
+  display: inline-block;
+  margin-top: 7px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  padding: 2px 8px;
+  border-radius: 999px;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
-  margin-top: 12px;
+}
+.emp-status-pill.status-later {
+  background: rgba(249,115,22,0.15);
+  color: var(--orange);
+  border: 1px solid rgba(249,115,22,0.35);
+}
+.emp-status-pill.status-off {
+  background: var(--surface-2);
+  color: var(--text-mute);
+  border: 1px solid var(--border);
 }
 
-/* ── Lower grid ── */
+/* Trophy chips inside employee cards */
+.emp-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.emp-badge-chip {
+  font-size: 15px;
+  line-height: 1;
+  cursor: default;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.4));
+}
+
+/* ── Lower grid — badges | heatmap (2×) | ticker ── */
 .lower-grid {
   display: grid;
-  grid-template-columns: 1.1fr 1fr 1fr;
+  grid-template-columns: 1fr 2fr 1fr;
   gap: 14px;
   margin-top: 14px;
 }
@@ -417,10 +444,10 @@ body.kiosk-bg {
   margin-bottom: 10px;
 }
 
-/* Badges */
+/* Badges — 2 wide × 3 tall */
 .badges-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
 }
 .badge-item {
@@ -445,6 +472,7 @@ body.kiosk-bg {
 .badge-item.b-new    .badge-icon { background: rgba(244,114,182,0.10); border: 1px solid rgba(244,114,182,0.4); }
 .badge-item.b-close  .badge-icon { background: rgba(249,115,22,0.10);  border: 1px solid rgba(249,115,22,0.4); }
 .badge-item.b-streak .badge-icon { background: rgba(250,204,21,0.10);  border: 1px solid rgba(250,204,21,0.4); }
+.badge-item.b-txn    .badge-icon { background: rgba(239,68,68,0.10);   border: 1px solid rgba(239,68,68,0.4); }
 .badge-title  { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text); }
 .badge-holder { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
 .badge-stat   { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap; }
@@ -462,7 +490,9 @@ body.kiosk-bg {
   border-radius: 4px;
   position: relative;
   border: 1px solid transparent;
+  cursor: default;
 }
+.hm-bar:hover { filter: brightness(1.15); }
 .hm-bar.now {
   border-color: var(--green);
   box-shadow: 0 0 10px rgba(74,222,128,0.3);
@@ -476,6 +506,26 @@ body.kiosk-bg {
   color: var(--text-mute);
   letter-spacing: 0.4px;
 }
+/* Hover tooltip showing dollar amount */
+.hm-tooltip {
+  position: absolute;
+  top: -34px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+  z-index: 10;
+}
+.hm-bar:hover .hm-tooltip { opacity: 1; }
 .hm-legend {
   display: flex;
   justify-content: space-between;

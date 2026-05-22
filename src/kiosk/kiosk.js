@@ -38,7 +38,8 @@ var kiosk = (function() {
   // ── State ──────────────────────────────────────────────
   var _slug         = null;
   var _storeName    = '';
-  var _offShift     = [];    // roster employees not yet on shift today
+  var _onShift      = [];    // full roster array (all statuses) — used by lb refresh
+  var _badges       = [];    // current week's badges — used by lb refresh
   var _pollTimer    = null;
   var _lbTimer      = null;
   var _clockTimer   = null;
@@ -238,55 +239,88 @@ var kiosk = (function() {
   }
 
   // ── Render: Staff leaderboard grid ────────────────────
-  // offShift: array of { initials, name, role } for roster employees
-  //           not yet active today — rendered as dimmed ghost cards
-  function renderStaffGrid(staff, storeName, offShift) {
+  // onShift: full roster array with { initials, name, role, status, note }
+  //          used to build shift-status and mark off-shift employees
+  // badges:  normalized badge array — used to show which trophies each emp holds
+  function renderStaffGrid(staff, storeName, onShift, badges) {
     var maxSales = staff.length > 0 ? (staff[0].sales || 1) : 1;
 
-    var activeCards = staff.map(function(s) {
-      var isLeading = s.rank === 1;
-      var barPct    = maxSales > 0 ? Math.round((s.sales / maxSales) * 100) : 0;
-      var aovStr    = s.aov  ? '$' + s.aov.toFixed(2) : '—';
-      var uptStr    = s.upt  ? s.upt.toFixed(1)        : '—';
+    // Build shift status map: name (lower) → { status, note }
+    var shiftMap = {};
+    (onShift || []).forEach(function(p) {
+      shiftMap[(p.name || '').toLowerCase()] = { status: p.status || 'on', note: p.note || null };
+    });
 
+    // Build badge map: holder name (lower) → [badge, ...]
+    var badgeMap = {};
+    (badges || []).forEach(function(b) {
+      if (!b.holder) return;
+      var key = b.holder.toLowerCase();
+      if (!badgeMap[key]) badgeMap[key] = [];
+      badgeMap[key].push(b);
+    });
+
+    var cards = staff.map(function(s) {
+      var isLeading  = s.rank === 1;
+      var barPct     = maxSales > 0 ? Math.round((s.sales / maxSales) * 100) : 0;
+      var aovStr     = s.aov  ? '$' + s.aov.toFixed(2) : '—';
+      var uptStr     = s.upt  ? s.upt.toFixed(1)        : '—';
+      var nameKey    = (s.name || '').toLowerCase();
+      var shift      = shiftMap[nameKey] || { status: 'on', note: null };
+      var isOffShift = shift.status !== 'on';
+
+      // Streak / personal best / note row
       var extraHtml = '';
       if (s.streakType === 'fire' && s.streak > 0) {
         extraHtml = '<div class="emp-extra streak">🔥 ' + e(s.streak) + '-day streak</div>';
       } else if (s.personalBestPct !== null && s.personalBestPct >= 0.90) {
         extraHtml = '<div class="emp-extra pb">⚡ Personal best in sight</div>';
-      } else if (s.note) {
-        extraHtml = '<div class="emp-extra muted">' + e(s.note) + '</div>';
       } else if (s.streak > 0) {
         extraHtml = '<div class="emp-extra muted">' + e(s.streak) + '-day streak</div>';
       }
 
+      // Off-shift status pill — shows note ("Back at 8p") or generic label
+      var statusHtml = '';
+      if (isOffShift) {
+        var pillCls = shift.status === 'later' ? 'status-later' : 'status-off';
+        var pillTxt = shift.note || (shift.status === 'later' ? 'Later today' : 'Off shift');
+        statusHtml = '<div class="emp-status-pill ' + e(pillCls) + '">' + e(pillTxt) + '</div>';
+      }
+
+      // Trophies this employee currently holds (mini chips)
+      // Try full-name key first (fixture holders = "Dean Deloof"),
+      // then first-name key (GAS holders = "Zachary")
+      var firstKey   = (s.name || '').split(' ')[0].toLowerCase();
+      var myBadges   = badgeMap[nameKey] || badgeMap[firstKey] || [];
+      var badgesHtml = myBadges.length > 0
+        ? '<div class="emp-badges">'
+            + myBadges.map(function(b) {
+                return '<span class="emp-badge-chip" title="' + e(b.title) + '">' + b.icon + '</span>';
+              }).join('')
+          + '</div>'
+        : '';
+
       var amtId = 'kioskEmpAmt' + s.rank;
 
-      return '<div class="emp-card' + (isLeading ? ' leading' : '') + '">'
+      var statsBody = s.sales > 0
+        ? '<div class="emp-amt num" id="' + amtId + '" data-target="' + (s.sales || 0) + '">' + fmtDollars(0) + '</div>'
+          + '<div class="emp-bar"><span style="width:0%" data-final="' + barPct + '%"></span></div>'
+          + '<div class="emp-stats"><span>AOV <b>' + e(aovStr) + '</b></span><span>UPT <b>' + e(uptStr) + '</b></span></div>'
+        : '<div class="emp-amt" style="color:var(--text-mute);font-size:13px;margin-top:12px">No sales yet</div>';
+
+      return '<div class="emp-card' + (isLeading ? ' leading' : '') + (isOffShift ? ' off-shift' : '') + '">'
         + '<span class="emp-rank">#' + e(s.rank) + '</span>'
         + '<div class="emp-head">'
         + '  <div class="emp-av">' + e(s.initials) + '</div>'
-        + '  <div><div class="emp-n">' + e(s.name.split(' ')[0]) + '</div>'
-        + '  <div class="emp-r">' + e(s.role) + '</div></div>'
+        + '  <div>'
+        + '    <div class="emp-n">' + e(s.name.split(' ')[0]) + '</div>'
+        + '    <div class="emp-r">' + e(s.role) + '</div>'
+        + '  </div>'
         + '</div>'
-        + '<div class="emp-amt num" id="' + amtId + '" data-target="' + (s.sales || 0) + '">'
-        + fmtDollars(0)
-        + '</div>'
-        + '<div class="emp-bar"><span style="width:0%" data-final="' + barPct + '%"></span></div>'
-        + '<div class="emp-stats"><span>AOV <b>' + e(aovStr) + '</b></span><span>UPT <b>' + e(uptStr) + '</b></span></div>'
+        + statsBody
+        + badgesHtml
+        + statusHtml
         + extraHtml
-        + '</div>';
-    }).join('');
-
-    // Off-shift ghost cards — dimmed, no sales data
-    var ghostCards = (offShift || []).map(function(p) {
-      return '<div class="emp-card off-shift">'
-        + '<div class="emp-head">'
-        + '  <div class="emp-av">' + e(p.initials) + '</div>'
-        + '  <div><div class="emp-n">' + e(p.name.split(' ')[0]) + '</div>'
-        + '  <div class="emp-r">' + e(p.role || '') + '</div></div>'
-        + '</div>'
-        + '<div class="emp-amt off-shift-label">Off shift</div>'
         + '</div>';
     }).join('');
 
@@ -296,7 +330,7 @@ var kiosk = (function() {
       + '  <span class="lb-sep">/</span>'
       + '  <span class="lb-meta">Live · refreshes every 30 seconds</span>'
       + '</div>'
-      + '<div class="lb-grid">' + activeCards + ghostCards + '</div>'
+      + '<div class="lb-grid">' + cards + '</div>'
       + '</section>';
   }
 
@@ -336,7 +370,11 @@ var kiosk = (function() {
       if (h.current)   cls = ' now';
       if (h.projected) cls = ' projected';
       var color = pctColor(h.pct || 0, h.projected);
+      // Amount: use explicit field if present, else derive from pct × peakRevenue
+      var amt    = h.amount != null ? h.amount : Math.round((h.pct || 0) * (peakRevenue || 0) / 100);
+      var amtStr = '$' + amt.toLocaleString() + (h.projected ? ' est.' : '');
       return '<div class="hm-bar' + cls + '" style="height:' + (h.pct || 0) + '%;background:' + color + '">'
+        + '<div class="hm-tooltip">' + e(amtStr) + '</div>'
         + '<span class="hm-hour">' + e(h.hour) + '</span>'
         + '</div>';
     }).join('');
@@ -472,8 +510,6 @@ var kiosk = (function() {
     var staff        = data.leaderboard.staff;
     var badges       = data.badges.badges;
     var leader       = staff[0] || {};
-    // Employees in roster but not yet active today → ghost cards
-    var offShift     = onShift.filter(function(p) { return p.status !== 'on'; });
 
     return [
       '<canvas id="kioskConfetti"></canvas>',
@@ -486,7 +522,7 @@ var kiosk = (function() {
           renderPaceCard(today),
         '</div>',
         renderClosingBanner(),
-        renderStaffGrid(staff, store.name, offShift),
+        renderStaffGrid(staff, store.name, onShift, badges),
         '<div class="lower-grid">',
           renderBadges(badges),
           renderHeatmap(hourly, peakHour, peakRevenue),
@@ -505,8 +541,9 @@ var kiosk = (function() {
     _slug      = slug;
     _storeName = (data.today.store && data.today.store.name) || slug || '';
 
-    // Roster employees not active yet today (used in staff grid and 5-min refresh)
-    _offShift = (data.today.onShift || []).filter(function(p) { return p.status !== 'on'; });
+    // Full roster + badges — kept for leaderboard refresh re-renders
+    _onShift = data.today.onShift || [];
+    _badges  = data.badges.badges || [];
 
     // Seed ticker cursor from the most recent transaction timestamp
     _lastTxnTs = data.today.latestTxnTs || '';
@@ -793,15 +830,17 @@ var kiosk = (function() {
       'the-closer':  'b-close',
       'streak':      'b-streak',
       'new-hire':    'b-new',
+      'txn-king':    'b-txn',
     };
     var BADGE_ICON_MAP = {
-      'aov-avenger': '💰',  // 💰
-      'upsell-king': '👑',  // 👑
-      'cleanest':    '🧼',  // 🧼
-      'top-sales':   '🔥',  // 🔥
-      'the-closer':  '🤝',  // 🤝
-      'streak':      '⚡',        // ⚡
-      'new-hire':    '🌱',  // 🌱
+      'aov-avenger': '💰',
+      'upsell-king': '👑',
+      'cleanest':    '🧼',
+      'top-sales':   '🔥',
+      'the-closer':  '🤝',
+      'streak':      '⚡',
+      'new-hire':    '🌱',
+      'txn-king':    '🎯',
     };
     var normalizedBadges = (bg.badges || []).map(function(b) {
       return {
@@ -936,7 +975,7 @@ var kiosk = (function() {
           var staff   = data.leaderboard.staff;
           var section = document.querySelector('.lb-section');
           if (section) {
-            section.outerHTML = renderStaffGrid(staff, _storeName, _offShift);
+            section.outerHTML = renderStaffGrid(staff, _storeName, _onShift, _badges);
             animateBars();
             // Animate employee amounts
             staff.forEach(function(s) {
