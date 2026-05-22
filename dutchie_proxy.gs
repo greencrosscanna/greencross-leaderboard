@@ -1395,8 +1395,12 @@ function getStoreToday(store, params) {
   const hourMap = aggregateByHour_(txns);
 
   // First-name frequency map so ticker can show "Zachary B." vs "Zachary R."
+  // Use the full employee roster (all known staff at this store) so that
+  // an off-shift Zachary still triggers disambiguation for the on-shift one.
   const tickerFirstNames = {};
-  Object.values(agg.byEmployee).forEach(emp => {
+  const fullRoster = (getEmployeeRoster_()[store.slug] || []);
+  const rosterSource = fullRoster.length > 0 ? fullRoster : Object.values(agg.byEmployee);
+  rosterSource.forEach(emp => {
     const fn = (emp.name || '').split(' ')[0].toLowerCase();
     tickerFirstNames[fn] = (tickerFirstNames[fn] || 0) + 1;
   });
