@@ -335,13 +335,37 @@ var kiosk = (function() {
         + '</div>';
     }).join('');
 
+    // Ghost cards — roster members with no leaderboard entry today
+    // (GAS marks these status:'off' with sales:0; they haven't transacted yet)
+    var staffNames = {};
+    staff.forEach(function(s) { staffNames[(s.name || '').toLowerCase()] = true; });
+
+    var ghostCards = (onShift || [])
+      .filter(function(p) {
+        return p.status !== 'on' && !staffNames[(p.name || '').toLowerCase()];
+      })
+      .map(function(p) {
+        var pillCls = p.status === 'later' ? 'status-later' : 'status-off';
+        var pillTxt = p.note || (p.status === 'later' ? 'Later today' : 'Off today');
+        return '<div class="emp-card off-shift">'
+          + '<div class="emp-head">'
+          + '  <div class="emp-av">' + e(p.initials || '') + '</div>'
+          + '  <div>'
+          + '    <div class="emp-n">' + e((p.name || '').split(' ')[0]) + '</div>'
+          + '    <div class="emp-r">' + e(p.role || '') + '</div>'
+          + '  </div>'
+          + '</div>'
+          + '<div class="emp-status-pill ' + e(pillCls) + '">' + e(pillTxt) + '</div>'
+          + '</div>';
+      }).join('');
+
     return '<section class="lb-section">'
       + '<div class="lb-head">'
       + '  <h2>Today · ' + e(storeName || '') + ' Team</h2>'
       + '  <span class="lb-sep">/</span>'
       + '  <span class="lb-meta">Live · refreshes every 30 seconds</span>'
       + '</div>'
-      + '<div class="lb-grid">' + cards + '</div>'
+      + '<div class="lb-grid">' + cards + ghostCards + '</div>'
       + '</section>';
   }
 
@@ -383,8 +407,10 @@ var kiosk = (function() {
       if (h.current)   cls = ' now';
       if (h.projected) cls = ' projected';
       var color = pctColor(h.pct || 0, h.projected);
-      // Amount: use explicit field if present, else derive from pct × peakRevenue
-      var amt    = h.amount != null ? h.amount : Math.round((h.pct || 0) * (peakRevenue || 0) / 100);
+      // Amount: explicit field → GAS h.revenue → pct × peakRevenue fallback
+      var amt    = h.amount != null ? h.amount
+                 : h.revenue != null ? h.revenue
+                 : Math.round((h.pct || 0) * (peakRevenue || 0) / 100);
       var amtStr = '$' + amt.toLocaleString() + (h.projected ? ' est.' : '');
       return '<div class="hm-bar' + cls + '" style="height:' + (h.pct || 0) + '%;background:' + color + '">'
         + '<div class="hm-tooltip">' + e(amtStr) + '</div>'
