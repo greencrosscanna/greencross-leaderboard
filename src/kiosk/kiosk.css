@@ -264,9 +264,10 @@ body.kiosk-bg {
 .gauge-wrap {
   position: relative;
   width: 220px;
-  height: 130px;
   margin: 4px auto 0;
 }
+/* Pace gauge is taller to accommodate axis labels below the arc */
+.pace-gauge-wrap { width: 220px; }
 .gauge-pct {
   position: absolute;
   bottom: 0; left: 0; right: 0;
@@ -299,16 +300,9 @@ body.kiosk-bg {
   align-items: center;
   text-align: center;
 }
-.pace-svg { width: 220px; height: 130px; }
-.pace-readout { text-align: center; margin-top: 4px; }
-.pace-readout .pr-delta {
-  font-size: 30px;
-  font-weight: 800;
-  letter-spacing: -0.5px;
-}
-.pace-readout .pr-delta.up   { color: var(--green); }
-.pace-readout .pr-delta.down { color: var(--red); }
-.pace-readout .pr-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+.pace-svg { width: 220px; height: 148px; display: block; }
+.pr-delta.up   { color: var(--green); }
+.pr-delta.down { color: var(--red); }
 .pace-projection {
   margin-top: auto;
   padding-top: 12px;

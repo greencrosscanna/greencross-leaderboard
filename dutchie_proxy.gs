@@ -1394,6 +1394,21 @@ function getStoreToday(store, params) {
   const agg    = aggregateTransactions_(txns);
   const hourMap = aggregateByHour_(txns);
 
+  // First-name frequency map so ticker can show "Zachary B." vs "Zachary R."
+  const tickerFirstNames = {};
+  Object.values(agg.byEmployee).forEach(emp => {
+    const fn = (emp.name || '').split(' ')[0].toLowerCase();
+    tickerFirstNames[fn] = (tickerFirstNames[fn] || 0) + 1;
+  });
+  function disambiguateTicker_(name) {
+    const parts = (name || '').trim().split(/\s+/);
+    const fn    = (parts[0] || '').toLowerCase();
+    if ((tickerFirstNames[fn] || 0) > 1 && parts.length > 1) {
+      return parts[0] + ' ' + parts[parts.length - 1][0].toUpperCase() + '.';
+    }
+    return parts[0] || name;
+  }
+
   const dailyGoal = getDailyGoal_(store.slug);
 
   // Pace: how far ahead/behind goal given elapsed store time (PT, DST-aware)
@@ -1469,7 +1484,7 @@ function getStoreToday(store, params) {
   function makeTicker_(tx) {
     const emp = txEmployee_(tx);
     return {
-      who:   emp.name.split(' ')[0],
+      who:   disambiguateTicker_(emp.name),
       qty:   txItems_(tx),   // distinct SKUs — see txItems_ for cannabis UPT rationale
       price: txTotal_(tx),
       ts:    tx.transactionDateLocalTime || tx.transactionDate || '',

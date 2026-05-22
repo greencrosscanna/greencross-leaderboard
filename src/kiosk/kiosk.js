@@ -232,29 +232,32 @@ var kiosk = (function() {
 
     return '<div class="pace-card">'
       + '<div class="kcard-label">Pace · vs. Plan</div>'
-      + '<svg class="pace-svg" viewBox="0 0 220 130">'
-      + '  <!-- zone arcs -->'
-      + '  <path d="M 20 120 A 90 90 0 0 1 73 41"  stroke="#ef4444" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.55"/>'
-      + '  <path d="M 73 41 A 90 90 0 0 1 147 41"  stroke="#eab308" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.55"/>'
-      + '  <path d="M 147 41 A 90 90 0 0 1 200 120" stroke="#4ade80" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.55"/>'
-      + '  <!-- tick marks -->'
-      + '  <g stroke="#5e6864" stroke-width="1">'
-      + '    <line x1="20" y1="120" x2="28" y2="116"/>'
-      + '    <line x1="200" y1="120" x2="192" y2="116"/>'
-      + '    <line x1="110" y1="30" x2="110" y2="40"/>'
-      + '  </g>'
-      + '  <text x="20"  y="136" fill="#b8d4cc" font-size="11" font-weight="600" text-anchor="start">−20%</text>'
-      + '  <text x="200" y="136" fill="#b8d4cc" font-size="11" font-weight="600" text-anchor="end">+20%</text>'
-      + '  <text x="110" y="24"  fill="#b8d4cc" font-size="11" font-weight="600" text-anchor="middle">PLAN</text>'
-      + '  <!-- needle -->'
-      + '  <g id="kioskPaceNeedle" style="transform-origin:110px 120px;transform:rotate(-90deg);transition:transform 1.4s cubic-bezier(.2,.7,.3,1)">'
-      + '    <line x1="110" y1="120" x2="110" y2="42" stroke="#e6ece9" stroke-width="2.5" stroke-linecap="round"/>'
-      + '    <circle cx="110" cy="120" r="6" fill="#e6ece9" stroke="#0a0e0d" stroke-width="2"/>'
-      + '  </g>'
-      + '</svg>'
-      + '<div class="pace-readout">'
-      + '  <div class="pr-delta ' + deltaCls + '">' + e(paceDisp) + '</div>'
-      + '  <div class="pr-label">' + e(direction) + '</div>'
+      + '<div class="gauge-wrap pace-gauge-wrap">'
+      + '  <svg class="pace-svg" viewBox="0 0 220 148">'
+      + '    <!-- zone arcs -->'
+      + '    <path d="M 20 120 A 90 90 0 0 1 73 41"  stroke="#ef4444" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.55"/>'
+      + '    <path d="M 73 41 A 90 90 0 0 1 147 41"  stroke="#eab308" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.55"/>'
+      + '    <path d="M 147 41 A 90 90 0 0 1 200 120" stroke="#4ade80" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.55"/>'
+      + '    <!-- tick marks -->'
+      + '    <g stroke="#9ab8b0" stroke-width="1">'
+      + '      <line x1="20" y1="120" x2="28" y2="116"/>'
+      + '      <line x1="200" y1="120" x2="192" y2="116"/>'
+      + '      <line x1="110" y1="30" x2="110" y2="40"/>'
+      + '    </g>'
+      + '    <text x="20"  y="142" fill="#b8d4cc" font-size="11" font-weight="600" text-anchor="start">−20%</text>'
+      + '    <text x="200" y="142" fill="#b8d4cc" font-size="11" font-weight="600" text-anchor="end">+20%</text>'
+      + '    <text x="110" y="24"  fill="#b8d4cc" font-size="11" font-weight="600" text-anchor="middle">PLAN</text>'
+      + '    <!-- needle -->'
+      + '    <g id="kioskPaceNeedle" style="transform-origin:110px 120px;transform:rotate(-90deg);transition:transform 1.4s cubic-bezier(.2,.7,.3,1)">'
+      + '      <line x1="110" y1="120" x2="110" y2="42" stroke="#e6ece9" stroke-width="2.5" stroke-linecap="round"/>'
+      + '      <circle cx="110" cy="120" r="6" fill="#e6ece9" stroke="#0a0e0d" stroke-width="2"/>'
+      + '    </g>'
+      + '  </svg>'
+      + '  <!-- Pace readout overlaid inside the arc — same pattern as goal card -->'
+      + '  <div class="gauge-pct">'
+      + '    <div class="gp-big pr-delta ' + deltaCls + '" id="kioskPacePct">' + e(paceDisp) + '</div>'
+      + '    <div class="gp-small">' + e(direction) + '</div>'
+      + '  </div>'
       + '</div>'
       + '<div class="pace-projection">'
       + '  Projected close: <span class="pp-v num">' + e(fmtDollars(proj)) + '</span>'
@@ -1046,6 +1049,12 @@ var kiosk = (function() {
     if (needle && td.pace != null) {
       var clamped = Math.max(-0.20, Math.min(0.20, td.pace));
       needle.style.transform = 'rotate(' + Math.round((clamped / 0.20) * 90) + 'deg)';
+      // Also update the overlaid pace % text
+      var pacePctEl = document.getElementById('kioskPacePct');
+      if (pacePctEl) {
+        pacePctEl.textContent = fmtPace(td.pace);
+        pacePctEl.className = 'gp-big pr-delta ' + (td.pace >= 0 ? 'up' : 'down');
+      }
     }
 
     // Closing push
