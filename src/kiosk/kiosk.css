@@ -189,40 +189,51 @@ body.kiosk-bg {
 .leader-row {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 16px;
+  margin-top: 4px;
 }
 .leader-avatar-xl {
-  width: 86px; height: 86px;
+  width: 74px; height: 74px;
   border-radius: 50%;
   background: linear-gradient(135deg, #4ade80, #1e6a45);
   color: #0a0e0d;
   font-weight: 900;
-  font-size: 30px;
+  font-size: 26px;
   display: flex; align-items: center; justify-content: center;
   border: 3px solid var(--green);
-  box-shadow: 0 0 24px rgba(74,222,128,0.35);
+  box-shadow: 0 0 20px rgba(74,222,128,0.35);
   flex-shrink: 0;
   position: relative;
 }
 .leader-crown {
   position: absolute;
-  top: -16px; left: 50%;
+  top: -14px; left: 50%;
   transform: translateX(-50%);
-  font-size: 22px;
+  font-size: 20px;
   filter: drop-shadow(0 2px 6px rgba(250,204,21,0.5));
 }
-.leader-name  { font-size: 28px; font-weight: 800; letter-spacing: -0.3px; }
-.leader-role  { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 4px; }
+.leader-info { flex: 1; min-width: 0; }
+.leader-name  { font-size: 24px; font-weight: 800; letter-spacing: -0.3px; }
+.leader-role  { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 3px; }
+.leader-sub   { color: var(--text-dim); font-size: 12px; margin-top: 5px; }
+.leader-streak { color: var(--orange); font-weight: 600; font-size: 12px; margin-top: 4px; }
+.leader-amount-wrap { margin-left: auto; text-align: right; flex-shrink: 0; }
 .leader-amount {
-  font-size: 44px;
+  font-size: 40px;
   font-weight: 800;
   color: var(--green);
   letter-spacing: -1px;
-  margin-top: 10px;
   line-height: 1;
 }
-.leader-sub   { color: var(--text-dim); font-size: 12px; margin-top: 6px; }
-.leader-streak { color: var(--orange); font-weight: 600; }
+.leader-amt-label {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  margin-top: 3px;
+  text-align: right;
+}
 
 /* Goal arc card */
 .goal-card {
@@ -263,12 +274,12 @@ body.kiosk-bg {
   display: flex;
   justify-content: space-around;
   width: 100%;
-  margin-top: 10px;
+  margin-top: auto;
   border-top: 1px solid var(--border);
-  padding-top: 10px;
+  padding-top: 12px;
 }
-.goal-stat .gs-v { font-size: 16px; font-weight: 700; }
-.goal-stat .gs-l { font-size: 10px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+.goal-stat .gs-v { font-size: 20px; font-weight: 700; }
+.goal-stat .gs-l { font-size: 11px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 1px; margin-top: 3px; }
 
 /* Pace dial card */
 .pace-card {
@@ -282,6 +293,8 @@ body.kiosk-bg {
   text-align: center;
 }
 .pace-svg { width: 220px; height: 130px; }
+/* Make pace SVG axis labels readable */
+.pace-svg text { fill: #8fa89e !important; }
 .pace-readout { text-align: center; margin-top: 4px; }
 .pace-readout .pr-delta {
   font-size: 30px;
@@ -292,8 +305,8 @@ body.kiosk-bg {
 .pace-readout .pr-delta.down { color: var(--red); }
 .pace-readout .pr-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
 .pace-projection {
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: auto;
+  padding-top: 12px;
   border-top: 1px solid var(--border);
   width: 100%;
   text-align: center;
@@ -461,11 +474,11 @@ body.kiosk-bg {
 .badge-item {
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  padding: 10px;
+  padding: 12px 14px;
   background: var(--surface-2);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 .badge-icon {
   width: 34px; height: 34px;

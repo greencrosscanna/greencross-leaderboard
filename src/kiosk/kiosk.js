@@ -111,14 +111,35 @@ var kiosk = (function() {
       + '</div>';
   }
 
+  // ── Helper: first name, or first name + last initial when duped ──
+  function disambiguateName(name, firstNameCount) {
+    var parts = (name || '').trim().split(/\s+/);
+    var fn = (parts[0] || '').toLowerCase();
+    if ((firstNameCount[fn] || 0) > 1 && parts.length > 1) {
+      return parts[0] + ' ' + parts[parts.length - 1][0].toUpperCase() + '.';
+    }
+    return parts[0] || name;
+  }
+
   // ── Render: Leader card ────────────────────────────────
-  function renderLeaderCard(leader) {
+  function renderLeaderCard(leader, allStaff) {
+    // Build firstNameCount from the full staff roster so we can disambiguate
+    var fnCount = {};
+    (allStaff || []).forEach(function(s) {
+      var fn = (s.name || '').split(' ')[0].toLowerCase();
+      fnCount[fn] = (fnCount[fn] || 0) + 1;
+    });
+    var dispName = disambiguateName(leader.name, fnCount);
+
     var streakHtml = '';
     if (leader.streak && leader.streakType === 'fire') {
-      streakHtml = ' · <span class="leader-streak">🔥 ' + e(leader.streak) + '-day streak</span>';
+      streakHtml = '<div class="leader-streak">🔥 ' + e(leader.streak) + '-day streak</div>';
     }
     var aovStr = leader.aov ? '$' + leader.aov.toFixed(2) : '—';
     var uptStr = leader.upt ? leader.upt.toFixed(1) : '—';
+    var roleHtml = leader.role
+      ? '<div class="leader-role">' + e(leader.role) + '</div>'
+      : '';
 
     return '<div class="leader-card">'
       + '<div class="kcard-label">Today\'s Leader</div>'
@@ -127,15 +148,18 @@ var kiosk = (function() {
       + '    <span class="leader-crown">👑</span>'
       + e(leader.initials)
       + '  </div>'
-      + '  <div>'
-      + '    <div class="leader-name">' + e(leader.name.split(' ')[0]) + '</div>'
-      + '    <div class="leader-role">' + e(leader.role) + '</div>'
+      + '  <div class="leader-info">'
+      + '    <div class="leader-name">' + e(dispName) + '</div>'
+      + roleHtml
+      + '    <div class="leader-sub">'
+      + e(leader.txns) + ' txns · ' + e(aovStr) + ' AOV · ' + e(uptStr) + ' UPT'
+      + '    </div>'
+      + streakHtml
+      + '  </div>'
+      + '  <div class="leader-amount-wrap">'
       + '    <div class="leader-amount num" id="kioskLeaderAmt" data-target="' + (leader.sales || 0) + '">'
       + fmtDollars(0) + '</div>'
-      + '    <div class="leader-sub">'
-      + e(leader.txns) + ' txns · ' + e(aovStr) + ' AOV · ' + e(uptStr) + ' UPT'
-      + streakHtml
-      + '    </div>'
+      + '    <div class="leader-amt-label">Today</div>'
       + '  </div>'
       + '</div>'
       + '</div>';
@@ -319,12 +343,13 @@ var kiosk = (function() {
           + '<div class="emp-stats"><span>AOV <b>' + e(aovStr) + '</b></span><span>UPT <b>' + e(uptStr) + '</b></span></div>'
         : '<div class="emp-amt" style="color:var(--text-mute);font-size:13px;margin-top:12px">No sales yet</div>';
 
+      var dispName = disambiguateName(s.name, firstNameCount);
       return '<div class="emp-card' + (isLeading ? ' leading' : '') + (isOffShift ? ' off-shift' : '') + '">'
         + '<span class="emp-rank">#' + e(s.rank) + '</span>'
         + '<div class="emp-head">'
         + '  <div class="emp-av">' + e(s.initials) + '</div>'
         + '  <div>'
-        + '    <div class="emp-n">' + e(s.name.split(' ')[0]) + '</div>'
+        + '    <div class="emp-n">' + e(dispName) + '</div>'
         + '    <div class="emp-r">' + e(s.role) + '</div>'
         + '  </div>'
         + '</div>'
@@ -358,11 +383,12 @@ var kiosk = (function() {
                 }).join('')
             + '</div>'
           : '';
+        var ghostDispName = disambiguateName(p.name, firstNameCount);
         return '<div class="emp-card off-shift">'
           + '<div class="emp-head">'
           + '  <div class="emp-av">' + e(p.initials || '') + '</div>'
           + '  <div>'
-          + '    <div class="emp-n">' + e((p.name || '').split(' ')[0]) + '</div>'
+          + '    <div class="emp-n">' + e(ghostDispName) + '</div>'
           + '    <div class="emp-r">' + e(p.role || '') + '</div>'
           + '  </div>'
           + '</div>'
@@ -383,6 +409,17 @@ var kiosk = (function() {
 
   // ── Render: Weekly badges ──────────────────────────────
   function renderBadges(badges) {
+    // Short stat label by badge type — avoids long descriptors ("discount rate") overflowing
+    var SHORT_STAT_LABEL = {
+      'b-aov':    'AOV',
+      'b-upt':    'UPT',
+      'b-clean':  'Disc.',
+      'b-streak': 'Sales',
+      'b-close':  'Tickets',
+      'b-new':    'New cust.',
+      'b-txn':    'Items',
+    };
+
     // Count first names across all badge holders — disambiguate with last initial when duped
     var badgeFirstNames = {};
     (badges || []).forEach(function(b) {
@@ -399,9 +436,10 @@ var kiosk = (function() {
         displayName += ' ' + parts[parts.length - 1][0].toUpperCase() + '.';
       }
       // Split stat into value + descriptor: "$39.81 avg ticket" → ["$39.81", "avg ticket"]
+      // Use short label from map if available (avoids long GAS descriptors overflowing)
       var statParts = (b.stat || '').trim().split(/\s+(.*)/);
       var statVal   = statParts[0] || '';
-      var statLabel = statParts[1] || '';
+      var statLabel = SHORT_STAT_LABEL[b.type] || statParts[1] || '';
       return '<div class="badge-item ' + e(b.type) + '">'
           + '<div class="badge-icon">' + b.icon + '</div>'
           + '<div class="badge-info">'
@@ -587,7 +625,7 @@ var kiosk = (function() {
       '<div class="kiosk-wrap">',
         renderHeader(store),
         '<div class="hero-grid">',
-          renderLeaderCard(leader),
+          renderLeaderCard(leader, staff),
           renderGoalCard(today),
           renderPaceCard(today),
         '</div>',
