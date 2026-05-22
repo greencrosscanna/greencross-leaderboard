@@ -473,9 +473,12 @@ body.kiosk-bg {
 .badge-item.b-close  .badge-icon { background: rgba(249,115,22,0.10);  border: 1px solid rgba(249,115,22,0.4); }
 .badge-item.b-streak .badge-icon { background: rgba(250,204,21,0.10);  border: 1px solid rgba(250,204,21,0.4); }
 .badge-item.b-txn    .badge-icon { background: rgba(239,68,68,0.10);   border: 1px solid rgba(239,68,68,0.4); }
-.badge-title  { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text); }
-.badge-holder { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
-.badge-stat   { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.badge-info   { min-width: 0; flex: 1; }
+.badge-title  { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge-holder { font-size: 14px; font-weight: 800; color: var(--text); margin-top: 1px; letter-spacing: -0.2px; }
+.badge-stat   { margin-left: auto; text-align: right; flex-shrink: 0; }
+.badge-stat-value { font-size: 15px; font-weight: 800; color: var(--text); letter-spacing: -0.3px; }
+.badge-stat-label { font-size: 9px; font-weight: 500; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.4px; margin-top: 1px; }
 
 /* Heatmap */
 .heatmap {

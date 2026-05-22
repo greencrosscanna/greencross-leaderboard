@@ -385,15 +385,22 @@ var kiosk = (function() {
   function renderBadges(badges) {
     var items = (badges || []).map(function(b) {
       // Show first name only in the small badge card (full name is in b.holder for matching)
-    var holderFirst = (b.holder || '').split(' ')[0];
-    return '<div class="badge-item ' + e(b.type) + '">'
-        + '<div class="badge-icon">' + b.icon + '</div>'
-        + '<div>'
-        + '  <div class="badge-title">' + e(b.title) + '</div>'
-        + '  <div class="badge-holder">' + e(holderFirst) + '</div>'
-        + '</div>'
-        + '<div class="badge-stat">' + e(b.stat) + '</div>'
-        + '</div>';
+      var holderFirst = (b.holder || '').split(' ')[0];
+      // Split stat into value + descriptor: "$39.81 avg ticket" → ["$39.81", "avg ticket"]
+      var statParts   = (b.stat || '').trim().split(/\s+(.*)/);
+      var statVal     = statParts[0] || '';
+      var statLabel   = statParts[1] || '';
+      return '<div class="badge-item ' + e(b.type) + '">'
+          + '<div class="badge-icon">' + b.icon + '</div>'
+          + '<div class="badge-info">'
+          + '  <div class="badge-title">' + e(b.title) + '</div>'
+          + '  <div class="badge-holder">' + e(holderFirst) + '</div>'
+          + '</div>'
+          + '<div class="badge-stat">'
+          + '  <div class="badge-stat-value">' + e(statVal) + '</div>'
+          + (statLabel ? '<div class="badge-stat-label">' + e(statLabel) + '</div>' : '')
+          + '</div>'
+          + '</div>';
     }).join('');
 
     return '<div class="kiosk-card">'
