@@ -40,6 +40,7 @@ var kiosk = (function() {
   var _storeName    = '';
   var _onShift      = [];    // full roster array (all statuses) — used by lb refresh
   var _badges       = [];    // current week's badges — used by lb refresh
+  var _goal         = 0;     // daily revenue goal — used by pace projection updates
   var _pollTimer    = null;
   var _lbTimer      = null;
   var _clockTimer   = null;
@@ -220,15 +221,21 @@ var kiosk = (function() {
   // ── Render: Pace dial card ─────────────────────────────
   function renderPaceCard(today) {
     var pace      = today.pace || 0;
-    var direction = pace >= 0 ? 'ahead of plan' : 'behind plan';
-    var deltaCls  = pace >= 0 ? 'up' : 'down';
-    var paceDisp  = fmtPace(pace);
     var proj      = today.projectedRevenue || 0;
     var goal      = today.goal || 0;
     var overUnder = proj - goal;
-    var ouSign    = overUnder >= 0 ? '▲ $' : '▼ −$';
-    var ouStr     = ouSign + Math.abs(overUnder).toLocaleString() + (overUnder >= 0 ? ' over goal' : ' under goal');
-    var ouColor   = overUnder >= 0 ? 'var(--green)' : 'var(--red)';
+    var projCls   = overUnder >= 0 ? 'up' : 'down';
+    var ouAbs     = Math.abs(Math.round(overUnder));
+
+    // Sub-label inside the arc: how far over/short in dollars
+    function projSubLabel(diff, g) {
+      if (Math.abs(diff) < g * 0.02) return 'On plan';
+      return diff >= 0
+        ? '▲ $' + Math.round(diff).toLocaleString() + ' over'
+        : '▼ $' + Math.round(-diff).toLocaleString() + ' short';
+    }
+    var subLabel = projSubLabel(overUnder, goal || 1);
+    var ouColor  = overUnder >= 0 ? 'var(--green)' : 'var(--red)';
 
     return '<div class="pace-card">'
       + '<div class="kcard-label">Pace · vs. Plan</div>'
@@ -253,15 +260,15 @@ var kiosk = (function() {
       + '      <circle cx="110" cy="120" r="6" fill="#e6ece9" stroke="#0a0e0d" stroke-width="2"/>'
       + '    </g>'
       + '  </svg>'
-      + '  <!-- Pace readout overlaid inside the arc — same pattern as goal card -->'
+      + '  <!-- Projected close overlaid inside the arc — same pattern as goal card -->'
       + '  <div class="gauge-pct">'
-      + '    <div class="gp-big pr-delta ' + deltaCls + '" id="kioskPacePct">' + e(paceDisp) + '</div>'
-      + '    <div class="gp-small">' + e(direction) + '</div>'
+      + '    <div class="gp-big pr-delta ' + projCls + ' num" id="kioskPacePct" data-target="' + proj + '">' + fmtDollars(0) + '</div>'
+      + '    <div class="gp-small" id="kioskPaceLabel">' + e(subLabel) + '</div>'
       + '  </div>'
       + '</div>'
       + '<div class="pace-projection">'
-      + '  Projected close: <span class="pp-v num">' + e(fmtDollars(proj)) + '</span>'
-      + '  · <span style="color:' + ouColor + '">' + ouStr + '</span>'
+      + '  Projected close · <span class="pp-v">' + e(fmtDollars(proj)) + '</span>'
+      + '  · <span style="color:' + ouColor + '">' + e(subLabel) + '</span>'
       + '</div>'
       + '</div>';
   }
@@ -666,6 +673,7 @@ var kiosk = (function() {
     // Full roster + badges — kept for leaderboard refresh re-renders
     _onShift = data.today.onShift || [];
     _badges  = data.badges.badges || [];
+    _goal    = data.today.goal    || 0;
 
     // Seed ticker cursor from the most recent transaction timestamp
     _lastTxnTs = data.today.latestTxnTs || '';
@@ -737,6 +745,10 @@ var kiosk = (function() {
     var toGoEl  = document.getElementById('kioskGoalToGo');
     if (soldEl) countUp(soldEl, parseInt(soldEl.getAttribute('data-target'), 10) || 0);
     if (toGoEl) countUp(toGoEl, parseInt(toGoEl.getAttribute('data-target'), 10) || 0);
+
+    // Projected close (pace card)
+    var paceProjEl = document.getElementById('kioskPacePct');
+    if (paceProjEl) countUp(paceProjEl, parseInt(paceProjEl.getAttribute('data-target'), 10) || 0, 1400);
 
     // Employee amounts
     var staff = data.leaderboard.staff || [];
@@ -1049,11 +1061,25 @@ var kiosk = (function() {
     if (needle && td.pace != null) {
       var clamped = Math.max(-0.20, Math.min(0.20, td.pace));
       needle.style.transform = 'rotate(' + Math.round((clamped / 0.20) * 90) + 'deg)';
-      // Also update the overlaid pace % text
-      var pacePctEl = document.getElementById('kioskPacePct');
-      if (pacePctEl) {
-        pacePctEl.textContent = fmtPace(td.pace);
-        pacePctEl.className = 'gp-big pr-delta ' + (td.pace >= 0 ? 'up' : 'down');
+    }
+    // Update projected close overlay
+    if (td.projectedRevenue != null) {
+      var proj      = td.projectedRevenue;
+      var diff      = proj - _goal;
+      var projCls   = diff >= 0 ? 'up' : 'down';
+      var projEl    = document.getElementById('kioskPacePct');
+      if (projEl) {
+        countUp(projEl, proj, 800);
+        projEl.className = 'gp-big pr-delta num ' + projCls;
+      }
+      var labelEl = document.getElementById('kioskPaceLabel');
+      if (labelEl && _goal > 0) {
+        var diffAbs = Math.abs(Math.round(diff));
+        labelEl.textContent = Math.abs(diff) < _goal * 0.02
+          ? 'On plan'
+          : diff >= 0
+            ? '▲ $' + diffAbs.toLocaleString() + ' over'
+            : '▼ $' + diffAbs.toLocaleString() + ' short';
       }
     }
 
