@@ -383,18 +383,30 @@ var kiosk = (function() {
 
   // ── Render: Weekly badges ──────────────────────────────
   function renderBadges(badges) {
+    // Count first names across all badge holders — disambiguate with last initial when duped
+    var badgeFirstNames = {};
+    (badges || []).forEach(function(b) {
+      var fn = (b.holder || '').trim().split(/\s+/)[0].toLowerCase();
+      badgeFirstNames[fn] = (badgeFirstNames[fn] || 0) + 1;
+    });
+
     var items = (badges || []).map(function(b) {
-      // Show first name only in the small badge card (full name is in b.holder for matching)
-      var holderFirst = (b.holder || '').split(' ')[0];
+      // Holder display: first name, + last initial if first name is shared
+      var parts       = (b.holder || '').trim().split(/\s+/);
+      var fn          = (parts[0] || '').toLowerCase();
+      var displayName = parts[0] || '';
+      if (badgeFirstNames[fn] > 1 && parts.length > 1) {
+        displayName += ' ' + parts[parts.length - 1][0].toUpperCase() + '.';
+      }
       // Split stat into value + descriptor: "$39.81 avg ticket" → ["$39.81", "avg ticket"]
-      var statParts   = (b.stat || '').trim().split(/\s+(.*)/);
-      var statVal     = statParts[0] || '';
-      var statLabel   = statParts[1] || '';
+      var statParts = (b.stat || '').trim().split(/\s+(.*)/);
+      var statVal   = statParts[0] || '';
+      var statLabel = statParts[1] || '';
       return '<div class="badge-item ' + e(b.type) + '">'
           + '<div class="badge-icon">' + b.icon + '</div>'
           + '<div class="badge-info">'
           + '  <div class="badge-title">' + e(b.title) + '</div>'
-          + '  <div class="badge-holder">' + e(holderFirst) + '</div>'
+          + '  <div class="badge-holder">' + e(displayName) + '</div>'
           + '</div>'
           + '<div class="badge-stat">'
           + '  <div class="badge-stat-value">' + e(statVal) + '</div>'
@@ -900,14 +912,25 @@ var kiosk = (function() {
       'new-hire':    '🌱',
       'txn-king':    '🎯',
     };
+    // Short display titles — avoids ellipsis truncation in narrow badge cards
+    var BADGE_SHORT_MAP = {
+      'aov-avenger': 'AOV Avenger',
+      'upsell-king': 'Upsell King',
+      'cleanest':    'Low Disc.',
+      'top-sales':   'Top Sales',
+      'the-closer':  'The Closer',
+      'streak':      'Win Streak',
+      'new-hire':    'New Cust.',
+      'txn-king':    'Txn King',
+    };
     var normalizedBadges = (bg.badges || []).map(function(b) {
       return {
-        id:     b.id     || '',
-        icon:   BADGE_ICON_MAP[b.id] || b.icon || '',
-        title:  b.label  || b.title  || '',
-        holder: b.winner || b.holder || '',
-        stat:   b.detail || b.stat   || '',
-        type:   BADGE_TYPE_MAP[b.id] || b.type || '',
+        id:         b.id     || '',
+        icon:       BADGE_ICON_MAP[b.id]   || b.icon  || '',
+        title:      BADGE_SHORT_MAP[b.id]  || b.label || b.title || '',
+        holder:     b.winner || b.holder   || '',
+        stat:       b.detail || b.stat     || '',
+        type:       BADGE_TYPE_MAP[b.id]   || b.type  || '',
       };
     });
 

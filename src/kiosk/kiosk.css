@@ -444,11 +444,19 @@ body.kiosk-bg {
   margin-bottom: 10px;
 }
 
-/* Badges — 2 wide × 3 tall */
+/* Lower grid cards fill their full cell height */
+.lower-grid > .kiosk-card {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Badges — 2 wide × 3 tall, fills available vertical space */
 .badges-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
+  flex: 1;
+  align-content: space-between;
 }
 .badge-item {
   border: 1px solid var(--border-strong);
@@ -474,19 +482,28 @@ body.kiosk-bg {
 .badge-item.b-streak .badge-icon { background: rgba(250,204,21,0.10);  border: 1px solid rgba(250,204,21,0.4); }
 .badge-item.b-txn    .badge-icon { background: rgba(239,68,68,0.10);   border: 1px solid rgba(239,68,68,0.4); }
 .badge-info   { min-width: 0; flex: 1; }
-.badge-title  { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge-title  { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; white-space: nowrap; color: var(--text-dim); }
+/* Per-type accent colors for the badge category label */
+.badge-item.b-aov   .badge-title { color: rgba(74,222,128,0.75); }
+.badge-item.b-upt   .badge-title { color: rgba(96,165,250,0.75); }
+.badge-item.b-clean .badge-title { color: rgba(167,139,250,0.75); }
+.badge-item.b-new   .badge-title { color: rgba(244,114,182,0.75); }
+.badge-item.b-close .badge-title { color: rgba(249,115,22,0.75); }
+.badge-item.b-streak .badge-title { color: rgba(250,204,21,0.75); }
+.badge-item.b-txn   .badge-title { color: rgba(239,68,68,0.75); }
 .badge-holder { font-size: 14px; font-weight: 800; color: var(--text); margin-top: 1px; letter-spacing: -0.2px; }
 .badge-stat   { margin-left: auto; text-align: right; flex-shrink: 0; }
 .badge-stat-value { font-size: 15px; font-weight: 800; color: var(--text); letter-spacing: -0.3px; }
 .badge-stat-label { font-size: 9px; font-weight: 500; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.4px; margin-top: 1px; }
 
-/* Heatmap */
+/* Heatmap — fills remaining card height set by lower-grid row */
 .heatmap {
   display: flex;
   gap: 5px;
   margin-top: 6px;
   align-items: flex-end;
-  height: 120px;
+  flex: 1;
+  min-height: 100px;
 }
 .hm-bar {
   flex: 1;
