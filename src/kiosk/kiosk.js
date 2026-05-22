@@ -267,8 +267,8 @@ var kiosk = (function() {
       + '  </div>'
       + '</div>'
       + '<div class="pace-projection">'
-      + '  Projected close · <span class="pp-v">' + e(fmtDollars(proj)) + '</span>'
-      + '  · <span style="color:' + ouColor + '">' + e(subLabel) + '</span>'
+      + '  Projected close · <span class="pp-v" id="kioskPaceProjVal">' + e(fmtDollars(proj)) + '</span>'
+      + '  · <span id="kioskPaceProjLabel" style="color:' + ouColor + '">' + e(subLabel) + '</span>'
       + '</div>'
       + '</div>';
   }
@@ -1075,11 +1075,20 @@ var kiosk = (function() {
       var labelEl = document.getElementById('kioskPaceLabel');
       if (labelEl && _goal > 0) {
         var diffAbs = Math.abs(Math.round(diff));
-        labelEl.textContent = Math.abs(diff) < _goal * 0.02
+        var sublabel = Math.abs(diff) < _goal * 0.02
           ? 'On plan'
           : diff >= 0
             ? '▲ $' + diffAbs.toLocaleString() + ' over'
             : '▼ $' + diffAbs.toLocaleString() + ' short';
+        labelEl.textContent = sublabel;
+        // Keep bottom row in sync
+        var projValEl = document.getElementById('kioskPaceProjVal');
+        if (projValEl) projValEl.textContent = fmtDollars(proj);
+        var projLblEl = document.getElementById('kioskPaceProjLabel');
+        if (projLblEl) {
+          projLblEl.textContent = sublabel;
+          projLblEl.style.color = diff >= 0 ? 'var(--green)' : 'var(--red)';
+        }
       }
     }
 
