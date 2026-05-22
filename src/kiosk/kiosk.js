@@ -260,6 +260,14 @@ var kiosk = (function() {
       badgeMap[key].push(b);
     });
 
+    // Count how many staff members share each first name.
+    // First-name shortcut is only safe when the name is unique in the roster.
+    var firstNameCount = {};
+    staff.forEach(function(s) {
+      var fn = (s.name || '').split(' ')[0].toLowerCase();
+      firstNameCount[fn] = (firstNameCount[fn] || 0) + 1;
+    });
+
     var cards = staff.map(function(s) {
       var isLeading  = s.rank === 1;
       var barPct     = maxSales > 0 ? Math.round((s.sales / maxSales) * 100) : 0;
@@ -288,10 +296,13 @@ var kiosk = (function() {
       }
 
       // Trophies this employee currently holds (mini chips)
-      // Try full-name key first (fixture holders = "Dean Deloof"),
-      // then first-name key (GAS holders = "Zachary")
-      var firstKey   = (s.name || '').split(' ')[0].toLowerCase();
-      var myBadges   = badgeMap[nameKey] || badgeMap[firstKey] || [];
+      // Try full-name key first (fixture holders = "Dean Deloof").
+      // Fall back to first-name key (GAS holders = "Zachary") ONLY when that
+      // first name is unique in the roster — avoids giving one Zachary's trophies
+      // to a different Zachary at rank #4.
+      var firstKey        = (s.name || '').split(' ')[0].toLowerCase();
+      var firstNameUnique = firstNameCount[firstKey] === 1;
+      var myBadges        = badgeMap[nameKey] || (firstNameUnique ? badgeMap[firstKey] : null) || [];
       var badgesHtml = myBadges.length > 0
         ? '<div class="emp-badges">'
             + myBadges.map(function(b) {
@@ -337,11 +348,13 @@ var kiosk = (function() {
   // ── Render: Weekly badges ──────────────────────────────
   function renderBadges(badges) {
     var items = (badges || []).map(function(b) {
-      return '<div class="badge-item ' + e(b.type) + '">'
+      // Show first name only in the small badge card (full name is in b.holder for matching)
+    var holderFirst = (b.holder || '').split(' ')[0];
+    return '<div class="badge-item ' + e(b.type) + '">'
         + '<div class="badge-icon">' + b.icon + '</div>'
         + '<div>'
         + '  <div class="badge-title">' + e(b.title) + '</div>'
-        + '  <div class="badge-holder">' + e(b.holder) + '</div>'
+        + '  <div class="badge-holder">' + e(holderFirst) + '</div>'
         + '</div>'
         + '<div class="badge-stat">' + e(b.stat) + '</div>'
         + '</div>';

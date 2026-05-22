@@ -1605,7 +1605,7 @@ function getStoreBadges(store, params) {
   const aovKing = best(emps, e => e.avgOrderValue);
   badges.push({
     id: 'aov-avenger', icon: '💰', label: 'AOV Avenger', type: 'gold',
-    winner: firstName_(aovKing.name),
+    winner: aovKing.name,   // full name — frontend matches by name, not first name
     detail: '$' + aovKing.avgOrderValue + ' avg ticket',
   });
 
@@ -1613,7 +1613,7 @@ function getStoreBadges(store, params) {
   const uptKing = best(emps, e => e.avgUPT);
   badges.push({
     id: 'upsell-king', icon: '👑', label: 'Upsell King', type: 'gold',
-    winner: firstName_(uptKing.name),
+    winner: uptKing.name,
     detail: uptKing.avgUPT + ' items/ticket',
   });
 
@@ -1623,7 +1623,7 @@ function getStoreBadges(store, params) {
     const cleanest = worst(cleanEmps, e => e.discountRate);
     badges.push({
       id: 'cleanest', icon: '🧼', label: 'Cleanest Receipts', type: 'silver',
-      winner: firstName_(cleanest.name),
+      winner: cleanest.name,
       detail: Math.round(cleanest.discountRate * 100) + '% discount rate',
     });
   }
@@ -1632,7 +1632,7 @@ function getStoreBadges(store, params) {
   const topSales = best(emps, e => e.sales);
   badges.push({
     id: 'top-sales', icon: '🔥', label: 'Top Sales', type: 'gold',
-    winner: firstName_(topSales.name),
+    winner: topSales.name,
     detail: '$' + Math.round(topSales.sales).toLocaleString() + ' this week',
   });
 
@@ -1640,8 +1640,17 @@ function getStoreBadges(store, params) {
   const closer = best(emps, e => e.transactions);
   badges.push({
     id: 'the-closer', icon: '🤝', label: 'The Closer', type: 'silver',
-    winner: firstName_(closer.name),
+    winner: closer.name,
     detail: closer.transactions + ' tickets',
+  });
+
+  // 🎯 Transaction King — most individual items sold across all transactions
+  //    (distinct from The Closer = ticket count, and Upsell King = avg UPT)
+  const volumeKing = best(emps, e => e.items);
+  badges.push({
+    id: 'txn-king', icon: '🎯', label: 'Transaction King', type: 'silver',
+    winner: volumeKing.name,
+    detail: volumeKing.items + ' items sold',
   });
 
   return {
