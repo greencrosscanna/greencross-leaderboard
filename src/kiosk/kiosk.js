@@ -122,10 +122,11 @@ var kiosk = (function() {
   }
 
   // ── Render: Leader card ────────────────────────────────
-  function renderLeaderCard(leader, allStaff) {
-    // Build firstNameCount from the full staff roster so we can disambiguate
+  function renderLeaderCard(leader, allStaff, onShift) {
+    // Build firstNameCount from the FULL roster (onShift) so off-shift duplicates
+    // trigger disambiguation even when only one Zachary has sales today
     var fnCount = {};
-    (allStaff || []).forEach(function(s) {
+    (onShift || allStaff || []).forEach(function(s) {
       var fn = (s.name || '').split(' ')[0].toLowerCase();
       fnCount[fn] = (fnCount[fn] || 0) + 1;
     });
@@ -242,9 +243,9 @@ var kiosk = (function() {
       + '    <line x1="200" y1="120" x2="192" y2="116"/>'
       + '    <line x1="110" y1="30" x2="110" y2="40"/>'
       + '  </g>'
-      + '  <text x="20"  y="135" fill="#9ab8b0" font-size="9" text-anchor="start">−20%</text>'
-      + '  <text x="200" y="135" fill="#9ab8b0" font-size="9" text-anchor="end">+20%</text>'
-      + '  <text x="110" y="25"  fill="#9ab8b0" font-size="9" text-anchor="middle">PLAN</text>'
+      + '  <text x="20"  y="136" fill="#b8d4cc" font-size="11" font-weight="600" text-anchor="start">−20%</text>'
+      + '  <text x="200" y="136" fill="#b8d4cc" font-size="11" font-weight="600" text-anchor="end">+20%</text>'
+      + '  <text x="110" y="24"  fill="#b8d4cc" font-size="11" font-weight="600" text-anchor="middle">PLAN</text>'
       + '  <!-- needle -->'
       + '  <g id="kioskPaceNeedle" style="transform-origin:110px 120px;transform:rotate(-90deg);transition:transform 1.4s cubic-bezier(.2,.7,.3,1)">'
       + '    <line x1="110" y1="120" x2="110" y2="42" stroke="#e6ece9" stroke-width="2.5" stroke-linecap="round"/>'
@@ -284,12 +285,22 @@ var kiosk = (function() {
       badgeMap[key].push(b);
     });
 
-    // Count how many staff members share each first name.
-    // First-name shortcut is only safe when the name is unique in the roster.
+    // Count first-name frequency across the FULL roster (onShift) so that
+    // an off-shift Zachary triggers disambiguation for the on-shift Zachary too.
     var firstNameCount = {};
-    staff.forEach(function(s) {
-      var fn = (s.name || '').split(' ')[0].toLowerCase();
+    (onShift || []).forEach(function(p) {
+      var fn = (p.name || '').split(' ')[0].toLowerCase();
       firstNameCount[fn] = (firstNameCount[fn] || 0) + 1;
+    });
+    // Also include any leaderboard entries not in the onShift roster
+    staff.forEach(function(s) {
+      var inRoster = (onShift || []).some(function(p) {
+        return (p.name || '').toLowerCase() === (s.name || '').toLowerCase();
+      });
+      if (!inRoster) {
+        var fn = (s.name || '').split(' ')[0].toLowerCase();
+        firstNameCount[fn] = (firstNameCount[fn] || 0) + 1;
+      }
     });
 
     var cards = staff.map(function(s) {
@@ -625,7 +636,7 @@ var kiosk = (function() {
       '<div class="kiosk-wrap">',
         renderHeader(store),
         '<div class="hero-grid">',
-          renderLeaderCard(leader, staff),
+          renderLeaderCard(leader, staff, onShift),
           renderGoalCard(today),
           renderPaceCard(today),
         '</div>',
