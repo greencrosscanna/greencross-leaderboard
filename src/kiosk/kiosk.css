@@ -268,8 +268,8 @@ body.kiosk-bg {
   bottom: 0; left: 0; right: 0;
   text-align: center;
 }
-.gauge-pct .gp-big   { font-size: 38px; font-weight: 800; letter-spacing: -1px; }
-.gauge-pct .gp-small { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+.gauge-pct .gp-big   { font-size: 44px; font-weight: 800; letter-spacing: -1px; }
+.gauge-pct .gp-small { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
 .goal-stats {
   display: flex;
   justify-content: space-around;
@@ -278,8 +278,11 @@ body.kiosk-bg {
   border-top: 1px solid var(--border);
   padding-top: 12px;
 }
-.goal-stat .gs-v { font-size: 20px; font-weight: 700; }
+.goal-stat .gs-v { font-size: 22px; font-weight: 700; }
 .goal-stat .gs-l { font-size: 11px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 1px; margin-top: 3px; }
+/* Bigger kcard-label in the two metric cards */
+.goal-card .kcard-label,
+.pace-card .kcard-label { font-size: 12px; letter-spacing: 1px; }
 
 /* Pace dial card */
 .pace-card {
@@ -293,8 +296,6 @@ body.kiosk-bg {
   text-align: center;
 }
 .pace-svg { width: 220px; height: 130px; }
-/* Make pace SVG axis labels readable */
-.pace-svg text { fill: #8fa89e !important; }
 .pace-readout { text-align: center; margin-top: 4px; }
 .pace-readout .pr-delta {
   font-size: 30px;
@@ -310,10 +311,10 @@ body.kiosk-bg {
   border-top: 1px solid var(--border);
   width: 100%;
   text-align: center;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-dim);
 }
-.pace-projection .pp-v { color: var(--text); font-weight: 700; }
+.pace-projection .pp-v { color: var(--text); font-weight: 700; font-size: 15px; }
 
 /* ── Staff leaderboard grid ── */
 .lb-section { margin-top: 14px; }
