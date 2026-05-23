@@ -700,7 +700,8 @@ body.kiosk-bg {
   border-left: 3px solid var(--green);
   border-radius: 6px;
   padding: 8px 10px;
-  display: flex;
+  display: grid;
+  grid-template-columns: 44px 110px 1fr auto;
   align-items: center;
   gap: 10px;
   font-size: 12px;
@@ -713,10 +714,10 @@ body.kiosk-bg {
   from { transform: translateY(-10px); opacity: 0; }
   to   { transform: translateY(0);     opacity: 1; }
 }
-.t-time { color: var(--text-mute); font-size: 10px; min-width: 44px; }
-.t-who  { font-weight: 600; min-width: 52px; }
-.t-desc { color: var(--text-dim); font-size: 11px; flex: 1; }
-.t-amt  { color: var(--green); font-weight: 700; margin-left: auto; white-space: nowrap; }
+.t-time { color: var(--text-mute); font-size: 10px; }
+.t-who  { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-desc { color: var(--text-dim); font-size: 11px; }
+.t-amt  { color: var(--green); font-weight: 700; white-space: nowrap; text-align: right; }
 
 /* ── Rare drop overlay ── */
 #kioskRareDrop {
