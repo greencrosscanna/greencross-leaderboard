@@ -432,38 +432,37 @@ body.kiosk-bg {
 }
 
 @media (max-width: 1024px) {
-  .kiosk-wrap           { padding: 10px 14px 14px; }
-  .kiosk-clock .kc-time { font-size: 18px; }
+  .kiosk-wrap           { padding: 10px 12px 12px; }
+
+  /* Hide header + shift strip — everything above the hero cards */
+  .kiosk-header         { display: none; }
+  .shift-strip          { display: none; }
+  .hero-grid            { margin-top: 0; }
 
   /* Hero: hide leader card — leaderboard stripe has the same info.
      Goal + Pace take the full row side by side. */
   .leader-card          { display: none; }
-  .hero-grid {
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-  }
-  /* Gauges use the extra space */
+  .hero-grid            { grid-template-columns: 1fr 1fr; gap: 10px; }
   .gauge-wrap           { width: 100%; max-width: 240px; height: 130px; }
   .gauge-pct .gp-big    { font-size: 42px; }
   .kstat-v              { font-size: 16px; }
   .kstat-l              { font-size: 9px; }
 
-  /* Leaderboard: hide off-shift, 2 wide columns for ~4 active staff */
+  /* Leaderboard: hide off-shift, 4 equal columns (width / 4) */
   .emp-card.off-shift   { display: none; }
-  .lb-grid              { grid-template-columns: repeat(2, 1fr); }
+  .lb-grid              { grid-template-columns: repeat(4, 1fr); }
 
-  /* Lower grid: trophies + live sales side by side (row 1),
-     heatmap full-width below (row 2) */
-  .lower-grid {
-    grid-template-columns: 1fr 1fr;
-  }
+  /* Employee names → initials only */
+  .emp-n                { font-size: 0; }
+  .emp-n::before        { content: attr(data-initials); font-size: 17px; font-weight: 800; letter-spacing: -0.2px; }
+
+  /* Lower grid: trophies (narrower) + live sales (wider) row 1,
+     heatmap full-width row 2 */
+  .lower-grid           { grid-template-columns: 5fr 7fr; }
   .badges-card          { grid-column: 1; grid-row: 1; }
   .ticker-card          { grid-column: 2; grid-row: 1; }
   .heatmap-card         { grid-column: 1 / -1; grid-row: 2; }
-  .ticker-feed          { max-height: 360px; }
-
-  /* Shift strip: allow wrapping */
-  .shift-strip          { flex-wrap: wrap; }
+  .ticker-feed          { max-height: 400px; }
 }
 
 /* ── Staff leaderboard grid ── */
