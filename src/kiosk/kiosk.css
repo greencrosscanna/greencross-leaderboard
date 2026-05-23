@@ -407,63 +407,7 @@ body.kiosk-bg {
   text-align: center;
 }
 
-/* ── Responsive ──────────────────────────────────────────────────────────
-   1180px  iPad Air / 10.2" landscape — light font scaling
-   1024px  iPad portrait (all models) — full layout reflow
-   ──────────────────────────────────────────────────────────────────── */
 
-@media (max-width: 1180px) {
-  .kiosk-wrap          { padding: 14px 20px 20px; }
-  .leader-name         { font-size: 26px; }
-  .leader-amount       { font-size: 42px; }
-  .leader-avatar       { width: 78px; height: 78px; font-size: 26px; }
-  .kstat-v             { font-size: 19px; }
-  .gauge-pct .gp-big   { font-size: 40px; }
-}
-
-@media (max-width: 1100px) {
-  .leader-chips        { flex-direction: column; align-items: flex-end; }
-  .leader-name         { font-size: 22px; }
-  .leader-amount       { font-size: 36px; }
-  .leader-avatar       { width: 72px; height: 72px; font-size: 24px; }
-  .gauge-wrap          { width: 210px; height: 114px; }
-  .gauge-pct .gp-big   { font-size: 36px; }
-  .kstat-v             { font-size: 17px; }
-}
-
-@media (max-width: 1024px) {
-  .kiosk-wrap           { padding: 10px 12px 12px; }
-
-  /* Hide header + shift strip — everything above the hero cards */
-  .kiosk-header         { display: none; }
-  .shift-strip          { display: none; }
-  .hero-grid            { margin-top: 0; }
-
-  /* Hero: hide leader card — leaderboard stripe has the same info.
-     Goal + Pace take the full row side by side. */
-  .leader-card          { display: none; }
-  .hero-grid            { grid-template-columns: 1fr 1fr; gap: 10px; }
-  .gauge-wrap           { width: 100%; max-width: 240px; height: 130px; }
-  .gauge-pct .gp-big    { font-size: 42px; }
-  .kstat-v              { font-size: 16px; }
-  .kstat-l              { font-size: 9px; }
-
-  /* Leaderboard: hide off-shift, up to 4 columns */
-  .emp-card.off-shift   { display: none; }
-  .lb-grid              { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
-
-  /* Employee names → initials only (swap via explicit elements) */
-  .emp-n                { display: none; }
-  .emp-initials         { display: block; font-size: 17px; font-weight: 800; letter-spacing: -0.2px; line-height: 1.2; }
-
-  /* Lower grid: trophies (narrower) + live sales (wider) row 1,
-     heatmap full-width row 2 */
-  .lower-grid           { grid-template-columns: 5fr 7fr; }
-  .badges-card          { grid-column: 1; grid-row: 1; }
-  .ticker-card          { grid-column: 2; grid-row: 1; }
-  .heatmap-card         { grid-column: 1 / -1; grid-row: 2; }
-  .ticker-feed          { max-height: 400px; }
-}
 
 /* ── Staff leaderboard grid ── */
 .lb-section { margin-top: 14px; }
@@ -901,4 +845,60 @@ body.kiosk-bg {
   color: #4ade80;
   font-weight: 700;
   font-size: 16px;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────
+   1180px  iPad Air / 10.2" landscape — light font scaling
+   1024px  iPad portrait (all models) — full layout reflow
+   ──────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 1180px) {
+  .kiosk-wrap          { padding: 14px 20px 20px; }
+  .leader-name         { font-size: 26px; }
+  .leader-amount       { font-size: 42px; }
+  .leader-avatar       { width: 78px; height: 78px; font-size: 26px; }
+  .kstat-v             { font-size: 19px; }
+  .gauge-pct .gp-big   { font-size: 40px; }
+}
+
+@media (max-width: 1100px) {
+  .leader-chips        { flex-direction: column; align-items: flex-end; }
+  .leader-name         { font-size: 22px; }
+  .leader-amount       { font-size: 36px; }
+  .leader-avatar       { width: 72px; height: 72px; font-size: 24px; }
+  .gauge-wrap          { width: 210px; height: 114px; }
+  .gauge-pct .gp-big   { font-size: 36px; }
+  .kstat-v             { font-size: 17px; }
+}
+
+@media (max-width: 1024px) {
+  .kiosk-wrap           { padding: 10px 12px 12px; }
+
+  /* Hide header + shift strip */
+  .kiosk-header         { display: none; }
+  .shift-strip          { display: none; }
+  .hero-grid            { margin-top: 0; }
+
+  /* Hero: hide leader card, Goal + Pace side by side */
+  .leader-card          { display: none; }
+  .hero-grid            { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .gauge-wrap           { width: 100%; max-width: 240px; height: 130px; }
+  .gauge-pct .gp-big    { font-size: 42px; }
+  .kstat-v              { font-size: 16px; }
+  .kstat-l              { font-size: 9px; }
+
+  /* Leaderboard: hide off-shift, auto-fit collapses to active employees */
+  .emp-card.off-shift   { display: none; }
+  .lb-grid              { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+
+  /* Employee names → initials */
+  .emp-n                { display: none; }
+  .emp-initials         { display: block; font-size: 17px; font-weight: 800; letter-spacing: -0.2px; line-height: 1.2; }
+
+  /* Lower grid: trophies+heatmap stacked left (2fr), live sales full-height right (3fr) */
+  .lower-grid           { grid-template-columns: 2fr 3fr; }
+  .badges-card          { grid-column: 1; grid-row: 1; }
+  .heatmap-card         { grid-column: 1; grid-row: 2; }
+  .ticker-card          { grid-column: 2; grid-row: 1 / 3; }
+  .ticker-feed          { max-height: 500px; }
 }
