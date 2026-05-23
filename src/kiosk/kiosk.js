@@ -774,7 +774,7 @@ var kiosk = (function() {
     // Full roster + badges — kept for leaderboard refresh re-renders
     _onShift = data.today.onShift || [];
     _badges  = data.badges.badges || [];
-    _goal    = data.today.goal    || 0;
+    _goal    = (data.today.today && data.today.today.goal) || data.today.goal || 0;
 
     // Seed ticker cursor from the most recent transaction timestamp
     _lastTxnTs = data.today.latestTxnTs || '';

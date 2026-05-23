@@ -1507,16 +1507,17 @@ function getStoreToday(store, params) {
       .filter(tx => (tx.transactionDateLocalTime || tx.transactionDate || '') > sinceTs)
       .reverse();   // newest first for ticker display
     return {
-      isUpdate:         true,
-      revenue:          agg.sales,
-      transactions:     agg.transactions,
-      avgOrderValue:    agg.avgOrderValue,
-      pctToGoal:        pctToGoal,
-      pace:             pace,
-      projectedRevenue: projectedRevenue,
-      toGo:             storeClosed ? 0 : Math.max(0, dailyGoal - agg.sales),
-      latestTxnTs:      latestTxnTs,
-      newTicker:        newTxns.map(makeTicker_),
+      isUpdate:          true,
+      revenue:           agg.sales,
+      transactions:      agg.transactions,
+      avgOrderValue:     agg.avgOrderValue,
+      pctToGoal:         pctToGoal,
+      pace:              pace,
+      projectedRevenue:  projectedRevenue,
+      toGo:              storeClosed ? 0 : Math.max(0, dailyGoal - agg.sales),
+      timeRemainingLabel: timeRemainingLabel,
+      latestTxnTs:       latestTxnTs,
+      newTicker:         newTxns.map(makeTicker_),
     };
   }
 
