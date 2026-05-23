@@ -1577,6 +1577,47 @@ function getStoreLeaderboard(store, params) {
 
   props.setProperty(GC_STREAKS_KEY, JSON.stringify(streaks));
 
+  // Compute "leading since" — walk txns chronologically, find when the
+  // current day-leader last took the #1 spot and hasn't lost it since.
+  const leaderName    = empList.length > 0 ? empList[0].name : '';
+  const leaderKey     = leaderName.toLowerCase().replace(/\s+/g, '_');
+  const runningTotals = {};
+  let   currentLeader = null;
+  let   leadingSinceTs = '';
+
+  txns.forEach(function(tx) {
+    const emp    = txEmployee_(tx);
+    const empKey = emp.name.toLowerCase().replace(/\s+/g, '_');
+    if (!empKey || emp.name === 'Unknown') return;
+    runningTotals[empKey] = (runningTotals[empKey] || 0) + txTotal_(tx);
+
+    // Who's leading right now?
+    let topKey = null, topAmt = 0;
+    Object.entries(runningTotals).forEach(([k, v]) => {
+      if (v > topAmt) { topAmt = v; topKey = k; }
+    });
+
+    if (topKey && topKey !== currentLeader) {
+      currentLeader = topKey;
+      if (topKey === leaderKey) {
+        leadingSinceTs = tx.transactionDateLocalTime || tx.transactionDate || '';
+      }
+    }
+  });
+
+  // Format "2026-05-22T13:34:05.000" → "1:34 PM"
+  function fmtLeadingSince_(tsStr) {
+    if (!tsStr || tsStr.length < 16) return '';
+    const h = parseInt(tsStr.substring(11, 13), 10);
+    const m = parseInt(tsStr.substring(14, 16), 10);
+    if (isNaN(h) || isNaN(m)) return '';
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12  = h % 12 || 12;
+    return h12 + ':' + (m < 10 ? '0' : '') + m + ' ' + ampm;
+  }
+
+  const leaderLeadingSince = fmtLeadingSince_(leadingSinceTs);
+
   const staff = empList.map((emp, i) => ({
     rank:          i + 1,
     initials:      emp.initials,
@@ -1587,6 +1628,7 @@ function getStoreLeaderboard(store, params) {
     avgUPT:        emp.avgUPT || 0,
     discountRate:  emp.discountRate,
     streakDays:    emp._streak || 1,
+    leadingSince:  i === 0 ? leaderLeadingSince : '',
     note:          null,
   }));
 
