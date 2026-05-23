@@ -448,13 +448,13 @@ body.kiosk-bg {
   .kstat-v              { font-size: 16px; }
   .kstat-l              { font-size: 9px; }
 
-  /* Leaderboard: hide off-shift, 4 equal columns (width / 4) */
+  /* Leaderboard: hide off-shift, up to 4 columns */
   .emp-card.off-shift   { display: none; }
-  .lb-grid              { grid-template-columns: repeat(4, 1fr); }
+  .lb-grid              { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
 
-  /* Employee names → initials only */
-  .emp-n                { font-size: 0; }
-  .emp-n::before        { content: attr(data-initials); font-size: 17px; font-weight: 800; letter-spacing: -0.2px; }
+  /* Employee names → initials only (swap via explicit elements) */
+  .emp-n                { display: none; }
+  .emp-initials         { display: block; font-size: 17px; font-weight: 800; letter-spacing: -0.2px; line-height: 1.2; }
 
   /* Lower grid: trophies (narrower) + live sales (wider) row 1,
      heatmap full-width row 2 */
@@ -533,7 +533,8 @@ body.kiosk-bg {
 .emp-card:not(.leading) .emp-bar span { background: var(--text-dim); }
 .emp-stats { display: flex; gap: 12px; margin-top: 10px; font-size: 11px; color: var(--text-dim); }
 .emp-stats b  { color: var(--text); font-weight: 600; }
-.emp-extra { margin-top: 8px; font-size: 11px; font-weight: 600; }
+.emp-extra    { margin-top: 8px; font-size: 11px; font-weight: 600; }
+.emp-initials { display: none; } /* shown only in iPad media query */
 .emp-extra.streak    { color: var(--orange); }
 .emp-extra.pb        { color: var(--blue); }
 .emp-extra.muted     { color: var(--text-mute); font-weight: 500; }
