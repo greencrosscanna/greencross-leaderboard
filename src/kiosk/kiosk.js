@@ -283,6 +283,8 @@ var kiosk = (function() {
       + '          stroke="#a3f0be" stroke-width="16" fill="none" stroke-linecap="round"'
       + '          stroke-dasharray="0 308" stroke-dashoffset="0"'
       + '          style="transition: stroke-dasharray 1.6s cubic-bezier(.2,.7,.3,1), stroke-dashoffset 1.6s cubic-bezier(.2,.7,.3,1); filter: drop-shadow(0 0 4px #86efac)"/>'
+      + '    <!-- Masks the butt-cap endpoint so the arc appears to end cleanly -->'
+      + '    <circle id="kioskGoalEndCap" cx="22" cy="122" r="7" fill="#232a27" opacity="0"/>'
       + '  </svg>'
       + '  <div class="gauge-pct">'
       + '    <div class="gp-big num" id="kioskGoalPct">0%</div>'
@@ -907,11 +909,27 @@ var kiosk = (function() {
   }
 
   function setGoalArcs(pct) {
-    var ARC_LEN   = 308;
-    var capped    = Math.min(pct, 1);
-    var arc       = document.getElementById('kioskGoalArc');
-    var ovr       = document.getElementById('kioskGoalOverflow');
+    var ARC_LEN = 308;
+    var capped  = Math.min(pct, 1);
+    var arc     = document.getElementById('kioskGoalArc');
+    var ovr     = document.getElementById('kioskGoalOverflow');
+    var cap     = document.getElementById('kioskGoalEndCap');
+
     if (arc) arc.setAttribute('stroke-dashoffset', String(Math.round(ARC_LEN * (1 - capped))));
+
+    // Masking circle: sits at the current arc endpoint and hides the butt-cap disc.
+    // Arc center (120,122), radius 98. Progress maps 0→π (left) to 1→0 (right).
+    if (cap) {
+      if (pct > 0 && pct < 1) {
+        var theta = Math.PI * (1 - capped);
+        cap.setAttribute('cx', (120 + 98 * Math.cos(theta)).toFixed(1));
+        cap.setAttribute('cy', (122 - 98 * Math.sin(theta)).toFixed(1));
+        cap.setAttribute('opacity', '1');
+      } else {
+        cap.setAttribute('opacity', '0'); // hidden at 0% (nothing drawn) and ≥100% (overflow takes over)
+      }
+    }
+
     if (ovr) {
       if (pct > 1) {
         var overLen = Math.round(Math.min(pct - 1, 0.5) * ARC_LEN);
