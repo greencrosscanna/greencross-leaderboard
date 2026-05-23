@@ -701,7 +701,7 @@ body.kiosk-bg {
   border-radius: 6px;
   padding: 8px 10px;
   display: grid;
-  grid-template-columns: 44px 110px 1fr auto;
+  grid-template-columns: 44px 1fr 58px auto;
   align-items: center;
   gap: 10px;
   font-size: 12px;
@@ -715,8 +715,8 @@ body.kiosk-bg {
   to   { transform: translateY(0);     opacity: 1; }
 }
 .t-time { color: var(--text-mute); font-size: 10px; }
-.t-who  { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.t-desc { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.t-who  { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.t-desc { color: var(--text-dim); font-size: 11px; white-space: nowrap; overflow: hidden; }
 .t-amt  { color: var(--green); font-weight: 700; white-space: nowrap; text-align: right; }
 
 /* ── Rare drop overlay ── */
