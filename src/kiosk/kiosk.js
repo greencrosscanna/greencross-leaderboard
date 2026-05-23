@@ -256,7 +256,7 @@ var kiosk = (function() {
   function renderGoalCard(today) {
     var pct      = today.pctToGoal || 0;
     var pctDisp  = Math.round(pct * 100) + '%';
-    var closed   = today.timeRemainingLabel === 'Store closed';
+    var closed   = today.timeRemainingLabel === 'Closed';
     // Arc for "M 22 122 A 98 98 0 0 1 218 122" ≈ π × 98 = 308
     var ARC_LEN  = 308;
 
@@ -302,7 +302,7 @@ var kiosk = (function() {
       + '  </div>'
       + '  <div class="kstat">'
       + '    <div class="kstat-v' + (closed ? ' store-closed-label' : '') + '" id="kioskTimeRemaining">' + e(today.timeRemainingLabel || '—') + '</div>'
-      + '    <div class="kstat-l">Status</div>'
+      + '    <div class="kstat-l">Remain</div>'
       + '  </div>'
       + '</div>'
       + '</div>';
@@ -1163,7 +1163,7 @@ var kiosk = (function() {
     var pctToGoal = td.pctToGoal || 0;
     var toGo      = td.toGo      || 0;
     var label     = td.timeRemainingLabel || '';
-    var closed    = label === 'Store closed';
+    var closed    = label === 'Closed';
 
     var soldEl = document.getElementById('kioskGoalSold');
     if (soldEl) countUp(soldEl, revenue, 800);

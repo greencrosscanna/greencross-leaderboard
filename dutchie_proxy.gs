@@ -1432,11 +1432,14 @@ function getStoreToday(store, params) {
   // Time remaining (PT, store hours 8 am – 10 pm)
   const minutesLeft  = STORE_CLOSE_HOUR * 60 - (nowHour * 60 + nowMinute);
   const storeClosed  = minutesLeft <= 0;
+  // Format as H:MM (e.g. "5:47", "0:23"), with special cases near close
+  const _remH   = Math.floor(Math.max(0, minutesLeft) / 60);
+  const _remM   = Math.max(0, minutesLeft) % 60;
+  const _remFmt = _remH + ':' + String(_remM).padStart(2, '0');
   const timeRemainingLabel =
-    storeClosed         ? 'Store closed'     // past 10 pm
-    : minutesLeft <= 60 ? 'Closing soon'     // last hour
-    : minutesLeft <= 120 ? '~1h remaining'   // second-to-last hour
-    : Math.floor(minutesLeft / 60) + 'h remaining';
+    storeClosed         ? 'Closed'
+    : minutesLeft <= 0  ? 'Closed'
+    : _remFmt;
 
   // Project EOD revenue (straight-line); after close it's the actual final number
   const projectedRevenue = storeClosed
