@@ -261,6 +261,11 @@ var kiosk = (function() {
       + '          stroke-dasharray="' + ARC_LEN + '"'
       + '          stroke-dashoffset="' + ARC_LEN + '"'
       + '          style="transition: stroke-dashoffset 1.6s cubic-bezier(.2,.7,.3,1)"/>'
+      + '    <path id="kioskGoalOverflow"'
+      + '          d="M 22 122 A 98 98 0 0 1 218 122"'
+      + '          stroke="#a3f0be" stroke-width="16" fill="none" stroke-linecap="round"'
+      + '          stroke-dasharray="0 308" stroke-dashoffset="0"'
+      + '          style="transition: stroke-dasharray 1.6s cubic-bezier(.2,.7,.3,1), stroke-dashoffset 1.6s cubic-bezier(.2,.7,.3,1); filter: drop-shadow(0 0 4px #86efac)"/>'
       + '  </svg>'
       + '  <div class="gauge-pct">'
       + '    <div class="gp-big num" id="kioskGoalPct">0%</div>'
@@ -878,9 +883,26 @@ var kiosk = (function() {
   function animateGoalArc(pct) {
     var ARC_LEN = 308;
     setTimeout(function() {
-      var arc = document.getElementById('kioskGoalArc');
-      if (arc) arc.setAttribute('stroke-dashoffset', String(Math.round(ARC_LEN * (1 - (pct || 0)))));
+      setGoalArcs(pct || 0);
     }, 250);
+  }
+
+  function setGoalArcs(pct) {
+    var ARC_LEN   = 308;
+    var capped    = Math.min(pct, 1);
+    var arc       = document.getElementById('kioskGoalArc');
+    var ovr       = document.getElementById('kioskGoalOverflow');
+    if (arc) arc.setAttribute('stroke-dashoffset', String(Math.round(ARC_LEN * (1 - capped))));
+    if (ovr) {
+      if (pct > 1) {
+        var overLen = Math.round(Math.min(pct - 1, 0.5) * ARC_LEN);
+        ovr.setAttribute('stroke-dasharray',  overLen + ' 9999');
+        ovr.setAttribute('stroke-dashoffset', String(-(ARC_LEN - overLen)));
+      } else {
+        ovr.setAttribute('stroke-dasharray',  '0 308');
+        ovr.setAttribute('stroke-dashoffset', '0');
+      }
+    }
   }
 
   // ── Pace tick ─────────────────────────────────────────
@@ -1151,8 +1173,7 @@ var kiosk = (function() {
       subEl.textContent = closed ? 'final' : 'to goal';
     }
 
-    var arc = document.getElementById('kioskGoalArc');
-    if (arc) arc.setAttribute('stroke-dashoffset', String(Math.round(308 * (1 - pctToGoal))));
+    setGoalArcs(pctToGoal);
 
     // Dim the card when store is closed
     var card = arc && arc.closest('.goal-card');
