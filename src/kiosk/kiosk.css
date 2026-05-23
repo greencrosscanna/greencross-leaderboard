@@ -408,10 +408,8 @@ body.kiosk-bg {
 }
 
 /* ── Responsive ──────────────────────────────────────────────────────────
-   Three breakpoints:
-     1180px  iPad Air / 10.2" landscape — light font scaling
-     1024px  iPad Pro portrait / older iPad landscape — layout tightening
-      820px  iPad Air portrait — hero reflow, lb 3-col, lower-grid stack
+   1180px  iPad Air / 10.2" landscape — light font scaling
+   1024px  iPad portrait (all models) — full layout reflow
    ──────────────────────────────────────────────────────────────────── */
 
 @media (max-width: 1180px) {
@@ -434,43 +432,28 @@ body.kiosk-bg {
 }
 
 @media (max-width: 1024px) {
-  .kiosk-wrap          { padding: 12px 16px 16px; }
-  .hero-grid           { gap: 10px; }
-  .gauge-wrap          { width: 190px; height: 103px; }
-  .gauge-pct .gp-big   { font-size: 32px; }
-  .leader-avatar       { width: 66px; height: 66px; font-size: 22px; }
-  .leader-name         { font-size: 20px; }
-  .leader-amount       { font-size: 32px; }
-  .kstat-v             { font-size: 16px; }
-  .kstat-l             { font-size: 9px; }
-  /* Leaderboard: 4 cards instead of 6 */
-  .lb-grid             { grid-template-columns: repeat(4, 1fr); }
-  /* Lower grid: tighter proportions */
-  .lower-grid          { grid-template-columns: 1fr 1.6fr 1fr; }
-}
-
-@media (max-width: 820px) {
-  .kiosk-wrap           { padding: 10px 12px 14px; }
+  .kiosk-wrap           { padding: 10px 14px 14px; }
   .kiosk-clock .kc-time { font-size: 18px; }
 
-  /* Hero: hide leader card (leaderboard stripe has the same info),
-     goal + pace take the full row side by side */
+  /* Hero: hide leader card — leaderboard stripe has the same info.
+     Goal + Pace take the full row side by side. */
   .leader-card          { display: none; }
   .hero-grid {
     grid-template-columns: 1fr 1fr;
     gap: 10px;
   }
-  /* Gauges can use more space without the leader card */
-  .gauge-wrap           { width: 100%; max-width: 220px; height: 119px; }
-  .gauge-pct .gp-big    { font-size: 38px; }
+  /* Gauges use the extra space */
+  .gauge-wrap           { width: 100%; max-width: 240px; height: 130px; }
+  .gauge-pct .gp-big    { font-size: 42px; }
+  .kstat-v              { font-size: 16px; }
+  .kstat-l              { font-size: 9px; }
 
-  /* Leaderboard: only active employees shown (off-shift hidden),
-     2 columns for ~4 people */
+  /* Leaderboard: hide off-shift, 2 wide columns for ~4 active staff */
   .emp-card.off-shift   { display: none; }
   .lb-grid              { grid-template-columns: repeat(2, 1fr); }
 
-  /* Lower grid: badges + live sales side by side (row 1),
-     heatmap full width below (row 2) */
+  /* Lower grid: trophies + live sales side by side (row 1),
+     heatmap full-width below (row 2) */
   .lower-grid {
     grid-template-columns: 1fr 1fr;
   }
