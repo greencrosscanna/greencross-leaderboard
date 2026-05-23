@@ -582,7 +582,7 @@ var kiosk = (function() {
           + '</div>';
     }).join('');
 
-    return '<div class="kiosk-card">'
+    return '<div class="kiosk-card badges-card">'
       + '<div class="kcard-label">This Week\'s Trophies</div>'
       + '<div class="badges-grid">' + items + '</div>'
       + '</div>';
@@ -620,7 +620,7 @@ var kiosk = (function() {
       ? 'Peak · ' + e(peakHour) + ' · ' + e(fmtDollars(peakRevenue || 0))
       : '';
 
-    return '<div class="kiosk-card">'
+    return '<div class="kiosk-card heatmap-card">'
       + '<div class="kcard-label">Today by Hour</div>'
       + '<div class="heatmap">' + bars + '</div>'
       + '<div class="hm-legend">'
