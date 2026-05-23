@@ -699,7 +699,7 @@ body.kiosk-bg {
   border-radius: 6px;
   padding: 8px 10px;
   display: grid;
-  grid-template-columns: 44px 1fr 58px auto;
+  grid-template-columns: 44px 1fr 58px 52px;
   align-items: center;
   gap: 10px;
   font-size: 12px;

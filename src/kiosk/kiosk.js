@@ -274,7 +274,7 @@ var kiosk = (function() {
       + '          stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="round"/>'
       + '    <path id="kioskGoalArc"'
       + '          d="M 22 122 A 98 98 0 0 1 218 122"'
-      + '          stroke="url(#goalGrad)" stroke-width="14" fill="none" stroke-linecap="round"'
+      + '          stroke="url(#goalGrad)" stroke-width="14" fill="none" stroke-linecap="butt"'
       + '          stroke-dasharray="' + ARC_LEN + '"'
       + '          stroke-dashoffset="' + ARC_LEN + '"'
       + '          style="transition: stroke-dashoffset 1.6s cubic-bezier(.2,.7,.3,1)"/>'
@@ -654,7 +654,7 @@ var kiosk = (function() {
     var rows = (items || []).map(function(t) {
       return '<div class="ticker-item">'
         + '<span class="t-time">' + e(t.time) + '</span>'
-        + '<span class="t-who"><span class="t-who-name">' + e(t.firstName) + '</span>'
+        + '<span class="t-who"><span class="t-who-name">' + e((t.firstName || '').split(' ')[0]) + '</span>'
         +                        '<span class="t-who-init">' + e(nameToInitials(t.firstName)) + '</span></span>'
         + '<span class="t-desc">' + e(t.desc) + '</span>'
         + '<span class="t-amt">'  + e(fmtDollars(t.amount)) + '</span>'
