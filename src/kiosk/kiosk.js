@@ -293,7 +293,7 @@ var kiosk = (function() {
   // ── Render: Pace dial card ─────────────────────────────
   // PACE_RANGE: ±N% maps to ±90° rotation on the arc.
   // Zones: |deg| > 30 → red (left) or green (right); |deg| ≤ 30 → amber.
-  var PACE_RANGE = 80;
+  var PACE_RANGE = 30;
 
   function paceZone(pace) {
     var pct     = (pace || 0) * 100;           // convert decimal to percentage
