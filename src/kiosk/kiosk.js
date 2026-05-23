@@ -138,7 +138,10 @@ var kiosk = (function() {
 
     // ── Chips ────────────────────────────────────────────
     var chipsHtml = '';
-    if (leader.streak && leader.streak > 0 && leader.streakType === 'fire') {
+    if (leader.leadingSince) {
+      chipsHtml += '<span class="leader-chip since">👑 Leading since ' + e(leader.leadingSince) + '</span>';
+    }
+    if (leader.streak && leader.streak > 1 && leader.streakType === 'fire') {
       chipsHtml += '<span class="leader-chip streak">🔥 ' + leader.streak + '-day streak</span>';
     }
 
@@ -1049,6 +1052,7 @@ var kiosk = (function() {
         upt:             s.upt   != null  ? s.upt   : (s.avgUPT        || 0),
         streak:          streak,
         streakType:      s.streakType     || (streak > 2 ? 'fire' : ''),
+        leadingSince:    s.leadingSince   || '',
         personalBestPct: s.personalBestPct || null,
         note:            s.note           || null,
       };
