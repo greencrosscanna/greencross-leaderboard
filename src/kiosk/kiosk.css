@@ -688,7 +688,7 @@ body.kiosk-bg {
   flex-direction: column;
   gap: 6px;
   min-height: 180px;
-  max-height: 340px;
+  max-height: 220px;
   overflow: hidden;
   position: relative;
 }
@@ -712,8 +712,10 @@ body.kiosk-bg {
   from { transform: translateY(-10px); opacity: 0; }
   to   { transform: translateY(0);     opacity: 1; }
 }
-.t-time { color: var(--text-mute); font-size: 10px; }
-.t-who  { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.t-time       { color: var(--text-mute); font-size: 10px; }
+.t-who        { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.t-who-name   { display: inline; }   /* desktop: first name */
+.t-who-init   { display: none; }     /* desktop: hidden */
 .t-desc { color: var(--text-dim); font-size: 11px; white-space: nowrap; overflow: hidden; }
 .t-amt  { color: var(--green); font-weight: 700; white-space: nowrap; text-align: right; }
 
@@ -897,4 +899,8 @@ body.kiosk-bg {
   .heatmap-card         { grid-column: 1; grid-row: 2; }
   .ticker-card          { grid-column: 2; grid-row: 1 / 3; }
   .ticker-feed          { max-height: 680px; }
+
+  /* Ticker: initials on iPad, first name on desktop */
+  .t-who-name           { display: none; }
+  .t-who-init           { display: inline; }
 }
