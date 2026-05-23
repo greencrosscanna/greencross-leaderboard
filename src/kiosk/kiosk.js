@@ -264,17 +264,11 @@ var kiosk = (function() {
       + '<div class="kcard-label">Daily Goal · ' + e(fmtDollars(today.goal)) + '</div>'
       + '<div class="gauge-wrap">'
       + '  <svg width="240" height="130" viewBox="0 0 240 130">'
-      + '    <defs>'
-      + '      <linearGradient id="goalGrad" x1="0" x2="1" y1="0" y2="0">'
-      + '        <stop offset="0%" stop-color="#2f8a52"/>'
-      + '        <stop offset="100%" stop-color="#4ade80"/>'
-      + '      </linearGradient>'
-      + '    </defs>'
       + '    <path d="M 22 122 A 98 98 0 0 1 218 122"'
-      + '          stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="round"/>'
+      + '          stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="butt"/>'
       + '    <path id="kioskGoalArc"'
       + '          d="M 22 122 A 98 98 0 0 1 218 122"'
-      + '          stroke="url(#goalGrad)" stroke-width="14" fill="none" stroke-linecap="butt"'
+      + '          stroke="#4ade80" stroke-width="14" fill="none" stroke-linecap="butt"'
       + '          stroke-dasharray="' + ARC_LEN + '"'
       + '          stroke-dashoffset="' + ARC_LEN + '"'
       + '          style="transition: stroke-dashoffset 1.6s cubic-bezier(.2,.7,.3,1)"/>'
@@ -283,8 +277,6 @@ var kiosk = (function() {
       + '          stroke="#a3f0be" stroke-width="16" fill="none" stroke-linecap="round"'
       + '          stroke-dasharray="0 308" stroke-dashoffset="0"'
       + '          style="transition: stroke-dasharray 1.6s cubic-bezier(.2,.7,.3,1), stroke-dashoffset 1.6s cubic-bezier(.2,.7,.3,1); filter: drop-shadow(0 0 4px #86efac)"/>'
-      + '    <!-- Masks the butt-cap endpoint so the arc appears to end cleanly -->'
-      + '    <circle id="kioskGoalEndCap" cx="22" cy="122" r="7" fill="#232a27" opacity="0"/>'
       + '  </svg>'
       + '  <div class="gauge-pct">'
       + '    <div class="gp-big num" id="kioskGoalPct">0%</div>'
@@ -911,24 +903,10 @@ var kiosk = (function() {
   function setGoalArcs(pct) {
     var ARC_LEN = 308;
     var capped  = Math.min(pct, 1);
-    var arc     = document.getElementById('kioskGoalArc');
-    var ovr     = document.getElementById('kioskGoalOverflow');
-    var cap     = document.getElementById('kioskGoalEndCap');
+    var arc = document.getElementById('kioskGoalArc');
+    var ovr = document.getElementById('kioskGoalOverflow');
 
     if (arc) arc.setAttribute('stroke-dashoffset', String(Math.round(ARC_LEN * (1 - capped))));
-
-    // Masking circle: sits at the current arc endpoint and hides the butt-cap disc.
-    // Arc center (120,122), radius 98. Progress maps 0→π (left) to 1→0 (right).
-    if (cap) {
-      if (pct > 0 && pct < 1) {
-        var theta = Math.PI * (1 - capped);
-        cap.setAttribute('cx', (120 + 98 * Math.cos(theta)).toFixed(1));
-        cap.setAttribute('cy', (122 - 98 * Math.sin(theta)).toFixed(1));
-        cap.setAttribute('opacity', '1');
-      } else {
-        cap.setAttribute('opacity', '0'); // hidden at 0% (nothing drawn) and ≥100% (overflow takes over)
-      }
-    }
 
     if (ovr) {
       if (pct > 1) {
