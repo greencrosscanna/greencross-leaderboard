@@ -716,7 +716,7 @@ body.kiosk-bg {
 }
 .t-time { color: var(--text-mute); font-size: 10px; }
 .t-who  { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.t-desc { color: var(--text-dim); font-size: 11px; }
+.t-desc { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
 .t-amt  { color: var(--green); font-weight: 700; white-space: nowrap; text-align: right; }
 
 /* ── Rare drop overlay ── */
