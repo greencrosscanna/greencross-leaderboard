@@ -654,7 +654,7 @@ var kiosk = (function() {
     var rows = (items || []).map(function(t) {
       return '<div class="ticker-item">'
         + '<span class="t-time">' + e(t.time) + '</span>'
-        + '<span class="t-who"><span class="t-who-name">' + e((t.firstName || '').split(' ')[0]) + '</span>'
+        + '<span class="t-who"><span class="t-who-name">' + e(t.firstName || '') + '</span>'
         +                        '<span class="t-who-init">' + e(nameToInitials(t.firstName)) + '</span></span>'
         + '<span class="t-desc">' + e(t.desc) + '</span>'
         + '<span class="t-amt">'  + e(fmtDollars(t.amount)) + '</span>'
@@ -975,7 +975,7 @@ var kiosk = (function() {
       var el = document.createElement('div');
       el.className = 'ticker-item fresh';
       el.innerHTML = '<span class="t-time">' + GC.esc(fmtTxnTime(t.ts)) + '</span>'
-        + '<span class="t-who"><span class="t-who-name">' + GC.esc((t.who || '').split(' ')[0]) + '</span>'
+        + '<span class="t-who"><span class="t-who-name">' + GC.esc(t.who || '') + '</span>'
         +                     '<span class="t-who-init">' + GC.esc(nameToInitials(t.who || '')) + '</span></span>'
         + '<span class="t-desc">' + GC.esc(qtyStr)        + '</span>'
         + '<span class="t-amt">'  + GC.esc(fmtDollars(t.price || 0)) + '</span>';
