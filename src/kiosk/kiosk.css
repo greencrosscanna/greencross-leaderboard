@@ -688,7 +688,7 @@ body.kiosk-bg {
   flex-direction: column;
   gap: 6px;
   min-height: 180px;
-  max-height: 220px;
+  max-height: 340px;
   overflow: hidden;
   position: relative;
 }
@@ -887,18 +887,14 @@ body.kiosk-bg {
   .kstat-v              { font-size: 16px; }
   .kstat-l              { font-size: 9px; }
 
-  /* Leaderboard: hide off-shift, auto-fit collapses to active employees */
+  /* Leaderboard: hide off-shift, always 4-column grid (empty tracks = empty slots) */
   .emp-card.off-shift   { display: none; }
-  .lb-grid              { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-
-  /* Employee names → initials */
-  .emp-n                { display: none; }
-  .emp-initials         { display: block; font-size: 17px; font-weight: 800; letter-spacing: -0.2px; line-height: 1.2; }
+  .lb-grid              { grid-template-columns: repeat(4, 1fr); }
 
   /* Lower grid: trophies+heatmap stacked left (2fr), live sales full-height right (3fr) */
   .lower-grid           { grid-template-columns: 2fr 3fr; }
   .badges-card          { grid-column: 1; grid-row: 1; }
   .heatmap-card         { grid-column: 1; grid-row: 2; }
   .ticker-card          { grid-column: 2; grid-row: 1 / 3; }
-  .ticker-feed          { max-height: 500px; }
+  .ticker-feed          { max-height: 680px; }
 }

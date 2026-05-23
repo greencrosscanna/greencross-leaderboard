@@ -54,6 +54,13 @@ var kiosk = (function() {
   // ── Helpers ────────────────────────────────────────────
   function e(s) { return GC.esc(String(s)); }
 
+  /** "Dean Smith" → "DS", "Dean" → "D" */
+  function nameToInitials(name) {
+    return (name || '').trim().split(/\s+/)
+      .map(function(w) { return w[0] ? w[0].toUpperCase() : ''; })
+      .join('').slice(0, 2);
+  }
+
   function fmtDollars(n) {
     if (n === null || n === undefined) return '—';
     return '$' + Math.round(n).toLocaleString();
@@ -637,7 +644,7 @@ var kiosk = (function() {
     var rows = (items || []).map(function(t) {
       return '<div class="ticker-item">'
         + '<span class="t-time">' + e(t.time) + '</span>'
-        + '<span class="t-who">'  + e(t.firstName) + '</span>'
+        + '<span class="t-who">'  + e(nameToInitials(t.firstName)) + '</span>'
         + '<span class="t-desc">' + e(t.desc) + '</span>'
         + '<span class="t-amt">'  + e(fmtDollars(t.amount)) + '</span>'
         + '</div>';
@@ -957,7 +964,7 @@ var kiosk = (function() {
       var el = document.createElement('div');
       el.className = 'ticker-item fresh';
       el.innerHTML = '<span class="t-time">' + GC.esc(fmtTxnTime(t.ts)) + '</span>'
-        + '<span class="t-who">'  + GC.esc(t.who   || '') + '</span>'
+        + '<span class="t-who">'  + GC.esc(nameToInitials(t.who || '')) + '</span>'
         + '<span class="t-desc">' + GC.esc(qtyStr)        + '</span>'
         + '<span class="t-amt">'  + GC.esc(fmtDollars(t.price || 0)) + '</span>';
       feed.insertBefore(el, feed.firstChild);
@@ -977,8 +984,8 @@ var kiosk = (function() {
       }
     });
 
-    // Keep feed trimmed to 8 rows
-    while (feed.children.length > 8) feed.removeChild(feed.lastChild);
+    // Keep feed trimmed to 10 rows
+    while (feed.children.length > 10) feed.removeChild(feed.lastChild);
   }
 
   // ── Data normalizer ────────────────────────────────────────────
