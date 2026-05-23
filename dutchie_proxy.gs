@@ -727,7 +727,13 @@ function fetchStoreTransactions_(storeSlug, fromUTC, toUTC) {
     Take:          5000,
   });
   const txns = Array.isArray(data) ? data : (data.transactions || data.data || []);
-  return txns.filter(tx => tx.transactionType === 'Retail');
+  return txns
+    .filter(tx => tx.transactionType === 'Retail')
+    .sort((a, b) => {
+      const ta = a.transactionDateLocalTime || a.transactionDate || '';
+      const tb = b.transactionDateLocalTime || b.transactionDate || '';
+      return ta < tb ? -1 : ta > tb ? 1 : 0;
+    });
 }
 
 /**
