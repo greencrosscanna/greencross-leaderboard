@@ -435,6 +435,8 @@ body.kiosk-bg {
   position: relative;
   overflow: hidden;
   transition: border-color 0.25s;
+  display: flex;
+  flex-direction: column;
 }
 .emp-card.leading {
   border-color: var(--green);
@@ -477,7 +479,7 @@ body.kiosk-bg {
 .emp-card:not(.leading) .emp-bar span { background: var(--text-dim); }
 .emp-stats { display: flex; gap: 12px; margin-top: 10px; font-size: 11px; color: var(--text-dim); }
 .emp-stats b  { color: var(--text); font-weight: 600; }
-.emp-extra    { margin-top: 8px; font-size: 11px; font-weight: 600; }
+.emp-extra    { margin-top: auto; padding-top: 8px; font-size: 11px; font-weight: 600; }
 .emp-initials { display: none; } /* shown only in iPad media query */
 .emp-extra.streak    { color: var(--orange); }
 .emp-extra.pb        { color: var(--blue); }
