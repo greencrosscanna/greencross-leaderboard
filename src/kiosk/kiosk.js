@@ -41,6 +41,7 @@ var kiosk = (function() {
   var _onShift      = [];    // full roster array (all statuses) — used by lb refresh
   var _badges       = [];    // current week's badges — used by lb refresh
   var _goal         = 0;     // daily revenue goal — used by pace projection updates
+  var _leaderName    = '';    // disambiguated display name of today's leader
   var _pollTimer    = null;
   var _lbTimer      = null;
   var _clockTimer   = null;
@@ -123,9 +124,11 @@ var kiosk = (function() {
   }
 
   // ── Render: Leader card ────────────────────────────────
-  function renderLeaderCard(leader, allStaff, onShift) {
-    // Build firstNameCount from the FULL roster (onShift) so off-shift duplicates
-    // trigger disambiguation even when only one Zachary has sales today
+  // Fixed count of distinct trophy types — denominator for "N / TOTAL trophies" stat.
+  var BADGE_TYPE_TOTAL = 7;
+
+  function renderLeaderCard(leader, allStaff, onShift, badges, today) {
+    // ── Name disambiguation ──────────────────────────────
     var fnCount = {};
     (onShift || allStaff || []).forEach(function(s) {
       var fn = (s.name || '').split(' ')[0].toLowerCase();
@@ -133,36 +136,98 @@ var kiosk = (function() {
     });
     var dispName = disambiguateName(leader.name, fnCount);
 
-    var streakHtml = '';
-    if (leader.streak && leader.streakType === 'fire') {
-      streakHtml = '<div class="leader-streak">🔥 ' + e(leader.streak) + '-day streak</div>';
+    // ── Chips ────────────────────────────────────────────
+    var chipsHtml = '';
+    if (leader.streak && leader.streak > 0 && leader.streakType === 'fire') {
+      chipsHtml += '<span class="leader-chip streak">🔥 ' + leader.streak + '-day streak</span>';
     }
+
+    // ── Secondary stat line ──────────────────────────────
     var aovStr = leader.aov ? '$' + leader.aov.toFixed(2) : '—';
     var uptStr = leader.upt ? leader.upt.toFixed(1) : '—';
     var roleHtml = leader.role
       ? '<div class="leader-role">' + e(leader.role) + '</div>'
       : '';
 
+    // ── Bottom-row stat 1: lead margin ───────────────────
+    var secondSales = (allStaff && allStaff[1]) ? (allStaff[1].sales || 0) : null;
+    var marginHtml;
+    if (secondSales !== null && leader.sales > 0) {
+      var margin    = (leader.sales || 0) - secondSales;
+      var marginCls = margin > 0 ? ' up' : (margin < 0 ? ' down' : '');
+      var marginStr = (margin >= 0 ? '+$' : '−$') + Math.abs(margin).toLocaleString();
+      marginHtml = '<div class="kstat' + marginCls + '">'
+        + '<div class="kstat-v num">' + marginStr + '</div>'
+        + '<div class="kstat-l">Ahead of #2</div>'
+        + '</div>';
+    } else {
+      marginHtml = '<div class="kstat">'
+        + '<div class="kstat-v num">—</div>'
+        + '<div class="kstat-l">Ahead of #2</div>'
+        + '</div>';
+    }
+
+    // ── Bottom-row stat 2: leader $/hr pace ──────────────
+    var paceHrHtml;
+    var hoursElapsed = today
+      ? Math.max((today.hoursOpen || 0) - (today.hoursRemaining || 0), 0.5)
+      : 0.5;
+    if (leader.sales > 0) {
+      var hrRate = Math.round((leader.sales || 0) / hoursElapsed);
+      paceHrHtml = '<div class="kstat">'
+        + '<div class="kstat-v num">$' + hrRate.toLocaleString()
+        + '<span style="font-size:14px;color:var(--text-dim);font-weight:600;">/hr</span></div>'
+        + '<div class="kstat-l">Current pace</div>'
+        + '</div>';
+    } else {
+      paceHrHtml = '<div class="kstat">'
+        + '<div class="kstat-v num">—</div>'
+        + '<div class="kstat-l">Current pace</div>'
+        + '</div>';
+    }
+
+    // ── Bottom-row stat 3: trophies held by leader ───────
+    var leaderNameLower = (leader.name || '').toLowerCase();
+    var trophyCount = (badges || []).filter(function(b) {
+      return (b.holder || '').toLowerCase() === leaderNameLower;
+    }).length;
+    var trophyHtml = '<div class="kstat">'
+      + '<div class="kstat-v num">'
+      + '<span style="color:var(--yellow);">' + trophyCount + '</span>'
+      + '<span style="color:var(--text-mute);font-weight:600;">/' + BADGE_TYPE_TOTAL + '</span>'
+      + '</div>'
+      + '<div class="kstat-l">Trophies today</div>'
+      + '</div>';
+
     return '<div class="leader-card">'
-      + '<div class="kcard-label">Today\'s Leader</div>'
-      + '<div class="leader-row">'
-      + '  <div class="leader-avatar-xl">'
+      + '<div class="leader-header">'
+      + '  <span class="kcard-label">Today\'s Leader</span>'
+      + '  <div class="leader-chips">' + chipsHtml + '</div>'
+      + '</div>'
+      + '<div class="leader-main">'
+      + '  <div class="leader-avatar-wrap">'
       + '    <span class="leader-crown">👑</span>'
-      + e(leader.initials)
+      + '    <div class="leader-avatar">' + e(leader.initials) + '</div>'
       + '  </div>'
       + '  <div class="leader-info">'
       + '    <div class="leader-name">' + e(dispName) + '</div>'
       + roleHtml
-      + '    <div class="leader-sub">'
-      + e(leader.txns) + ' txns · ' + e(aovStr) + ' AOV · ' + e(uptStr) + ' UPT'
+      + '    <div class="leader-secondary">'
+      + '      <b>' + e(String(leader.txns || 0)) + '</b> txns'
+      + '      · <b>' + e(aovStr) + '</b> AOV'
+      + '      · <b>' + e(uptStr) + '</b> UPT'
       + '    </div>'
-      + streakHtml
       + '  </div>'
       + '  <div class="leader-amount-wrap">'
       + '    <div class="leader-amount num" id="kioskLeaderAmt" data-target="' + (leader.sales || 0) + '">'
       + fmtDollars(0) + '</div>'
       + '    <div class="leader-amt-label">Today</div>'
       + '  </div>'
+      + '</div>'
+      + '<div class="kcard-stats">'
+      + marginHtml
+      + paceHrHtml
+      + trophyHtml
       + '</div>'
       + '</div>';
   }
@@ -172,23 +237,23 @@ var kiosk = (function() {
     var pct      = today.pctToGoal || 0;
     var pctDisp  = Math.round(pct * 100) + '%';
     var closed   = today.timeRemainingLabel === 'Store closed';
-    // Arc total length for "M 20 120 A 90 90 0 0 1 200 120" ≈ 283
-    var ARC_LEN  = 283;
+    // Arc for "M 22 122 A 98 98 0 0 1 218 122" ≈ π × 98 = 308
+    var ARC_LEN  = 308;
 
     return '<div class="goal-card' + (closed ? ' store-closed' : '') + '">'
       + '<div class="kcard-label">Daily Goal · ' + e(fmtDollars(today.goal)) + '</div>'
       + '<div class="gauge-wrap">'
-      + '  <svg width="220" height="130" viewBox="0 0 220 130">'
+      + '  <svg width="240" height="130" viewBox="0 0 240 130">'
       + '    <defs>'
       + '      <linearGradient id="goalGrad" x1="0" x2="1" y1="0" y2="0">'
       + '        <stop offset="0%" stop-color="#2f8a52"/>'
       + '        <stop offset="100%" stop-color="#4ade80"/>'
       + '      </linearGradient>'
       + '    </defs>'
-      + '    <path d="M 20 120 A 90 90 0 0 1 200 120"'
+      + '    <path d="M 22 122 A 98 98 0 0 1 218 122"'
       + '          stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="round"/>'
       + '    <path id="kioskGoalArc"'
-      + '          d="M 20 120 A 90 90 0 0 1 200 120"'
+      + '          d="M 22 122 A 98 98 0 0 1 218 122"'
       + '          stroke="url(#goalGrad)" stroke-width="14" fill="none" stroke-linecap="round"'
       + '          stroke-dasharray="' + ARC_LEN + '"'
       + '          stroke-dashoffset="' + ARC_LEN + '"'
@@ -199,87 +264,115 @@ var kiosk = (function() {
       + '    <div class="gp-small">' + (closed ? 'final' : 'to goal') + '</div>'
       + '  </div>'
       + '</div>'
-      + '<div class="goal-stats">'
-      + '  <div class="goal-stat">'
-      + '    <div class="gs-v num" id="kioskGoalSold" data-target="' + (today.revenue || 0) + '">' + fmtDollars(0) + '</div>'
-      + '    <div class="gs-l">Sold</div>'
+      + '<div class="kcard-stats">'
+      + '  <div class="kstat">'
+      + '    <div class="kstat-v num" id="kioskGoalSold" data-target="' + (today.revenue || 0) + '">' + fmtDollars(0) + '</div>'
+      + '    <div class="kstat-l">Sold</div>'
       + '  </div>'
-      + '  <div class="goal-stat">'
+      + '  <div class="kstat">'
       + (closed
-          ? '<div class="gs-v store-closed-label" id="kioskGoalToGo">Closed</div>'
-          : '<div class="gs-v num" id="kioskGoalToGo" data-target="' + (today.toGo || 0) + '">' + fmtDollars(0) + '</div>')
-      + '    <div class="gs-l" id="kioskToGoLabel">' + (closed ? '10 pm' : 'To Go') + '</div>'
+          ? '<div class="kstat-v store-closed-label" id="kioskGoalToGo">Closed</div>'
+          : '<div class="kstat-v num" id="kioskGoalToGo" data-target="' + (today.toGo || 0) + '">' + fmtDollars(0) + '</div>')
+      + '    <div class="kstat-l" id="kioskToGoLabel">' + (closed ? '10 pm' : 'To Go') + '</div>'
       + '  </div>'
-      + '  <div class="goal-stat">'
-      + '    <div class="gs-v' + (closed ? ' store-closed-label' : '') + '" id="kioskTimeRemaining">' + e(today.timeRemainingLabel || '—') + '</div>'
-      + '    <div class="gs-l">Status</div>'
+      + '  <div class="kstat">'
+      + '    <div class="kstat-v' + (closed ? ' store-closed-label' : '') + '" id="kioskTimeRemaining">' + e(today.timeRemainingLabel || '—') + '</div>'
+      + '    <div class="kstat-l">Status</div>'
       + '  </div>'
       + '</div>'
       + '</div>';
   }
-
   // ── Render: Pace dial card ─────────────────────────────
+  // PACE_RANGE: ±N% maps to ±90° rotation on the arc.
+  // Zones: |deg| > 30 → red (left) or green (right); |deg| ≤ 30 → amber.
+  var PACE_RANGE = 80;
+
+  function paceZone(pace) {
+    var pct     = (pace || 0) * 100;           // convert decimal to percentage
+    var clamped = Math.max(-PACE_RANGE, Math.min(PACE_RANGE, pct));
+    var deg     = (clamped / PACE_RANGE) * 90;
+    if (deg <= -30) return 'red';
+    if (deg >=  30) return 'green';
+    return 'amber';
+  }
+
   function renderPaceCard(today) {
-    var pace      = today.pace || 0;
-    var proj      = today.projectedRevenue || 0;
-    var goal      = today.goal || 0;
-    var overUnder = proj - goal;
+    var pace = today.pace || 0;
+    var proj = today.projectedRevenue || 0;
+    var goal = today.goal || 0;
+    var diff = proj - goal;
 
-    // ±% shown inside the arc (e.g. "+8%" or "−12%")
-    var pctVal    = Math.round(pace * 100);
-    var pctStr    = (pctVal >= 0 ? '+' : '−') + Math.abs(pctVal) + '%';
-    var paceCls   = pace >= 0 ? 'up' : 'down';
+    // ± % text and zone
+    var pctInt  = Math.round(pace * 100);
+    var pctStr  = (pctInt >= 0 ? '+' : '−') + Math.abs(pctInt) + '%';
+    var zone    = paceZone(pace);
+    var zoneColor = zone === 'red' ? 'var(--red)' : zone === 'green' ? 'var(--green)' : 'var(--amber)';
 
-    // Sub-label: projected close in dollars
-    var ouColor   = overUnder >= 0 ? 'var(--green)' : 'var(--red)';
-    function projSubLabel(diff, g) {
-      if (Math.abs(diff) < (g || 1) * 0.02) return 'On plan';
-      return diff >= 0
-        ? '▲ $' + Math.round(diff).toLocaleString() + ' over'
-        : '▼ $' + Math.round(-diff).toLocaleString() + ' short';
-    }
-    var subLabel = projSubLabel(overUnder, goal);
+    // Sublabel (under the big %)
+    var subLabel = Math.abs(diff) < (goal || 1) * 0.02
+      ? 'On plan'
+      : diff >= 0 ? 'ahead of plan' : 'behind plan';
 
-    // Needle rotation: pace clamped to ±20%, straight up = 0%
-    var clamped  = Math.max(-0.20, Math.min(0.20, pace));
-    var needleDeg = Math.round((clamped / 0.20) * 90);
+    // Tick rotation
+    var pct100  = pace * 100;
+    var clamped = Math.max(-PACE_RANGE, Math.min(PACE_RANGE, pct100));
+    var tickDeg = Math.round((clamped / PACE_RANGE) * 90);
+
+    // Bottom-row stats
+    var projStr   = fmtDollars(proj);
+    var gapAbs    = Math.abs(Math.round(diff));
+    var gapStr    = '$' + gapAbs.toLocaleString();
+    var statusStr = Math.abs(diff) < (goal || 1) * 0.02
+      ? 'On plan'
+      : diff >= 0 ? 'Ahead' : 'Behind';
+    var gapCls    = diff >= 0 ? '' : ' down';
+    var statusCls = diff >= 0 ? '' : ' down';
 
     return '<div class="pace-card">'
       + '<div class="kcard-label">Pace · vs. Plan</div>'
       + '<div class="gauge-wrap pace-gauge-wrap">'
-      + '  <svg class="pace-svg" viewBox="0 0 220 148">'
-      + '    <!-- zone arcs -->'
-      + '    <path d="M 20 120 A 90 90 0 0 1 73 41"  stroke="#ef4444" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.55"/>'
-      + '    <path d="M 73 41 A 90 90 0 0 1 147 41"  stroke="#eab308" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.55"/>'
-      + '    <path d="M 147 41 A 90 90 0 0 1 200 120" stroke="#4ade80" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.55"/>'
-      + '    <!-- tick marks -->'
-      + '    <g stroke="#9ab8b0" stroke-width="1">'
-      + '      <line x1="20" y1="120" x2="28" y2="116"/>'
-      + '      <line x1="200" y1="120" x2="192" y2="116"/>'
-      + '      <line x1="110" y1="30" x2="110" y2="40"/>'
-      + '    </g>'
-      + '    <text x="20"  y="142" fill="#b8d4cc" font-size="11" font-weight="600" text-anchor="start">−20%</text>'
-      + '    <text x="200" y="142" fill="#b8d4cc" font-size="11" font-weight="600" text-anchor="end">+20%</text>'
-      + '    <text x="110" y="24"  fill="#b8d4cc" font-size="11" font-weight="600" text-anchor="middle">PLAN</text>'
-      + '    <!-- needle -->'
-      + '    <g id="kioskPaceNeedle" style="transform-origin:110px 120px;transform:rotate(' + needleDeg + 'deg);transition:transform 1.4s cubic-bezier(.2,.7,.3,1)">'
-      + '      <line x1="110" y1="120" x2="110" y2="42" stroke="#e6ece9" stroke-width="2.5" stroke-linecap="round"/>'
-      + '      <circle cx="110" cy="120" r="6" fill="#e6ece9" stroke="#0a0e0d" stroke-width="2"/>'
+      + '  <svg width="240" height="130" viewBox="0 0 240 130">'
+      // Background track
+      + '    <path d="M 22 122 A 98 98 0 0 1 218 122"'
+      + '          stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="round"/>'
+      // 3-zone color band
+      + '    <path d="M 22 122 A 98 98 0 0 1 71 37"'
+      + '          stroke="#ef4444" stroke-width="14" fill="none" stroke-linecap="round" opacity="0.62"/>'
+      + '    <path d="M 71 37 A 98 98 0 0 1 169 37"'
+      + '          stroke="#eab308" stroke-width="14" fill="none" stroke-linecap="round" opacity="0.62"/>'
+      + '    <path d="M 169 37 A 98 98 0 0 1 218 122"'
+      + '          stroke="#4ade80" stroke-width="14" fill="none" stroke-linecap="round" opacity="0.62"/>'
+      // Apex anchor tick
+      + '    <line x1="120" y1="14" x2="120" y2="22" stroke="#5e6864" stroke-width="2" stroke-linecap="round"/>'
+      // Pill position indicator — rotates around arc center (120, 122)
+      + '    <g id="kioskPaceNeedle"'
+      + '       style="transform-origin:120px 122px;transform:rotate(' + tickDeg + 'deg);'
+      + 'transition:transform 1.4s cubic-bezier(.2,.7,.3,1)">'
+      + '      <rect x="113" y="11" width="14" height="26" rx="7" fill="#0a0e0d" opacity="0.55"/>'
+      + '      <rect x="115" y="13" width="10" height="22" rx="5" fill="#e6ece9" stroke="#0a0e0d" stroke-width="1.5"/>'
       + '    </g>'
       + '  </svg>'
-      + '  <!-- ±% pace overlaid inside the arc -->'
       + '  <div class="gauge-pct">'
-      + '    <div class="gp-big pr-delta ' + paceCls + '" id="kioskPacePct">' + e(pctStr) + '</div>'
-      + '    <div class="gp-small" id="kioskPaceLabel">' + e(subLabel) + '</div>'
+      + '    <div class="gp-big num zone-' + zone + '" id="kioskPacePct">' + e(pctStr) + '</div>'
+      + '    <div class="gp-small" id="kioskPaceLabel" style="color:' + zoneColor + '">' + e(subLabel) + '</div>'
       + '  </div>'
       + '</div>'
-      + '<div class="pace-projection">'
-      + '  Projected close · <span class="pp-v" id="kioskPaceProjVal">' + e(fmtDollars(proj)) + '</span>'
-      + '  · <span id="kioskPaceProjLabel" style="color:' + ouColor + '">' + e(subLabel) + '</span>'
+      + '<div class="kcard-stats">'
+      + '  <div class="kstat">'
+      + '    <div class="kstat-v num" id="kioskPaceProjVal">' + e(projStr) + '</div>'
+      + '    <div class="kstat-l">Projected</div>'
+      + '  </div>'
+      + '  <div class="kstat' + gapCls + '">'
+      + '    <div class="kstat-v num" id="kioskPaceShortBy">' + e(gapStr) + '</div>'
+      + '    <div class="kstat-l" id="kioskPaceShortByLabel">' + e(diff >= 0 ? 'Ahead by' : 'Short by') + '</div>'
+      + '  </div>'
+      + '  <div class="kstat' + statusCls + '">'
+      + '    <div class="kstat-v" id="kioskPaceStatus" style="font-size:18px;">' + e(statusStr) + '</div>'
+      + '    <div class="kstat-l">Status</div>'
+      + '  </div>'
       + '</div>'
       + '</div>';
   }
-
   // ── Render: Staff leaderboard grid ────────────────────
   // onShift: full roster array with { initials, name, role, status, note }
   //          used to build shift-status and mark off-shift employees
@@ -646,6 +739,7 @@ var kiosk = (function() {
     var staff        = data.leaderboard.staff;
     var badges       = data.badges.badges;
     var leader       = staff[0] || {};
+    _leaderName = leader.name || '';
 
     return [
       '<canvas id="kioskConfetti"></canvas>',
@@ -653,7 +747,7 @@ var kiosk = (function() {
       '<div class="kiosk-wrap">',
         renderHeader(store),
         '<div class="hero-grid">',
-          renderLeaderCard(leader, staff, onShift),
+          renderLeaderCard(leader, staff, onShift, badges, today),
           renderGoalCard(today),
           renderPaceCard(today),
         '</div>',
@@ -779,25 +873,22 @@ var kiosk = (function() {
 
   // ── Goal arc ───────────────────────────────────────────
   function animateGoalArc(pct) {
-    var ARC_LEN = 283;
+    var ARC_LEN = 308;
     setTimeout(function() {
       var arc = document.getElementById('kioskGoalArc');
       if (arc) arc.setAttribute('stroke-dashoffset', String(Math.round(ARC_LEN * (1 - (pct || 0)))));
     }, 250);
   }
 
-  // ── Pace needle ────────────────────────────────────────
+  // ── Pace tick ─────────────────────────────────────────
   function animatePaceNeedle(pace) {
-    // Gauge: -90deg (far left = -20%) to +90deg (far right = +20%)
-    // Starting transform: rotate(-90deg) = needle pointing left
-    // We OVERRIDE that with the actual pace:
-    //   deg = (pace / 0.20) * 90, clamped to [-90, 90]
     setTimeout(function() {
-      var needle = document.getElementById('kioskPaceNeedle');
-      if (!needle) return;
-      var clamped = Math.max(-0.20, Math.min(0.20, pace || 0));
-      var deg = Math.round((clamped / 0.20) * 90);
-      needle.style.transform = 'rotate(' + deg + 'deg)';
+      var tick = document.getElementById('kioskPaceNeedle');
+      if (!tick) return;
+      var pct100  = (pace || 0) * 100;
+      var clamped = Math.max(-PACE_RANGE, Math.min(PACE_RANGE, pct100));
+      var deg     = Math.round((clamped / PACE_RANGE) * 90);
+      tick.style.transform = 'rotate(' + deg + 'deg)';
     }, 350);
   }
 
@@ -845,6 +936,14 @@ var kiosk = (function() {
         + '<span class="t-amt">'  + GC.esc(fmtDollars(t.price || 0)) + '</span>';
       feed.insertBefore(el, feed.firstChild);
       setTimeout(function() { el.classList.remove('fresh'); }, 1800);
+
+      // Pulse the leader amount when a sale lands for the current leader
+      var leaderAmtEl = document.getElementById('kioskLeaderAmt');
+      if (leaderAmtEl && _leaderName && (t.who || '').split(' ')[0].toLowerCase() === _leaderName.split(' ')[0].toLowerCase()) {
+        leaderAmtEl.classList.remove('pulse-once');
+        void leaderAmtEl.offsetWidth; // force reflow to restart animation
+        leaderAmtEl.classList.add('pulse-once');
+      }
 
       // Trigger rare-drop overlay for high-value transactions
       if ((t.price || 0) >= GC.THRESHOLDS.rareDropMinTransaction) {
@@ -1049,7 +1148,7 @@ var kiosk = (function() {
     }
 
     var arc = document.getElementById('kioskGoalArc');
-    if (arc) arc.setAttribute('stroke-dashoffset', String(Math.round(283 * (1 - pctToGoal))));
+    if (arc) arc.setAttribute('stroke-dashoffset', String(Math.round(308 * (1 - pctToGoal))));
 
     // Dim the card when store is closed
     var card = arc && arc.closest('.goal-card');
@@ -1062,40 +1161,52 @@ var kiosk = (function() {
       lblEl.classList.toggle('store-closed-label', closed);
     }
 
-    var needle = document.getElementById('kioskPaceNeedle');
-    if (needle && td.pace != null) {
-      var clamped = Math.max(-0.20, Math.min(0.20, td.pace));
-      needle.style.transform = 'rotate(' + Math.round((clamped / 0.20) * 90) + 'deg)';
-    }
-    // Update ±% pace overlay
+    // Pace tick position
     if (td.pace != null) {
-      var paceVal  = td.pace;
-      var pctInt   = Math.round(paceVal * 100);
-      var pctStr   = (pctInt >= 0 ? '+' : '−') + Math.abs(pctInt) + '%';
-      var paceCls  = paceVal >= 0 ? 'up' : 'down';
-      var paceEl   = document.getElementById('kioskPacePct');
+      var tick = document.getElementById('kioskPaceNeedle');
+      if (tick) {
+        var pct100  = td.pace * 100;
+        var clamped = Math.max(-PACE_RANGE, Math.min(PACE_RANGE, pct100));
+        var tickDeg = Math.round((clamped / PACE_RANGE) * 90);
+        tick.style.transform = 'rotate(' + tickDeg + 'deg)';
+      }
+      // ±% big number + zone color
+      var pctInt    = Math.round(td.pace * 100);
+      var pctStr    = (pctInt >= 0 ? '+' : '−') + Math.abs(pctInt) + '%';
+      var zone      = paceZone(td.pace);
+      var zoneColor = zone === 'red' ? 'var(--red)' : zone === 'green' ? 'var(--green)' : 'var(--amber)';
+      var paceEl = document.getElementById('kioskPacePct');
       if (paceEl) {
         paceEl.textContent = pctStr;
-        paceEl.className = 'gp-big pr-delta ' + paceCls;
+        paceEl.className   = 'gp-big num zone-' + zone;
+      }
+      var labelEl = document.getElementById('kioskPaceLabel');
+      if (labelEl) {
+        var subLbl = Math.abs(td.pace) < 0.02 ? 'On plan'
+          : td.pace >= 0 ? 'ahead of plan' : 'behind plan';
+        labelEl.textContent  = subLbl;
+        labelEl.style.color  = zoneColor;
       }
     }
     if (td.projectedRevenue != null) {
-      var proj      = td.projectedRevenue;
-      var diff      = proj - _goal;
-      var sublabel  = Math.abs(diff) < (_goal || 1) * 0.02
-        ? 'On plan'
-        : diff >= 0
-          ? '▲ $' + Math.abs(Math.round(diff)).toLocaleString() + ' over'
-          : '▼ $' + Math.abs(Math.round(diff)).toLocaleString() + ' short';
-      var labelEl = document.getElementById('kioskPaceLabel');
-      if (labelEl) labelEl.textContent = sublabel;
-      // Keep bottom row in sync
+      var proj  = td.projectedRevenue;
+      var diff  = proj - _goal;
+      var gapCls = diff >= 0 ? '' : ' down';
       var projValEl = document.getElementById('kioskPaceProjVal');
       if (projValEl) projValEl.textContent = fmtDollars(proj);
-      var projLblEl = document.getElementById('kioskPaceProjLabel');
-      if (projLblEl) {
-        projLblEl.textContent = sublabel;
-        projLblEl.style.color = diff >= 0 ? 'var(--green)' : 'var(--red)';
+      var shortByEl = document.getElementById('kioskPaceShortBy');
+      if (shortByEl) {
+        shortByEl.textContent = '$' + Math.abs(Math.round(diff)).toLocaleString();
+        shortByEl.parentElement.className = 'kstat' + gapCls;
+      }
+      var shortByLblEl = document.getElementById('kioskPaceShortByLabel');
+      if (shortByLblEl) shortByLblEl.textContent = diff >= 0 ? 'Ahead by' : 'Short by';
+      var statusEl = document.getElementById('kioskPaceStatus');
+      if (statusEl) {
+        var statusStr = Math.abs(diff) < (_goal || 1) * 0.02 ? 'On plan'
+          : diff >= 0 ? 'Ahead' : 'Behind';
+        statusEl.textContent = statusStr;
+        statusEl.parentElement.className = 'kstat' + gapCls;
       }
     }
 

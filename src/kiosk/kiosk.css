@@ -175,71 +175,176 @@ body.kiosk-bg {
   margin-top: 14px;
 }
 
-/* Leader card */
+/* ── Shared bottom-stat row ── used by all 3 hero cards */
+.kcard-stats {
+  display: flex;
+  justify-content: space-around;
+  width: 100%;
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.kstat { text-align: center; }
+.kstat-v {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.kstat-l {
+  font-size: 10px;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 6px;
+  font-weight: 600;
+}
+.kstat.up   .kstat-v { color: var(--green); }
+.kstat.down .kstat-v { color: var(--red); }
+.kstat.warn .kstat-v { color: var(--amber); }
+
+/* ── Leader card ────────────────────────────────── */
 .leader-card {
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(400px 200px at 90% -20%, rgba(74,222,128,0.10), transparent 60%),
+    radial-gradient(500px 240px at 90% -10%, rgba(74,222,128,0.12), transparent 60%),
+    radial-gradient(360px 220px at 10% 110%, rgba(250,204,21,0.06), transparent 60%),
     var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 10px;
 }
-.leader-row {
+/* Slow-rotating conic rays behind the avatar */
+.leader-card::before {
+  content: "";
+  position: absolute;
+  top: 50%; left: 100px;
+  width: 220px; height: 220px;
+  transform: translate(-50%, -50%);
+  background: conic-gradient(
+    from 0deg,
+    rgba(74,222,128,0.00)  0deg,
+    rgba(74,222,128,0.07) 30deg,
+    rgba(74,222,128,0.00) 60deg,
+    rgba(74,222,128,0.00) 180deg,
+    rgba(74,222,128,0.07) 210deg,
+    rgba(74,222,128,0.00) 240deg,
+    rgba(74,222,128,0.00) 360deg
+  );
+  border-radius: 50%;
+  pointer-events: none;
+  animation: leader-rays 14s linear infinite;
+  z-index: 0;
+}
+@keyframes leader-rays { to { transform: translate(-50%, -50%) rotate(360deg); } }
+
+.leader-header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-top: 4px;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  position: relative;
+  z-index: 1;
 }
-.leader-avatar-xl {
-  width: 74px; height: 74px;
+.leader-header .kcard-label { margin: 0; }
+.leader-chips { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.leader-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.leader-chip.streak {
+  color: var(--orange);
+  border-color: rgba(249,115,22,0.4);
+  background: rgba(249,115,22,0.08);
+}
+.leader-chip.since {
+  color: var(--yellow);
+  border-color: rgba(250,204,21,0.4);
+  background: rgba(250,204,21,0.08);
+}
+.leader-main {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex: 1;
+  position: relative;
+  z-index: 1;
+  min-height: 110px;
+}
+.leader-avatar-wrap { position: relative; flex-shrink: 0; }
+.leader-avatar {
+  width: 90px; height: 90px;
   border-radius: 50%;
   background: linear-gradient(135deg, #4ade80, #1e6a45);
   color: #0a0e0d;
   font-weight: 900;
-  font-size: 26px;
+  font-size: 30px;
   display: flex; align-items: center; justify-content: center;
   border: 3px solid var(--green);
-  box-shadow: 0 0 20px rgba(74,222,128,0.35);
-  flex-shrink: 0;
+  box-shadow:
+    0 0 28px rgba(74,222,128,0.45),
+    inset 0 -8px 14px rgba(0,0,0,0.18);
   position: relative;
+  z-index: 2;
+  animation: avatar-pulse 3s ease-in-out infinite;
+}
+@keyframes avatar-pulse {
+  0%, 100% { box-shadow: 0 0 28px rgba(74,222,128,0.45), inset 0 -8px 14px rgba(0,0,0,0.18); }
+  50%       { box-shadow: 0 0 42px rgba(74,222,128,0.65), inset 0 -8px 14px rgba(0,0,0,0.18); }
 }
 .leader-crown {
   position: absolute;
-  top: -14px; left: 50%;
+  top: -16px; left: 50%;
   transform: translateX(-50%);
-  font-size: 20px;
-  filter: drop-shadow(0 2px 6px rgba(250,204,21,0.5));
+  font-size: 24px;
+  filter: drop-shadow(0 2px 8px rgba(250,204,21,0.55));
+  z-index: 3;
 }
 .leader-info { flex: 1; min-width: 0; }
-.leader-name  { font-size: 24px; font-weight: 800; letter-spacing: -0.3px; }
-.leader-role  { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 3px; }
-.leader-sub   { color: var(--text-dim); font-size: 12px; margin-top: 5px; }
-.leader-streak { color: var(--orange); font-weight: 600; font-size: 12px; margin-top: 4px; }
+.leader-name  { font-size: 30px; font-weight: 800; letter-spacing: -0.4px; line-height: 1; }
+.leader-role  { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.9px; margin-top: 6px; }
+.leader-secondary { color: var(--text-dim); font-size: 12px; margin-top: 8px; }
+.leader-secondary b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .leader-amount-wrap { margin-left: auto; text-align: right; flex-shrink: 0; }
 .leader-amount {
-  font-size: 40px;
+  font-size: 48px;
   font-weight: 800;
   color: var(--green);
-  letter-spacing: -1px;
+  letter-spacing: -1.2px;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 .leader-amt-label {
-  font-size: 9px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 700;
   color: var(--text-mute);
   text-transform: uppercase;
   letter-spacing: 1.2px;
-  margin-top: 3px;
+  margin-top: 6px;
   text-align: right;
 }
+/* Pulse the amount when a new sale lands for the leader */
+@keyframes amount-pulse {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.06); text-shadow: 0 0 30px rgba(74,222,128,0.6); }
+  100% { transform: scale(1); text-shadow: none; }
+}
+.pulse-once { animation: amount-pulse 0.7s ease-out; }
 
-/* Goal arc card */
+/* ── Goal arc card ───────────────────────────────── */
 .goal-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -250,10 +355,7 @@ body.kiosk-bg {
   align-items: center;
   text-align: center;
 }
-/* After 10 pm: store is closed — dim the card slightly */
-.goal-card.store-closed {
-  opacity: 0.72;
-}
+.goal-card.store-closed { opacity: 0.72; }
 .store-closed-label {
   font-size: 13px;
   font-weight: 600;
@@ -261,35 +363,37 @@ body.kiosk-bg {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+
+/* ── Gauge wrap — shared by goal + pace ─────────── */
 .gauge-wrap {
   position: relative;
-  width: 220px;
+  width: 240px;
+  height: 130px;
   margin: 4px auto 0;
+  flex-shrink: 0;
 }
-/* Pace gauge is taller to accommodate axis labels below the arc */
-.pace-gauge-wrap { width: 220px; }
+.pace-gauge-wrap { /* identical to gauge-wrap by design */ }
 .gauge-pct {
   position: absolute;
-  bottom: 0; left: 0; right: 0;
+  bottom: 4px; left: 0; right: 0;
   text-align: center;
 }
-.gauge-pct .gp-big   { font-size: 44px; font-weight: 800; letter-spacing: -1px; }
-.gauge-pct .gp-small { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
-.goal-stats {
-  display: flex;
-  justify-content: space-around;
-  width: 100%;
-  margin-top: auto;
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
-}
-.goal-stat .gs-v { font-size: 22px; font-weight: 700; }
-.goal-stat .gs-l { font-size: 11px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 1px; margin-top: 3px; }
+.gauge-pct .gp-big   { font-size: 46px; font-weight: 800; letter-spacing: -1.2px; line-height: 1; font-variant-numeric: tabular-nums; }
+.gauge-pct .gp-small { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.1px; margin-top: 4px; font-weight: 600; }
+/* Zone-based coloring for pace big number */
+.gp-big.zone-red   { color: var(--red); }
+.gp-big.zone-amber { color: var(--amber); }
+.gp-big.zone-green { color: var(--green); }
+
 /* Bigger kcard-label in the two metric cards */
 .goal-card .kcard-label,
 .pace-card .kcard-label { font-size: 12px; letter-spacing: 1px; }
 
-/* Pace dial card */
+/* Goal + pace cards push their .kcard-stats to the bottom */
+.goal-card .kcard-stats,
+.pace-card .kcard-stats { margin-top: auto; }
+
+/* ── Pace dial card ──────────────────────────────── */
 .pace-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -300,19 +404,13 @@ body.kiosk-bg {
   align-items: center;
   text-align: center;
 }
-.pace-svg { width: 220px; height: 148px; display: block; }
-.pr-delta.up   { color: var(--green); }
-.pr-delta.down { color: var(--red); }
-.pace-projection {
-  margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-  width: 100%;
-  text-align: center;
-  font-size: 13px;
-  color: var(--text-dim);
+
+/* ── Responsive fallback ─────────────────────────── */
+@media (max-width: 1100px) {
+  .leader-chips  { flex-direction: column; align-items: flex-end; }
+  .leader-name   { font-size: 24px; }
+  .leader-amount { font-size: 38px; }
 }
-.pace-projection .pp-v { color: var(--text); font-weight: 700; font-size: 15px; }
 
 /* ── Staff leaderboard grid ── */
 .lb-section { margin-top: 14px; }
