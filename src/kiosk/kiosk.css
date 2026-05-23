@@ -701,9 +701,10 @@ body.kiosk-bg {
   border-radius: 6px;
   padding: 8px 10px;
   display: grid;
-  grid-template-columns: 44px 1fr 58px 52px;
+  /* time | name (grows) | items (fixed for "99 items") | amount (fixed) */
+  grid-template-columns: 40px 1fr 62px 52px;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   font-size: 12px;
 }
 .ticker-item.fresh {
@@ -714,11 +715,18 @@ body.kiosk-bg {
   from { transform: translateY(-10px); opacity: 0; }
   to   { transform: translateY(0);     opacity: 1; }
 }
-.t-time       { color: var(--text-mute); font-size: 10px; }
-.t-who        { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.t-who-name   { display: inline; }   /* desktop: first name */
-.t-who-init   { display: none; }     /* desktop: hidden */
-.t-desc { color: var(--text-dim); font-size: 11px; white-space: nowrap; overflow: hidden; }
+.t-time { color: var(--text-mute); font-size: 10px; }
+/* .t-who is a grid cell — min-width:0 lets 1fr actually shrink */
+.t-who  { font-weight: 600; min-width: 0; overflow: hidden; }
+/* The visible child must own the ellipsis, not the parent */
+.t-who-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.t-who-init { display: none; }   /* desktop: hidden; iPad shows this instead */
+.t-desc { color: var(--text-dim); font-size: 11px; white-space: nowrap; text-align: right; }
 .t-amt  { color: var(--green); font-weight: 700; white-space: nowrap; text-align: right; }
 
 /* ── Rare drop overlay ── */
@@ -904,5 +912,5 @@ body.kiosk-bg {
 
   /* Ticker: initials on iPad, first name on desktop */
   .t-who-name           { display: none; }
-  .t-who-init           { display: inline; }
+  .t-who-init           { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
