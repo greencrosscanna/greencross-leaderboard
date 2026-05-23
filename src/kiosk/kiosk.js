@@ -54,11 +54,21 @@ var kiosk = (function() {
   // ── Helpers ────────────────────────────────────────────
   function e(s) { return GC.esc(String(s)); }
 
-  /** "Dean Smith" → "DS", "Dean" → "D" */
+  /**
+   * Always returns exactly 2 uppercase chars.
+   * "Dean Smith"  → "DS"
+   * "Zachary B."  → "ZB"
+   * "Dean"        → "De"
+   */
   function nameToInitials(name) {
-    return (name || '').trim().split(/\s+/)
-      .map(function(w) { return w[0] ? w[0].toUpperCase() : ''; })
-      .join('').slice(0, 2);
+    var parts = (name || '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      // First letter of first word + first letter of last word
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    // Single word: first 2 letters
+    var w = parts[0] || '??';
+    return (w[0] + (w[1] || w[0])).toUpperCase();
   }
 
   function fmtDollars(n) {

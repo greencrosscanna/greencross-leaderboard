@@ -1527,8 +1527,8 @@ function getStoreToday(store, params) {
     };
   }
 
-  // Full response: ticker seed = last 8 transactions newest-first
-  const recentTxns = txns.slice().reverse().slice(0, 8);
+  // Full response: ticker seed = last 10 transactions newest-first
+  const recentTxns = txns.slice().reverse().slice(0, 10);
   const ticker = recentTxns.map(makeTicker_);
 
   return {
