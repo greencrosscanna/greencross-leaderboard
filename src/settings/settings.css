@@ -1,0 +1,189 @@
+/* ============================================================
+   Green Cross — Settings View
+   ============================================================ */
+
+.settings-page {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 24px 60px;
+}
+
+/* ── Header ──────────────────────────────────────────────── */
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 28px;
+}
+.settings-back {
+  flex-shrink: 0;
+}
+.settings-title {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  margin: 0;
+}
+
+/* ── Body ─────────────────────────────────────────────────── */
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ── Card ─────────────────────────────────────────────────── */
+.settings-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.settings-card-head {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.1px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.settings-card-sub {
+  font-size: 12px;
+  color: var(--text-mute);
+  line-height: 1.5;
+}
+.settings-card-foot {
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  background: var(--surface);
+}
+
+/* ── Table ────────────────────────────────────────────────── */
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.settings-table thead th {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-mute);
+  padding: 10px 24px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.settings-table tbody td {
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  vertical-align: middle;
+}
+.settings-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.settings-table tbody tr:hover { background: rgba(74,222,128,0.03); }
+
+.settings-store-name,
+.settings-emp-name {
+  font-weight: 600;
+  color: var(--text);
+}
+.settings-emp-store {
+  color: var(--text-mute);
+  font-size: 12px;
+}
+.settings-derived {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+/* ── Inputs ───────────────────────────────────────────────── */
+.settings-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--surface-2, #131a17);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-width: 140px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.settings-input-wrap:focus-within {
+  border-color: var(--green);
+}
+.settings-input-prefix {
+  padding: 0 8px;
+  color: var(--text-mute);
+  font-size: 13px;
+  line-height: 34px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+}
+.settings-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 13px;
+  padding: 7px 10px;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.settings-nick-input {
+  background: var(--surface-2, #131a17);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-width: 200px;
+  transition: border-color 0.15s;
+}
+.settings-nick-input:focus {
+  outline: none;
+  border-color: var(--green);
+}
+
+/* ── Save status ──────────────────────────────────────────── */
+.settings-save-status {
+  font-size: 12px;
+  font-weight: 600;
+}
+.settings-save-status.ok  { color: var(--green); }
+.settings-save-status.err { color: var(--red); }
+
+/* ── Loading / error states ───────────────────────────────── */
+.settings-loading,
+.settings-error {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+.settings-error { color: var(--amber); }
+
+/* ── btn-primary (not in primitives yet) ─────────────────── */
+.btn-primary {
+  background: var(--green);
+  color: #0a0e0d;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.btn-primary:hover   { opacity: 0.88; }
+.btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
