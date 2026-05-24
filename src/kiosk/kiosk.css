@@ -479,13 +479,7 @@ body.kiosk-bg {
 .leader-bar .emp-bar-pct,
 .leader-bar .emp-bar-chevron { color: var(--green); }
 
-/* Bar track: left 67% is normal track, right 33% is subtle bonus zone tint */
-.emp-bar {
-  height: 4px;
-  background: linear-gradient(to right, var(--border) 66.7%, rgba(74,222,128,0.08) 66.7%);
-  border-radius: 2px;
-  overflow: hidden;
-}
+.emp-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
 
 /* Target marker line at the 100%-of-target position (67% of bar width) */
 .emp-bar-mark {
