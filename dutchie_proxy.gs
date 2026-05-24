@@ -565,20 +565,33 @@ function nameToKey_(name) {
 }
 
 /**
- * Apply nickname to a raw Dutchie name, preserving the last-initial suffix.
- * "Zachary B."  + nick "Zach"  → "Zach B."
- * "Zachary R."  + nick "Zach"  → "Zach R."
- * No nick stored                → original name unchanged
+ * Apply nickname to a raw Dutchie name. Returns the nickname exactly as stored.
+ * "Zachary B."  + nick "Zach"       → "Zach"
+ * "Zachary B."  + nick "Zach B."    → "Zach B."
+ * No nick stored                     → original name unchanged
+ *
+ * Fallback: Dutchie sometimes returns only a first name ("Nathan") while the
+ * roster (and saved key) has the full "Nathan W." — if the exact key misses,
+ * we scan for any stored key whose first segment matches the single-word name.
  */
 function applyNickname_(name, nicknames) {
   if (!name || !nicknames) return name;
-  const key  = nameToKey_(name);
-  const nick = nicknames[key];
-  if (!nick) return name;
-  // Keep everything after the first word (e.g. " B." from "Zachary B.")
-  const firstSpace = name.indexOf(' ');
-  const suffix = firstSpace !== -1 ? name.slice(firstSpace) : '';
-  return nick + suffix;
+
+  // 1. Exact key match
+  const key = nameToKey_(name);
+  if (nicknames[key]) return nicknames[key];
+
+  // 2. First-name-only fallback (handles Dutchie dropping the initial mid-day)
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) {
+    const firstKey = nameToKey_(parts[0]);
+    const found = Object.keys(nicknames).find(function(k) {
+      return k === firstKey || k.indexOf(firstKey + '_') === 0;
+    });
+    if (found) return nicknames[found];
+  }
+
+  return name;
 }
 
 /** Returns the daily revenue goal for a store (0 if not set). */
