@@ -224,16 +224,18 @@ var kiosk = (function() {
       + '</div>';
 
     // ── Progress bar toward personal target ─────────────
-    var leaderRawPct  = leader.target > 0
-      ? Math.round((leader.sales / leader.target) * 100)
-      : 0;
-    var leaderBarPct  = Math.min(leaderRawPct, 100);
-    var leaderBarOver = leaderRawPct >= 100;
-    var leaderBarLbl  = leaderRawPct + '%';
+    var LEADER_BAR_MAX  = 150;
+    var leaderRawPct    = leader.target > 0
+      ? Math.round((leader.sales / leader.target) * 100) : 0;
+    var leaderBarOver   = leaderRawPct >= 100;
+    var leaderBarFill   = Math.min(Math.round(leaderRawPct / LEADER_BAR_MAX * 100), 100);
+    var leaderMarkPct   = Math.round(100 / LEADER_BAR_MAX * 100); // 67
+    var leaderBarLbl    = leaderRawPct + '%';
     var leaderBarHtml = leader.target > 0
       ? '<div class="emp-bar-wrap leader-bar' + (leaderBarOver ? ' bar-over' : '') + '">'
-        +   '<div class="emp-bar"><span style="width:0%" data-final="' + leaderBarLbl + '"></span></div>'
-        +   '<div class="emp-bar-tick" style="left:0%" data-final="' + leaderBarLbl + '">'
+        +   '<div class="emp-bar"><span style="width:0%" data-final="' + leaderBarFill + '%"></span></div>'
+        +   '<div class="emp-bar-mark" style="left:' + leaderMarkPct + '%"></div>'
+        +   '<div class="emp-bar-tick" style="left:0%" data-final="' + leaderBarFill + '%">'
         +     '<span class="emp-bar-pct">' + leaderBarLbl + '</span>'
         +     '<span class="emp-bar-chevron">▲</span>'
         +   '</div>'
@@ -493,14 +495,21 @@ var kiosk = (function() {
 
       var amtId = 'kioskEmpAmt' + s.rank;
 
-      var rawBarPct  = s.target > 0 ? Math.round((s.sales / s.target) * 100) : 0;
-      var barOver    = rawBarPct >= 100;
-      var pctLabel   = rawBarPct + '%';
+      // Bar range: 0–150% of target fills the full bar width.
+      // This means the 100% target mark sits at 67% of bar width,
+      // leaving the right third as visible "over-target" territory.
+      var BAR_MAX       = 150;
+      var rawBarPct     = s.target > 0 ? Math.round((s.sales / s.target) * 100) : 0;
+      var barOver       = rawBarPct >= 100;
+      var barFillPct    = Math.min(Math.round(rawBarPct / BAR_MAX * 100), 100);
+      var targetMarkPct = Math.round(100 / BAR_MAX * 100); // 67 — where the target line sits
+      var pctLabel      = rawBarPct + '%';
       var statsBody = s.sales > 0
         ? '<div class="emp-amt num" id="' + amtId + '" data-target="' + (s.sales || 0) + '">' + fmtDollars(0) + '</div>'
           + '<div class="emp-bar-wrap' + (barOver ? ' bar-over' : '') + '">'
-          +   '<div class="emp-bar"><span style="width:0%" data-final="' + barPct + '%"></span></div>'
-          +   '<div class="emp-bar-tick" style="left:0%" data-final="' + barPct + '%">'
+          +   '<div class="emp-bar"><span style="width:0%" data-final="' + barFillPct + '%"></span></div>'
+          +   '<div class="emp-bar-mark" style="left:' + targetMarkPct + '%"></div>'
+          +   '<div class="emp-bar-tick" style="left:0%" data-final="' + barFillPct + '%">'
           +     '<span class="emp-bar-pct">' + pctLabel + '</span>'
           +     '<span class="emp-bar-chevron">▲</span>'
           +   '</div>'

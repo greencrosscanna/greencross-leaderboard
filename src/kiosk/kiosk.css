@@ -478,7 +478,31 @@ body.kiosk-bg {
 .leader-bar   { margin-top: 14px; margin-bottom: 8px; }
 .leader-bar .emp-bar-pct,
 .leader-bar .emp-bar-chevron { color: var(--green); }
-.emp-bar  { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+
+/* Bar track: left 67% is normal track, right 33% is subtle bonus zone tint */
+.emp-bar {
+  height: 4px;
+  background: linear-gradient(to right, var(--border) 66.7%, rgba(74,222,128,0.08) 66.7%);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+/* Target marker line at the 100%-of-target position (67% of bar width) */
+.emp-bar-mark {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 1.5px;
+  background: var(--text-mute);
+  border-radius: 1px;
+  opacity: 0.35;
+  pointer-events: none;
+}
+.emp-bar-wrap.bar-over .emp-bar-mark {
+  background: #4ade80;
+  opacity: 0.7;
+  box-shadow: 0 0 4px #86efac;
+}
 .emp-bar span { display: block; height: 100%; background: var(--green); border-radius: 2px; transition: width 1s ease-out; }
 .emp-card:not(.leading) .emp-bar span { background: var(--text-dim); }
 
