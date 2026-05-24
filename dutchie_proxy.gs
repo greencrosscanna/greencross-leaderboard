@@ -157,7 +157,8 @@ function doGet(e) {
       const stores  = getDirectorStores(params,  { byStore, byStoreToday, byStore30d });
       const staff   = getDirectorStaff(params,   { byStore, byStore30d });
       const alerts  = getDirectorAlerts(         { byStore: byStoreMTD });
-      return jsonOut({ summary, stores, staff, alerts }, params.callback);
+      const today   = getDirectorToday(byStoreToday);
+      return jsonOut({ summary, stores, staff, alerts, today }, params.callback);
     }
     if (params.action === 'directorsummary') {
       requireRole_(auth, ['owner','director']);
@@ -1051,6 +1052,78 @@ function syncEmployeeRoster_() {
 // ============================================================
 // DIRECTOR ENDPOINTS
 // ============================================================
+
+/**
+ * Aggregate today's performance across all stores for the director hero row.
+ * Returns the same shape as getStoreToday() so the director can reuse gauge logic.
+ *
+ * @param {Object} byStoreToday  { storeSlug: [txn, ...] } — pre-fetched today txns
+ */
+function getDirectorToday(byStoreToday) {
+  const { hour: nowHour, minute: nowMinute } = ptHourNow_();
+  const elapsedHours = Math.max(0, Math.min(nowHour + nowMinute / 60 - STORE_OPEN_HOUR, STORE_HOURS));
+  const dayFrac      = STORE_HOURS > 0 ? elapsedHours / STORE_HOURS : 0;
+
+  const minutesLeft = STORE_CLOSE_HOUR * 60 - (nowHour * 60 + nowMinute);
+  const storeClosed = minutesLeft <= 0;
+  const _remH  = Math.floor(Math.max(0, minutesLeft) / 60);
+  const _remM  = Math.max(0, minutesLeft) % 60;
+  const timeRemainingLabel = storeClosed
+    ? 'Closed'
+    : _remH + ':' + String(_remM).padStart(2, '0');
+
+  // Aggregate revenue + goals across all stores
+  let totalRevenue = 0;
+  let totalGoal    = 0;
+  const combinedHourMap = {};  // hour → { revenue, count }
+
+  STORES.forEach(function(store) {
+    const txns     = (byStoreToday || {})[store.slug] || [];
+    const agg      = aggregateTransactions_(txns);
+    const dailyGoal = getDailyGoal_(store.slug);
+
+    totalRevenue += agg.sales;
+    totalGoal    += dailyGoal;
+
+    // Merge hourly buckets
+    const hm = aggregateByHour_(txns);
+    Object.entries(hm).forEach(([h, v]) => {
+      if (!combinedHourMap[h]) combinedHourMap[h] = { revenue: 0, count: 0 };
+      combinedHourMap[h].revenue += v.revenue;
+      combinedHourMap[h].count   += v.count;
+    });
+  });
+
+  const pctToGoal  = totalGoal > 0 ? r3_(totalRevenue / totalGoal) : 0;
+  const paceGoal   = totalGoal * dayFrac;
+  const pace       = paceGoal > 0.5 ? r3_((totalRevenue - paceGoal) / paceGoal) : 0;
+  const toGo       = Math.max(0, totalGoal - totalRevenue);
+
+  // Build hourly array (same shape as getStoreToday hourly)
+  const maxRevenue = Math.max(1, ...Object.values(combinedHourMap).map(h => h.revenue));
+  const hourly = [];
+  for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
+    const d   = combinedHourMap[h] || { revenue: 0, count: 0 };
+    const lbl = h === 12 ? '12p' : h < 12 ? h + 'a' : (h - 12) + 'p';
+    hourly.push({
+      hour:      lbl,
+      revenue:   Math.round(d.revenue),
+      pct:       r1_((d.revenue / maxRevenue) * 100),
+      current:   h === nowHour,
+      projected: h > nowHour,
+    });
+  }
+
+  return {
+    revenue:            r2_(totalRevenue),
+    goal:               totalGoal,
+    pctToGoal:          pctToGoal,
+    pace:               pace,
+    toGo:               toGo,
+    timeRemainingLabel: timeRemainingLabel,
+    hourly:             hourly,
+  };
+}
 
 function getDirectorSummary(params, pre) {
   pre = pre || {};

@@ -454,6 +454,100 @@ var director = (function() {
       + '</div>';
   }
 
+  // ── Render: Today Aggregate Row ───────────────────────
+  // Three widgets matching the kiosk hero cards — Goal arc, Pace gauge, Hourly chart.
+  // SVG math identical to kiosk so the visuals are recognisable cross-view.
+
+  var DIR_ARC_LEN = 308; // π × 98 ≈ 308  (same arc as kiosk)
+  var DIR_PACE_RANGE = 80;
+
+  function renderDirGoalCard(today) {
+    var pct     = today.pctToGoal || 0;
+    var pctDisp = Math.round(pct * 100) + '%';
+    var capped  = Math.min(pct, 1);
+    var offset  = Math.round(DIR_ARC_LEN * (1 - capped));
+    var closed  = today.timeRemainingLabel === 'Closed';
+
+    var soldStr = GC.fmtCurrency(today.revenue || 0);
+    var toGoStr = GC.fmtCurrency(today.toGo   || 0);
+    var remStr  = today.timeRemainingLabel || '—';
+
+    return '<div class="dir-today-card">'
+      + '<div class="kcard-label">Daily Goal · ' + e(GC.fmtCurrency(today.goal)) + '</div>'
+      + '<div class="dir-gauge-wrap">'
+      +   '<svg width="200" height="108" viewBox="0 0 240 130" style="overflow:visible">'
+      +     '<path d="M 22 122 A 98 98 0 0 1 218 122" stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="butt"/>'
+      +     '<path d="M 22 122 A 98 98 0 0 1 218 122" stroke="#4ade80" stroke-width="14" fill="none"'
+      +       ' stroke-linecap="round" stroke-dasharray="308" stroke-dashoffset="' + offset + '"'
+      +       ' style="transition:stroke-dashoffset 1.4s cubic-bezier(.2,.7,.3,1)"/>'
+      +   '</svg>'
+      +   '<div class="dir-gauge-pct">' + e(pctDisp) + '</div>'
+      +   '<div class="dir-gauge-sub">to goal</div>'
+      + '</div>'
+      + '<div class="kcard-stats">'
+      +   '<div class="kstat"><div class="kstat-v num">' + e(soldStr) + '</div><div class="kstat-l">Sold</div></div>'
+      +   '<div class="kstat"><div class="kstat-v num' + (closed ? '' : '') + '">' + e(toGoStr) + '</div><div class="kstat-l">To go</div></div>'
+      +   '<div class="kstat"><div class="kstat-v num">' + e(remStr) + '</div><div class="kstat-l">Remain</div></div>'
+      + '</div>'
+      + '</div>';
+  }
+
+  function renderDirPaceCard(today) {
+    var pace     = today.pace || 0;
+    var clamped  = Math.max(-DIR_PACE_RANGE, Math.min(DIR_PACE_RANGE, pace * 100));
+    var deg      = (clamped / DIR_PACE_RANGE) * 90;
+    var zone     = deg <= -30 ? 'red' : deg >= 30 ? 'green' : 'amber';
+    var zoneColor = zone === 'red' ? 'var(--red)' : zone === 'green' ? 'var(--green)' : 'var(--amber)';
+    var pctStr   = (pace >= 0 ? '+' : '−') + Math.abs(Math.round(pace * 100)) + '%';
+    var subLabel = zone === 'red' ? 'Behind plan' : zone === 'green' ? 'Ahead of plan' : 'Near plan';
+
+    var proj     = today.revenue || 0;
+    var gap      = today.toGo || 0;
+    var gapCls   = gap > 0 ? ' down' : ' up';
+    var gapStr   = GC.fmtCurrency(gap);
+
+    return '<div class="dir-today-card">'
+      + '<div class="kcard-label">Pace · vs. Plan</div>'
+      + '<div class="dir-gauge-wrap">'
+      +   '<svg width="200" height="108" viewBox="0 0 240 130" style="overflow:visible">'
+      +     '<path d="M 22 122 A 98 98 0 0 1 218 122" stroke="#232a27" stroke-width="10" fill="none" stroke-linecap="butt"/>'
+      +     '<path d="M 22 122 A 98 98 0 0 1 71 37"   stroke="var(--red)"   stroke-width="10" fill="none" stroke-linecap="butt" opacity="0.62"/>'
+      +     '<path d="M 71 37  A 98 98 0 0 1 169 37"  stroke="var(--amber)" stroke-width="10" fill="none" stroke-linecap="butt" opacity="0.62"/>'
+      +     '<path d="M 169 37 A 98 98 0 0 1 218 122" stroke="var(--green)" stroke-width="10" fill="none" stroke-linecap="butt" opacity="0.62"/>'
+      +     '<line x1="120" y1="18" x2="120" y2="26" stroke="var(--text-mute)" stroke-width="2"/>'
+      +     '<g id="dirPaceTick" style="transform-origin:120px 122px;transform:rotate(' + deg + 'deg);transition:transform 1.4s cubic-bezier(.2,.7,.3,1)">'
+      +       '<rect x="113" y="11" width="14" height="26" rx="7" fill="#0a0e0d" opacity="0.55"/>'
+      +       '<rect x="115" y="13" width="10" height="22" rx="5" fill="#e6ece9" stroke="#0a0e0d" stroke-width="1.5"/>'
+      +     '</g>'
+      +   '</svg>'
+      +   '<div class="dir-gauge-pct zone-' + zone + '">' + e(pctStr) + '</div>'
+      +   '<div class="dir-gauge-sub" style="color:' + zoneColor + '">' + e(subLabel) + '</div>'
+      + '</div>'
+      + '<div class="kcard-stats">'
+      +   '<div class="kstat"><div class="kstat-v num">' + e(GC.fmtCurrency(proj)) + '</div><div class="kstat-l">Revenue</div></div>'
+      +   '<div class="kstat' + gapCls + '"><div class="kstat-v num">' + e(gapStr) + '</div><div class="kstat-l">' + e(gap > 0 ? 'Short by' : 'Ahead by') + '</div></div>'
+      + '</div>'
+      + '</div>';
+  }
+
+  function renderDirHourlyCard(today) {
+    var hourly = today.hourly || [];
+    var bars   = hourly.map(function(h) {
+      var cls = h.current ? ' current' : h.projected ? ' proj' : '';
+      return '<div class="dir-hour-col' + cls + '">'
+        +   '<div class="dir-hour-bar-wrap">'
+        +     '<div class="dir-hour-bar" style="height:' + h.pct + '%"></div>'
+        +   '</div>'
+        +   '<div class="dir-hour-lbl">' + e(h.hour) + '</div>'
+        + '</div>';
+    }).join('');
+
+    return '<div class="dir-today-card dir-hourly-card">'
+      + '<div class="kcard-label">Today by Hour</div>'
+      + '<div class="dir-hourly-chart">' + bars + '</div>'
+      + '</div>';
+  }
+
   // ── Render: Full Director Page ─────────────────────────
   function render(data) {
     _data = data;
@@ -462,10 +556,18 @@ var director = (function() {
     var staff  = data.staff.staff;
     var sum    = data.summary;
     var alerts = data.alerts;
+    var today  = data.today || {};
 
     return '<div class="app-page">'
       + renderHeader(data)
       + renderStatusStrip(stores)
+      + (today.goal
+          ? '<div class="dir-today-row">'
+              + renderDirGoalCard(today)
+              + renderDirPaceCard(today)
+              + renderDirHourlyCard(today)
+            + '</div>'
+          : '')
       + renderKPIs(sum)
       + renderStoreTable(stores)
       + renderFilterPills()
