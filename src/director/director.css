@@ -92,6 +92,29 @@
   .kpi-row.small { grid-template-columns: repeat(3, 1fr); }
 }
 
+/* ── Top Performers table — fixed column widths ─────────── */
+/* table-layout: fixed locks column widths regardless of row count,
+   so filtering store-by-store doesn't reflow the columns.        */
+#staffTable {
+  table-layout: fixed;
+  width: 100%;
+}
+#staffTable colgroup { display: table-column-group; }
+#staffTable th:nth-child(1)  { width: 60px;  }   /* Rank      */
+#staffTable th:nth-child(2)  { width: 200px; }   /* Staff     */
+#staffTable th:nth-child(3)  { width: 130px; }   /* Store     */
+#staffTable th:nth-child(4)  { width: 90px;  }   /* Role      */
+#staffTable th:nth-child(5)  { width: 150px; }   /* Sales     */
+#staffTable th:nth-child(6)  { width: 65px;  }   /* Txns      */
+#staffTable th:nth-child(7)  { width: 75px;  }   /* AOV       */
+#staffTable th:nth-child(8)  { width: 55px;  }   /* UPT       */
+#staffTable th:nth-child(9)  { width: 100px; }   /* Discount  */
+#staffTable th:nth-child(10) { width: 110px; }   /* Trend     */
+/* Truncate long text rather than wrapping */
+#staffTable td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* But let the staff name cell wrap on 2 lines if needed */
+#staffTable td:nth-child(2) { white-space: normal; }
+
 /* ── Lower Panel Grid (Alerts + Watch) ───────────────────── */
 .director-lower {
   display: grid;

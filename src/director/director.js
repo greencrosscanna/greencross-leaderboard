@@ -44,6 +44,8 @@ var director = (function() {
   var _storeFilter = 'all';
   var _tagFilter   = null;
   var _staffSearch = '';
+  var _roleFilter  = '';
+  var _shiftFilter = '';
   var _sortKey     = 'sales';
   var _sortDir     = -1;           // -1 = descending
   var _clockTimer  = null;
@@ -606,6 +608,20 @@ var director = (function() {
       result = result.slice(0, 10);
     }
 
+    // Role filter
+    if (_roleFilter) {
+      result = result.filter(function(s) {
+        return (s.roleLabel || '').toLowerCase().indexOf(_roleFilter.toLowerCase()) !== -1;
+      });
+    }
+
+    // Shift filter
+    if (_shiftFilter) {
+      result = result.filter(function(s) {
+        return (s.shift || '').toLowerCase() === _shiftFilter.toLowerCase();
+      });
+    }
+
     // Search
     if (_staffSearch) {
       var q = _staffSearch.toLowerCase();
@@ -737,11 +753,13 @@ var director = (function() {
     var lr = document.getElementById('lastRefreshed');
     if (lr) lr.textContent = 'Last refresh ' + GC.fmtTime(new Date());
 
-    // Period select — change triggers full data reload
+    // Period select — change triggers full data reload; reset local filters
     var periodSelect = document.getElementById('periodSelect');
     if (periodSelect) {
       periodSelect.addEventListener('change', function() {
-        _period = periodSelect.value;
+        _period      = periodSelect.value;
+        _roleFilter  = '';
+        _shiftFilter = '';
         doRefresh(false);
       });
     }
@@ -817,6 +835,24 @@ var director = (function() {
         var parts = sortSelect.value.split(',');
         _sortKey = parts[0];
         _sortDir = parseInt(parts[1]) || -1;
+        refreshStaffTable();
+      });
+    }
+
+    // Role filter
+    var roleSelect = document.getElementById('roleSelect');
+    if (roleSelect) {
+      roleSelect.addEventListener('change', function() {
+        _roleFilter = roleSelect.value;
+        refreshStaffTable();
+      });
+    }
+
+    // Shift filter
+    var shiftSelect = document.getElementById('shiftSelect');
+    if (shiftSelect) {
+      shiftSelect.addEventListener('change', function() {
+        _shiftFilter = shiftSelect.value;
         refreshStaffTable();
       });
     }
