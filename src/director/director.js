@@ -161,8 +161,12 @@ var director = (function() {
       + '<div class="cm-time" id="directorClock">—</div>'
       + '<div class="cm-date" id="directorDate">—</div>'
       + '</div>'
-      + '<button class="btn-ghost" id="btnRefresh">↻ Refresh</button>'
-      + '<button class="btn-ghost" id="btnExport">⤓ Export</button>'
+      + '<button class="btn-icon dir-settings-btn" id="btnSettings" title="Settings">'
+      +   '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'
+      +     '<circle cx="8" cy="8" r="2.2"/>'
+      +     '<path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M2.93 2.93l1.06 1.06M12.01 12.01l1.06 1.06M2.93 13.07l1.06-1.06M12.01 3.99l1.06-1.06"/>'
+      +   '</svg>'
+      + '</button>'
       + (session
           ? '<span class="user-chip" id="userChip">'
             + '<span class="uc-avatar">' + e(session.initials || '??') + '</span>'
@@ -292,7 +296,6 @@ var director = (function() {
     return '<div class="section-head">'
       + '<h2>Store Leaderboard · MTD</h2><span class="sh-sep">/</span>'
       + '<span class="sh-meta">Click any store to drill down</span>'
-      + '<a class="sh-link" id="configurePlan">Configure plan targets →</a>'
       + '</div>'
       + '<table class="gc-table" id="storeTable">'
       + '<thead><tr>'
@@ -672,8 +675,7 @@ var director = (function() {
       return;
     }
 
-    var btn = document.getElementById('btnRefresh');
-    if (btn) btn.classList.add('spinning');
+    var btn = null; // refresh button removed; kept for catch handler below
 
     GC.api.fetchDirectorAll('mtd')
       .then(function(data) {
@@ -713,14 +715,10 @@ var director = (function() {
     var lr = document.getElementById('lastRefreshed');
     if (lr) lr.textContent = 'Last refresh ' + GC.fmtTime(new Date());
 
-    // Refresh button
-    var btnRefresh = document.getElementById('btnRefresh');
-    if (btnRefresh) btnRefresh.addEventListener('click', function() { doRefresh(true); });
-
-    // Export (placeholder)
-    var btnExport = document.getElementById('btnExport');
-    if (btnExport) btnExport.addEventListener('click', function() {
-      GC.toast('Export not yet wired to real API', 'info');
+    // Settings gear
+    var btnSettings = document.getElementById('btnSettings');
+    if (btnSettings) btnSettings.addEventListener('click', function() {
+      GC.router.navigate('#/settings');
     });
 
     // User chip → logout
@@ -799,11 +797,6 @@ var director = (function() {
         var ssStore = ev.target.closest('.ss-store[data-slug]');
         if (ssStore) {
           GC.router.navigate('#/store/' + ssStore.dataset.slug);
-        }
-
-        // Configure plan targets link → Settings page
-        if (ev.target.id === 'configurePlan') {
-          GC.router.navigate('#/settings');
         }
 
         // View full leaderboard link

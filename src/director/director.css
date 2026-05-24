@@ -25,6 +25,23 @@
   align-items: center;
 }
 
+/* ── Settings gear button ────────────────────────────────── */
+.dir-settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 6px;
+  color: var(--text-mute);
+  transition: color 0.15s, background 0.15s;
+}
+.dir-settings-btn:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
 /* ── Store Status Strip ───────────────────────────────────── */
 .status-strip {
   margin-top: 14px;
