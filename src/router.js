@@ -48,6 +48,12 @@ GC.router = (function() {
       roles: ['owner','director'],
       render: function() { GC.views.renderLeaderboard(); },
     },
+    {
+      id: 'settings',
+      pattern: /^\/settings$/,
+      roles: ['owner','director'],
+      render: function() { GC.views.renderSettings(); },
+    },
   ];
 
   // ── Dispatch ───────────────────────────────────────────
@@ -136,4 +142,5 @@ GC.views = {
   renderDirector:    function() { console.warn('[GC.views] renderDirector not registered'); },
   renderKiosk:       function(slug) { console.warn('[GC.views] renderKiosk not registered:', slug); },
   renderLeaderboard: function() { console.warn('[GC.views] renderLeaderboard not registered'); },
+  renderSettings:    function() { console.warn('[GC.views] renderSettings not registered'); },
 };

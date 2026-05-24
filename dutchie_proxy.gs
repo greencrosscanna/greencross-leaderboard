@@ -27,6 +27,7 @@ const GC_STORE_PLANS_KEY    = 'GC_STORE_PLANS_JSON';
 const GC_STREAKS_KEY        = 'GC_STREAKS_JSON';
 const GC_EMPLOYEES_KEY      = 'GC_STORE_EMPLOYEES_JSON';
 const GC_PAY_PERIOD_ANCHOR  = 'GC_PAY_PERIOD_ANCHOR'; // stored as "YYYY-MM-DD" local date
+const GC_NICKNAMES_KEY       = 'GC_NICKNAMES_JSON';
 const GC_TARGET_CACHE_KEY   = 'GC_ROLLING_TARGET_CACHE_JSON';
 const PP_DAYS                = 14;   // pay-period length in days
 const TARGET_LOOKBACK_MONTHS = 6;    // rolling lookback for target calculation
@@ -210,6 +211,15 @@ function doGet(e) {
     if (params.action === 'setplan') {
       requireRole_(auth, ['owner','director']);
       return jsonOut(setStorePlan(params), params.callback);
+    }
+
+    if (params.action === 'getsettings') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(getSettings_(params), params.callback);
+    }
+    if (params.action === 'savesettings') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(saveSettings_(params), params.callback);
     }
 
     // ── Admin: user & key management (director only) ───────
@@ -532,6 +542,19 @@ function fmtDate_(ms) {
 function getStorePlans_() {
   const raw = PropertiesService.getScriptProperties().getProperty(GC_STORE_PLANS_KEY);
   return JSON.parse(raw || '{}');
+}
+
+/** Returns the nickname map { nameKey: displayName }. */
+function getNicknames_() {
+  const raw = PropertiesService.getScriptProperties().getProperty(GC_NICKNAMES_KEY);
+  try { return raw ? JSON.parse(raw) : {}; } catch(e) { return {}; }
+}
+
+/** Apply nickname to a raw Dutchie employee name, or return name unchanged. */
+function applyNickname_(name, nicknames) {
+  if (!name || !nicknames) return name;
+  const key = name.toLowerCase().replace(/\s+/g, '_');
+  return nicknames[key] || name;
 }
 
 /** Returns the daily revenue goal for a store (0 if not set). */
@@ -1338,8 +1361,10 @@ function getDirectorStaff(params, pre) {
 
   // Sort by sales, assign ranks, badge top performers
   staffList.sort((a, b) => b.sales - a.sales);
+  const _nicknames = getNicknames_();
   staffList.forEach(function(s, i) {
     s.rank = i + 1;
+    s.name = applyNickname_(s.name, _nicknames);
     if (i < 3 && !s.tags.includes('flag')) s.tags.push('top');
   });
 
@@ -1836,13 +1861,14 @@ function getStoreLeaderboard(store, params) {
   const empTargets  = computeEmpTargets_(store.slug, dailyGoal);
   const fallbackTgt = dailyGoal > 0 ? Math.round(dailyGoal / 4) : 0;
 
+  const _storeNicknames = getNicknames_();
   const staff = empList.map((emp, i) => {
     const nameKey = emp.name.toLowerCase().replace(/\s+/g, '_');
     const target  = empTargets[nameKey] || fallbackTgt;
     return {
       rank:          i + 1,
       initials:      emp.initials,
-      name:          emp.name,
+      name:          applyNickname_(emp.name, _storeNicknames),
       sales:         emp.sales,
       transactions:  emp.transactions,
       avgOrderValue: emp.avgOrderValue,
@@ -2040,4 +2066,84 @@ function jsonOut(data, callback) {
   return ContentService
     .createTextOutput(json)
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ============================================================
+// SETTINGS ENDPOINTS
+// ============================================================
+
+function getSettings_(params) {
+  const plans     = getStorePlans_();
+  const nicknames = getNicknames_();
+  const roster    = getEmployeeRoster_();
+
+  // Flatten roster into sorted unique employee list
+  const empMap = {};
+  STORES.forEach(function(store) {
+    (roster[store.slug] || []).forEach(function(emp) {
+      const key = emp.name.toLowerCase().replace(/\s+/g, '_');
+      if (!empMap[key] && emp.name && emp.name !== 'Unknown') {
+        empMap[key] = { key: key, name: emp.name, store: store.name };
+      }
+    });
+  });
+  const employees = Object.values(empMap).sort(function(a, b) {
+    return a.name.localeCompare(b.name);
+  });
+
+  return {
+    ok:        true,
+    plans:     STORES.map(function(s) {
+      const p = plans[s.slug] || {};
+      const daily = p.daily || (p.monthly ? Math.round(p.monthly / 30.4) : 0);
+      return {
+        slug:    s.slug,
+        name:    s.name,
+        daily:   daily,
+        pp:      daily ? Math.round(daily * PP_DAYS) : 0,
+        monthly: daily ? Math.round(daily * 30.4) : (p.monthly || 0),
+      };
+    }),
+    nicknames: nicknames,
+    employees: employees,
+  };
+}
+
+function saveSettings_(params) {
+  const props = PropertiesService.getScriptProperties();
+
+  // Save nicknames
+  if (params.nicknames !== undefined) {
+    try {
+      const n = JSON.parse(params.nicknames);
+      // Remove empty values
+      Object.keys(n).forEach(function(k) { if (!n[k]) delete n[k]; });
+      props.setProperty(GC_NICKNAMES_KEY, JSON.stringify(n));
+    } catch(e) {
+      return { ok: false, error: 'Invalid nicknames JSON: ' + e.message };
+    }
+  }
+
+  // Save plans
+  if (params.plans !== undefined) {
+    try {
+      const updates = JSON.parse(params.plans);
+      const existing = getStorePlans_();
+      updates.forEach(function(p) {
+        if (!p.slug) return;
+        const daily = Math.round(Number(p.daily) || 0);
+        if (daily > 0) {
+          existing[p.slug] = {
+            daily:   daily,
+            monthly: Math.round(daily * 30.4),
+          };
+        }
+      });
+      props.setProperty(GC_STORE_PLANS_KEY, JSON.stringify(existing));
+    } catch(e) {
+      return { ok: false, error: 'Invalid plans JSON: ' + e.message };
+    }
+  }
+
+  return { ok: true };
 }

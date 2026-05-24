@@ -801,9 +801,9 @@ var director = (function() {
           GC.router.navigate('#/store/' + ssStore.dataset.slug);
         }
 
-        // Configure plan targets link
+        // Configure plan targets link → Settings page
         if (ev.target.id === 'configurePlan') {
-          GC.toast('Plan configuration coming in v1.1', 'info');
+          GC.router.navigate('#/settings');
         }
 
         // View full leaderboard link

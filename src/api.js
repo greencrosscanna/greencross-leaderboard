@@ -156,6 +156,17 @@ GC.api = (function() {
     return gasCall('directoralerts');
   }
 
+  function fetchSettings() {
+    return gasCall('getsettings', {});
+  }
+
+  function saveSettings(plans, nicknames) {
+    var params = {};
+    if (plans)     params.plans     = JSON.stringify(plans);
+    if (nicknames) params.nicknames = JSON.stringify(nicknames);
+    return gasCall('savesettings', params);
+  }
+
   // Convenience: single GAS round-trip returning all four director payloads
   function fetchDirectorAll(period) {
     period = period || 'mtd';
@@ -227,5 +238,7 @@ GC.api = (function() {
     fetchStoreBadges:     fetchStoreBadges,
     fetchKioskAll:        fetchKioskAll,
     fetchLeaderboardStaff: fetchLeaderboardStaff,
+    fetchSettings:    fetchSettings,
+    saveSettings:     saveSettings,
   };
 })();
