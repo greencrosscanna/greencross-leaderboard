@@ -497,22 +497,32 @@ body.kiosk-bg {
   opacity: 0.7;
   box-shadow: 0 0 4px #86efac;
 }
-.emp-bar span { display: block; height: 100%; background: var(--green); border-radius: 2px; transition: width 1s ease-out; }
-.emp-card:not(.leading) .emp-bar span { background: var(--text-dim); }
+/* All fills: gradient from dim green → full bright at the target/mark point.
+   --mark-pct defaults to 100% when under target (gradient spans the whole fill).
+   This creates a satisfying "charging up" effect as employees approach their goal. */
+.emp-bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(to right,
+    rgba(74, 222, 128, 0.20) 0%,
+    #4ade80 var(--mark-pct, 100%)
+  );
+  border-radius: 2px;
+  transition: width 1s ease-out;
+}
 
-/* Over-target: base fill stays its normal color; ::after covers only the
-   over-target portion (markPct → 100%) with bright green + glow.
-   --mark-pct is set inline on the span from JS. */
+/* Over-target: ::after overlays only the portion past the hash mark with glow.
+   The base gradient already ends at full bright exactly at --mark-pct, so the
+   ::after blends in seamlessly and then pulses on top. */
 .emp-bar-wrap.bar-over .emp-bar span {
   position: relative;
-  overflow: visible;
 }
 .emp-bar-wrap.bar-over .emp-bar span::after {
   content: '';
   position: absolute;
   top: 0; bottom: 0;
   left: var(--mark-pct, 100%);
-  right: -1px;
+  right: 0;
   background: #4ade80;
   border-radius: 0 2px 2px 0;
   animation: barGlowPulse 2s ease-in-out infinite;
