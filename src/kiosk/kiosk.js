@@ -268,7 +268,7 @@ var kiosk = (function() {
       + '          stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="butt"/>'
       + '    <path id="kioskGoalArc"'
       + '          d="M 22 122 A 98 98 0 0 1 218 122"'
-      + '          stroke="#4ade80" stroke-width="14" fill="none" stroke-linecap="butt"'
+      + '          stroke="#4ade80" stroke-width="14" fill="none" stroke-linecap="round"'
       + '          stroke-dasharray="' + ARC_LEN + '"'
       + '          stroke-dashoffset="' + ARC_LEN + '"'
       + '          style="transition: stroke-dashoffset 1.6s cubic-bezier(.2,.7,.3,1)"/>'
