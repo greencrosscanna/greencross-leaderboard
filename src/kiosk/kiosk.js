@@ -397,8 +397,6 @@ var kiosk = (function() {
   //          used to build shift-status and mark off-shift employees
   // badges:  normalized badge array — used to show which trophies each emp holds
   function renderStaffGrid(staff, storeName, onShift, badges) {
-    var maxSales = staff.length > 0 ? (staff[0].sales || 1) : 1;
-
     // Build shift status map: name (lower) → { status, note }
     var shiftMap = {};
     (onShift || []).forEach(function(p) {
@@ -434,7 +432,7 @@ var kiosk = (function() {
 
     var cards = staff.map(function(s) {
       var isLeading  = s.rank === 1;
-      var barPct     = maxSales > 0 ? Math.round((s.sales / maxSales) * 100) : 0;
+      var barPct     = s.target > 0 ? Math.min(Math.round((s.sales / s.target) * 100), 100) : 0;
       var aovStr     = s.aov  ? '$' + s.aov.toFixed(2) : '—';
       var uptStr     = s.upt  ? s.upt.toFixed(1)        : '—';
       var nameKey    = (s.name || '').toLowerCase();
