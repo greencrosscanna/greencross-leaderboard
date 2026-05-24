@@ -1561,27 +1561,47 @@ function getStoreLeaderboard(store, params) {
   const today  = todayR.toLocal;
 
   // Load and update streaks
-  const props   = PropertiesService.getScriptProperties();
-  const streaks = JSON.parse(props.getProperty(GC_STREAKS_KEY) || '{}');
+  const props     = PropertiesService.getScriptProperties();
+  const streaks   = JSON.parse(props.getProperty(GC_STREAKS_KEY) || '{}');
+  const yesterday = fmtDate_(new Date(today).getTime() - 24 * 60 * 60 * 1000);
 
   const empList = Object.values(agg.byEmployee)
     .sort((a, b) => b.sales - a.sales);
 
+  // Keys for employees who transacted today — used to detect absent employees below
+  const activeKeys = new Set();
+
   empList.forEach(function(emp) {
     const key = store.slug + ':' + emp.name.toLowerCase().replace(/\s+/g, '_');
-    const s   = streaks[key] || { days: 0, lastDate: '' };
-
-    const yesterday = fmtDate_(new Date(today).getTime() - 24 * 60 * 60 * 1000);
+    activeKeys.add(key);
+    const s = streaks[key] || { days: 0, lastDate: '' };
 
     if (s.lastDate === yesterday) {
-      s.days    = (s.days || 0) + 1;
+      // Consecutive day — extend streak
+      s.days     = (s.days || 0) + 1;
       s.lastDate = today;
     } else if (s.lastDate !== today) {
-      s.days    = 1;
+      // Gap in attendance — reset to 1 (today counts as day 1)
+      s.days     = 1;
       s.lastDate = today;
     }
     streaks[key] = s;
-    emp._streak = s.days;
+    emp._streak  = s.days;
+  });
+
+  // Break streaks for roster members who had no transactions today.
+  // Without this pass an absent employee's streak would persist indefinitely.
+  (getEmployeeRoster_()[store.slug] || []).forEach(function(p) {
+    const key = store.slug + ':' + (p.name || '').toLowerCase().replace(/\s+/g, '_');
+    if (activeKeys.has(key)) return;          // already updated above
+    const s = streaks[key];
+    if (!s) return;                           // no history yet, nothing to break
+    // If their last sale was before yesterday, their streak is broken
+    if (s.lastDate && s.lastDate < yesterday) {
+      s.days     = 0;
+      s.lastDate = '';                        // cleared so next active day starts at 1
+      streaks[key] = s;
+    }
   });
 
   props.setProperty(GC_STREAKS_KEY, JSON.stringify(streaks));
@@ -1636,7 +1656,7 @@ function getStoreLeaderboard(store, params) {
     avgOrderValue: emp.avgOrderValue,
     avgUPT:        emp.avgUPT || 0,
     discountRate:  emp.discountRate,
-    streakDays:    emp._streak || 1,
+    streakDays:    emp._streak != null ? emp._streak : 1,
     leadingSince:  i === 0 ? leaderLeadingSince : '',
     note:          null,
   }));
