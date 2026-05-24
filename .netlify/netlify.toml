@@ -1,19 +1,25 @@
+plugins = []
+headers = []
+redirects = []
+
+[functions]
+
+[functions."*"]
+
 [build]
-  publish = "."
+publish = "/Users/skypinnick/greencross-leaderboard"
+publishOrigin = "default"
 
-# No server-side routing needed — app uses hash routing (#/director, #/store/:slug).
-# All routes are handled client-side by src/router.js.
+[build.environment]
 
-[[headers]]
-  for = "/*"
-  [headers.values]
-    X-Frame-Options = "SAMEORIGIN"
-    X-Content-Type-Options = "nosniff"
-    Referrer-Policy = "strict-origin-when-cross-origin"
+[build.processing]
 
-# Serve fixture JSON with the right content type
-[[headers]]
-  for = "/src/fixtures/*.json"
-  [headers.values]
-    Content-Type = "application/json"
-    Cache-Control = "no-cache"
+[build.processing.css]
+
+[build.processing.html]
+
+[build.processing.images]
+
+[build.processing.js]
+
+[build.services]

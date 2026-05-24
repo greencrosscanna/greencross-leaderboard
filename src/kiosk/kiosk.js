@@ -1094,6 +1094,7 @@ var kiosk = (function() {
         streak:          streak,
         streakType:      s.streakType     || (streak > 2 ? 'fire' : ''),
         leadingSince:    s.leadingSince   || '',
+        target:          s.target         || 0,
         personalBestPct: s.personalBestPct || null,
         note:            s.note           || null,
       };

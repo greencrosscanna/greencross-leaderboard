@@ -4,7 +4,7 @@
     {
       "name": "greencross-leaderboard",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8181"],
+      "runtimeArgs": ["serve.py"],
       "port": 8181
     }
   ]
