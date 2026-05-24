@@ -187,24 +187,13 @@ var kiosk = (function() {
         + '</div>';
     }
 
-    // ── Bottom-row stat 2: leader $/hr pace ──────────────
-    var paceHrHtml;
-    var hoursElapsed = today
-      ? Math.max((today.hoursOpen || 0) - (today.hoursRemaining || 0), 0.5)
-      : 0.5;
-    if (leader.sales > 0) {
-      var hrRate = Math.round((leader.sales || 0) / hoursElapsed);
-      paceHrHtml = '<div class="kstat">'
-        + '<div class="kstat-v num">$' + hrRate.toLocaleString()
-        + '<span style="font-size:14px;color:var(--text-dim);font-weight:600;">/hr</span></div>'
-        + '<div class="kstat-l">Current pace</div>'
-        + '</div>';
-    } else {
-      paceHrHtml = '<div class="kstat">'
-        + '<div class="kstat-v num">—</div>'
-        + '<div class="kstat-l">Current pace</div>'
-        + '</div>';
-    }
+    // ── Bottom-row stat 2: store projected EOD ───────────
+    var projEodHtml;
+    var projVal = (today && today.projectedRevenue) ? today.projectedRevenue : 0;
+    projEodHtml = '<div class="kstat">'
+      + '<div class="kstat-v num">' + (projVal > 0 ? fmtDollars(projVal) : '—') + '</div>'
+      + '<div class="kstat-l">Projected</div>'
+      + '</div>';
 
     // ── Bottom-row stat 3: trophies held by leader ───────
     var leaderNameLower = (leader.name || '').toLowerCase();
@@ -246,7 +235,7 @@ var kiosk = (function() {
       + '</div>'
       + '<div class="kcard-stats">'
       + marginHtml
-      + paceHrHtml
+      + projEodHtml
       + trophyHtml
       + '</div>'
       + '</div>';
@@ -384,10 +373,6 @@ var kiosk = (function() {
       + '  <div class="kstat' + gapCls + '">'
       + '    <div class="kstat-v num" id="kioskPaceShortBy">' + e(gapStr) + '</div>'
       + '    <div class="kstat-l" id="kioskPaceShortByLabel">' + e(diff >= 0 ? 'Ahead by' : 'Short by') + '</div>'
-      + '  </div>'
-      + '  <div class="kstat' + statusCls + '">'
-      + '    <div class="kstat-v" id="kioskPaceStatus" style="font-size:18px;">' + e(statusStr) + '</div>'
-      + '    <div class="kstat-l">Status</div>'
       + '  </div>'
       + '</div>'
       + '</div>';
@@ -1245,13 +1230,6 @@ var kiosk = (function() {
       }
       var shortByLblEl = document.getElementById('kioskPaceShortByLabel');
       if (shortByLblEl) shortByLblEl.textContent = diff >= 0 ? 'Ahead by' : 'Short by';
-      var statusEl = document.getElementById('kioskPaceStatus');
-      if (statusEl) {
-        var statusStr = Math.abs(diff) < (_goal || 1) * 0.02 ? 'On plan'
-          : diff >= 0 ? 'Ahead' : 'Behind';
-        statusEl.textContent = statusStr;
-        statusEl.parentElement.className = 'kstat' + gapCls;
-      }
     }
 
     // Closing push
