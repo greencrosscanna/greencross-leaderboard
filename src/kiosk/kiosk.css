@@ -483,17 +483,18 @@ body.kiosk-bg {
 .emp-card:not(.leading) .emp-bar span { background: var(--text-dim); }
 
 /* Over-target: bright green fill + glow, matches the goal arc overflow treatment.
-   Glow goes on .emp-bar (not the inner span) so overflow:hidden doesn't clip it. */
-.bar-over .emp-bar {
+   Use !important + overflow:visible to beat the .emp-card:not(.leading) specificity
+   and ensure the glow isn't clipped by overflow:hidden. */
+.emp-bar-wrap.bar-over .emp-bar {
   overflow: visible;
 }
-.bar-over .emp-bar span {
-  background: #4ade80;
+.emp-bar-wrap.bar-over .emp-bar span {
+  background: #4ade80 !important;
   border-radius: 2px;
   animation: barGlowPulse 2s ease-in-out infinite;
 }
-.bar-over .emp-bar-pct,
-.bar-over .emp-bar-chevron { color: #4ade80; }
+.emp-bar-wrap.bar-over .emp-bar-pct,
+.emp-bar-wrap.bar-over .emp-bar-chevron { color: #4ade80; }
 
 @keyframes barGlowPulse {
   0%, 100% { box-shadow: 0 0 4px #86efac, 0 0 8px #86efac; }
