@@ -500,15 +500,21 @@ body.kiosk-bg {
 .emp-bar span { display: block; height: 100%; background: var(--green); border-radius: 2px; transition: width 1s ease-out; }
 .emp-card:not(.leading) .emp-bar span { background: var(--text-dim); }
 
-/* Over-target: bright green fill + glow, matches the goal arc overflow treatment.
-   Use !important + overflow:visible to beat the .emp-card:not(.leading) specificity
-   and ensure the glow isn't clipped by overflow:hidden. */
-.emp-bar-wrap.bar-over .emp-bar {
+/* Over-target: base fill stays its normal color; ::after covers only the
+   over-target portion (markPct → 100%) with bright green + glow.
+   --mark-pct is set inline on the span from JS. */
+.emp-bar-wrap.bar-over .emp-bar span {
+  position: relative;
   overflow: visible;
 }
-.emp-bar-wrap.bar-over .emp-bar span {
-  background: #4ade80 !important;
-  border-radius: 2px;
+.emp-bar-wrap.bar-over .emp-bar span::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: var(--mark-pct, 100%);
+  right: -1px;
+  background: #4ade80;
+  border-radius: 0 2px 2px 0;
   animation: barGlowPulse 2s ease-in-out infinite;
 }
 .emp-bar-wrap.bar-over .emp-bar-pct,
@@ -516,7 +522,7 @@ body.kiosk-bg {
 
 @keyframes barGlowPulse {
   0%, 100% { box-shadow: 0 0 4px #86efac, 0 0 8px #86efac; }
-  50%       { box-shadow: 0 0 8px #4ade80, 0 0 16px #86efac; }
+  50%       { box-shadow: 0 0 6px #4ade80, 0 0 14px #86efac; }
 }
 
 /* Tick mark + % that rides at the fill position */
