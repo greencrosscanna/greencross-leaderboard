@@ -224,12 +224,13 @@ var kiosk = (function() {
       + '</div>';
 
     // ── Progress bar toward personal target ─────────────
-    var leaderBarPct  = (leader.target > 0)
+    var leaderBarPct  = leader.target > 0
       ? Math.min(Math.round((leader.sales / leader.target) * 100), 100)
       : 0;
-    var leaderBarLbl  = leaderBarPct + '%';
+    var leaderBarOver = leaderBarPct >= 100;
+    var leaderBarLbl  = leaderBarOver ? '100%' : leaderBarPct + '%';
     var leaderBarHtml = leader.target > 0
-      ? '<div class="emp-bar-wrap leader-bar">'
+      ? '<div class="emp-bar-wrap leader-bar' + (leaderBarOver ? ' bar-over' : '') + '">'
         +   '<div class="emp-bar"><span style="width:0%" data-final="' + leaderBarLbl + '"></span></div>'
         +   '<div class="emp-bar-tick" style="left:0%" data-final="' + leaderBarLbl + '">'
         +     '<span class="emp-bar-pct">' + leaderBarLbl + '</span>'
@@ -491,10 +492,11 @@ var kiosk = (function() {
 
       var amtId = 'kioskEmpAmt' + s.rank;
 
-      var pctLabel   = barPct + '%';
+      var barOver    = barPct >= 100;
+      var pctLabel   = barOver ? '100%' : barPct + '%';
       var statsBody = s.sales > 0
         ? '<div class="emp-amt num" id="' + amtId + '" data-target="' + (s.sales || 0) + '">' + fmtDollars(0) + '</div>'
-          + '<div class="emp-bar-wrap">'
+          + '<div class="emp-bar-wrap' + (barOver ? ' bar-over' : '') + '">'
           +   '<div class="emp-bar"><span style="width:0%" data-final="' + pctLabel + '"></span></div>'
           +   '<div class="emp-bar-tick" style="left:0%" data-final="' + pctLabel + '">'
           +     '<span class="emp-bar-pct">' + pctLabel + '</span>'
