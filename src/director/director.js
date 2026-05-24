@@ -24,10 +24,21 @@ GC.views.renderDirector = function() {
   // Start clock immediately (doesn't need data)
   director.startClock();
 
+  // Fetch MTD data for store rankings/KPIs, then overlay Pay Period staff data
   GC.api.fetchDirectorAll('mtd')
     .then(function(data) {
       app.innerHTML = director.render(data);
       director.init(data);
+
+      // Second fetch: staff for current pay period (replaces MTD staff in table)
+      GC.api.fetchDirectorStaff('pp')
+        .then(function(ppData) {
+          director.updateStaffTable(ppData.staff || []);
+        })
+        .catch(function(err) {
+          console.warn('[director] pay-period staff fetch failed:', err);
+          // MTD data already rendered — fail silently
+        });
     })
     .catch(function(err) {
       console.error('[director] fetch failed:', err);
@@ -317,7 +328,7 @@ var director = (function() {
           + avatarHtml(s.initials)
           + '<div>'
           + '<div class="who-name">' + e(s.name) + tagsHtml(tags) + '</div>'
-          + '<div class="who-sub">' + e(s.hoursWorked) + 'h MTD</div>'
+          + '<div class="who-sub">' + e(s.hoursWorked) + 'h this PP</div>'
           + '</div></div></td>'
         + '<td><div class="store-cell">'
           + storeDotHtml(s.storeSlug)
@@ -336,7 +347,7 @@ var director = (function() {
     }).join('');
 
     return '<div class="section-head">'
-      + '<h2>Top Performers · All Stores · MTD</h2>'
+      + '<h2>Top Performers · All Stores · Pay Period</h2>'
       + '<span class="sh-sep">/</span>'
       + '<span class="sh-meta">Across ' + total + ' active staff</span>'
       + '<a class="sh-link" id="viewFullLeaderboard">View full leaderboard →</a>'
@@ -615,7 +626,7 @@ var director = (function() {
         + '<td><div class="who">'
           + avatarHtml(s.initials)
           + '<div><div class="who-name">' + e(s.name) + tagsHtml(tags) + '</div>'
-          + '<div class="who-sub">' + e(s.hoursWorked) + 'h MTD</div>'
+          + '<div class="who-sub">' + e(s.hoursWorked) + 'h this PP</div>'
           + '</div></div></td>'
         + '<td><div class="store-cell">' + storeDotHtml(s.storeSlug) + '<span>' + e(s.storeName) + '</span></div></td>'
         + '<td>' + e(s.roleLabel) + '</td>'
@@ -680,6 +691,11 @@ var director = (function() {
           init(data);
         }
         if (showToast) GC.toast('Dashboard refreshed', 'success');
+
+        // Overlay pay-period staff data
+        GC.api.fetchDirectorStaff('pp')
+          .then(function(ppData) { updateStaffTable(ppData.staff || []); })
+          .catch(function() {}); // fail silently — MTD data still visible
       })
       .catch(function(err) {
         if (showToast) GC.toast('Refresh failed: ' + err.message, 'error');
@@ -799,11 +815,60 @@ var director = (function() {
   }
 
   // Public API of the director module
+  // ── Update just the staff table with pay-period data ─────
+  function updateStaffTable(staff) {
+    if (!staff || !staff.length) return;
+
+    // Merge into _data so pill filters keep working
+    if (_data) _data.staff = { staff: staff };
+
+    var tbody = document.getElementById('staffTableBody');
+    if (!tbody) return;
+
+    var filtered = applyStaffFilters(staff);
+    var maxSales = filtered.length ? filtered[0].sales : 1;
+    var total    = staff.length;
+
+    tbody.innerHTML = filtered.map(function(s) {
+      var isNew = GC.isNewHire(s.hireDate);
+      var tags  = s.tags.slice();
+      if (isNew && tags.indexOf('new') === -1) tags.push('new');
+      return '<tr data-employee="' + e(s.id) + '">'
+        + '<td>' + rankPillHtml(s.rank, total) + '</td>'
+        + '<td><div class="who">'
+          + avatarHtml(s.initials)
+          + '<div><div class="who-name">' + e(s.name) + tagsHtml(tags) + '</div>'
+          + '<div class="who-sub">' + e(s.hoursWorked) + 'h this PP</div>'
+          + '</div></div></td>'
+        + '<td><div class="store-cell">' + storeDotHtml(s.storeSlug) + '<span>' + e(s.storeName) + '</span></div></td>'
+        + '<td>' + e(s.roleLabel) + '</td>'
+        + '<td class="num">' + e(GC.fmtCurrency(s.sales)) + '</td>'
+        + '<td class="num">' + e(GC.fmtNum(s.transactions)) + '</td>'
+        + '<td class="num' + (s.avgOrderValue > 80 ? ' v-green' : '') + '">' + e(GC.fmtCurrency(s.avgOrderValue)) + '</td>'
+        + '<td class="num' + (s.avgUPT >= 2.6 ? ' v-green' : '') + '">' + e(GC.fmtDecimal(s.avgUPT)) + '</td>'
+        + '<td>' + discountCell(s.discountRate) + '</td>'
+        + '<td>' + sparklineSvg(s.trend30d, s.trendPct) + '</td>'
+        + '</tr>';
+    }).join('');
+
+    // Update the "Across N active staff" count
+    var meta = document.querySelector('#staffTable + * .sh-meta, .section-head .sh-meta');
+    // Find the sh-meta next to the Pay Period heading
+    var heads = document.querySelectorAll('.section-head');
+    heads.forEach(function(h) {
+      if (h.querySelector('h2') && h.querySelector('h2').textContent.indexOf('Pay Period') !== -1) {
+        var m = h.querySelector('.sh-meta');
+        if (m) m.textContent = 'Across ' + total + ' active staff';
+      }
+    });
+  }
+
   return {
-    render:        render,
-    renderLoading: renderLoading,
-    renderError:   renderError,
-    init:          init,
-    startClock:    startClock,
+    render:           render,
+    renderLoading:    renderLoading,
+    renderError:      renderError,
+    init:             init,
+    startClock:       startClock,
+    updateStaffTable: updateStaffTable,
   };
 })();
