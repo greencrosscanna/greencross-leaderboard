@@ -1422,23 +1422,28 @@ function computeEmpTargets_(storeSlug, dailyGoal) {
   const today   = pt.dateStr;
   const cacheKey = storeSlug + ':dow:' + today;
 
-  // Return cached result if it was computed today for this store
-  if (cache[cacheKey] && typeof cache[cacheKey] === 'object') {
+  // Return cached result if it was computed today and has at least one entry
+  if (cache[cacheKey] && typeof cache[cacheKey] === 'object'
+      && Object.keys(cache[cacheKey]).length > 0) {
     return cache[cacheKey];
   }
 
-  // Build a 28-day window ending yesterday (PT)
-  const todayStartMs     = ptDateToUtcMs_(today);
-  const windowEndMs      = todayStartMs - 1;                       // end of yesterday
-  const windowStartMs    = todayStartMs - 28 * 24 * 60 * 60 * 1000; // 28 days ago (start)
+  // Build a 28-day window ending yesterday (PT).
+  // fetchStoreTransactions_ expects ISO 8601 strings, not raw ms.
+  const todayStartMs  = ptDateToUtcMs_(today);
+  const windowFromISO = new Date(todayStartMs - 28 * 24 * 60 * 60 * 1000).toISOString();
+  const windowToISO   = new Date(todayStartMs - 1).toISOString();
 
   let txns = [];
   try {
-    txns = fetchStoreTransactions_(storeSlug, windowStartMs, windowEndMs);
+    txns = fetchStoreTransactions_(storeSlug, windowFromISO, windowToISO);
   } catch (e) {
-    // If fetch fails, return an empty map; kiosk will use the fallback
+    // Fetch failed — return without caching so the next poll retries
     return {};
   }
+
+  // Don't cache an empty result — let the next poll retry the fetch
+  if (txns.length === 0) return {};
 
   // Group: nameKey → { dateStr → dailySales }
   const empDays = {};
