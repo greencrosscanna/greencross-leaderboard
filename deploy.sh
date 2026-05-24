@@ -43,14 +43,14 @@ PYEOF
 
 # 2. Push GAS backend (dutchie_proxy.gs + index.html.built as index.html)
 echo "▶ Pushing to GAS..."
+cp index.html index.html.dev        # save dev version before overwriting
 cp index.html.built index.html
 clasp push --force
 clasp deploy --deploymentId "$DEPLOY_ID" --description "$MSG"
 
-# 3. Restore the dev index.html (with external src references) from git,
-#    then stage and push all modified tracked files to GitHub Pages
+# 3. Restore the dev index.html from our saved copy (not git — preserves uncommitted edits)
 echo "▶ Pushing to GitHub..."
-git checkout -- index.html          # restore the dev version
+cp index.html.dev index.html        # restore the dev version
 git add -u                          # stage all modified tracked files
 git commit -m "$MSG
 
