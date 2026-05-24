@@ -819,6 +819,20 @@ var director = (function() {
   function updateStaffTable(staff) {
     if (!staff || !staff.length) return;
 
+    // The standalone directorstaff endpoint doesn't fetch 30d trend data.
+    // Trend is a rolling window independent of the period, so pull it from
+    // the MTD response already in _data and merge it into each PP row.
+    var trendMap = {};
+    if (_data && _data.staff && _data.staff.staff) {
+      _data.staff.staff.forEach(function(s) {
+        trendMap[s.id] = { trend30d: s.trend30d, trendPct: s.trendPct };
+      });
+    }
+    staff = staff.map(function(s) {
+      var t = trendMap[s.id];
+      return t ? Object.assign({}, s, { trend30d: t.trend30d, trendPct: t.trendPct }) : s;
+    });
+
     // Merge into _data so pill filters keep working
     if (_data) _data.staff = { staff: staff };
 
