@@ -274,7 +274,7 @@ var kiosk = (function() {
       + '          style="transition: stroke-dashoffset 1.6s cubic-bezier(.2,.7,.3,1)"/>'
       + '    <path id="kioskGoalOverflow"'
       + '          d="M 22 122 A 98 98 0 0 1 218 122"'
-      + '          stroke="#a3f0be" stroke-width="16" fill="none" stroke-linecap="round"'
+      + '          stroke="none" stroke-width="16" fill="none" stroke-linecap="round"'
       + '          stroke-dasharray="0 308" stroke-dashoffset="0"'
       + '          style="transition: stroke-dasharray 1.6s cubic-bezier(.2,.7,.3,1), stroke-dashoffset 1.6s cubic-bezier(.2,.7,.3,1); filter: drop-shadow(0 0 4px #86efac)"/>'
       + '  </svg>'
@@ -911,9 +911,12 @@ var kiosk = (function() {
     if (ovr) {
       if (pct > 1) {
         var overLen = Math.round(Math.min(pct - 1, 0.5) * ARC_LEN);
+        ovr.setAttribute('stroke',            '#a3f0be');
         ovr.setAttribute('stroke-dasharray',  overLen + ' 9999');
         ovr.setAttribute('stroke-dashoffset', String(-(ARC_LEN - overLen)));
       } else {
+        // stroke="none" prevents the round-linecap zero-length dash from drawing a dot
+        ovr.setAttribute('stroke',            'none');
         ovr.setAttribute('stroke-dasharray',  '0 308');
         ovr.setAttribute('stroke-dashoffset', '0');
       }
