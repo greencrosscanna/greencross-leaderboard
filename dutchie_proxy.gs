@@ -544,17 +544,41 @@ function getStorePlans_() {
   return JSON.parse(raw || '{}');
 }
 
-/** Returns the nickname map { nameKey: displayName }. */
+/** Returns the nickname map { nameKey: displayName }, with keys normalised (no periods). */
 function getNicknames_() {
   const raw = PropertiesService.getScriptProperties().getProperty(GC_NICKNAMES_KEY);
-  try { return raw ? JSON.parse(raw) : {}; } catch(e) { return {}; }
+  try {
+    const stored = raw ? JSON.parse(raw) : {};
+    // Normalise stored keys: strip periods so "zachary_b." and "zachary_b" both work
+    const out = {};
+    Object.keys(stored).forEach(function(k) {
+      const clean = k.replace(/\./g, '').trim();
+      if (stored[k] && clean) out[clean] = stored[k];
+    });
+    return out;
+  } catch(e) { return {}; }
 }
 
-/** Apply nickname to a raw Dutchie employee name, or return name unchanged. */
+/** Normalise a Dutchie name into a lookup key (lowercase, no periods, spaces→underscore). */
+function nameToKey_(name) {
+  return (name || '').toLowerCase().replace(/\./g, '').replace(/\s+/g, '_').trim();
+}
+
+/**
+ * Apply nickname to a raw Dutchie name, preserving the last-initial suffix.
+ * "Zachary B."  + nick "Zach"  → "Zach B."
+ * "Zachary R."  + nick "Zach"  → "Zach R."
+ * No nick stored                → original name unchanged
+ */
 function applyNickname_(name, nicknames) {
   if (!name || !nicknames) return name;
-  const key = name.toLowerCase().replace(/\s+/g, '_');
-  return nicknames[key] || name;
+  const key  = nameToKey_(name);
+  const nick = nicknames[key];
+  if (!nick) return name;
+  // Keep everything after the first word (e.g. " B." from "Zachary B.")
+  const firstSpace = name.indexOf(' ');
+  const suffix = firstSpace !== -1 ? name.slice(firstSpace) : '';
+  return nick + suffix;
 }
 
 /** Returns the daily revenue goal for a store (0 if not set). */
@@ -1964,6 +1988,12 @@ function getStoreBadges(store, params) {
     detail: volumeKing.items + ' items sold',
   });
 
+  // Apply nicknames to all badge winners
+  const _badgeNicks = getNicknames_();
+  badges.forEach(function(b) {
+    if (b.winner) b.winner = applyNickname_(b.winner, _badgeNicks);
+  });
+
   return {
     storeSlug:   store.slug,
     storeName:   store.name,
@@ -2081,7 +2111,7 @@ function getSettings_(params) {
   const empMap = {};
   STORES.forEach(function(store) {
     (roster[store.slug] || []).forEach(function(emp) {
-      const key = emp.name.toLowerCase().replace(/\s+/g, '_');
+      const key = nameToKey_(emp.name);   // strips periods — consistent with applyNickname_
       if (!empMap[key] && emp.name && emp.name !== 'Unknown') {
         empMap[key] = { key: key, name: emp.name, store: store.name };
       }
