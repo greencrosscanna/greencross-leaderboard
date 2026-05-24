@@ -224,11 +224,12 @@ var kiosk = (function() {
       + '</div>';
 
     // ── Progress bar toward personal target ─────────────
-    var leaderBarPct  = leader.target > 0
-      ? Math.min(Math.round((leader.sales / leader.target) * 100), 100)
+    var leaderRawPct  = leader.target > 0
+      ? Math.round((leader.sales / leader.target) * 100)
       : 0;
-    var leaderBarOver = leaderBarPct >= 100;
-    var leaderBarLbl  = leaderBarOver ? '100%' : leaderBarPct + '%';
+    var leaderBarPct  = Math.min(leaderRawPct, 100);
+    var leaderBarOver = leaderRawPct >= 100;
+    var leaderBarLbl  = leaderRawPct + '%';
     var leaderBarHtml = leader.target > 0
       ? '<div class="emp-bar-wrap leader-bar' + (leaderBarOver ? ' bar-over' : '') + '">'
         +   '<div class="emp-bar"><span style="width:0%" data-final="' + leaderBarLbl + '"></span></div>'
@@ -449,7 +450,7 @@ var kiosk = (function() {
 
     var cards = staff.map(function(s) {
       var isLeading  = s.rank === 1;
-      var barPct     = s.target > 0 ? Math.min(Math.round((s.sales / s.target) * 100), 100) : 0;
+      var barPct     = s.target > 0 ? Math.min(rawBarPct, 100) : 0;
       var aovStr     = s.aov  ? '$' + s.aov.toFixed(2) : '—';
       var uptStr     = s.upt  ? s.upt.toFixed(1)        : '—';
       var nameKey    = (s.name || '').toLowerCase();
@@ -492,13 +493,14 @@ var kiosk = (function() {
 
       var amtId = 'kioskEmpAmt' + s.rank;
 
-      var barOver    = barPct >= 100;
-      var pctLabel   = barOver ? '100%' : barPct + '%';
+      var rawBarPct  = s.target > 0 ? Math.round((s.sales / s.target) * 100) : 0;
+      var barOver    = rawBarPct >= 100;
+      var pctLabel   = rawBarPct + '%';
       var statsBody = s.sales > 0
         ? '<div class="emp-amt num" id="' + amtId + '" data-target="' + (s.sales || 0) + '">' + fmtDollars(0) + '</div>'
           + '<div class="emp-bar-wrap' + (barOver ? ' bar-over' : '') + '">'
-          +   '<div class="emp-bar"><span style="width:0%" data-final="' + pctLabel + '"></span></div>'
-          +   '<div class="emp-bar-tick" style="left:0%" data-final="' + pctLabel + '">'
+          +   '<div class="emp-bar"><span style="width:0%" data-final="' + barPct + '%"></span></div>'
+          +   '<div class="emp-bar-tick" style="left:0%" data-final="' + barPct + '%">'
           +     '<span class="emp-bar-pct">' + pctLabel + '</span>'
           +     '<span class="emp-bar-chevron">▲</span>'
           +   '</div>'
