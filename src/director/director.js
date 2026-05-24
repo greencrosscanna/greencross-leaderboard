@@ -690,7 +690,7 @@ var director = (function() {
     if (_refreshTimer) clearInterval(_refreshTimer);
     _refreshTimer = setInterval(function() {
       doRefresh(false);
-    }, 60000); // every 60s per spec §6
+    }, 30000); // every 30s — matches kiosk polling interval
   }
 
   function doRefresh(showToast) {

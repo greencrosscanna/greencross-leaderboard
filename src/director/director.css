@@ -60,6 +60,7 @@
   transition: background 0.15s;
 }
 .ss-store:hover { background: var(--surface-2); }
+.ss-store + .ss-store { border-left: 1px solid var(--border); }
 .ss-store .ss-dot {
   width: 9px;
   height: 9px;
