@@ -475,11 +475,23 @@ var kiosk = (function() {
 
       var amtId = 'kioskEmpAmt' + s.rank;
 
+      var pctLabel   = barPct + '%';
+      var targetLine = s.target > 0
+        ? '<div class="emp-target">Target <b class="num">' + fmtDollars(s.target) + '</b></div>'
+        : '';
       var statsBody = s.sales > 0
         ? '<div class="emp-amt num" id="' + amtId + '" data-target="' + (s.sales || 0) + '">' + fmtDollars(0) + '</div>'
-          + '<div class="emp-bar"><span style="width:0%" data-final="' + barPct + '%"></span></div>'
+          + '<div class="emp-bar-wrap">'
+          +   '<div class="emp-bar"><span style="width:0%" data-final="' + pctLabel + '"></span></div>'
+          +   '<div class="emp-bar-tick" style="left:0%" data-final="' + pctLabel + '">'
+          +     '<span class="emp-bar-pct">' + pctLabel + '</span>'
+          +     '<span class="emp-bar-chevron">▲</span>'
+          +   '</div>'
+          + '</div>'
           + '<div class="emp-stats"><span>AOV <b>' + e(aovStr) + '</b></span><span>UPT <b>' + e(uptStr) + '</b></span></div>'
-        : '<div class="emp-amt" style="color:var(--text-mute);font-size:13px;margin-top:12px">No sales yet</div>';
+          + targetLine
+        : '<div class="emp-amt" style="color:var(--text-mute);font-size:13px;margin-top:12px">No sales yet</div>'
+          + targetLine;
 
       var dispName = disambiguateName(s.name, firstNameCount);
       return '<div class="emp-card' + (isLeading ? ' leading' : '') + (isOffShift ? ' off-shift' : '') + '">'
@@ -938,6 +950,9 @@ var kiosk = (function() {
     setTimeout(function() {
       document.querySelectorAll('.emp-bar span[data-final]').forEach(function(span) {
         span.style.width = span.getAttribute('data-final');
+      });
+      document.querySelectorAll('.emp-bar-tick[data-final]').forEach(function(tick) {
+        tick.style.left = tick.getAttribute('data-final');
       });
     }, 400);
   }

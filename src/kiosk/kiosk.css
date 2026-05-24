@@ -474,11 +474,32 @@ body.kiosk-bg {
 .emp-r    { font-size: 10px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.6px; margin-top: 1px; }
 .emp-amt  { font-size: 24px; font-weight: 800; margin-top: 12px; letter-spacing: -0.5px; }
 .emp-card.leading .emp-amt { color: var(--green); }
-.emp-bar  { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 6px; }
+.emp-bar-wrap { position: relative; margin-top: 18px; margin-bottom: 4px; }
+.emp-bar  { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
 .emp-bar span { display: block; height: 100%; background: var(--green); border-radius: 2px; transition: width 1s ease-out; }
 .emp-card:not(.leading) .emp-bar span { background: var(--text-dim); }
-.emp-stats { display: flex; gap: 12px; margin-top: 10px; font-size: 11px; color: var(--text-dim); }
+
+/* Tick mark + % that rides at the fill position */
+.emp-bar-tick {
+  position: absolute;
+  top: -18px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+  pointer-events: none;
+  transition: left 1s ease-out;
+}
+.emp-bar-pct     { font-size: 9px; font-weight: 700; color: var(--text-mute); letter-spacing: 0.3px; white-space: nowrap; }
+.emp-bar-chevron { font-size: 5px; color: var(--text-mute); margin-top: 1px; line-height: 1; }
+.emp-card.leading .emp-bar-pct,
+.emp-card.leading .emp-bar-chevron { color: var(--green); }
+
+.emp-stats { display: flex; gap: 12px; margin-top: 8px; font-size: 11px; color: var(--text-dim); }
 .emp-stats b  { color: var(--text); font-weight: 600; }
+.emp-target   { margin-top: 5px; font-size: 10px; color: var(--text-mute); }
+.emp-target b { color: var(--text-dim); font-weight: 600; }
 .emp-extra    { margin-top: auto; padding-top: 8px; font-size: 11px; font-weight: 600; }
 .emp-initials { display: none; } /* shown only in iPad media query */
 .emp-extra.streak    { color: var(--orange); }
