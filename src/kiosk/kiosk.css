@@ -512,8 +512,10 @@ body.kiosk-bg {
 }
 
 /* Over-target: ::after overlays only the portion past the hash mark with glow.
-   The base gradient already ends at full bright exactly at --mark-pct, so the
-   ::after blends in seamlessly and then pulses on top. */
+   overflow:hidden on .emp-bar would clip the box-shadow, so lift it when bar-over. */
+.emp-bar-wrap.bar-over .emp-bar {
+  overflow: visible;
+}
 .emp-bar-wrap.bar-over .emp-bar span {
   position: relative;
 }
