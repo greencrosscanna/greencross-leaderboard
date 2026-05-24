@@ -187,13 +187,28 @@ var kiosk = (function() {
         + '</div>';
     }
 
-    // ── Bottom-row stat 2: store projected EOD ───────────
-    var projEodHtml;
-    var projVal = (today && today.projectedRevenue) ? today.projectedRevenue : 0;
-    projEodHtml = '<div class="kstat">'
-      + '<div class="kstat-v num">' + (projVal > 0 ? fmtDollars(projVal) : '—') + '</div>'
-      + '<div class="kstat-l">Projected</div>'
-      + '</div>';
+    // ── Bottom-row stat 2: personal stretch target ───────
+    // leader.target comes from GAS (28-day avg daily sales × 1.025).
+    // Color: green if already met, amber if within 20% of target, default otherwise.
+    var targetHtml;
+    var tgtVal = leader.target || 0;
+    if (tgtVal > 0) {
+      var tgtCls = '';
+      if (leader.sales >= tgtVal) {
+        tgtCls = ' up';           // green — hit or exceeded
+      } else if (leader.sales >= tgtVal * 0.8) {
+        tgtCls = ' warn';         // amber — within 20%
+      }
+      targetHtml = '<div class="kstat' + tgtCls + '">'
+        + '<div class="kstat-v num">' + fmtDollars(tgtVal) + '</div>'
+        + '<div class="kstat-l">Today\'s target</div>'
+        + '</div>';
+    } else {
+      targetHtml = '<div class="kstat">'
+        + '<div class="kstat-v num">—</div>'
+        + '<div class="kstat-l">Today\'s target</div>'
+        + '</div>';
+    }
 
     // ── Bottom-row stat 3: trophies held by leader ───────
     var leaderNameLower = (leader.name || '').toLowerCase();
@@ -235,7 +250,7 @@ var kiosk = (function() {
       + '</div>'
       + '<div class="kcard-stats">'
       + marginHtml
-      + projEodHtml
+      + targetHtml
       + trophyHtml
       + '</div>'
       + '</div>';

@@ -1391,6 +1391,105 @@ function getDirectorAlerts(pre) {
 }
 
 // ============================================================
+// EMPLOYEE STRETCH TARGETS
+// ============================================================
+
+/**
+ * Returns a map of { nameKey: targetDollars } for every employee at a store.
+ *
+ * Algorithm:
+ *   1. Fetch the last 28 days of transactions (excluding today).
+ *   2. Group each transaction by employee × local-date to get daily sales.
+ *   3. For each employee, average all days they actually worked (days with $0 are excluded —
+ *      absent days shouldn't drag the target down).
+ *   4. Multiply the average by 1.025 (+2.5 % stretch).
+ *   5. Fall back to Math.round(dailyGoal / 4) for employees with no history.
+ *
+ * Results are cached in ScriptProperties keyed by store + date so the 28-day
+ * fetch only runs ONCE per store per day, not on every 30-second poll.
+ *
+ * @param {string} storeSlug
+ * @param {number} dailyGoal  Store-level daily goal (used for fallback)
+ * @return {Object}  { nameKey: targetDollars, ... }
+ */
+function computeEmpTargets_(storeSlug, dailyGoal) {
+  const props    = PropertiesService.getScriptProperties();
+  const cacheRaw = props.getProperty(GC_TARGET_CACHE_KEY) || '{}';
+  let   cache    = {};
+  try { cache = JSON.parse(cacheRaw); } catch (e) { cache = {}; }
+
+  const pt      = ptNow_();
+  const today   = pt.dateStr;
+  const cacheKey = storeSlug + ':dow:' + today;
+
+  // Return cached result if it was computed today for this store
+  if (cache[cacheKey] && typeof cache[cacheKey] === 'object') {
+    return cache[cacheKey];
+  }
+
+  // Build a 28-day window ending yesterday (PT)
+  const todayStartMs     = ptDateToUtcMs_(today);
+  const windowEndMs      = todayStartMs - 1;                       // end of yesterday
+  const windowStartMs    = todayStartMs - 28 * 24 * 60 * 60 * 1000; // 28 days ago (start)
+
+  let txns = [];
+  try {
+    txns = fetchStoreTransactions_(storeSlug, windowStartMs, windowEndMs);
+  } catch (e) {
+    // If fetch fails, return an empty map; kiosk will use the fallback
+    return {};
+  }
+
+  // Group: nameKey → { dateStr → dailySales }
+  const empDays = {};
+  txns.forEach(function(tx) {
+    const emp    = txEmployee_(tx);
+    const key    = emp.name.toLowerCase().replace(/\s+/g, '_');
+    if (!key || key === 'unknown') return;
+    const ts     = tx.transactionDateLocalTime || tx.transactionDate || '';
+    const day    = ts.slice(0, 10);
+    if (!day || day.length < 10) return;
+    if (!empDays[key]) empDays[key] = {};
+    empDays[key][day] = (empDays[key][day] || 0) + txTotal_(tx);
+  });
+
+  // Average daily sales per employee — same day-of-week only, then +2.5 %.
+  // Using the same DOW (e.g. only Sundays on a Sunday) means the target
+  // reflects actual Sunday traffic, not a blend of busy Fridays and slow Tuesdays.
+  // Fall back to all worked days if fewer than 2 same-DOW samples exist.
+  const todayDow = pt.dow;   // 0=Sun … 6=Sat
+  const fallback = dailyGoal > 0 ? Math.round(dailyGoal / 4) : 0;
+  const targets  = {};
+  Object.entries(empDays).forEach(function([key, days]) {
+    // Same-day-of-week entries
+    const sameDowVals = Object.entries(days)
+      .filter(([dateStr, v]) => v > 0 && new Date(dateStr + 'T12:00:00').getDay() === todayDow)
+      .map(([, v]) => v);
+
+    // Fall back to all worked days if we don't have at least 2 matching samples
+    const dayVals = sameDowVals.length >= 2
+      ? sameDowVals
+      : Object.values(days).filter(v => v > 0);
+
+    if (dayVals.length === 0) { targets[key] = fallback; return; }
+    const avg = dayVals.reduce((s, v) => s + v, 0) / dayVals.length;
+    targets[key] = Math.round(avg * 1.025);
+  });
+
+  // Persist: keep entries for other stores/dates in the cache, add ours
+  // Prune stale entries (> 2 days old) to avoid unbounded growth
+  const cutoff = fmtDate_(todayStartMs - 2 * 24 * 60 * 60 * 1000);
+  Object.keys(cache).forEach(function(k) {
+    const datePart = k.split(':')[1] || '';
+    if (datePart && datePart < cutoff) delete cache[k];
+  });
+  cache[cacheKey] = targets;
+  props.setProperty(GC_TARGET_CACHE_KEY, JSON.stringify(cache));
+
+  return targets;
+}
+
+// ============================================================
 // STORE / KIOSK ENDPOINTS
 // ============================================================
 
@@ -1441,10 +1540,17 @@ function getStoreToday(store, params) {
     : minutesLeft <= 0  ? 'Closed'
     : _remFmt;
 
-  // Project EOD revenue (straight-line); after close it's the actual final number
+  // Project EOD revenue (straight-line); after close it's the actual final number.
+  // Require at least MIN_PROJ_HOURS of elapsed store time before extrapolating —
+  // before that threshold the multiplier is too large (e.g. 14× at the 1-hour mark)
+  // and one big early transaction blows up the projection. Below the threshold we
+  // return 0 so the kiosk renders "—" instead of a misleading number.
+  const MIN_PROJ_HOURS = 2;
   const projectedRevenue = storeClosed
     ? agg.sales
-    : (dayFrac > 0.05 ? Math.round(agg.sales / dayFrac) : agg.sales);
+    : elapsedHours >= MIN_PROJ_HOURS
+      ? Math.round(agg.sales / dayFrac)
+      : 0;
 
   // Hourly bar chart
   const maxRevenue = Math.max(1, ...Object.values(hourMap).map(h => h.revenue));
@@ -1647,19 +1753,29 @@ function getStoreLeaderboard(store, params) {
 
   const leaderLeadingSince = fmtLeadingSince_(leadingSinceTs);
 
-  const staff = empList.map((emp, i) => ({
-    rank:          i + 1,
-    initials:      emp.initials,
-    name:          emp.name,
-    sales:         emp.sales,
-    transactions:  emp.transactions,
-    avgOrderValue: emp.avgOrderValue,
-    avgUPT:        emp.avgUPT || 0,
-    discountRate:  emp.discountRate,
-    streakDays:    emp._streak != null ? emp._streak : 1,
-    leadingSince:  i === 0 ? leaderLeadingSince : '',
-    note:          null,
-  }));
+  // Personal stretch targets — computed from 28-day history, cached per day
+  const dailyGoal   = getDailyGoal_(store.slug);
+  const empTargets  = computeEmpTargets_(store.slug, dailyGoal);
+  const fallbackTgt = dailyGoal > 0 ? Math.round(dailyGoal / 4) : 0;
+
+  const staff = empList.map((emp, i) => {
+    const nameKey = emp.name.toLowerCase().replace(/\s+/g, '_');
+    const target  = empTargets[nameKey] || fallbackTgt;
+    return {
+      rank:          i + 1,
+      initials:      emp.initials,
+      name:          emp.name,
+      sales:         emp.sales,
+      transactions:  emp.transactions,
+      avgOrderValue: emp.avgOrderValue,
+      avgUPT:        emp.avgUPT || 0,
+      discountRate:  emp.discountRate,
+      streakDays:    emp._streak != null ? emp._streak : 1,
+      leadingSince:  i === 0 ? leaderLeadingSince : '',
+      target:        target,
+      note:          null,
+    };
+  });
 
   return {
     storeSlug:   store.slug,
