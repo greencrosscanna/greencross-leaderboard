@@ -39,15 +39,9 @@ GC.views.renderDirector = function() {
 var director = (function() {
 
   // ── State ──────────────────────────────────────────────
-  var _data      = null;
-  var _period    = 'mtd';
+  var _data        = null;
   var _storeFilter = 'all';
   var _tagFilter   = null;
-  var _staffSearch = '';
-  var _roleFilter  = '';
-  var _shiftFilter = '';
-  var _sortKey     = 'sales';
-  var _sortDir     = -1;           // -1 = descending
   var _clockTimer  = null;
 
   // ── Helpers ────────────────────────────────────────────
@@ -236,7 +230,7 @@ var director = (function() {
     return bigRow + smallRow;
   }
 
-  // ── Render: Store filter pills (above store table) ────
+  // ── Render: Store filter pills (above staff table) ────
   function renderFilterPills() {
     return '<div class="filter-row" id="filterRow">'
       + ['All Stores','Baseline','Center','Century','Commercial','Portland','River']
@@ -251,27 +245,6 @@ var director = (function() {
       + '<button class="pill" data-tag="watch">Watch</button>'
       + '<button class="pill' + (_tagFilter === 'flag' ? ' active-red' : '') + '" data-tag="flag" id="flagPill">Flagged · ' + (_data ? _data.alerts.discountWatch.length : 0) + '</button>'
       + '</div>'
-      + '</div>';
-  }
-
-  // ── Render: Staff controls (between store table and staff table) ──
-  function renderStaffControls() {
-    return '<div class="controls" id="staffControls">'
-      + '<input type="text" id="staffSearch" placeholder="Search staff by name, store, or role…" value="' + e(_staffSearch) + '">'
-      + '<select id="periodSelect">'
-      + ['pp','mtd','today','wtd','qtd','ytd'].map(function(p) {
-          return '<option value="' + p + '"' + (p === _period ? ' selected' : '') + '>Period: ' + GC.periodLabel(p) + '</option>';
-        }).join('')
-      + '</select>'
-      + '<select id="roleSelect"><option value="">All Roles</option><option>Store Mgr</option><option>Asst Mgr</option><option>Budtender</option></select>'
-      + '<select id="shiftSelect"><option value="">All Shifts</option><option>Open</option><option>Mid</option><option>Close</option></select>'
-      + '<select id="sortSelect">'
-      + '<option value="sales,-1">Sort: Sales ↓</option>'
-      + '<option value="vsplan,-1">vs. Plan ↓</option>'
-      + '<option value="avgOrderValue,-1">AOV ↓</option>'
-      + '<option value="discountRate,1">Discount % ↑</option>'
-      + '</select>'
-      + '<button class="btn-icon" id="btnCols" title="Column settings">⚙</button>'
       + '</div>';
   }
 
@@ -578,7 +551,6 @@ var director = (function() {
       + renderKPIs(sum)
       + renderStoreTable(stores)
       + renderFilterPills()
-      + renderStaffControls()
       + renderStaffTable(staff)
       + '<div class="director-lower">'
       + renderAlerts(alerts)
@@ -608,36 +580,8 @@ var director = (function() {
       result = result.slice(0, 10);
     }
 
-    // Role filter
-    if (_roleFilter) {
-      result = result.filter(function(s) {
-        return (s.roleLabel || '').toLowerCase().indexOf(_roleFilter.toLowerCase()) !== -1;
-      });
-    }
-
-    // Shift filter
-    if (_shiftFilter) {
-      result = result.filter(function(s) {
-        return (s.shift || '').toLowerCase() === _shiftFilter.toLowerCase();
-      });
-    }
-
-    // Search
-    if (_staffSearch) {
-      var q = _staffSearch.toLowerCase();
-      result = result.filter(function(s) {
-        return s.name.toLowerCase().indexOf(q) !== -1
-          || s.storeName.toLowerCase().indexOf(q) !== -1
-          || (s.roleLabel || '').toLowerCase().indexOf(q) !== -1;
-      });
-    }
-
-    // Sort
-    result.sort(function(a, b) {
-      var av = a[_sortKey] || 0;
-      var bv = b[_sortKey] || 0;
-      return _sortDir * (av - bv);   // -1 = descending (largest first), 1 = ascending
-    });
+    // Default sort: sales descending
+    result.sort(function(a, b) { return (b.sales || 0) - (a.sales || 0); });
 
     return result;
   }
@@ -720,7 +664,7 @@ var director = (function() {
     var btn = document.getElementById('btnRefresh');
     if (btn) btn.classList.add('spinning');
 
-    GC.api.fetchDirectorAll(_period)
+    GC.api.fetchDirectorAll('mtd')
       .then(function(data) {
         // Guard again in case route changed while the fetch was in-flight
         var currentHash = window.location.hash || '#/director';
@@ -752,17 +696,6 @@ var director = (function() {
     // Update last-refreshed label
     var lr = document.getElementById('lastRefreshed');
     if (lr) lr.textContent = 'Last refresh ' + GC.fmtTime(new Date());
-
-    // Period select — change triggers full data reload; reset local filters
-    var periodSelect = document.getElementById('periodSelect');
-    if (periodSelect) {
-      periodSelect.addEventListener('change', function() {
-        _period      = periodSelect.value;
-        _roleFilter  = '';
-        _shiftFilter = '';
-        doRefresh(false);
-      });
-    }
 
     // Refresh button
     var btnRefresh = document.getElementById('btnRefresh');
@@ -812,48 +745,6 @@ var director = (function() {
           }
           refreshStaffTable();
         }
-      });
-    }
-
-    // Search
-    var searchInput = document.getElementById('staffSearch');
-    if (searchInput) {
-      var searchDebounce;
-      searchInput.addEventListener('input', function() {
-        clearTimeout(searchDebounce);
-        searchDebounce = setTimeout(function() {
-          _staffSearch = searchInput.value;
-          refreshStaffTable();
-        }, 200);
-      });
-    }
-
-    // Sort select (staff table)
-    var sortSelect = document.getElementById('sortSelect');
-    if (sortSelect) {
-      sortSelect.addEventListener('change', function() {
-        var parts = sortSelect.value.split(',');
-        _sortKey = parts[0];
-        _sortDir = parseInt(parts[1]) || -1;
-        refreshStaffTable();
-      });
-    }
-
-    // Role filter
-    var roleSelect = document.getElementById('roleSelect');
-    if (roleSelect) {
-      roleSelect.addEventListener('change', function() {
-        _roleFilter = roleSelect.value;
-        refreshStaffTable();
-      });
-    }
-
-    // Shift filter
-    var shiftSelect = document.getElementById('shiftSelect');
-    if (shiftSelect) {
-      shiftSelect.addEventListener('change', function() {
-        _shiftFilter = shiftSelect.value;
-        refreshStaffTable();
       });
     }
 
