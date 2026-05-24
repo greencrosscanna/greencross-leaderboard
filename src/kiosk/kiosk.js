@@ -223,6 +223,21 @@ var kiosk = (function() {
       + '<div class="kstat-l">Trophies today</div>'
       + '</div>';
 
+    // ── Progress bar toward personal target ─────────────
+    var leaderBarPct  = (leader.target > 0)
+      ? Math.min(Math.round((leader.sales / leader.target) * 100), 100)
+      : 0;
+    var leaderBarLbl  = leaderBarPct + '%';
+    var leaderBarHtml = leader.target > 0
+      ? '<div class="emp-bar-wrap leader-bar">'
+        +   '<div class="emp-bar"><span style="width:0%" data-final="' + leaderBarLbl + '"></span></div>'
+        +   '<div class="emp-bar-tick" style="left:0%" data-final="' + leaderBarLbl + '">'
+        +     '<span class="emp-bar-pct">' + leaderBarLbl + '</span>'
+        +     '<span class="emp-bar-chevron">▲</span>'
+        +   '</div>'
+        + '</div>'
+      : '';
+
     return '<div class="leader-card">'
       + '<div class="leader-header">'
       + '  <span class="kcard-label">Today\'s Leader</span>'
@@ -248,6 +263,7 @@ var kiosk = (function() {
       + '    <div class="leader-amt-label">Today</div>'
       + '  </div>'
       + '</div>'
+      + leaderBarHtml
       + '<div class="kcard-stats">'
       + marginHtml
       + targetHtml

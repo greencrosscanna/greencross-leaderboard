@@ -475,6 +475,9 @@ body.kiosk-bg {
 .emp-amt  { font-size: 24px; font-weight: 800; margin-top: 12px; letter-spacing: -0.5px; }
 .emp-card.leading .emp-amt { color: var(--green); }
 .emp-bar-wrap { position: relative; margin-top: 18px; margin-bottom: 4px; }
+.leader-bar   { margin-top: 14px; margin-bottom: 8px; }
+.leader-bar .emp-bar-pct,
+.leader-bar .emp-bar-chevron { color: var(--green); }
 .emp-bar  { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
 .emp-bar span { display: block; height: 100%; background: var(--green); border-radius: 2px; transition: width 1s ease-out; }
 .emp-card:not(.leading) .emp-bar span { background: var(--text-dim); }
