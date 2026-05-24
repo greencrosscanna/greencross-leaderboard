@@ -498,8 +498,6 @@ body.kiosk-bg {
 
 .emp-stats { display: flex; gap: 12px; margin-top: 8px; font-size: 11px; color: var(--text-dim); }
 .emp-stats b  { color: var(--text); font-weight: 600; }
-.emp-target   { margin-top: 5px; font-size: 10px; color: var(--text-mute); }
-.emp-target b { color: var(--text-dim); font-weight: 600; }
 .emp-extra    { margin-top: auto; padding-top: 8px; font-size: 11px; font-weight: 600; }
 .emp-initials { display: none; } /* shown only in iPad media query */
 .emp-extra.streak    { color: var(--orange); }

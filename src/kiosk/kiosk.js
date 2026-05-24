@@ -476,9 +476,6 @@ var kiosk = (function() {
       var amtId = 'kioskEmpAmt' + s.rank;
 
       var pctLabel   = barPct + '%';
-      var targetLine = s.target > 0
-        ? '<div class="emp-target">Target <b class="num">' + fmtDollars(s.target) + '</b></div>'
-        : '';
       var statsBody = s.sales > 0
         ? '<div class="emp-amt num" id="' + amtId + '" data-target="' + (s.sales || 0) + '">' + fmtDollars(0) + '</div>'
           + '<div class="emp-bar-wrap">'
@@ -488,10 +485,10 @@ var kiosk = (function() {
           +     '<span class="emp-bar-chevron">▲</span>'
           +   '</div>'
           + '</div>'
-          + '<div class="emp-stats"><span>AOV <b>' + e(aovStr) + '</b></span><span>UPT <b>' + e(uptStr) + '</b></span></div>'
-          + targetLine
-        : '<div class="emp-amt" style="color:var(--text-mute);font-size:13px;margin-top:12px">No sales yet</div>'
-          + targetLine;
+          + '<div class="emp-stats"><span>AOV <b>' + e(aovStr) + '</b></span><span>UPT <b>' + e(uptStr) + '</b></span>'
+          + (s.target > 0 ? '<span>Target <b class="num">' + fmtDollars(s.target) + '</b></span>' : '')
+          + '</div>'
+        : '<div class="emp-amt" style="color:var(--text-mute);font-size:13px;margin-top:12px">No sales yet</div>';
 
       var dispName = disambiguateName(s.name, firstNameCount);
       return '<div class="emp-card' + (isLeading ? ' leading' : '') + (isOffShift ? ' off-shift' : '') + '">'
