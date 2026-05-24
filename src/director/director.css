@@ -231,6 +231,58 @@
 }
 .dir-hour-col.current .dir-hour-lbl { color: var(--green); font-weight: 700; }
 
+/* Hover tooltip */
+.dir-hour-tip {
+  position: absolute;
+  bottom: calc(100% + 26px); /* above the bar-wrap */
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface-2, #1a2420);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  z-index: 10;
+}
+.dir-hour-col:hover .dir-hour-tip { opacity: 1; }
+.tip-hour {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-mute);
+  font-weight: 600;
+}
+.tip-val {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
+}
+.dir-hour-tip.proj-tip .tip-val {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-dim);
+  font-style: italic;
+}
+/* Arrow pointer */
+.dir-hour-tip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--border);
+}
+
 @media (max-width: 1200px) {
   .dir-today-row { grid-template-columns: 1fr 1fr; }
   .dir-hourly-card { grid-column: span 2; }

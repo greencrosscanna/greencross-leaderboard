@@ -533,8 +533,13 @@ var director = (function() {
   function renderDirHourlyCard(today) {
     var hourly = today.hourly || [];
     var bars   = hourly.map(function(h) {
-      var cls = h.current ? ' current' : h.projected ? ' proj' : '';
+      var cls     = h.current ? ' current' : h.projected ? ' proj' : '';
+      var tipVal  = h.revenue > 0 ? GC.fmtCurrency(h.revenue) : '—';
+      var tipHtml = h.projected
+        ? '<div class="dir-hour-tip proj-tip"><span class="tip-hour">' + e(h.hour) + '</span><span class="tip-val">projected</span></div>'
+        : '<div class="dir-hour-tip"><span class="tip-hour">' + e(h.hour) + '</span><span class="tip-val">' + e(tipVal) + '</span></div>';
       return '<div class="dir-hour-col' + cls + '">'
+        +   tipHtml
         +   '<div class="dir-hour-bar-wrap">'
         +     '<div class="dir-hour-bar" style="height:' + h.pct + '%"></div>'
         +   '</div>'
