@@ -151,7 +151,7 @@ var settings = (function() {
 
       // Goal PP input — pre-filled with effectivePP (manual if set, else computed active × stretch)
       var overrideVal   = g.effectivePP || Math.round(rBase * mult);
-      var overrideInput = '<div class="settings-input-wrap" style="max-width:118px">'
+      var overrideInput = '<div class="settings-input-wrap" style="max-width:100px">'
         + '<span class="settings-input-prefix">$</span>'
         + '<input class="settings-input settings-pp-override" type="text" inputmode="numeric"'
         + ' data-slug="' + e(g.slug) + '"'
