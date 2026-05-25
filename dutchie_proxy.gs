@@ -133,6 +133,18 @@ function doGet(e) {
       return jsonOut({ ok: true, ts: new Date().toISOString() }, params.callback);
     }
 
+    // ── One-time API key bootstrap (only works if key not yet set) ─
+    if (params.action === 'initapikey') {
+      var props = PropertiesService.getScriptProperties();
+      if (props.getProperty('GC_API_READONLY_KEY')) {
+        return jsonOut({ ok: false, error: 'Already initialised' }, params.callback);
+      }
+      var k = (params.key || '').trim();
+      if (!k) return jsonOut({ ok: false, error: 'Missing key param' }, params.callback);
+      props.setProperty('GC_API_READONLY_KEY', k);
+      return jsonOut({ ok: true, msg: 'API key set' }, params.callback);
+    }
+
     // ── Read-only goals for Sales Dashboard (API key auth) ─
     if (params.action === 'goals') {
       var storedKey = PropertiesService.getScriptProperties().getProperty('GC_API_READONLY_KEY');
