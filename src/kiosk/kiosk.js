@@ -115,8 +115,9 @@ var kiosk = (function() {
       var noteHtml = (p.status !== 'on' && p.note)
         ? e(p.role) + ' · ' + e(p.note)
         : e(p.role);
+      var shiftNameKey = p.nameKey || GC.nameToKey(p.name || '');
       return '<div class="shift-person' + cls + '">'
-        + '  <div class="shift-ring">' + e(p.initials) + '</div>'
+        + GC.lbAvaPuck(shiftNameKey, p.avatarConfig || null, p.initials || '??', true)
         + '  <div class="shift-meta">'
         + '    <span class="shift-name">' + e(p.name) + '</span>'
         + '    <span class="shift-role">' + noteHtml + '</span>'
@@ -519,7 +520,7 @@ var kiosk = (function() {
       return '<div class="emp-card' + (isLeading ? ' leading' : '') + (isOffShift ? ' off-shift' : '') + '">'
         + '<span class="emp-rank">#' + e(s.rank) + '</span>'
         + '<div class="emp-head">'
-        + '  <div class="emp-av">' + e(s.initials) + '</div>'
+        + GC.lbAvaPuck(s.nameKey, s.avatarConfig, s.initials, true)
         + '  <div>'
         + '    <div class="emp-n">' + e(dispName) + '</div>'
         + '    <div class="emp-initials">' + e(s.initials) + '</div>'
@@ -557,9 +558,10 @@ var kiosk = (function() {
             + '</div>'
           : '';
         var ghostDispName = p.name;
+        var ghostNameKey  = p.nameKey || GC.nameToKey(p.name || '');
         return '<div class="emp-card off-shift">'
           + '<div class="emp-head">'
-          + '  <div class="emp-av">' + e(p.initials || '') + '</div>'
+          + GC.lbAvaPuck(ghostNameKey, p.avatarConfig || null, p.initials || '??', true)
           + '  <div>'
           + '    <div class="emp-n">' + e(ghostDispName) + '</div>'
           + '    <div class="emp-r">' + e(p.role || '') + '</div>'
@@ -1081,12 +1083,15 @@ var kiosk = (function() {
           timeRemainingLabel: td.timeRemainingLabel  || '',
         },
         onShift: (td.onShift || []).map(function(p) {
+          var nameKey = GC.nameToKey(p.name || '');
           return {
-            initials: p.initials || '',
-            name:     p.name     || '',
-            role:     p.role     || '',
-            status:   p.status   || 'on',
-            note:     p.note     || null,
+            initials:     p.initials || '',
+            name:         p.name     || '',
+            nameKey:      nameKey,
+            avatarConfig: kioskAvatarConfigs[nameKey] || null,
+            role:         p.role     || '',
+            status:       p.status   || 'on',
+            note:         p.note     || null,
           };
         }),
         hourly:       td.hourly       || [],
@@ -1115,12 +1120,16 @@ var kiosk = (function() {
     // ── staff ──
     // GAS: avgOrderValue, avgUPT, transactions, streakDays (no role, no streakType)
     // Fixture: aov, txns, streak, streakType, role, upt
+    var kioskAvatarConfigs = lb.avatarConfigs || {};
     var normalizedStaff = (lb.staff || []).map(function(s) {
-      var streak = s.streak != null ? s.streak : (s.streakDays || 0);
+      var streak  = s.streak != null ? s.streak : (s.streakDays || 0);
+      var nameKey = GC.nameToKey(s.name || '');
       return {
         rank:            s.rank           || 0,
         initials:        s.initials       || '',
         name:            s.name           || '',
+        nameKey:         nameKey,
+        avatarConfig:    kioskAvatarConfigs[nameKey] || null,
         role:            s.role           || s.roleLabel || '',
         sales:           s.sales          || 0,
         txns:            s.txns  != null  ? s.txns  : (s.transactions || 0),

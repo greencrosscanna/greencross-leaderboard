@@ -270,6 +270,79 @@ GC.esc = function(s) {
     .replace(/"/g,'&quot;');
 };
 
+// ── Avatar helpers ────────────────────────────────────────
+
+/** Canonical nameKey: same logic as GAS nameToKey_() */
+GC.nameToKey = function(name) {
+  return (name || '').toLowerCase().replace(/\./g, '').replace(/\s+/g, '_').trim();
+};
+
+/**
+ * Build a DiceBear Avataaars v9 URL from a config object + seed.
+ * Rules:
+ *   - _none in top/facialHair/accessories → set *Probability=0, skip color param
+ *   - Otherwise → *Probability=100 so feature is guaranteed
+ */
+GC.buildAvatarUrl = function(cfg, seed) {
+  var params = [];
+  params.push('seed=' + encodeURIComponent(seed || 'unknown'));
+
+  var noAccessories = cfg.accessories === '_none';
+  var noFacialHair  = cfg.facialHair  === '_none';
+  var noHair        = cfg.top         === '_none';
+
+  var keys = Object.keys(cfg);
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    var v = cfg[k];
+    if (v == null || v === '_none')                 continue;
+    if (k === 'accessoriesColor' && noAccessories)  continue;
+    if (k === 'facialHairColor'  && noFacialHair)   continue;
+    if (k === 'hairColor'        && noHair)          continue;
+    params.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
+  }
+
+  params.push('accessoriesProbability=' + (noAccessories ? '0' : '100'));
+  params.push('facialHairProbability='  + (noFacialHair  ? '0' : '100'));
+  params.push('topProbability='         + (noHair        ? '0' : '100'));
+
+  return 'https://api.dicebear.com/9.x/avataaars/svg?' + params.join('&');
+};
+
+/**
+ * onerror handler for .lb-ava img elements.
+ * Falls back to initials text stored in [data-initials] on the parent puck.
+ */
+GC.avaFallback = function(img) {
+  var puck = img.parentNode;
+  if (!puck) return;
+  puck.classList.add('initials');
+  puck.textContent = puck.getAttribute('data-initials') || '';
+};
+
+/**
+ * Generate the HTML for a leaderboard avatar puck.
+ * @param {string}  nameKey      - stable per-employee key (used as seed + nav target)
+ * @param {Object}  avatarConfig - avatar config object, or null/undefined for initials
+ * @param {string}  initials     - fallback text (2–3 chars)
+ * @param {boolean} clickable    - if true, adds data-ava-nav so the chip navigates to picker
+ */
+GC.lbAvaPuck = function(nameKey, avatarConfig, initials, clickable) {
+  var esc      = GC.esc;
+  var safeInit = esc(initials || '??');
+  var navAttr  = clickable ? ' data-ava-nav="' + esc(nameKey) + '"' : '';
+
+  if (avatarConfig) {
+    var url = GC.buildAvatarUrl(avatarConfig, nameKey);
+    return '<div class="lb-ava" data-initials="' + safeInit + '"' + navAttr + '>'
+      + '<img src="' + esc(url) + '" alt="" onerror="GC.avaFallback(this)">'
+      + '</div>';
+  }
+  return '<div class="lb-ava initials" data-initials="' + safeInit + '"' + navAttr + '>'
+    + safeInit
+    + '</div>';
+};
+
 // ── Toast ─────────────────────────────────────────────────
 GC.toast = function(message, type, duration) {
   type     = type     || 'info';

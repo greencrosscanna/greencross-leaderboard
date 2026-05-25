@@ -320,3 +320,17 @@
 
 
 .settings-dim { color: var(--text-dim); }
+
+/* ── Avatar card ─────────────────────────────────────────── */
+.settings-ava-edit {
+  color: var(--green);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.settings-ava-edit:hover { text-decoration: underline; }
+
+#avatarTable td { vertical-align: middle; padding: 8px 12px; }
+#avatarTable .lb-ava { cursor: default; }
+#avatarTable .lb-ava:hover { transform: none; }

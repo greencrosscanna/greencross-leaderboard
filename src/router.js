@@ -54,13 +54,36 @@ GC.router = (function() {
       roles: ['owner','director'],
       render: function() { GC.views.renderSettings(); },
     },
+    {
+      id: 'avatar',
+      pattern: /^\/avatar$/,
+      roles: ['owner','director','store_manager','asst_manager','budtender'],
+      render: function(params, queryParams) { GC.views.renderAvatar(queryParams); },
+    },
   ];
 
   // ── Dispatch ───────────────────────────────────────────
   function dispatch(hash) {
     // Normalise: strip leading #, ensure leading /
-    var path = (hash || '').replace(/^#/, '') || '/login';
-    if (path === '' || path === '/') path = '/login';
+    var raw = (hash || '').replace(/^#/, '') || '/login';
+    if (raw === '' || raw === '/') raw = '/login';
+
+    // Split path from query string (e.g. /avatar?employee=john_doe)
+    var qIdx   = raw.indexOf('?');
+    var path   = qIdx >= 0 ? raw.slice(0, qIdx) : raw;
+    var qs     = qIdx >= 0 ? raw.slice(qIdx + 1) : '';
+
+    // Parse query params into a plain object
+    var queryParams = {};
+    if (qs) {
+      qs.split('&').forEach(function(pair) {
+        var eq = pair.indexOf('=');
+        if (eq > 0) {
+          queryParams[decodeURIComponent(pair.slice(0, eq))] =
+            decodeURIComponent(pair.slice(eq + 1));
+        }
+      });
+    }
 
     // Find matching route
     var matched = null;
@@ -98,7 +121,7 @@ GC.router = (function() {
     }
 
     _currentRoute = matched.id;
-    matched.render(params);
+    matched.render(params, queryParams);
   }
 
   // ── Navigate ───────────────────────────────────────────
@@ -121,6 +144,16 @@ GC.router = (function() {
     window.addEventListener('hashchange', function() {
       dispatch(window.location.hash);
     });
+
+    // Global click handler for .lb-ava chips with data-ava-nav attribute.
+    // Handles clicks anywhere inside the puck (e.g. on the img child).
+    document.addEventListener('click', function(e) {
+      var puck = e.target.closest('[data-ava-nav]');
+      if (!puck) return;
+      var key = puck.getAttribute('data-ava-nav');
+      if (key) navigate('#/avatar?employee=' + encodeURIComponent(key));
+    });
+
     // Dispatch on initial load
     dispatch(window.location.hash);
   }
@@ -143,4 +176,5 @@ GC.views = {
   renderKiosk:       function(slug) { console.warn('[GC.views] renderKiosk not registered:', slug); },
   renderLeaderboard: function() { console.warn('[GC.views] renderLeaderboard not registered'); },
   renderSettings:    function() { console.warn('[GC.views] renderSettings not registered'); },
+  renderAvatar:      function(qp) { console.warn('[GC.views] renderAvatar not registered', qp); },
 };

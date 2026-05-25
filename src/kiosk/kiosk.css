@@ -573,6 +573,29 @@ body.kiosk-bg {
   border-color: var(--border);
 }
 
+/* ── lb-ava sizing overrides for kiosk context ─────────────── */
+/* Staff grid cards: match the former .emp-av size (36px) */
+.emp-head > .lb-ava {
+  width: 36px;
+  height: 36px;
+  font-size: 13px;
+  border: 1px solid rgba(125, 212, 154, 0.3);
+}
+/* Shift strip: match former .shift-ring size (38px) with green border glow */
+.shift-person > .lb-ava {
+  width: 38px;
+  height: 38px;
+  font-size: 12px;
+  border: 2px solid var(--green);
+  box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.6);
+  animation: kiosk-pulse-ring 2.2s ease-out infinite;
+}
+.shift-person.off > .lb-ava,
+.shift-person.later > .lb-ava {
+  border-color: var(--border-strong);
+  animation: none;
+}
+
 /* Off-shift status pills */
 .emp-status-pill {
   display: inline-block;

@@ -50,10 +50,11 @@ GC.views.renderDirector = function() {
 var director = (function() {
 
   // ── State ──────────────────────────────────────────────
-  var _data        = null;
-  var _storeFilter = 'all';
-  var _tagFilter   = null;
-  var _clockTimer  = null;
+  var _data          = null;
+  var _avatarConfigs = {};
+  var _storeFilter   = 'all';
+  var _tagFilter     = null;
+  var _clockTimer    = null;
 
   // ── Helpers ────────────────────────────────────────────
 
@@ -101,7 +102,12 @@ var director = (function() {
       + '</span>';
   }
 
-  function avatarHtml(initials, size) {
+  function avatarHtml(initials, size, name) {
+    if (name) {
+      var nameKey = GC.nameToKey(name);
+      var config  = _avatarConfigs[nameKey] || null;
+      return GC.lbAvaPuck(nameKey, config, initials, true);
+    }
     var cls = size === 'lg' ? 'avatar lg' : 'avatar';
     return '<div class="' + cls + '">' + e(initials) + '</div>';
   }
@@ -278,7 +284,7 @@ var director = (function() {
           + '<div class="sc-meta"><div class="sc-name">' + e(s.name) + '</div><div class="sc-sub">' + e(s.address) + ' · ' + s.staffCount + ' staff</div></div>'
           + '</div></td>'
         + '<td><div class="who">'
-          + avatarHtml(s.manager.initials)
+          + avatarHtml(s.manager.initials, null, s.manager.name)
           + '<div><div class="who-name">' + e(s.manager.name) + '</div><div class="who-sub">' + e(s.manager.roleLabel || 'Store Mgr') + '</div></div>'
           + '</div></td>'
         + '<td>' + salesBarHtml(s.sales, maxSales) + '</td>'
@@ -328,7 +334,7 @@ var director = (function() {
       return '<tr data-employee="' + e(s.id) + '">'
         + '<td>' + rankPillHtml(s.rank, total) + '</td>'
         + '<td><div class="who">'
-          + avatarHtml(s.initials)
+          + avatarHtml(s.initials, null, s.name)
           + '<div>'
           + '<div class="who-name">' + e(s.name) + tagsHtml(tags) + '</div>'
           + '<div class="who-sub">' + e(s.hoursWorked) + 'h this PP</div>'
@@ -412,7 +418,7 @@ var director = (function() {
       return '<div class="watch-row">'
         + '<div class="watch-who">'
         + '<div class="who">'
-        + avatarHtml(w.initials)
+        + avatarHtml(w.initials, null, w.name)
         + '<div><div class="who-name">' + e(w.name) + '</div>'
         + '<div class="who-sub">' + e(w.ordersOver15Pct) + ' orders &gt;15% off · ' + e(reasonLabel + noteStr) + '</div>'
         + '</div></div></div>'
@@ -544,7 +550,8 @@ var director = (function() {
 
   // ── Render: Full Director Page ─────────────────────────
   function render(data) {
-    _data = data;
+    _data          = data;
+    _avatarConfigs = data.avatarConfigs || {};
 
     var stores = data.stores.stores;
     var staff  = data.staff.staff;
@@ -627,7 +634,7 @@ var director = (function() {
       return '<tr data-employee="' + e(s.id) + '">'
         + '<td>' + rankPillHtml(s.rank, total) + '</td>'
         + '<td><div class="who">'
-          + avatarHtml(s.initials)
+          + avatarHtml(s.initials, null, s.name)
           + '<div><div class="who-name">' + e(s.name) + tagsHtml(tags) + '</div>'
           + '<div class="who-sub">' + e(s.hoursWorked) + 'h this PP</div>'
           + '</div></div></td>'
@@ -843,7 +850,7 @@ var director = (function() {
       return '<tr data-employee="' + e(s.id) + '">'
         + '<td>' + rankPillHtml(s.rank, total) + '</td>'
         + '<td><div class="who">'
-          + avatarHtml(s.initials)
+          + avatarHtml(s.initials, null, s.name)
           + '<div><div class="who-name">' + e(s.name) + tagsHtml(tags) + '</div>'
           + '<div class="who-sub">' + e(s.hoursWorked) + 'h this PP</div>'
           + '</div></div></td>'

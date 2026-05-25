@@ -15,7 +15,7 @@ GC.views.renderLeaderboard = function(period) {
   // Single round-trip reusing the directorall mega-batch
   GC.api.fetchDirectorAll(period)
     .then(function(data) {
-      var lbData = lb.normalizeStaff(data.staff);
+      var lbData = lb.normalizeStaff(data.staff, data.avatarConfigs || {});
       app.innerHTML = lb.render(data.summary, data.alerts, lbData, period);
       lb.init(period);
     })
@@ -181,7 +181,7 @@ var lb = (function() {
         + '<td><span class="rank-pill ' + e(rankCls) + '">#' + e(s.rank) + '</span></td>'
         + '<td>'
         + '  <div class="who">'
-        + '    <div class="avatar">' + e(s.initials) + '</div>'
+        + GC.lbAvaPuck(s.nameKey, s.avatarConfig, s.initials, true)
         + '    <div>'
         + '      <div class="who-name">' + e(s.name)
         +          (tagsHtml ? ' <span class="tags">' + tagsHtml + '</span>' : '')
@@ -315,13 +315,17 @@ var lb = (function() {
   // ── Normalize: directorall.staff → leaderboard shape ────────
   // directorall returns staff with totalActive / hoursWorked / roleLabel.
   // The table expects totalStaff / hours / role.
-  function normalizeStaff(staffData) {
+  function normalizeStaff(staffData, avatarConfigs) {
     if (!staffData) return { totalStaff: 0, showing: 0, staff: [] };
+    avatarConfigs = avatarConfigs || {};
     var staff = (staffData.staff || []).map(function(s) {
+      var nameKey = GC.nameToKey(s.name || '');
       return {
         rank:          s.rank          || 0,
         initials:      s.initials      || '',
         name:          s.name          || '',
+        nameKey:       nameKey,
+        avatarConfig:  avatarConfigs[nameKey] || null,
         role:          s.roleLabel     || s.role || '',
         hours:         s.hoursWorked   || s.hours || 0,
         storeSlug:     s.storeSlug     || '',
@@ -384,7 +388,7 @@ var lb = (function() {
         refreshBtn.disabled = true;
         refreshBtn.textContent = '↻ Refreshing…';
         GC.api.fetchDirectorAll(_period).then(function(data) {
-          _lbData   = normalizeStaff(data.staff);
+          _lbData   = normalizeStaff(data.staff, data.avatarConfigs || {});
           _summary  = data.summary;
           _alerts   = data.alerts;
           refreshTable();

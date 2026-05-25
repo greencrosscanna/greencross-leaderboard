@@ -33,6 +33,7 @@ const GC_GOALS_CACHE_KEY    = 'GC_GOALS_CACHE_JSON';
 const GC_STRETCH_KEY        = 'GC_STRETCH_MULTIPLIER';  // stored as decimal, e.g. 0.025 = 2.5%
 const GC_YOY_GOALS_KEY      = 'GC_YOY_GOALS_JSON';
 const GC_MANUAL_PP_KEY      = 'GC_MANUAL_PP_GOALS_JSON'; // slug→final PP goal overrides
+const GC_AVATAR_CONFIGS_KEY  = 'GC_AVATAR_CONFIGS_JSON'; // { nameKey: { ...avatar_config } }
 const PP_DAYS                = 14;   // pay-period length in days
 const TARGET_LOOKBACK_MONTHS = 6;    // rolling lookback for target calculation
 const DUTCHIE_BASE          = 'https://api.pos.dutchie.com';
@@ -188,7 +189,8 @@ function doGet(e) {
       const staff   = getDirectorStaff(params,   { byStore, byStore30d });
       const alerts  = getDirectorAlerts(         { byStore: byStoreMTD });
       const today   = getDirectorToday(byStoreToday);
-      return jsonOut({ summary, stores, staff, alerts, today }, params.callback);
+      const avatarConfigs = getAvatarConfigs_();
+      return jsonOut({ summary, stores, staff, alerts, today, avatarConfigs }, params.callback);
     }
     if (params.action === 'directorsummary') {
       requireRole_(auth, ['owner','director']);
@@ -263,6 +265,9 @@ function doGet(e) {
     if (params.action === 'savemanualgoals') {
       requireRole_(auth, ['owner','director']);
       return jsonOut(saveManualGoals_(params), params.callback);
+    }
+    if (params.action === 'saveavatar') {
+      return jsonOut(saveAvatarConfig_(params), params.callback);
     }
 
     // ── Admin: user & key management (director only) ───────
@@ -1859,10 +1864,11 @@ function getDirectorStaff(params, pre) {
 function getLeaderboardStaff(params, pre) {
   const data = getDirectorStaff(params, pre);
   return {
-    period:     data.period,
-    totalStaff: data.totalActive,
-    showing:    data.staff.length,
-    staff:      data.staff.map(s => ({
+    period:        data.period,
+    totalStaff:    data.totalActive,
+    showing:       data.staff.length,
+    avatarConfigs: getAvatarConfigs_(),
+    staff:         data.staff.map(s => ({
       rank:          s.rank,
       initials:      s.initials,
       name:          s.name,
@@ -2361,11 +2367,12 @@ function getStoreLeaderboard(store, params) {
   });
 
   return {
-    storeSlug:   store.slug,
-    storeName:   store.name,
-    date:        today,
-    staff:       staff,
-    lastUpdated: new Date().toISOString(),
+    storeSlug:    store.slug,
+    storeName:    store.name,
+    date:         today,
+    staff:        staff,
+    lastUpdated:  new Date().toISOString(),
+    avatarConfigs: getAvatarConfigs_(),
   };
 }
 
@@ -2658,6 +2665,7 @@ function getSettings_(params) {
     nicknames:        nicknames,
     employees:        employees,
     manualGoals:      getManualPPGoals_(),
+    avatarConfigs:    getAvatarConfigs_(),
   };
 }
 
@@ -2681,6 +2689,32 @@ function saveManualGoals_(params) {
   PropertiesService.getScriptProperties().setProperty(GC_MANUAL_PP_KEY, JSON.stringify(clean));
   Logger.log('[manualGoals] saved: ' + JSON.stringify(clean));
   return { ok: true };
+}
+
+/** Returns the full avatar config map { nameKey: configObject }. */
+function getAvatarConfigs_() {
+  var raw = PropertiesService.getScriptProperties().getProperty(GC_AVATAR_CONFIGS_KEY);
+  if (!raw) return {};
+  try { return JSON.parse(raw); } catch(e) { return {}; }
+}
+
+/**
+ * Save one employee's avatar config.
+ * Expects params.nameKey (string) and params.config (JSON string of avatar config object).
+ */
+function saveAvatarConfig_(params) {
+  if (!params.nameKey) return { ok: false, error: 'nameKey required' };
+  var configStr = params.config;
+  if (!configStr) return { ok: false, error: 'config required' };
+  var config;
+  try { config = JSON.parse(configStr); } catch(e) {
+    return { ok: false, error: 'Invalid config JSON: ' + e.message };
+  }
+  var configs = getAvatarConfigs_();
+  configs[params.nameKey] = config;
+  PropertiesService.getScriptProperties().setProperty(GC_AVATAR_CONFIGS_KEY, JSON.stringify(configs));
+  Logger.log('[avatar] saved config for ' + params.nameKey);
+  return { ok: true, nameKey: params.nameKey };
 }
 
 /**
