@@ -57,38 +57,61 @@ var settings = (function() {
       + '</header>';
   }
 
-  // ── Plan Targets section ───────────────────────────────────
-  function renderPlanTargets(plans) {
-    var rows = (plans || []).map(function(p) {
+  // ── Goals section (auto-computed, read-only) ───────────────
+  function renderGoalsSection(goals, computedAt) {
+    var DOW_ORDER = [1,2,3,4,5,6,0]; // Mon first
+    var DOW_LABELS = {0:'Sun',1:'Mon',2:'Tue',3:'Wed',4:'Thu',5:'Fri',6:'Sat'};
+
+    function fmtDate(iso) {
+      if (!iso) return '—';
+      var d = new Date(iso);
+      return (d.getMonth()+1) + '/' + d.getDate() + '/' + String(d.getFullYear()).slice(2);
+    }
+
+    var rows = (goals || []).map(function(g) {
+      var dowCells = DOW_ORDER.map(function(d) {
+        var val = g.dowAvg && g.dowAvg[d] ? g.dowAvg[d] : 0;
+        return '<td class="settings-dow-cell">'
+          + '<div class="settings-dow-lbl">' + DOW_LABELS[d] + '</div>'
+          + '<div class="settings-dow-val">' + (val ? '$' + Math.round(val/1000) + 'k' : '—') + '</div>'
+          + '</td>';
+      }).join('');
       return '<tr>'
-        + '<td class="settings-store-name">' + e(p.name) + '</td>'
-        + '<td><div class="settings-input-wrap">'
-        +   '<span class="settings-input-prefix">$</span>'
-        +   '<input class="settings-input" type="number" min="0" step="100"'
-        +     ' data-slug="' + e(p.slug) + '" value="' + e(p.daily || '') + '"'
-        +     ' placeholder="0">'
-        + '</div></td>'
-        + '<td class="settings-derived" data-pp="' + e(p.slug) + '">'  + (p.pp      ? fmt(p.pp)      : '—') + '</td>'
-        + '<td class="settings-derived" data-mo="' + e(p.slug) + '">'  + (p.monthly ? fmt(p.monthly) : '—') + '</td>'
+        + '<td class="settings-store-name">' + e(g.name) + '</td>'
+        + '<td class="settings-derived">' + (g.ppGoal  ? fmt(g.ppGoal)  : '—') + '</td>'
+        + '<td class="settings-derived">' + (g.monthly ? fmt(g.monthly) : '—') + '</td>'
+        + dowCells
+        + '<td class="settings-pp-range">'
+        +   (g.ppStart ? fmtDate(g.ppStart) + ' – ' + fmtDate(g.ppEnd) : '—')
+        + '</td>'
         + '</tr>';
     }).join('');
 
-    return '<div class="settings-card" id="planCard">'
+    var metaLine = computedAt
+      ? 'Computed ' + fmtDate(computedAt) + ' · Updates at each new pay period'
+      : 'Not yet computed — click Recalculate to fetch from Dutchie';
+
+    return '<div class="settings-card" id="goalsCard">'
       + '<div class="settings-card-head">'
       +   '<div>'
-      +     '<div class="settings-card-title">Store Plan Targets</div>'
-      +     '<div class="settings-card-sub">Set each store\'s daily goal. Pay-period (×14) and monthly (×30.4) values update automatically.</div>'
+      +     '<div class="settings-card-title">Revenue Goals</div>'
+      +     '<div class="settings-card-sub">Auto-computed from last 12 pay periods. Daily goals are day-of-week averages (last 24 occurrences).</div>'
       +   '</div>'
+      +   '<button class="btn-secondary" id="recalcBtn">Recalculate</button>'
       + '</div>'
-      + '<table class="settings-table" id="planTable">'
+      + '<div class="settings-goals-meta" id="goalsMeta">' + e(metaLine) + '</div>'
+      + '<div class="settings-table-wrap">'
+      + '<table class="settings-table settings-goals-table" id="goalsTable">'
       + '<thead><tr>'
-      +   '<th>Store</th><th>Daily Goal</th><th>Pay Period</th><th>Monthly</th>'
+      +   '<th>Store</th><th>Pay Period</th><th>Monthly</th>'
+      +   '<th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th>'
+      +   '<th>Current PP</th>'
       + '</tr></thead>'
       + '<tbody>' + rows + '</tbody>'
       + '</table>'
+      + '</div>'
       + '<div class="settings-card-foot">'
-      +   '<div class="settings-save-status" id="planStatus"></div>'
-      +   '<button class="btn-primary" id="savePlansBtn">Save Targets</button>'
+      +   '<div class="settings-save-status" id="recalcStatus"></div>'
       + '</div>'
       + '</div>';
   }
@@ -131,7 +154,7 @@ var settings = (function() {
     return '<div class="app-page settings-page">'
       + renderHeader()
       + '<div class="settings-body">'
-      +   renderPlanTargets(data.plans)
+      +   renderGoalsSection(data.goals, data.computedAt)
       +   renderNicknames(data.employees, data.nicknames)
       + '</div>'
       + '</div>';
@@ -146,54 +169,31 @@ var settings = (function() {
       GC.router.navigate('#/director');
     });
 
-    // Plan inputs — update derived cells on keyup
-    var planTable = document.getElementById('planTable');
-    if (planTable) {
-      planTable.addEventListener('input', function(ev) {
-        var input = ev.target.closest('input[data-slug]');
-        if (!input) return;
-        var slug  = input.dataset.slug;
-        var daily = Math.round(Number(input.value) || 0);
-        var ppEl  = document.querySelector('[data-pp="' + slug + '"]');
-        var moEl  = document.querySelector('[data-mo="' + slug + '"]');
-        if (ppEl) ppEl.textContent = daily ? fmt(daily * 14)   : '—';
-        if (moEl) moEl.textContent = daily ? fmt(daily * 30.4) : '—';
-      });
-    }
+    // Recalculate goals button
+    var recalcBtn    = document.getElementById('recalcBtn');
+    var recalcStatus = document.getElementById('recalcStatus');
+    var goalsMeta    = document.getElementById('goalsMeta');
+    if (recalcBtn) {
+      recalcBtn.addEventListener('click', function() {
+        recalcBtn.disabled = true;
+        recalcBtn.textContent = 'Recalculating…';
+        if (recalcStatus) { recalcStatus.textContent = ''; recalcStatus.className = 'settings-save-status'; }
 
-    // Save plan targets
-    var savePlansBtn = document.getElementById('savePlansBtn');
-    var planStatus   = document.getElementById('planStatus');
-    if (savePlansBtn) {
-      savePlansBtn.addEventListener('click', function() {
-        var inputs = document.querySelectorAll('#planTable input[data-slug]');
-        var plans  = [];
-        inputs.forEach(function(inp) {
-          plans.push({ slug: inp.dataset.slug, daily: Number(inp.value) || 0 });
-        });
-
-        savePlansBtn.disabled = true;
-        savePlansBtn.textContent = 'Saving…';
-        planStatus.textContent = '';
-        planStatus.className = 'settings-save-status';
-
-        GC.api.saveSettings(plans, null)
+        GC.api.gasCall('recalculategoals', {})
           .then(function(res) {
-            savePlansBtn.disabled = false;
-            savePlansBtn.textContent = 'Save Targets';
+            recalcBtn.disabled = false;
+            recalcBtn.textContent = 'Recalculate';
             if (res.ok) {
-              planStatus.textContent = '✓ Saved';
-              planStatus.className = 'settings-save-status ok';
+              if (recalcStatus) { recalcStatus.textContent = '✓ Goals recalculated — reload to see updated values'; recalcStatus.className = 'settings-save-status ok'; }
+              if (goalsMeta) { goalsMeta.textContent = 'Recalculated just now · Reload to see updated values'; }
             } else {
-              planStatus.textContent = '✗ ' + (res.error || 'Save failed');
-              planStatus.className = 'settings-save-status err';
+              if (recalcStatus) { recalcStatus.textContent = '✗ ' + (res.error || 'Recalculation failed'); recalcStatus.className = 'settings-save-status err'; }
             }
           })
           .catch(function(err) {
-            savePlansBtn.disabled = false;
-            savePlansBtn.textContent = 'Save Targets';
-            planStatus.textContent = '✗ ' + err.message;
-            planStatus.className = 'settings-save-status err';
+            recalcBtn.disabled = false;
+            recalcBtn.textContent = 'Recalculate';
+            if (recalcStatus) { recalcStatus.textContent = '✗ ' + err.message; recalcStatus.className = 'settings-save-status err'; }
           });
       });
     }

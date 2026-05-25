@@ -240,5 +240,6 @@ GC.api = (function() {
     fetchLeaderboardStaff: fetchLeaderboardStaff,
     fetchSettings:    fetchSettings,
     saveSettings:     saveSettings,
+    gasCall:          gasCall,
   };
 })();

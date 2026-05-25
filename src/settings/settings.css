@@ -187,3 +187,61 @@
 }
 .btn-primary:hover   { opacity: 0.88; }
 .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Goals section ───────────────────────────────────────── */
+.settings-goals-meta {
+  font-size: 11px;
+  color: var(--text-mute);
+  padding: 0 0 12px 0;
+  font-style: italic;
+}
+
+.settings-table-wrap {
+  overflow-x: auto;
+}
+
+.settings-goals-table th,
+.settings-goals-table td {
+  white-space: nowrap;
+}
+
+.settings-dow-cell {
+  text-align: center;
+  padding: 6px 4px !important;
+}
+.settings-dow-lbl {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-mute);
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+.settings-dow-val {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.settings-pp-range {
+  font-size: 11px;
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+
+/* ── Secondary button ────────────────────────────────────── */
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 16px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  transition: background 0.15s, opacity 0.15s;
+}
+.btn-secondary:hover { background: var(--surface-3, var(--surface-2)); }
+.btn-secondary:disabled { opacity: 0.5; cursor: default; }

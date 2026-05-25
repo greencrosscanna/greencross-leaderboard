@@ -29,6 +29,7 @@ const GC_EMPLOYEES_KEY      = 'GC_STORE_EMPLOYEES_JSON';
 const GC_PAY_PERIOD_ANCHOR  = 'GC_PAY_PERIOD_ANCHOR'; // stored as "YYYY-MM-DD" local date
 const GC_NICKNAMES_KEY       = 'GC_NICKNAMES_JSON';
 const GC_TARGET_CACHE_KEY   = 'GC_ROLLING_TARGET_CACHE_JSON';
+const GC_GOALS_CACHE_KEY    = 'GC_GOALS_CACHE_JSON';
 const PP_DAYS                = 14;   // pay-period length in days
 const TARGET_LOOKBACK_MONTHS = 6;    // rolling lookback for target calculation
 const DUTCHIE_BASE          = 'https://api.pos.dutchie.com';
@@ -40,6 +41,9 @@ const STORE_TZ = 'America/Los_Angeles';
 const STORE_OPEN_HOUR  = 8;   // 8 am
 const STORE_CLOSE_HOUR = 22;  // 10 pm
 const STORE_HOURS      = STORE_CLOSE_HOUR - STORE_OPEN_HOUR; // 14
+
+// Request-scoped memoization — reset to null at start of each GAS execution.
+var _goalsCache_ = null;
 
 // ── PT timezone helpers ──────────────────────────────────────────────────────
 
@@ -204,7 +208,11 @@ function doGet(e) {
 
     if (params.action === 'refreshtargets') {
       requireRole_(auth, ['owner','director']);
-      return jsonOut(refreshTargetsAll(), params.callback);
+      return jsonOut(recalculateGoals_(), params.callback);
+    }
+    if (params.action === 'recalculategoals') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(recalculateGoals_(), params.callback);
     }
 
     // ── Plan management ────────────────────────────────────
@@ -596,38 +604,188 @@ function applyNickname_(name, nicknames) {
   return parts[0];
 }
 
-/** Returns the daily revenue goal for a store (0 if not set). */
 /**
- * Daily revenue goal derived from the 6-month rolling pay-period target.
- * Falls back to static plan if no target has been computed yet.
+ * Lazy-compute store-level revenue goals for the current pay period.
+ *
+ * Fetches the last 12 completed pay periods (= 168 days = 24 occurrences of each
+ * day of week) in parallel via fetchAllStoresTransactionsMulti_, then computes:
+ *   ppGoal  — average of 12 PP revenue totals
+ *   dowAvg  — { 0..6: avg daily revenue } where 0=Sun,1=Mon,...,6=Sat (matches ptNow_().dow)
+ *   monthly — sum of 7 DOW averages × 4.33 (avg weeks per month)
+ *
+ * Results are cached in ScriptProperties keyed by PP start date and are valid
+ * for the entire 14-day pay period. _goalsCache_ provides request-scope memoization
+ * so repeated calls within one HTTP request don't re-read ScriptProperties.
+ *
+ * @param  {boolean} forceRecompute  True → ignore cache and recompute from Dutchie
+ * @return {Object}  { storeSlug: { ppGoal, dowAvg, monthly, ppStart, ppEnd, computedAt } }
+ */
+function getOrComputeGoals_(forceRecompute) {
+  // Request-scope memo
+  if (!forceRecompute && _goalsCache_) return _goalsCache_;
+
+  const props = PropertiesService.getScriptProperties();
+
+  // Determine current PP start
+  const anchorStr    = props.getProperty(GC_PAY_PERIOD_ANCHOR) || '2026-05-11';
+  const anchorMs     = ptDateToUtcMs_(anchorStr);
+  const PP_MS        = PP_DAYS * 24 * 60 * 60 * 1000;
+  const todayStartMs = ptDateToUtcMs_(ptNow_().dateStr);
+  const daysSince    = Math.round((todayStartMs - anchorMs) / (24 * 60 * 60 * 1000));
+  const ppOffset     = daysSince >= 0 ? Math.floor(daysSince / PP_DAYS) : Math.ceil(daysSince / PP_DAYS) - 1;
+  const ppStartMs    = anchorMs + ppOffset * PP_MS;
+  const ppStartStr   = Utilities.formatDate(new Date(ppStartMs), STORE_TZ, 'yyyy-MM-dd');
+  const ppEndStr     = Utilities.formatDate(new Date(ppStartMs + PP_MS - 1), STORE_TZ, 'yyyy-MM-dd');
+
+  // Check ScriptProperties cache
+  if (!forceRecompute) {
+    let cached = {};
+    try { cached = JSON.parse(props.getProperty(GC_GOALS_CACHE_KEY) || '{}'); } catch(e) {}
+    if (cached.ppStart === ppStartStr && cached.goals) {
+      _goalsCache_ = cached.goals;
+      return _goalsCache_;
+    }
+  }
+
+  Logger.log('[goals] Computing goals for PP ' + ppStartStr + '…');
+
+  // Build 12 prior completed PP date ranges
+  const ranges = [];
+  for (var i = 12; i >= 1; i--) {
+    var fromMs = ppStartMs - i * PP_MS;
+    var toMs   = fromMs + PP_MS - 1;
+    ranges.push({ fromUTC: new Date(fromMs).toISOString(), toUTC: new Date(toMs).toISOString() });
+  }
+
+  // 72 parallel requests (12 PP ranges × 6 stores)
+  Logger.log('[goals] Firing ' + (ranges.length * STORES.length) + ' parallel requests…');
+  var fetched = fetchAllStoresTransactionsMulti_(ranges);
+
+  var goals = {};
+  STORES.forEach(function(store) {
+    // Merge all 12 PP ranges into one daily revenue map and track per-PP totals
+    var allByDay = {};
+    var ppTotals = [];
+
+    fetched.forEach(function(byStore) {
+      var txns   = byStore[store.slug] || [];
+      var ppDay  = aggregateByDay_(txns);
+      var ppSum  = 0;
+      Object.keys(ppDay).forEach(function(day) {
+        allByDay[day] = (allByDay[day] || 0) + ppDay[day];
+        ppSum += ppDay[day];
+      });
+      ppTotals.push(ppSum);
+    });
+
+    // PP goal: average of the 12 completed PP totals
+    var ppGoal = ppTotals.length > 0
+      ? Math.round(ppTotals.reduce(function(a, b) { return a + b; }, 0) / ppTotals.length)
+      : 0;
+
+    // DOW averages — use Utilities.formatDate with STORE_TZ for DST-correct weekday
+    // Convention: 'u' format gives 1=Mon…7=Sun; % 7 → Mon=1,…,Sat=6,Sun=0 (matches ptNow_().dow)
+    var dowBuckets = {0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
+    Object.keys(allByDay).forEach(function(day) {
+      var d   = new Date(Date.UTC(Number(day.slice(0,4)), Number(day.slice(5,7))-1, Number(day.slice(8,10)), 12));
+      var dow = parseInt(Utilities.formatDate(d, STORE_TZ, 'u'), 10) % 7;  // Mon=1…Sun=0
+      dowBuckets[dow].push(allByDay[day]);
+    });
+
+    var flatDaily = ppGoal > 0 ? Math.round(ppGoal / PP_DAYS) : 0;
+    var dowAvg = {};
+    for (var d = 0; d <= 6; d++) {
+      var vals = dowBuckets[d];
+      dowAvg[d] = vals.length > 0
+        ? Math.round(vals.reduce(function(a, b) { return a + b; }, 0) / vals.length)
+        : flatDaily;
+    }
+
+    // Monthly = sum of one full week of DOW averages × 4.33 avg weeks/month
+    var weeklySum = Object.values(dowAvg).reduce(function(a, b) { return a + b; }, 0);
+    var monthly   = Math.round(weeklySum * 4.33);
+
+    goals[store.slug] = {
+      ppGoal:     ppGoal,
+      dowAvg:     dowAvg,
+      monthly:    monthly,
+      ppStart:    ppStartStr,
+      ppEnd:      ppEndStr,
+      computedAt: new Date().toISOString(),
+    };
+
+    Logger.log('[goals] ' + store.slug
+      + ' pp=$' + ppGoal
+      + ' mon=$' + dowAvg[1] + ' fri=$' + dowAvg[5] + ' sat=$' + dowAvg[6]
+      + ' mo=$' + monthly);
+  });
+
+  // Persist to ScriptProperties
+  props.setProperty(GC_GOALS_CACHE_KEY, JSON.stringify({
+    ppStart:    ppStartStr,
+    computedAt: new Date().toISOString(),
+    goals:      goals,
+  }));
+  _goalsCache_ = goals;
+  return goals;
+}
+
+/** Force-recompute goals from Dutchie. Called via ?action=recalculategoals or nightly trigger. */
+function recalculateGoals_() {
+  try {
+    var goals = getOrComputeGoals_(true);
+    return { ok: true, stores: Object.keys(goals).length };
+  } catch(e) {
+    Logger.log('recalculateGoals_ error: ' + e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Daily revenue goal for a store — returns today's day-of-week average from
+ * the 12-PP lookback. Falls back to PP÷14 then static plan if not yet computed.
  */
 function getDailyGoal_(slug) {
-  const pp = getPayPeriodTarget_(slug);
-  if (pp > 0) return Math.round(pp / PP_DAYS);
-  const plan = (getStorePlans_())[slug] || {};
+  try {
+    var goals = getOrComputeGoals_();
+    var g = goals && goals[slug];
+    if (g && g.dowAvg) {
+      var dow = ptNow_().dow;
+      return g.dowAvg[dow] || Math.round((g.ppGoal || 0) / PP_DAYS);
+    }
+  } catch(e) { Logger.log('getDailyGoal_ goals error: ' + e.message); }
+  var plan = (getStorePlans_())[slug] || {};
   if (plan.daily)   return plan.daily;
   if (plan.monthly) return Math.round(plan.monthly / 30.4);
   return 0;
 }
 
-/** Monthly goal derived from pay-period target (pp × 30.4/14). */
+/** Monthly revenue goal — DOW-weighted (sum of 7 DOW averages × 4.33). */
 function getMonthlyGoal_(slug) {
-  const pp = getPayPeriodTarget_(slug);
-  if (pp > 0) return Math.round(pp * 30.4 / PP_DAYS);
-  const plan = (getStorePlans_())[slug] || {};
+  try {
+    var goals = getOrComputeGoals_();
+    var g = goals && goals[slug];
+    if (g && g.monthly > 0) return g.monthly;
+  } catch(e) { Logger.log('getMonthlyGoal_ goals error: ' + e.message); }
+  var plan = (getStorePlans_())[slug] || {};
   if (plan.monthly) return plan.monthly;
   if (plan.daily)   return Math.round(plan.daily * 30.4);
   return 0;
 }
 
 /**
- * Returns the cached 14-day (pay-period) net sales target for a store.
- * Populated by refreshTargetsAll() which runs nightly via trigger.
+ * Returns the 14-day pay-period revenue target for a store.
+ * Sourced from the 12-PP DOW-aware goal computation.
  */
 function getPayPeriodTarget_(slug) {
-  const props = PropertiesService.getScriptProperties();
-  const cache = JSON.parse(props.getProperty(GC_TARGET_CACHE_KEY) || '{}');
-  return (cache[slug] && cache[slug].ppTarget) || 0;
+  try {
+    var goals = getOrComputeGoals_();
+    var g = goals && goals[slug];
+    return (g && g.ppGoal) || 0;
+  } catch(e) {
+    Logger.log('getPayPeriodTarget_ goals error: ' + e.message);
+    return 0;
+  }
 }
 
 /**
@@ -2119,75 +2277,71 @@ function jsonOut(data, callback) {
 // ============================================================
 
 function getSettings_(params) {
-  const plans     = getStorePlans_();
-  const nicknames = getNicknames_();
-  const roster    = getEmployeeRoster_();
+  var nicknames = getNicknames_();
+  var roster    = getEmployeeRoster_();
+
+  // Load computed goals (lazy, cached for PP)
+  var goals = {};
+  var computedAt = null;
+  try {
+    goals = getOrComputeGoals_();
+    var props = PropertiesService.getScriptProperties();
+    var cacheMeta = {};
+    try { cacheMeta = JSON.parse(props.getProperty(GC_GOALS_CACHE_KEY) || '{}'); } catch(e) {}
+    computedAt = cacheMeta.computedAt || null;
+  } catch(e) {
+    Logger.log('getSettings_: goal load failed: ' + e.message);
+  }
+
+  // DOW index → label (matching ptNow_().dow: 0=Sun,1=Mon,...,6=Sat)
+  var DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   // Flatten roster into sorted unique employee list
-  const empMap = {};
+  var empMap = {};
   STORES.forEach(function(store) {
     (roster[store.slug] || []).forEach(function(emp) {
-      const key = nameToKey_(emp.name);   // strips periods — consistent with applyNickname_
+      var key = nameToKey_(emp.name);
       if (!empMap[key] && emp.name && emp.name !== 'Unknown') {
         empMap[key] = { key: key, name: emp.name, store: store.name };
       }
     });
   });
-  const employees = Object.values(empMap).sort(function(a, b) {
+  var employees = Object.values(empMap).sort(function(a, b) {
     return a.name.localeCompare(b.name);
   });
 
   return {
-    ok:        true,
-    plans:     STORES.map(function(s) {
-      const p = plans[s.slug] || {};
-      const daily = p.daily || (p.monthly ? Math.round(p.monthly / 30.4) : 0);
+    ok:         true,
+    computedAt: computedAt,
+    dowLabels:  DOW_LABELS,
+    goals:      STORES.map(function(s) {
+      var g = goals[s.slug] || {};
       return {
         slug:    s.slug,
         name:    s.name,
-        daily:   daily,
-        pp:      daily ? Math.round(daily * PP_DAYS) : 0,
-        monthly: daily ? Math.round(daily * 30.4) : (p.monthly || 0),
+        ppGoal:  g.ppGoal  || 0,
+        monthly: g.monthly || 0,
+        ppStart: g.ppStart || null,
+        ppEnd:   g.ppEnd   || null,
+        dowAvg:  g.dowAvg  || {},
       };
     }),
-    nicknames: nicknames,
-    employees: employees,
+    nicknames:  nicknames,
+    employees:  employees,
   };
 }
 
 function saveSettings_(params) {
-  const props = PropertiesService.getScriptProperties();
+  var props = PropertiesService.getScriptProperties();
 
-  // Save nicknames
+  // Save nicknames only — goals are auto-computed from Dutchie history
   if (params.nicknames !== undefined) {
     try {
-      const n = JSON.parse(params.nicknames);
-      // Remove empty values
+      var n = JSON.parse(params.nicknames);
       Object.keys(n).forEach(function(k) { if (!n[k]) delete n[k]; });
       props.setProperty(GC_NICKNAMES_KEY, JSON.stringify(n));
     } catch(e) {
       return { ok: false, error: 'Invalid nicknames JSON: ' + e.message };
-    }
-  }
-
-  // Save plans
-  if (params.plans !== undefined) {
-    try {
-      const updates = JSON.parse(params.plans);
-      const existing = getStorePlans_();
-      updates.forEach(function(p) {
-        if (!p.slug) return;
-        const daily = Math.round(Number(p.daily) || 0);
-        if (daily > 0) {
-          existing[p.slug] = {
-            daily:   daily,
-            monthly: Math.round(daily * 30.4),
-          };
-        }
-      });
-      props.setProperty(GC_STORE_PLANS_KEY, JSON.stringify(existing));
-    } catch(e) {
-      return { ok: false, error: 'Invalid plans JSON: ' + e.message };
     }
   }
 
