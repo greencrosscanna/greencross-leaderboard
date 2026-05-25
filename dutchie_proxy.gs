@@ -612,7 +612,7 @@ function applyNickname_(name, nicknames) {
  * day of week) in parallel via fetchAllStoresTransactionsMulti_, then computes:
  *   ppGoal  — average of 12 PP revenue totals
  *   dowAvg  — { 0..6: avg daily revenue } where 0=Sun,1=Mon,...,6=Sat (matches ptNow_().dow)
- *   monthly — sum of 7 DOW averages × 4.33 (avg weeks per month)
+ *   monthly — exact sum of DOW averages × actual weekday count for current month
  *
  * Results are cached in ScriptProperties keyed by PP start date and are valid
  * for the entire 14-day pay period. _goalsCache_ provides request-scope memoization
@@ -705,9 +705,11 @@ function getOrComputeGoals_(forceRecompute) {
         : flatDaily;
     }
 
-    // Monthly = sum of one full week of DOW averages × 4.33 avg weeks/month
-    var weeklySum = Object.values(dowAvg).reduce(function(a, b) { return a + b; }, 0);
-    var monthly   = Math.round(weeklySum * 4.33);
+    // Monthly = exact weekday count for the current calendar month × DOW averages.
+    // Cached at compute time; getMonthlyGoal_() recomputes live so it stays accurate
+    // as the month changes without requiring a full Recalculate.
+    var pt      = ptNow_();
+    var monthly = computeAccurateMonthly_(dowAvg, pt.year, pt.month);
 
     goals[store.slug] = {
       ppGoal:     ppGoal,
@@ -758,6 +760,44 @@ function getStretchMultiplier_() {
 }
 
 /**
+ * Count occurrences of each day-of-week in a calendar month (PT-aware).
+ * Returns { 0..6: count } using the same DOW convention as ptNow_().dow
+ * (1=Mon, 2=Tue, …, 6=Sat, 0=Sun).
+ *
+ * @param {number} year   Full year (e.g. 2026)
+ * @param {number} month  0-indexed month (0=Jan, 11=Dec)
+ */
+function monthDowCounts_(year, month) {
+  var daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  var counts = {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0};
+  for (var d = 1; d <= daysInMonth; d++) {
+    var dt  = new Date(Date.UTC(year, month, d, 12));   // noon UTC → correct PT date
+    var dow = parseInt(Utilities.formatDate(dt, STORE_TZ, 'u'), 10) % 7; // Mon=1…Sun=0
+    counts[dow]++;
+  }
+  return counts;
+}
+
+/**
+ * Compute the exact monthly revenue goal by summing each day of the month's
+ * DOW average. Accounts for the fact that months have different numbers of
+ * each weekday (e.g. May 2026 has 5 Mondays but 4 Sundays).
+ *
+ * @param {Object} dowAvg  { 0..6: avgDailyRevenue }
+ * @param {number} year    Full year
+ * @param {number} month   0-indexed month
+ * @return {number} Rounded monthly revenue goal
+ */
+function computeAccurateMonthly_(dowAvg, year, month) {
+  var counts = monthDowCounts_(year, month);
+  var total  = 0;
+  for (var d = 0; d <= 6; d++) {
+    total += (dowAvg[d] || 0) * (counts[d] || 0);
+  }
+  return Math.round(total);
+}
+
+/**
  * Daily revenue goal for a store — returns today's day-of-week average from
  * the 12-PP lookback, with stretch multiplier applied. Falls back to PP÷14
  * then static plan if not yet computed.
@@ -779,13 +819,21 @@ function getDailyGoal_(slug) {
   return 0;
 }
 
-/** Monthly revenue goal — DOW-weighted (sum of 7 DOW averages × 4.33), with stretch. */
+/**
+ * Monthly revenue goal — exact count of each weekday in the current calendar
+ * month × its DOW average, with stretch multiplier applied.
+ * More accurate than × 4.33 since months have varying numbers of each weekday.
+ */
 function getMonthlyGoal_(slug) {
   var stretch = getStretchMultiplier_();
   try {
     var goals = getOrComputeGoals_();
     var g = goals && goals[slug];
-    if (g && g.monthly > 0) return Math.round(g.monthly * (1 + stretch));
+    if (g && g.dowAvg) {
+      var pt      = ptNow_();
+      var monthly = computeAccurateMonthly_(g.dowAvg, pt.year, pt.month);
+      return Math.round(monthly * (1 + stretch));
+    }
   } catch(e) { Logger.log('getMonthlyGoal_ goals error: ' + e.message); }
   var plan = (getStorePlans_())[slug] || {};
   if (plan.monthly) return Math.round(plan.monthly * (1 + stretch));
@@ -2342,18 +2390,25 @@ function getSettings_(params) {
     reportTo:   reportTo,
     stretch:    getStretchMultiplier_(),
     dowLabels:  DOW_LABELS,
-    goals:      STORES.map(function(s) {
-      var g = goals[s.slug] || {};
-      return {
-        slug:    s.slug,
-        name:    s.name,
-        ppGoal:  g.ppGoal  || 0,
-        monthly: g.monthly || 0,
-        ppStart: g.ppStart || null,
-        ppEnd:   g.ppEnd   || null,
-        dowAvg:  g.dowAvg  || {},
-      };
-    }),
+    goals:      (function() {
+      var pt = ptNow_();
+      return STORES.map(function(s) {
+        var g       = goals[s.slug] || {};
+        // Accurate monthly: exact weekday count for current calendar month (base, no stretch)
+        var monthly = g.dowAvg
+          ? computeAccurateMonthly_(g.dowAvg, pt.year, pt.month)
+          : (g.monthly || 0);
+        return {
+          slug:    s.slug,
+          name:    s.name,
+          ppGoal:  g.ppGoal  || 0,
+          monthly: monthly,
+          ppStart: g.ppStart || null,
+          ppEnd:   g.ppEnd   || null,
+          dowAvg:  g.dowAvg  || {},
+        };
+      });
+    })(),
     nicknames:  nicknames,
     employees:  employees,
   };
