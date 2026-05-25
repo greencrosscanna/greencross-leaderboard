@@ -145,8 +145,8 @@ var settings = (function() {
       var rStyle = src === 'rolling' ? ' class="settings-active-col"' : ' class="settings-dim"';
       var yStyle = src === 'yoy'     ? ' class="settings-active-col"' : ' class="settings-dim"';
       var baselineCell = '<td class="settings-baseline-cell">'
-        + '<div' + rStyle + ' data-base-pp="' + rBase + '"><span class="settings-baseline-label">R</span> ' + rFmt + '</div>'
-        + '<div' + yStyle + ' data-base-pp="' + yBase + '"><span class="settings-baseline-label">Y</span> ' + (yBase ? yFmt : '<span class="settings-dim">—</span>') + '</div>'
+        + '<div' + rStyle + ' data-base-pp="' + rBase + '">' + rFmt + '</div>'
+        + '<div' + yStyle + ' data-base-pp="' + yBase + '">' + (yBase ? yFmt : '<span class="settings-dim">—</span>') + '</div>'
         + '</td>';
 
       // Goal PP input — pre-filled with effectivePP (manual if set, else computed active × stretch)
