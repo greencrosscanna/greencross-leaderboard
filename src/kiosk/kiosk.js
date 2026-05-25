@@ -131,13 +131,10 @@ var kiosk = (function() {
   }
 
   // ── Helper: first name, or first name + last initial when duped ──
-  function disambiguateName(name, firstNameCount) {
-    var parts = (name || '').trim().split(/\s+/);
-    var fn = (parts[0] || '').toLowerCase();
-    if ((firstNameCount[fn] || 0) > 1 && parts.length > 1) {
-      return parts[0] + ' ' + parts[parts.length - 1][0].toUpperCase() + '.';
-    }
-    return parts[0] || name;
+  function disambiguateName(name) {
+    // Server applies nicknames and strips initials by default.
+    // Disambiguation is handled in Settings — just return the name as-is.
+    return name || '';
   }
 
   // ── Render: Leader card ────────────────────────────────
@@ -145,13 +142,7 @@ var kiosk = (function() {
   var BADGE_TYPE_TOTAL = 7;
 
   function renderLeaderCard(leader, allStaff, onShift, badges, today) {
-    // ── Name disambiguation ──────────────────────────────
-    var fnCount = {};
-    (onShift || allStaff || []).forEach(function(s) {
-      var fn = (s.name || '').split(' ')[0].toLowerCase();
-      fnCount[fn] = (fnCount[fn] || 0) + 1;
-    });
-    var dispName = disambiguateName(leader.name, fnCount);
+    var dispName = leader.name;
 
     // ── Chips ────────────────────────────────────────────
     var chipsHtml = '';
@@ -524,7 +515,7 @@ var kiosk = (function() {
           + '</div>'
         : '<div class="emp-amt" style="color:var(--text-mute);font-size:13px;margin-top:12px">No sales yet</div>';
 
-      var dispName = disambiguateName(s.name, firstNameCount);
+      var dispName = s.name;
       return '<div class="emp-card' + (isLeading ? ' leading' : '') + (isOffShift ? ' off-shift' : '') + '">'
         + '<span class="emp-rank">#' + e(s.rank) + '</span>'
         + '<div class="emp-head">'
@@ -565,7 +556,7 @@ var kiosk = (function() {
                 }).join('')
             + '</div>'
           : '';
-        var ghostDispName = disambiguateName(p.name, firstNameCount);
+        var ghostDispName = p.name;
         return '<div class="emp-card off-shift">'
           + '<div class="emp-head">'
           + '  <div class="emp-av">' + e(p.initials || '') + '</div>'

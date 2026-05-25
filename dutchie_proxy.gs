@@ -1728,12 +1728,13 @@ function getStoreToday(store, params) {
     Object.values(agg.byEmployee).map(e => e.name.toLowerCase())
   );
 
-  // Pull in roster employees not yet seen today
+  // Pull in roster employees not yet seen today (apply nicknames so display is consistent)
+  const _rosterNicks = getNicknames_();
   const rosterEmps = (getEmployeeRoster_()[store.slug] || [])
     .filter(e => !activeIds.has(String(e.id)) && !activeNames.has(e.name.toLowerCase()))
     .map(e => ({
       initials: e.initials,
-      name:     e.name,
+      name:     applyNickname_(e.name, _rosterNicks),
       status:   'off',
       sales:    0,
       note:     null,
