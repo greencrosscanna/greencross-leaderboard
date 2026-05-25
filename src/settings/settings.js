@@ -58,7 +58,7 @@ var settings = (function() {
   }
 
   // ── Goals section (auto-computed, read-only) ───────────────
-  function renderGoalsSection(goals, computedAt, reportFrom, reportTo) {
+  function renderGoalsSection(goals, computedAt, reportFrom, reportTo, stretch) {
     var DOW_ORDER = [1,2,3,4,5,6,0]; // Mon first
     var DOW_LABELS = {0:'Sun',1:'Mon',2:'Tue',3:'Wed',4:'Thu',5:'Fri',6:'Sat'};
 
@@ -88,17 +88,31 @@ var settings = (function() {
       ? [ppRangeStr, reportRangeStr, 'Computed ' + fmtDate(computedAt)].filter(Boolean).join(' · ')
       : 'Not yet computed — click Recalculate to fetch from Dutchie';
 
+    // Build stretch dropdown options (0% to 5% in 0.5% steps)
+    var currentStretch = parseFloat(stretch) || 0;
+    var stretchOpts = '';
+    for (var pct = 0; pct <= 5.01; pct += 0.5) {
+      var optVal = Math.round(pct * 10) / 1000;
+      var optLbl = pct === 0 ? '0% — base' : '+' + pct.toFixed(1) + '%';
+      var sel    = Math.abs(currentStretch - optVal) < 0.0001 ? ' selected' : '';
+      stretchOpts += '<option value="' + optVal + '"' + sel + '>' + optLbl + '</option>';
+    }
+
+    // Rows — store BASE values in data attrs; JS applies stretch on change
     var rows = (goals || []).map(function(g) {
+      var mult     = 1 + currentStretch;
       var dowCells = DOW_ORDER.map(function(d) {
-        var val = g.dowAvg && g.dowAvg[d] ? g.dowAvg[d] : 0;
-        return '<td class="settings-dow-cell">'
-          + '<div class="settings-dow-val">' + fmtDow(val) + '</div>'
+        var base = (g.dowAvg && g.dowAvg[d]) ? g.dowAvg[d] : 0;
+        return '<td class="settings-dow-cell" data-base-dow="' + base + '">'
+          + '<div class="settings-dow-val">' + fmtDow(Math.round(base * mult)) + '</div>'
           + '</td>';
       }).join('');
       return '<tr>'
         + '<td class="settings-store-name">' + e(g.name) + '</td>'
-        + '<td class="settings-derived">' + (g.ppGoal  ? fmt(g.ppGoal)  : '—') + '</td>'
-        + '<td class="settings-derived">' + (g.monthly ? fmt(g.monthly) : '—') + '</td>'
+        + '<td class="settings-derived" data-base-pp="' + (g.ppGoal || 0) + '">'
+        +   (g.ppGoal  ? fmt(Math.round(g.ppGoal  * mult)) : '—') + '</td>'
+        + '<td class="settings-derived" data-base-monthly="' + (g.monthly || 0) + '">'
+        +   (g.monthly ? fmt(Math.round(g.monthly * mult)) : '—') + '</td>'
         + dowCells
         + '</tr>';
     }).join('');
@@ -110,7 +124,14 @@ var settings = (function() {
       +     '<div class="settings-card-sub">Auto-computed from last 12 pay periods · Daily goals are day-of-week averages (24 samples)</div>'
       +     '<div class="settings-goals-meta" id="goalsMeta">' + e(metaLine) + '</div>'
       +   '</div>'
-      +   '<button class="btn-secondary" id="recalcBtn">Recalculate</button>'
+      +   '<div class="settings-card-actions">'
+      +     '<button class="btn-secondary" id="recalcBtn">Recalculate</button>'
+      +     '<div class="settings-stretch-group">'
+      +       '<label class="settings-stretch-label">Stretch</label>'
+      +       '<select class="settings-stretch-select" id="stretchSelect">' + stretchOpts + '</select>'
+      +       '<button class="btn-secondary" id="applyStretchBtn">Apply</button>'
+      +     '</div>'
+      +   '</div>'
       + '</div>'
       + '<div class="settings-table-wrap">'
       + '<table class="settings-table settings-goals-table" id="goalsTable">'
@@ -165,7 +186,7 @@ var settings = (function() {
     return '<div class="app-page settings-page">'
       + renderHeader()
       + '<div class="settings-body">'
-      +   renderGoalsSection(data.goals, data.computedAt, data.reportFrom, data.reportTo)
+      +   renderGoalsSection(data.goals, data.computedAt, data.reportFrom, data.reportTo, data.stretch || 0)
       +   renderNicknames(data.employees, data.nicknames)
       + '</div>'
       + '</div>';
@@ -204,6 +225,53 @@ var settings = (function() {
           .catch(function(err) {
             recalcBtn.disabled = false;
             recalcBtn.textContent = 'Recalculate';
+            if (recalcStatus) { recalcStatus.textContent = '✗ ' + err.message; recalcStatus.className = 'settings-save-status err'; }
+          });
+      });
+    }
+
+    // Stretch multiplier — live preview + Apply
+    var stretchSelect    = document.getElementById('stretchSelect');
+    var applyStretchBtn  = document.getElementById('applyStretchBtn');
+
+    function applyStretchDisplay() {
+      var mult = 1 + (parseFloat(stretchSelect ? stretchSelect.value : 0) || 0);
+      document.querySelectorAll('[data-base-pp]').forEach(function(el) {
+        var base = parseFloat(el.getAttribute('data-base-pp')) || 0;
+        el.textContent = base ? '$' + Math.round(base * mult).toLocaleString('en-US') : '—';
+      });
+      document.querySelectorAll('[data-base-monthly]').forEach(function(el) {
+        var base = parseFloat(el.getAttribute('data-base-monthly')) || 0;
+        el.textContent = base ? '$' + Math.round(base * mult).toLocaleString('en-US') : '—';
+      });
+      document.querySelectorAll('.settings-dow-cell[data-base-dow]').forEach(function(el) {
+        var base = parseFloat(el.getAttribute('data-base-dow')) || 0;
+        var inner = el.querySelector('.settings-dow-val');
+        if (inner) inner.textContent = base ? '$' + Math.round(base * mult).toLocaleString('en-US') : '—';
+      });
+    }
+
+    if (stretchSelect) stretchSelect.addEventListener('change', applyStretchDisplay);
+
+    if (applyStretchBtn) {
+      applyStretchBtn.addEventListener('click', function() {
+        var stretch = parseFloat(stretchSelect ? stretchSelect.value : 0) || 0;
+        applyStretchBtn.disabled = true;
+        applyStretchBtn.textContent = 'Saving…';
+        if (recalcStatus) { recalcStatus.textContent = ''; recalcStatus.className = 'settings-save-status'; }
+
+        GC.api.gasCall('savesettings', { stretch: stretch })
+          .then(function(res) {
+            applyStretchBtn.disabled = false;
+            applyStretchBtn.textContent = 'Apply';
+            if (recalcStatus) {
+              recalcStatus.textContent = res.ok ? '✓ Stretch saved' : '✗ ' + (res.error || 'Save failed');
+              recalcStatus.className   = 'settings-save-status ' + (res.ok ? 'ok' : 'err');
+            }
+          })
+          .catch(function(err) {
+            applyStretchBtn.disabled = false;
+            applyStretchBtn.textContent = 'Apply';
             if (recalcStatus) { recalcStatus.textContent = '✗ ' + err.message; recalcStatus.className = 'settings-save-status err'; }
           });
       });

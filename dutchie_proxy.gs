@@ -30,6 +30,7 @@ const GC_PAY_PERIOD_ANCHOR  = 'GC_PAY_PERIOD_ANCHOR'; // stored as "YYYY-MM-DD" 
 const GC_NICKNAMES_KEY       = 'GC_NICKNAMES_JSON';
 const GC_TARGET_CACHE_KEY   = 'GC_ROLLING_TARGET_CACHE_JSON';
 const GC_GOALS_CACHE_KEY    = 'GC_GOALS_CACHE_JSON';
+const GC_STRETCH_KEY        = 'GC_STRETCH_MULTIPLIER';  // stored as decimal, e.g. 0.025 = 2.5%
 const PP_DAYS                = 14;   // pay-period length in days
 const TARGET_LOOKBACK_MONTHS = 6;    // rolling lookback for target calculation
 const DUTCHIE_BASE          = 'https://api.pos.dutchie.com';
@@ -747,46 +748,61 @@ function recalculateGoals_() {
 }
 
 /**
+ * Returns the stored stretch multiplier (e.g. 0.025 for 2.5%).
+ * Clamped to [0, 0.05]. Defaults to 0 if not set.
+ */
+function getStretchMultiplier_() {
+  var raw = PropertiesService.getScriptProperties().getProperty(GC_STRETCH_KEY);
+  var val = parseFloat(raw || '0');
+  return isNaN(val) ? 0 : Math.max(0, Math.min(0.05, val));
+}
+
+/**
  * Daily revenue goal for a store — returns today's day-of-week average from
- * the 12-PP lookback. Falls back to PP÷14 then static plan if not yet computed.
+ * the 12-PP lookback, with stretch multiplier applied. Falls back to PP÷14
+ * then static plan if not yet computed.
  */
 function getDailyGoal_(slug) {
+  var stretch = getStretchMultiplier_();
   try {
     var goals = getOrComputeGoals_();
     var g = goals && goals[slug];
     if (g && g.dowAvg) {
-      var dow = ptNow_().dow;
-      return g.dowAvg[dow] || Math.round((g.ppGoal || 0) / PP_DAYS);
+      var dow  = ptNow_().dow;
+      var base = g.dowAvg[dow] || Math.round((g.ppGoal || 0) / PP_DAYS);
+      return Math.round(base * (1 + stretch));
     }
   } catch(e) { Logger.log('getDailyGoal_ goals error: ' + e.message); }
   var plan = (getStorePlans_())[slug] || {};
-  if (plan.daily)   return plan.daily;
-  if (plan.monthly) return Math.round(plan.monthly / 30.4);
+  if (plan.daily)   return Math.round(plan.daily   * (1 + stretch));
+  if (plan.monthly) return Math.round(plan.monthly / 30.4 * (1 + stretch));
   return 0;
 }
 
-/** Monthly revenue goal — DOW-weighted (sum of 7 DOW averages × 4.33). */
+/** Monthly revenue goal — DOW-weighted (sum of 7 DOW averages × 4.33), with stretch. */
 function getMonthlyGoal_(slug) {
+  var stretch = getStretchMultiplier_();
   try {
     var goals = getOrComputeGoals_();
     var g = goals && goals[slug];
-    if (g && g.monthly > 0) return g.monthly;
+    if (g && g.monthly > 0) return Math.round(g.monthly * (1 + stretch));
   } catch(e) { Logger.log('getMonthlyGoal_ goals error: ' + e.message); }
   var plan = (getStorePlans_())[slug] || {};
-  if (plan.monthly) return plan.monthly;
-  if (plan.daily)   return Math.round(plan.daily * 30.4);
+  if (plan.monthly) return Math.round(plan.monthly * (1 + stretch));
+  if (plan.daily)   return Math.round(plan.daily * 30.4 * (1 + stretch));
   return 0;
 }
 
 /**
- * Returns the 14-day pay-period revenue target for a store.
+ * Returns the 14-day pay-period revenue target for a store, with stretch applied.
  * Sourced from the 12-PP DOW-aware goal computation.
  */
 function getPayPeriodTarget_(slug) {
+  var stretch = getStretchMultiplier_();
   try {
     var goals = getOrComputeGoals_();
     var g = goals && goals[slug];
-    return (g && g.ppGoal) || 0;
+    return g && g.ppGoal ? Math.round(g.ppGoal * (1 + stretch)) : 0;
   } catch(e) {
     Logger.log('getPayPeriodTarget_ goals error: ' + e.message);
     return 0;
@@ -2324,6 +2340,7 @@ function getSettings_(params) {
     computedAt: computedAt,
     reportFrom: reportFrom,
     reportTo:   reportTo,
+    stretch:    getStretchMultiplier_(),
     dowLabels:  DOW_LABELS,
     goals:      STORES.map(function(s) {
       var g = goals[s.slug] || {};
@@ -2345,7 +2362,7 @@ function getSettings_(params) {
 function saveSettings_(params) {
   var props = PropertiesService.getScriptProperties();
 
-  // Save nicknames only — goals are auto-computed from Dutchie history
+  // Save nicknames
   if (params.nicknames !== undefined) {
     try {
       var n = JSON.parse(params.nicknames);
@@ -2354,6 +2371,15 @@ function saveSettings_(params) {
     } catch(e) {
       return { ok: false, error: 'Invalid nicknames JSON: ' + e.message };
     }
+  }
+
+  // Save stretch multiplier (0–0.05)
+  if (params.stretch !== undefined) {
+    var s = parseFloat(params.stretch);
+    if (isNaN(s)) return { ok: false, error: 'Invalid stretch value' };
+    s = Math.max(0, Math.min(0.05, s));
+    props.setProperty(GC_STRETCH_KEY, String(s));
+    Logger.log('[stretch] saved: ' + (s * 100).toFixed(1) + '%');
   }
 
   return { ok: true };
