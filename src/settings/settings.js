@@ -144,17 +144,21 @@ var settings = (function() {
       var yFmt   = yBase ? fmtGoal(Math.round(yBase * mult)) : '<span class="settings-dim">—</span>';
       var rStyle = src === 'rolling' ? ' class="settings-active-col"' : ' class="settings-dim"';
       var yStyle = src === 'yoy'     ? ' class="settings-active-col"' : ' class="settings-dim"';
+      // data-base-pp on inner <span> so textContent updates don't clobber the label span
       var baselineCell = '<td class="settings-baseline-cell">'
-        + '<div' + rStyle + ' data-base-pp="' + rBase + '"><span class="settings-baseline-label">R</span>' + rFmt + '</div>'
-        + '<div' + yStyle + ' data-base-pp="' + yBase + '"><span class="settings-baseline-label">Y</span>' + (yBase ? yFmt : '<span class="settings-dim">—</span>') + '</div>'
+        + '<div' + rStyle + '><span class="settings-baseline-label">R</span><span data-base-pp="' + rBase + '">' + rFmt + '</span></div>'
+        + '<div' + yStyle + '><span class="settings-baseline-label">Y</span><span data-base-pp="' + yBase + '">' + (yBase ? yFmt : '<span class="settings-dim">—</span>') + '</span></div>'
         + '</td>';
 
       // Goal PP input — pre-filled with effectivePP (manual if set, else computed active × stretch)
-      var overrideVal   = g.effectivePP || Math.round(rBase * mult);
-      var overrideInput = '<div class="settings-input-wrap" style="max-width:100px">'
+      // data-base-computed-pp = unscaled computed active PP (pre-stretch, pre-override) for scaling monthly/DOW live
+      var computedBasePP = (g.active && g.active.ppGoal) ? g.active.ppGoal : (rBase || yBase);
+      var overrideVal    = g.effectivePP || Math.round(computedBasePP * mult);
+      var overrideInput  = '<div class="settings-input-wrap" style="max-width:100px">'
         + '<span class="settings-input-prefix">$</span>'
         + '<input class="settings-input settings-pp-override" type="text" inputmode="numeric"'
         + ' data-slug="' + e(g.slug) + '"'
+        + ' data-base-computed-pp="' + computedBasePP + '"'
         + ' value="' + Math.round(overrideVal).toLocaleString('en-US') + '"'
         + (g.hasManual ? ' data-manual="1"' : '')
         + '>'
@@ -292,23 +296,47 @@ var settings = (function() {
     var applyStretchBtn = document.getElementById('applyStretchBtn');
 
     function applyStretchDisplay() {
-      var mult = 1 + (parseFloat(stretchSelect ? stretchSelect.value : 0) || 0);
+      var mult = 1 + (parseFloat((stretchSelect && stretchSelect.value) || 0) || 0);
+
+      // Baseline PP spans (Rolling / YoY) — pure stretch, no override involved
       document.querySelectorAll('[data-base-pp]').forEach(function(el) {
         var base = parseFloat(el.getAttribute('data-base-pp')) || 0;
         el.textContent = base ? '$' + Math.round(base * mult).toLocaleString('en-US') : '—';
       });
-      document.querySelectorAll('[data-base-monthly]').forEach(function(el) {
-        var base = parseFloat(el.getAttribute('data-base-monthly')) || 0;
-        el.textContent = base ? '$' + Math.round(base * mult).toLocaleString('en-US') : '—';
-      });
-      document.querySelectorAll('.settings-dow-cell[data-base-dow]').forEach(function(el) {
-        var base  = parseFloat(el.getAttribute('data-base-dow')) || 0;
-        var inner = el.querySelector('.settings-dow-val');
-        if (inner) inner.textContent = base ? '$' + Math.round(base * mult).toLocaleString('en-US') : '—';
+
+      // Monthly + DOW — per-row, scaled by override when one is set
+      document.querySelectorAll('#goalsTable tbody tr').forEach(function(row) {
+        var inp        = row.querySelector('.settings-pp-override');
+        var computedPP = inp ? (parseFloat(inp.getAttribute('data-base-computed-pp')) || 0) : 0;
+        var rawVal     = inp ? (inp.value || '').replace(/[^0-9.]/g, '') : '';
+        var overrideVal = rawVal ? parseFloat(rawVal) : NaN;
+
+        // scale = ratio of override final goal to what computed final goal would be
+        // When no override, overrideVal ≈ computedPP * mult → scale = 1
+        var scale = (overrideVal > 0 && computedPP > 0)
+          ? overrideVal / (computedPP * mult)
+          : 1;
+
+        var monthlyEl = row.querySelector('[data-base-monthly]');
+        if (monthlyEl) {
+          var base = parseFloat(monthlyEl.getAttribute('data-base-monthly')) || 0;
+          monthlyEl.textContent = base ? '$' + Math.round(base * mult * scale).toLocaleString('en-US') : '—';
+        }
+
+        row.querySelectorAll('.settings-dow-cell[data-base-dow]').forEach(function(el) {
+          var base  = parseFloat(el.getAttribute('data-base-dow')) || 0;
+          var inner = el.querySelector('.settings-dow-val');
+          if (inner) inner.textContent = base ? '$' + Math.round(base * mult * scale).toLocaleString('en-US') : '—';
+        });
       });
     }
 
     if (stretchSelect) stretchSelect.addEventListener('change', applyStretchDisplay);
+
+    // Live-update monthly + DOW when override input changes
+    document.querySelectorAll('.settings-pp-override').forEach(function(inp) {
+      inp.addEventListener('input', applyStretchDisplay);
+    });
 
     if (applyStretchBtn) {
       applyStretchBtn.addEventListener('click', function() {
@@ -405,6 +433,9 @@ var settings = (function() {
           });
       });
     }
+
+    // Apply override scaling once on load so saved overrides are reflected immediately
+    applyStretchDisplay();
   }
 
   return { render: render, renderLoading: renderLoading, renderError: renderError, init: init };
