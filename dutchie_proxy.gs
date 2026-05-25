@@ -269,6 +269,22 @@ function doGet(e) {
     if (params.action === 'saveavatar') {
       return jsonOut(saveAvatarConfig_(params), params.callback);
     }
+    // Lightweight endpoint for the avatar picker — all authenticated roles.
+    // Returns the employee roster + avatar config map without computing goals.
+    if (params.action === 'getavatardata') {
+      var avRoster  = getEmployeeRoster_();
+      var avEmpMap  = {};
+      STORES.forEach(function(store) {
+        (avRoster[store.slug] || []).forEach(function(emp) {
+          var key = nameToKey_(emp.name);
+          if (!avEmpMap[key] && emp.name && emp.name !== 'Unknown') {
+            avEmpMap[key] = { key: key, name: emp.name, store: store.name };
+          }
+        });
+      });
+      var avEmployees = Object.values(avEmpMap).sort(function(a, b) { return a.name.localeCompare(b.name); });
+      return jsonOut({ ok: true, employees: avEmployees, avatarConfigs: getAvatarConfigs_() }, params.callback);
+    }
 
     // ── Admin: user & key management (director only) ───────
     if (params.action === 'setuser') {

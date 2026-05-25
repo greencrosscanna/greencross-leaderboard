@@ -330,15 +330,19 @@ GC.avaFallback = function(img) {
 GC.lbAvaPuck = function(nameKey, avatarConfig, initials, clickable) {
   var esc      = GC.esc;
   var safeInit = esc(initials || '??');
-  var navAttr  = clickable ? ' data-ava-nav="' + esc(nameKey) + '"' : '';
+  // data-ava-nav drives CSS cursor + hover scale; onclick is the reliable nav trigger
+  var navAttr = clickable ? ' data-ava-nav="' + esc(nameKey) + '"' : '';
+  var clickHandler = clickable
+    ? ' onclick="GC.router.navigate(\'#/avatar?employee=' + encodeURIComponent(nameKey) + '\')"'
+    : '';
 
   if (avatarConfig) {
     var url = GC.buildAvatarUrl(avatarConfig, nameKey);
-    return '<div class="lb-ava" data-initials="' + safeInit + '"' + navAttr + '>'
+    return '<div class="lb-ava" data-initials="' + safeInit + '"' + navAttr + clickHandler + '>'
       + '<img src="' + esc(url) + '" alt="" onerror="GC.avaFallback(this)">'
       + '</div>';
   }
-  return '<div class="lb-ava initials" data-initials="' + safeInit + '"' + navAttr + '>'
+  return '<div class="lb-ava initials" data-initials="' + safeInit + '"' + navAttr + clickHandler + '>'
     + safeInit
     + '</div>';
 };

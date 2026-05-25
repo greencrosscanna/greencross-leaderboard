@@ -160,6 +160,12 @@ GC.api = (function() {
     return gasCall('getsettings', {});
   }
 
+  // Lightweight avatar data — employees list + avatarConfigs, no goals.
+  // Accessible to all authenticated roles (not director-only).
+  function fetchAvatarData() {
+    return gasCall('getavatardata', {});
+  }
+
   function saveSettings(plans, nicknames) {
     var params = {};
     if (plans)     params.plans     = JSON.stringify(plans);
@@ -239,6 +245,7 @@ GC.api = (function() {
     fetchKioskAll:        fetchKioskAll,
     fetchLeaderboardStaff: fetchLeaderboardStaff,
     fetchSettings:    fetchSettings,
+    fetchAvatarData:  fetchAvatarData,
     saveSettings:     saveSettings,
     gasCall:          gasCall,
   };
