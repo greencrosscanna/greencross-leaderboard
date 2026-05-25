@@ -31,7 +31,8 @@ const GC_NICKNAMES_KEY       = 'GC_NICKNAMES_JSON';
 const GC_TARGET_CACHE_KEY   = 'GC_ROLLING_TARGET_CACHE_JSON';
 const GC_GOALS_CACHE_KEY    = 'GC_GOALS_CACHE_JSON';
 const GC_STRETCH_KEY        = 'GC_STRETCH_MULTIPLIER';  // stored as decimal, e.g. 0.025 = 2.5%
-const GC_YOY_GOALS_KEY  = 'GC_YOY_GOALS_JSON';
+const GC_YOY_GOALS_KEY      = 'GC_YOY_GOALS_JSON';
+const GC_MANUAL_PP_KEY      = 'GC_MANUAL_PP_GOALS_JSON'; // slug→final PP goal overrides
 const PP_DAYS                = 14;   // pay-period length in days
 const TARGET_LOOKBACK_MONTHS = 6;    // rolling lookback for target calculation
 const DUTCHIE_BASE          = 'https://api.pos.dutchie.com';
@@ -237,6 +238,10 @@ function doGet(e) {
     if (params.action === 'savesettings') {
       requireRole_(auth, ['owner','director']);
       return jsonOut(saveSettings_(params), params.callback);
+    }
+    if (params.action === 'savemanualgoals') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(saveManualGoals_(params), params.callback);
     }
 
     // ── Admin: user & key management (director only) ───────
@@ -627,6 +632,17 @@ function activeGoalSource_(gr, gy) {
 }
 
 /**
+ * Returns the manual PP goal overrides map: { slug: finalPPGoal (number) }.
+ * When a store has an entry here it overrides max(rolling, yoy) entirely.
+ * Stretch is NOT applied on top — the stored value IS the goal.
+ */
+function getManualPPGoals_() {
+  var raw = PropertiesService.getScriptProperties().getProperty(GC_MANUAL_PP_KEY);
+  if (!raw) return {};
+  try { return JSON.parse(raw); } catch(e) { return {}; }
+}
+
+/**
  * Lazy-compute store-level revenue goals for the current pay period.
  *
  * Fetches the last 12 completed pay periods (= 168 days = 24 occurrences of each
@@ -950,60 +966,82 @@ function computeAccurateMonthly_(dowAvg, year, month) {
 }
 
 /**
- * Daily revenue goal — uses the higher of rolling vs. YoY per store + stretch.
- * Returns today's DOW-specific average from the winning goal set.
+ * Resolve the effective goal set for a store:
+ *   1. Manual PP override → scales computed DOW ratios to match the override
+ *   2. Otherwise → max(rolling, yoy) + stretch
+ * Returns { g (goals object with dowAvg), effectivePP, useManual, stretch }
+ */
+function resolveGoal_(slug) {
+  var stretch = getStretchMultiplier_();
+  var manuals = getManualPPGoals_();
+  var rGoals  = getOrComputeGoals_();
+  var yGoals  = getOrComputeYoYGoals_();
+  var gr = (rGoals && rGoals[slug]) || {};
+  var gy = (yGoals && yGoals[slug]) || {};
+  var g  = (activeGoalSource_(gr, gy) === 'yoy') ? gy : gr;
+
+  var manualRaw = manuals[slug];
+  var manualPP  = manualRaw ? parseFloat(manualRaw) : NaN;
+  if (!isNaN(manualPP) && manualPP > 0) {
+    // Scale DOW averages proportionally to the manual PP total (preserves day-of-week pattern)
+    var computedPP = g.ppGoal || 1;
+    var scale      = manualPP / computedPP;
+    var scaledAvg  = {};
+    if (g.dowAvg) {
+      for (var d = 0; d <= 6; d++) {
+        scaledAvg[d] = (g.dowAvg[d] || 0) * scale;
+      }
+    }
+    var scaledG = { ppGoal: manualPP, dowAvg: scaledAvg };
+    return { g: scaledG, effectivePP: manualPP, useManual: true, stretch: 0 };
+  }
+  return { g: g, effectivePP: g.ppGoal || 0, useManual: false, stretch: stretch };
+}
+
+/**
+ * Daily revenue goal — higher of rolling vs. YoY per store + stretch.
+ * Manual PP override (if set) bypasses computed goals entirely; stretch not applied on top.
  */
 function getDailyGoal_(slug) {
-  var stretch = getStretchMultiplier_();
   try {
-    var rGoals = getOrComputeGoals_();
-    var yGoals = getOrComputeYoYGoals_();
-    var gr = rGoals && rGoals[slug];
-    var gy = yGoals && yGoals[slug];
-    var g  = (activeGoalSource_(gr, gy) === 'yoy') ? gy : gr;
+    var res = resolveGoal_(slug);
+    var g   = res.g;
     if (g && g.dowAvg) {
       var dow  = ptNow_().dow;
       var base = g.dowAvg[dow] || Math.round((g.ppGoal || 0) / PP_DAYS);
-      return Math.round(base * (1 + stretch));
+      return Math.round(base * (1 + res.stretch));
     }
   } catch(e) { Logger.log('getDailyGoal_ error: ' + e.message); }
+  var stretch = getStretchMultiplier_();
   var plan = (getStorePlans_())[slug] || {};
   if (plan.daily)   return Math.round(plan.daily   * (1 + stretch));
   if (plan.monthly) return Math.round(plan.monthly / 30.4 * (1 + stretch));
   return 0;
 }
 
-/** Monthly revenue goal — higher of rolling vs. YoY + stretch, exact weekday count for current month. */
+/** Monthly revenue goal — exact weekday count. Manual override scales DOW ratios; otherwise max(rolling,yoy) + stretch. */
 function getMonthlyGoal_(slug) {
-  var stretch = getStretchMultiplier_();
   try {
-    var rGoals = getOrComputeGoals_();
-    var yGoals = getOrComputeYoYGoals_();
-    var gr = rGoals && rGoals[slug];
-    var gy = yGoals && yGoals[slug];
-    var g  = (activeGoalSource_(gr, gy) === 'yoy') ? gy : gr;
+    var res = resolveGoal_(slug);
+    var g   = res.g;
     if (g && g.dowAvg) {
       var pt      = ptNow_();
       var monthly = computeAccurateMonthly_(g.dowAvg, pt.year, pt.month);
-      return Math.round(monthly * (1 + stretch));
+      return Math.round(monthly * (1 + res.stretch));
     }
   } catch(e) { Logger.log('getMonthlyGoal_ error: ' + e.message); }
+  var stretch = getStretchMultiplier_();
   var plan = (getStorePlans_())[slug] || {};
   if (plan.monthly) return Math.round(plan.monthly * (1 + stretch));
   if (plan.daily)   return Math.round(plan.daily * 30.4 * (1 + stretch));
   return 0;
 }
 
-/** PP revenue target — higher of rolling vs. YoY per store + stretch. */
+/** PP revenue target — manual override if set, otherwise max(rolling, yoy) + stretch. */
 function getPayPeriodTarget_(slug) {
-  var stretch = getStretchMultiplier_();
   try {
-    var rGoals = getOrComputeGoals_();
-    var yGoals = getOrComputeYoYGoals_();
-    var gr = rGoals && rGoals[slug];
-    var gy = yGoals && yGoals[slug];
-    var g  = (activeGoalSource_(gr, gy) === 'yoy') ? gy : gr;
-    return g && g.ppGoal ? Math.round(g.ppGoal * (1 + stretch)) : 0;
+    var res = resolveGoal_(slug);
+    return res.effectivePP ? Math.round(res.effectivePP * (1 + res.stretch)) : 0;
   } catch(e) {
     Logger.log('getPayPeriodTarget_ error: ' + e.message);
     return 0;
@@ -2574,9 +2612,17 @@ function getSettings_(params) {
     yoyTo:            yoyTo,
     dowLabels:        DOW_LABELS,
     goals:            STORES.map(function(s) {
-      var gr = rollingGoals[s.slug] || {};
-      var gy = yoyGoals[s.slug]    || {};
-      var src = activeGoalSource_(gr, gy);   // 'rolling' | 'yoy'
+      var gr       = rollingGoals[s.slug] || {};
+      var gy       = yoyGoals[s.slug]    || {};
+      var src      = activeGoalSource_(gr, gy);   // 'rolling' | 'yoy'
+      var stretch  = getStretchMultiplier_();
+      var manuals  = getManualPPGoals_();
+      var manualPP = manuals[s.slug] ? parseFloat(manuals[s.slug]) : null;
+      // effectivePP = manual override (if set) else computed active × (1+stretch)
+      var computedActivePP = (src === 'yoy' ? gy : gr).ppGoal || 0;
+      var effectivePP = (manualPP && manualPP > 0)
+        ? manualPP
+        : Math.round(computedActivePP * (1 + stretch));
       return {
         slug:         s.slug,
         name:         s.name,
@@ -2584,11 +2630,36 @@ function getSettings_(params) {
         yoy:          buildGoalRow(gy, gr),
         active:       buildGoalRow(src === 'yoy' ? gy : gr, null),
         activeSource: src,
+        effectivePP:  effectivePP,   // pre-fill value for override input
+        hasManual:    !!(manualPP && manualPP > 0),
       };
     }),
     nicknames:        nicknames,
     employees:        employees,
+    manualGoals:      getManualPPGoals_(),
   };
+}
+
+/** Save per-store manual PP goal overrides. Expects params.goals = JSON string of { slug: value }. */
+function saveManualGoals_(params) {
+  if (!params.goals) return { ok: false, error: 'Missing goals param' };
+  var parsed;
+  try { parsed = JSON.parse(params.goals); } catch(e) {
+    return { ok: false, error: 'Invalid JSON: ' + e.message };
+  }
+  // Validate and clean: only known store slugs, positive numbers (or null/0 to clear)
+  var known = {};
+  STORES.forEach(function(s) { known[s.slug] = true; });
+  var clean = {};
+  Object.keys(parsed).forEach(function(slug) {
+    if (!known[slug]) return;
+    var v = parseFloat(parsed[slug]);
+    if (v > 0) clean[slug] = v;
+    // 0 / null / '' → omit (clears the override)
+  });
+  PropertiesService.getScriptProperties().setProperty(GC_MANUAL_PP_KEY, JSON.stringify(clean));
+  Logger.log('[manualGoals] saved: ' + JSON.stringify(clean));
+  return { ok: true };
 }
 
 function saveSettings_(params) {
