@@ -1054,6 +1054,9 @@ var kiosk = (function() {
     var lb = rawData.leaderboard || {};
     var bg = rawData.badges      || {};
 
+    // Avatar config map — declared early so onShift + staff normalization can both use it
+    var kioskAvatarConfigs = lb.avatarConfigs || {};
+
     // ── today block ──
     var normalizedToday;
     if (td.store && td.today) {
@@ -1120,7 +1123,6 @@ var kiosk = (function() {
     // ── staff ──
     // GAS: avgOrderValue, avgUPT, transactions, streakDays (no role, no streakType)
     // Fixture: aov, txns, streak, streakType, role, upt
-    var kioskAvatarConfigs = lb.avatarConfigs || {};
     var normalizedStaff = (lb.staff || []).map(function(s) {
       var streak  = s.streak != null ? s.streak : (s.streakDays || 0);
       var nameKey = GC.nameToKey(s.name || '');
