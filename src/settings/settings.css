@@ -286,6 +286,28 @@
 .btn-secondary:disabled { opacity: 0.5; cursor: default; }
 
 
+/* ── Stacked baseline cell (Rolling over YoY) ───────────── */
+.settings-baseline-cell {
+  vertical-align: middle;
+  line-height: 1.6;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.settings-baseline-cell > div {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.settings-baseline-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  opacity: 0.5;
+  width: 10px;
+  flex-shrink: 0;
+}
+
 /* ── Active column highlight (per-row, whichever is higher) ─ */
 .settings-active-col {
   color: var(--green) !important;

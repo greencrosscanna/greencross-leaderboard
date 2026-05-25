@@ -139,13 +139,19 @@ var settings = (function() {
       var yBase = y.ppGoal  || 0;
       var mBase = activeG.monthly || 0;
 
-      // Highlight whichever column is the active (higher) one
-      var rClass = 'settings-derived settings-rolling-pp' + (src === 'rolling' ? ' settings-active-col' : '');
-      var yClass = 'settings-derived settings-yoy-pp'     + (src === 'yoy'     ? ' settings-active-col' : '');
+      // Stacked baseline cell: Rolling over YoY, winner highlighted green
+      var rFmt   = fmtGoal(Math.round(rBase * mult));
+      var yFmt   = yBase ? fmtGoal(Math.round(yBase * mult)) : '<span class="settings-dim">—</span>';
+      var rStyle = src === 'rolling' ? ' class="settings-active-col"' : ' class="settings-dim"';
+      var yStyle = src === 'yoy'     ? ' class="settings-active-col"' : ' class="settings-dim"';
+      var baselineCell = '<td class="settings-baseline-cell">'
+        + '<div' + rStyle + ' data-base-pp="' + rBase + '"><span class="settings-baseline-label">R</span> ' + rFmt + '</div>'
+        + '<div' + yStyle + ' data-base-pp="' + yBase + '"><span class="settings-baseline-label">Y</span> ' + (yBase ? yFmt : '<span class="settings-dim">—</span>') + '</div>'
+        + '</td>';
 
-      // Override input — pre-filled with effectivePP (manual if set, else computed active × stretch)
-      var overrideVal = g.effectivePP || Math.round(rBase * mult);
-      var overrideInput = '<div class="settings-input-wrap" style="max-width:120px">'
+      // Goal PP input — pre-filled with effectivePP (manual if set, else computed active × stretch)
+      var overrideVal   = g.effectivePP || Math.round(rBase * mult);
+      var overrideInput = '<div class="settings-input-wrap" style="max-width:118px">'
         + '<span class="settings-input-prefix">$</span>'
         + '<input class="settings-input settings-pp-override" type="text" inputmode="numeric"'
         + ' data-slug="' + e(g.slug) + '"'
@@ -156,10 +162,7 @@ var settings = (function() {
 
       return '<tr>'
         + '<td class="settings-store-name">' + e(g.name) + '</td>'
-        + '<td class="' + rClass + '" data-base-pp="' + rBase + '">'
-        + fmtGoal(Math.round(rBase * mult)) + '</td>'
-        + '<td class="' + yClass + '" data-base-pp="' + yBase + '">'
-        + (yBase ? fmtGoal(Math.round(yBase * mult)) : '<span class="settings-dim">—</span>') + '</td>'
+        + baselineCell
         + '<td>' + overrideInput + '</td>'
         + '<td class="settings-derived" data-base-monthly="' + mBase + '">'
         + fmtGoal(Math.round(mBase * mult)) + '</td>'
@@ -187,9 +190,8 @@ var settings = (function() {
       + '<table class="settings-table settings-goals-table" id="goalsTable">'
       + '<thead><tr>'
       +   '<th>Store</th>'
-      +   '<th title="Average of last 12 pay periods">Rolling PP</th>'
-      +   '<th title="Same 6-week window from 52 weeks ago">YoY PP</th>'
-      +   '<th title="Edit to override the active computed goal for this store">Goal PP</th>'
+      +   '<th title="R = Rolling 12-PP avg · Y = YoY same-season · Green = prevailing">Baseline (R / Y)</th>'
+      +   '<th title="Active goal — edit to override">Goal PP</th>'
       +   '<th>Monthly</th>'
       +   '<th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th>'
       + '</tr></thead>'
