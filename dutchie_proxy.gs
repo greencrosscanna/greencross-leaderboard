@@ -31,6 +31,8 @@ const GC_NICKNAMES_KEY       = 'GC_NICKNAMES_JSON';
 const GC_TARGET_CACHE_KEY   = 'GC_ROLLING_TARGET_CACHE_JSON';
 const GC_GOALS_CACHE_KEY    = 'GC_GOALS_CACHE_JSON';
 const GC_STRETCH_KEY        = 'GC_STRETCH_MULTIPLIER';  // stored as decimal, e.g. 0.025 = 2.5%
+const GC_YOY_GOALS_KEY  = 'GC_YOY_GOALS_JSON';
+const GC_GOAL_BASIS_KEY = 'GC_GOAL_BASIS';      // 'rolling' | 'yoy'
 const PP_DAYS                = 14;   // pay-period length in days
 const TARGET_LOOKBACK_MONTHS = 6;    // rolling lookback for target calculation
 const DUTCHIE_BASE          = 'https://api.pos.dutchie.com';
@@ -44,7 +46,8 @@ const STORE_CLOSE_HOUR = 22;  // 10 pm
 const STORE_HOURS      = STORE_CLOSE_HOUR - STORE_OPEN_HOUR; // 14
 
 // Request-scoped memoization — reset to null at start of each GAS execution.
-var _goalsCache_ = null;
+var _goalsCache_    = null;
+var _yoyGoalsCache_ = null;
 
 // ── PT timezone helpers ──────────────────────────────────────────────────────
 
@@ -213,7 +216,13 @@ function doGet(e) {
     }
     if (params.action === 'recalculategoals') {
       requireRole_(auth, ['owner','director']);
-      return jsonOut(recalculateGoals_(), params.callback);
+      var rollingResult = recalculateGoals_();
+      var yoyResult     = recalculateYoYGoals_();
+      return jsonOut({ ok: rollingResult.ok && yoyResult.ok, rolling: rollingResult, yoy: yoyResult }, params.callback);
+    }
+    if (params.action === 'recalculateyoygoals') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(recalculateYoYGoals_(), params.callback);
     }
 
     // ── Plan management ────────────────────────────────────
@@ -606,6 +615,15 @@ function applyNickname_(name, nicknames) {
 }
 
 /**
+ * Returns the active goal basis: 'rolling' (default) or 'yoy'.
+ * 'rolling' = last 12 pay periods; 'yoy' = same seasonal window 52 weeks ago.
+ */
+function getGoalBasis_() {
+  var raw = PropertiesService.getScriptProperties().getProperty(GC_GOAL_BASIS_KEY);
+  return raw === 'yoy' ? 'yoy' : 'rolling';
+}
+
+/**
  * Lazy-compute store-level revenue goals for the current pay period.
  *
  * Fetches the last 12 completed pay periods (= 168 days = 24 occurrences of each
@@ -750,6 +768,137 @@ function recalculateGoals_() {
 }
 
 /**
+ * Lazy-compute YoY store-level revenue goals.
+ *
+ * Fetches a 6-PP window (±3 PPs) centered on the equivalent week from 52 weeks
+ * ago (364 days = exactly 52 weeks, preserves day-of-week alignment).
+ * 36 parallel requests (6 ranges × 6 stores). Cached per PP start date.
+ *
+ * The stretch multiplier applied on top represents the YoY growth target —
+ * e.g. 2.5% stretch = "we want to grow 2.5% over last year this period."
+ *
+ * @param  {boolean} forceRecompute  True → ignore cache and recompute
+ * @return {Object}  { storeSlug: { ppGoal, dowAvg, monthly, yoyFrom, yoyTo, computedAt } }
+ */
+function getOrComputeYoYGoals_(forceRecompute) {
+  if (!forceRecompute && _yoyGoalsCache_) return _yoyGoalsCache_;
+
+  var props      = PropertiesService.getScriptProperties();
+  var anchorStr  = props.getProperty(GC_PAY_PERIOD_ANCHOR) || '2026-05-11';
+  var anchorMs   = ptDateToUtcMs_(anchorStr);
+  var PP_MS      = PP_DAYS * 24 * 60 * 60 * 1000;
+  var todayMs    = ptDateToUtcMs_(ptNow_().dateStr);
+  var daysSince  = Math.round((todayMs - anchorMs) / (24 * 60 * 60 * 1000));
+  var ppOffset   = daysSince >= 0 ? Math.floor(daysSince / PP_DAYS) : Math.ceil(daysSince / PP_DAYS) - 1;
+  var ppStartMs  = anchorMs + ppOffset * PP_MS;
+  var ppStartStr = Utilities.formatDate(new Date(ppStartMs), STORE_TZ, 'yyyy-MM-dd');
+
+  // Check cache
+  if (!forceRecompute) {
+    var cached = {};
+    try { cached = JSON.parse(props.getProperty(GC_YOY_GOALS_KEY) || '{}'); } catch(e) {}
+    if (cached.ppStart === ppStartStr && cached.goals) {
+      _yoyGoalsCache_ = cached.goals;
+      return _yoyGoalsCache_;
+    }
+  }
+
+  // Equivalent base: 52 weeks (364 days) ago — preserves day-of-week alignment
+  var YEAR_MS   = 364 * 24 * 60 * 60 * 1000;
+  var yoyBaseMs = ppStartMs - YEAR_MS;
+
+  // 6 bi-weekly windows: -3 to +2 PPs relative to the equivalent PP last year
+  var ranges = [];
+  for (var i = -3; i <= 2; i++) {
+    var fromMs = yoyBaseMs + i * PP_MS;
+    var toMs   = fromMs + PP_MS - 1;
+    ranges.push({ fromUTC: new Date(fromMs).toISOString(), toUTC: new Date(toMs).toISOString() });
+  }
+
+  var yoyFrom = Utilities.formatDate(new Date(yoyBaseMs - 3 * PP_MS), STORE_TZ, 'yyyy-MM-dd');
+  var yoyTo   = Utilities.formatDate(new Date(yoyBaseMs + 3 * PP_MS - 1), STORE_TZ, 'yyyy-MM-dd');
+
+  Logger.log('[yoy] Computing YoY goals for PP ' + ppStartStr + ' (window: ' + yoyFrom + ' – ' + yoyTo + ')…');
+
+  // 36 parallel requests (6 ranges × 6 stores)
+  var fetched = fetchAllStoresTransactionsMulti_(ranges);
+
+  var goals = {};
+  var pt    = ptNow_();
+
+  STORES.forEach(function(store) {
+    var allByDay = {};
+    var ppTotals = [];
+
+    fetched.forEach(function(byStore) {
+      var txns  = byStore[store.slug] || [];
+      var ppDay = aggregateByDay_(txns);
+      var ppSum = 0;
+      Object.keys(ppDay).forEach(function(day) {
+        allByDay[day] = (allByDay[day] || 0) + ppDay[day];
+        ppSum += ppDay[day];
+      });
+      ppTotals.push(ppSum);
+    });
+
+    var ppGoal = ppTotals.length > 0
+      ? Math.round(ppTotals.reduce(function(a, b) { return a + b; }, 0) / ppTotals.length)
+      : 0;
+
+    var flatDaily   = ppGoal > 0 ? Math.round(ppGoal / PP_DAYS) : 0;
+    var dowBuckets  = {0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
+    Object.keys(allByDay).forEach(function(day) {
+      var d   = new Date(Date.UTC(Number(day.slice(0,4)), Number(day.slice(5,7))-1, Number(day.slice(8,10)), 12));
+      var dow = parseInt(Utilities.formatDate(d, STORE_TZ, 'u'), 10) % 7;
+      dowBuckets[dow].push(allByDay[day]);
+    });
+
+    var dowAvg = {};
+    for (var d = 0; d <= 6; d++) {
+      var vals   = dowBuckets[d];
+      dowAvg[d]  = vals.length > 0
+        ? Math.round(vals.reduce(function(a, b) { return a + b; }, 0) / vals.length)
+        : flatDaily;
+    }
+
+    var monthly = computeAccurateMonthly_(dowAvg, pt.year, pt.month);
+
+    goals[store.slug] = {
+      ppGoal:     ppGoal,
+      dowAvg:     dowAvg,
+      monthly:    monthly,
+      yoyFrom:    yoyFrom,
+      yoyTo:      yoyTo,
+      ppStart:    ppStartStr,
+      computedAt: new Date().toISOString(),
+    };
+
+    Logger.log('[yoy] ' + store.slug + ' pp=$' + ppGoal + ' mon=$' + monthly);
+  });
+
+  props.setProperty(GC_YOY_GOALS_KEY, JSON.stringify({
+    ppStart:    ppStartStr,
+    computedAt: new Date().toISOString(),
+    yoyFrom:    yoyFrom,
+    yoyTo:      yoyTo,
+    goals:      goals,
+  }));
+  _yoyGoalsCache_ = goals;
+  return goals;
+}
+
+/** Force-recompute YoY goals. */
+function recalculateYoYGoals_() {
+  try {
+    var goals = getOrComputeYoYGoals_(true);
+    return { ok: true, stores: Object.keys(goals).length };
+  } catch(e) {
+    Logger.log('recalculateYoYGoals_ error: ' + e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
  * Returns the stored stretch multiplier (e.g. 0.025 for 2.5%).
  * Clamped to [0, 0.05]. Defaults to 0 if not set.
  */
@@ -798,61 +947,56 @@ function computeAccurateMonthly_(dowAvg, year, month) {
 }
 
 /**
- * Daily revenue goal for a store — returns today's day-of-week average from
- * the 12-PP lookback, with stretch multiplier applied. Falls back to PP÷14
- * then static plan if not yet computed.
+ * Daily revenue goal — uses active goal basis (rolling or YoY) + stretch.
+ * Returns today's DOW-specific average.
  */
 function getDailyGoal_(slug) {
   var stretch = getStretchMultiplier_();
+  var basis   = getGoalBasis_();
   try {
-    var goals = getOrComputeGoals_();
+    var goals = basis === 'yoy' ? getOrComputeYoYGoals_() : getOrComputeGoals_();
     var g = goals && goals[slug];
     if (g && g.dowAvg) {
       var dow  = ptNow_().dow;
       var base = g.dowAvg[dow] || Math.round((g.ppGoal || 0) / PP_DAYS);
       return Math.round(base * (1 + stretch));
     }
-  } catch(e) { Logger.log('getDailyGoal_ goals error: ' + e.message); }
+  } catch(e) { Logger.log('getDailyGoal_ error: ' + e.message); }
   var plan = (getStorePlans_())[slug] || {};
   if (plan.daily)   return Math.round(plan.daily   * (1 + stretch));
   if (plan.monthly) return Math.round(plan.monthly / 30.4 * (1 + stretch));
   return 0;
 }
 
-/**
- * Monthly revenue goal — exact count of each weekday in the current calendar
- * month × its DOW average, with stretch multiplier applied.
- * More accurate than × 4.33 since months have varying numbers of each weekday.
- */
+/** Monthly revenue goal — active basis + stretch, exact weekday count for current month. */
 function getMonthlyGoal_(slug) {
   var stretch = getStretchMultiplier_();
+  var basis   = getGoalBasis_();
   try {
-    var goals = getOrComputeGoals_();
+    var goals = basis === 'yoy' ? getOrComputeYoYGoals_() : getOrComputeGoals_();
     var g = goals && goals[slug];
     if (g && g.dowAvg) {
       var pt      = ptNow_();
       var monthly = computeAccurateMonthly_(g.dowAvg, pt.year, pt.month);
       return Math.round(monthly * (1 + stretch));
     }
-  } catch(e) { Logger.log('getMonthlyGoal_ goals error: ' + e.message); }
+  } catch(e) { Logger.log('getMonthlyGoal_ error: ' + e.message); }
   var plan = (getStorePlans_())[slug] || {};
   if (plan.monthly) return Math.round(plan.monthly * (1 + stretch));
   if (plan.daily)   return Math.round(plan.daily * 30.4 * (1 + stretch));
   return 0;
 }
 
-/**
- * Returns the 14-day pay-period revenue target for a store, with stretch applied.
- * Sourced from the 12-PP DOW-aware goal computation.
- */
+/** PP revenue target — active basis + stretch. */
 function getPayPeriodTarget_(slug) {
   var stretch = getStretchMultiplier_();
+  var basis   = getGoalBasis_();
   try {
-    var goals = getOrComputeGoals_();
+    var goals = basis === 'yoy' ? getOrComputeYoYGoals_() : getOrComputeGoals_();
     var g = goals && goals[slug];
     return g && g.ppGoal ? Math.round(g.ppGoal * (1 + stretch)) : 0;
   } catch(e) {
-    Logger.log('getPayPeriodTarget_ goals error: ' + e.message);
+    Logger.log('getPayPeriodTarget_ error: ' + e.message);
     return 0;
   }
 }
@@ -2349,27 +2493,36 @@ function getSettings_(params) {
   var nicknames = getNicknames_();
   var roster    = getEmployeeRoster_();
 
-  // Load computed goals (lazy, cached for PP)
-  var goals = {};
-  var computedAt  = null;
-  var reportFrom  = null;
-  var reportTo    = null;
+  // Load both goal sets (lazy, cached for PP)
+  var rollingGoals   = {};
+  var yoyGoals       = {};
+  var rollingComputedAt = null;
+  var yoyComputedAt     = null;
+  var yoyFrom = null, yoyTo = null;
+  var reportFrom = null, reportTo = null;
+  var props = PropertiesService.getScriptProperties();
   try {
-    goals = getOrComputeGoals_();
-    var props = PropertiesService.getScriptProperties();
-    var cacheMeta = {};
-    try { cacheMeta = JSON.parse(props.getProperty(GC_GOALS_CACHE_KEY) || '{}'); } catch(e) {}
-    computedAt = cacheMeta.computedAt  || null;
-    reportFrom = cacheMeta.reportFrom  || null;
-    reportTo   = cacheMeta.reportTo    || null;
-  } catch(e) {
-    Logger.log('getSettings_: goal load failed: ' + e.message);
-  }
+    rollingGoals = getOrComputeGoals_();
+    var rMeta = {};
+    try { rMeta = JSON.parse(props.getProperty(GC_GOALS_CACHE_KEY) || '{}'); } catch(e) {}
+    rollingComputedAt = rMeta.computedAt || null;
+    reportFrom        = rMeta.reportFrom  || null;
+    reportTo          = rMeta.reportTo    || null;
+  } catch(e) { Logger.log('getSettings_: rolling load failed: ' + e.message); }
 
-  // DOW index → label (matching ptNow_().dow: 0=Sun,1=Mon,...,6=Sat)
+  try {
+    yoyGoals = getOrComputeYoYGoals_();
+    var yMeta = {};
+    try { yMeta = JSON.parse(props.getProperty(GC_YOY_GOALS_KEY) || '{}'); } catch(e) {}
+    yoyComputedAt = yMeta.computedAt || null;
+    yoyFrom       = yMeta.yoyFrom    || null;
+    yoyTo         = yMeta.yoyTo      || null;
+  } catch(e) { Logger.log('getSettings_: yoy load failed: ' + e.message); }
+
   var DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var basis      = getGoalBasis_();
 
-  // Flatten roster into sorted unique employee list
+  // Flatten roster
   var empMap = {};
   STORES.forEach(function(store) {
     (roster[store.slug] || []).forEach(function(emp) {
@@ -2383,34 +2536,50 @@ function getSettings_(params) {
     return a.name.localeCompare(b.name);
   });
 
+  var pt = ptNow_();
+
+  function buildGoalRow(g, gRolling) {
+    var monthly = g.dowAvg
+      ? computeAccurateMonthly_(g.dowAvg, pt.year, pt.month)
+      : (g.monthly || 0);
+    // delta vs rolling PP (only meaningful for YoY rows)
+    var delta = (gRolling && gRolling.ppGoal && g.ppGoal)
+      ? g.ppGoal - gRolling.ppGoal : null;
+    return {
+      ppGoal:  g.ppGoal  || 0,
+      monthly: monthly,
+      ppStart: g.ppStart || null,
+      ppEnd:   g.ppEnd   || null,
+      dowAvg:  g.dowAvg  || {},
+      delta:   delta,
+    };
+  }
+
   return {
-    ok:         true,
-    computedAt: computedAt,
-    reportFrom: reportFrom,
-    reportTo:   reportTo,
-    stretch:    getStretchMultiplier_(),
-    dowLabels:  DOW_LABELS,
-    goals:      (function() {
-      var pt = ptNow_();
-      return STORES.map(function(s) {
-        var g       = goals[s.slug] || {};
-        // Accurate monthly: exact weekday count for current calendar month (base, no stretch)
-        var monthly = g.dowAvg
-          ? computeAccurateMonthly_(g.dowAvg, pt.year, pt.month)
-          : (g.monthly || 0);
-        return {
-          slug:    s.slug,
-          name:    s.name,
-          ppGoal:  g.ppGoal  || 0,
-          monthly: monthly,
-          ppStart: g.ppStart || null,
-          ppEnd:   g.ppEnd   || null,
-          dowAvg:  g.dowAvg  || {},
-        };
-      });
-    })(),
-    nicknames:  nicknames,
-    employees:  employees,
+    ok:               true,
+    basis:            basis,
+    stretch:          getStretchMultiplier_(),
+    rollingComputedAt: rollingComputedAt,
+    yoyComputedAt:    yoyComputedAt,
+    reportFrom:       reportFrom,
+    reportTo:         reportTo,
+    yoyFrom:          yoyFrom,
+    yoyTo:            yoyTo,
+    dowLabels:        DOW_LABELS,
+    goals:            STORES.map(function(s) {
+      var gr = rollingGoals[s.slug] || {};
+      var gy = yoyGoals[s.slug]    || {};
+      return {
+        slug:    s.slug,
+        name:    s.name,
+        rolling: buildGoalRow(gr, null),
+        yoy:     buildGoalRow(gy, gr),
+        // active = whichever basis is selected
+        active:  buildGoalRow(basis === 'yoy' ? gy : gr, null),
+      };
+    }),
+    nicknames:        nicknames,
+    employees:        employees,
   };
 }
 
@@ -2435,6 +2604,13 @@ function saveSettings_(params) {
     s = Math.max(0, Math.min(0.05, s));
     props.setProperty(GC_STRETCH_KEY, String(s));
     Logger.log('[stretch] saved: ' + (s * 100).toFixed(1) + '%');
+  }
+
+  // Save goal basis
+  if (params.basis !== undefined) {
+    var b = params.basis === 'yoy' ? 'yoy' : 'rolling';
+    props.setProperty(GC_GOAL_BASIS_KEY, b);
+    Logger.log('[basis] saved: ' + b);
   }
 
   return { ok: true };

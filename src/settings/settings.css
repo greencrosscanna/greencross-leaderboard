@@ -284,3 +284,71 @@
 }
 .btn-secondary:hover { background: var(--surface-3, var(--surface-2)); }
 .btn-secondary:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Goal basis bar ──────────────────────────────────────── */
+.settings-basis-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  flex-wrap: wrap;
+}
+.settings-basis-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+.settings-basis-opt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.settings-basis-opt input[type="radio"] {
+  accent-color: var(--green);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+.settings-basis-hint {
+  font-size: 11px;
+  color: var(--text-mute);
+  font-weight: 400;
+}
+
+/* ── Active basis column highlight ───────────────────────── */
+.settings-basis-col {
+  position: relative;
+}
+.settings-basis-col.active-basis {
+  color: var(--green) !important;
+}
+.settings-basis-col.active-basis::after {
+  content: ' ✓';
+  font-size: 9px;
+}
+
+/* ── Delta column ────────────────────────────────────────── */
+.settings-delta-cell {
+  text-align: center;
+}
+.settings-delta {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.settings-delta.pos { color: var(--green); background: rgba(74,222,128,0.1); }
+.settings-delta.neg { color: var(--red);   background: rgba(239, 68, 68, 0.1); }
+
+.settings-dim { color: var(--text-dim); }

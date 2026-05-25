@@ -58,14 +58,23 @@ var settings = (function() {
   }
 
   // ── Goals section (auto-computed, read-only) ───────────────
-  function renderGoalsSection(goals, computedAt, reportFrom, reportTo, stretch) {
-    var DOW_ORDER = [1,2,3,4,5,6,0]; // Mon first
+  function renderGoalsSection(data) {
+    var goals        = data.goals        || [];
+    var computedAt   = data.rollingComputedAt;
+    var reportFrom   = data.reportFrom;
+    var reportTo     = data.reportTo;
+    var yoyFrom      = data.yoyFrom;
+    var yoyTo        = data.yoyTo;
+    var yoyComputedAt = data.yoyComputedAt;
+    var stretch      = parseFloat(data.stretch) || 0;
+    var basis        = data.basis || 'rolling';
+
+    var DOW_ORDER  = [1,2,3,4,5,6,0]; // Mon first
     var DOW_LABELS = {0:'Sun',1:'Mon',2:'Tue',3:'Wed',4:'Thu',5:'Fri',6:'Sat'};
 
     function fmtDate(iso) {
       if (!iso) return '—';
-      // Accept both ISO timestamps and YYYY-MM-DD strings
-      var s = String(iso).slice(0, 10); // take YYYY-MM-DD portion
+      var s = String(iso).slice(0, 10);
       var parts = s.split('-');
       if (parts.length !== 3) return iso;
       return parts[1].replace(/^0/, '') + '-' + parts[2].replace(/^0/, '') + '-' + parts[0].slice(2);
@@ -76,20 +85,13 @@ var settings = (function() {
       return '$' + Math.round(val).toLocaleString('en-US');
     }
 
-    // Pull current PP dates from first goal entry (same for all stores)
-    var firstGoal = (goals || [])[0] || {};
-    var ppRangeStr = firstGoal.ppStart
-      ? 'Current PP: ' + fmtDate(firstGoal.ppStart) + ' – ' + fmtDate(firstGoal.ppEnd)
-      : '';
-    var reportRangeStr = (reportFrom && reportTo)
-      ? 'Report range: ' + fmtDate(reportFrom) + ' – ' + fmtDate(reportTo)
-      : '';
-    var metaLine = computedAt
-      ? [ppRangeStr, reportRangeStr, 'Computed ' + fmtDate(computedAt)].filter(Boolean).join(' · ')
-      : 'Not yet computed — click Recalculate to fetch from Dutchie';
+    function fmtGoal(val) {
+      if (!val) return '—';
+      return '$' + Math.round(val).toLocaleString('en-US');
+    }
 
-    // Build stretch dropdown options (0% to 5% in 0.5% steps)
-    var currentStretch = parseFloat(stretch) || 0;
+    // Build stretch options
+    var currentStretch = stretch;
     var stretchOpts = '';
     for (var pct = 0; pct <= 5.01; pct += 0.5) {
       var optVal = Math.round(pct * 10) / 1000;
@@ -98,31 +100,78 @@ var settings = (function() {
       stretchOpts += '<option value="' + optVal + '"' + sel + '>' + optLbl + '</option>';
     }
 
-    // Rows — store BASE values in data attrs; JS applies stretch on change
-    var rows = (goals || []).map(function(g) {
-      var mult     = 1 + currentStretch;
+    // Meta line
+    var metaParts = [];
+    if (computedAt)  metaParts.push('Rolling computed ' + fmtDate(computedAt));
+    if (yoyComputedAt) metaParts.push('YoY computed ' + fmtDate(yoyComputedAt));
+    if (!computedAt && !yoyComputedAt) metaParts.push('Not yet computed — click Recalculate');
+    var metaLine = metaParts.join(' · ');
+
+    var reportLine = '';
+    if (reportFrom && reportTo)
+      reportLine += 'Rolling range: ' + fmtDate(reportFrom) + ' – ' + fmtDate(reportTo);
+    if (yoyFrom && yoyTo)
+      reportLine += (reportLine ? ' · ' : '') + 'YoY window: ' + fmtDate(yoyFrom) + ' – ' + fmtDate(yoyTo);
+
+    // Current PP from first goal
+    var firstGoal = goals[0] || {};
+    var ppRangeStr = (firstGoal.rolling && firstGoal.rolling.ppStart)
+      ? 'Current PP: ' + fmtDate(firstGoal.rolling.ppStart) + ' – ' + fmtDate(firstGoal.rolling.ppEnd)
+      : '';
+
+    var fullMeta = [ppRangeStr, reportLine, metaLine].filter(Boolean).join(' · ');
+
+    // Table rows
+    var rows = goals.map(function(g) {
+      var r    = g.rolling || {};
+      var y    = g.yoy     || {};
+      var mult = 1 + currentStretch;
+
+      // DOW cells use active basis
+      var activeG  = basis === 'yoy' ? y : r;
       var dowCells = DOW_ORDER.map(function(d) {
-        var base = (g.dowAvg && g.dowAvg[d]) ? g.dowAvg[d] : 0;
+        var base = (activeG.dowAvg && activeG.dowAvg[d]) ? activeG.dowAvg[d] : 0;
         return '<td class="settings-dow-cell" data-base-dow="' + base + '">'
           + '<div class="settings-dow-val">' + fmtDow(Math.round(base * mult)) + '</div>'
           + '</td>';
       }).join('');
+
+      // Delta: YoY PP vs Rolling PP
+      var delta    = (y.ppGoal && r.ppGoal) ? (y.ppGoal - r.ppGoal) : null;
+      var deltaStr = delta !== null
+        ? '<span class="settings-delta ' + (delta >= 0 ? 'pos' : 'neg') + '">'
+          + (delta >= 0 ? '+' : '') + '$' + Math.abs(Math.round(delta)).toLocaleString('en-US')
+          + '</span>'
+        : '—';
+
+      var rBase = r.ppGoal  || 0;
+      var yBase = y.ppGoal  || 0;
+      var mBase = (basis === 'yoy' ? y.monthly : r.monthly) || 0;
+
       return '<tr>'
         + '<td class="settings-store-name">' + e(g.name) + '</td>'
-        + '<td class="settings-derived" data-base-pp="' + (g.ppGoal || 0) + '">'
-        +   (g.ppGoal  ? fmt(Math.round(g.ppGoal  * mult)) : '—') + '</td>'
-        + '<td class="settings-derived" data-base-monthly="' + (g.monthly || 0) + '">'
-        +   (g.monthly ? fmt(Math.round(g.monthly * mult)) : '—') + '</td>'
+        + '<td class="settings-derived settings-rolling-pp" data-base-pp="' + rBase + '"'
+        + (basis === 'rolling' ? ' data-active="1"' : '') + '>'
+        + fmtGoal(Math.round(rBase * mult)) + '</td>'
+        + '<td class="settings-derived settings-yoy-pp" data-base-pp="' + yBase + '"'
+        + (basis === 'yoy' ? ' data-active="1"' : '') + '>'
+        + (yBase ? fmtGoal(Math.round(yBase * mult)) : '<span class="settings-dim">—</span>') + '</td>'
+        + '<td class="settings-delta-cell">' + deltaStr + '</td>'
+        + '<td class="settings-derived" data-base-monthly="' + mBase + '">'
+        + fmtGoal(Math.round(mBase * mult)) + '</td>'
         + dowCells
         + '</tr>';
     }).join('');
+
+    var rollingActive = basis === 'rolling' ? ' checked' : '';
+    var yoyActive     = basis === 'yoy'     ? ' checked' : '';
 
     return '<div class="settings-card" id="goalsCard">'
       + '<div class="settings-card-head">'
       +   '<div>'
       +     '<div class="settings-card-title">Revenue Goals</div>'
-      +     '<div class="settings-card-sub">Auto-computed from last 12 pay periods · Daily goals are day-of-week averages (24 samples)</div>'
-      +     '<div class="settings-goals-meta" id="goalsMeta">' + e(metaLine) + '</div>'
+      +     '<div class="settings-card-sub">Rolling 12-PP vs. Year-over-Year same-season baseline · Stretch = growth target over baseline</div>'
+      +     '<div class="settings-goals-meta" id="goalsMeta">' + e(fullMeta) + '</div>'
       +   '</div>'
       +   '<div class="settings-card-actions">'
       +     '<button class="btn-secondary" id="recalcBtn">Recalculate</button>'
@@ -136,11 +185,22 @@ var settings = (function() {
       + '<div class="settings-table-wrap">'
       + '<table class="settings-table settings-goals-table" id="goalsTable">'
       + '<thead><tr>'
-      +   '<th>Store</th><th>Pay Period</th><th>Monthly</th>'
+      +   '<th>Store</th>'
+      +   '<th class="settings-basis-col' + (basis === 'rolling' ? ' active-basis' : '') + '" title="Average of last 12 pay periods">Rolling PP</th>'
+      +   '<th class="settings-basis-col' + (basis === 'yoy'     ? ' active-basis' : '') + '" title="Same 6-week window from 52 weeks ago">YoY PP</th>'
+      +   '<th title="YoY vs Rolling difference">Δ</th>'
+      +   '<th>Monthly</th>'
       +   '<th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th>'
       + '</tr></thead>'
       + '<tbody>' + rows + '</tbody>'
       + '</table>'
+      + '</div>'
+      + '<div class="settings-basis-bar">'
+      +   '<span class="settings-basis-label">Active goal basis:</span>'
+      +   '<label class="settings-basis-opt"><input type="radio" name="goalBasis" value="rolling"' + rollingActive + '> Rolling 12-PP <span class="settings-basis-hint">(smoothed historical avg)</span></label>'
+      +   '<label class="settings-basis-opt"><input type="radio" name="goalBasis" value="yoy"'     + yoyActive     + '> Year-over-Year <span class="settings-basis-hint">(same season last year + stretch = growth target)</span></label>'
+      +   '<button class="btn-secondary" id="saveBasisBtn">Save Basis</button>'
+      +   '<div class="settings-save-status" id="basisStatus"></div>'
       + '</div>'
       + '<div class="settings-card-foot">'
       +   '<div class="settings-save-status" id="recalcStatus"></div>'
@@ -186,7 +246,7 @@ var settings = (function() {
     return '<div class="app-page settings-page">'
       + renderHeader()
       + '<div class="settings-body">'
-      +   renderGoalsSection(data.goals, data.computedAt, data.reportFrom, data.reportTo, data.stretch || 0)
+      +   renderGoalsSection(data)
       +   renderNicknames(data.employees, data.nicknames)
       + '</div>'
       + '</div>';
@@ -201,7 +261,7 @@ var settings = (function() {
       GC.router.navigate('#/director');
     });
 
-    // Recalculate goals button
+    // Recalculate button (triggers both rolling + YoY)
     var recalcBtn    = document.getElementById('recalcBtn');
     var recalcStatus = document.getElementById('recalcStatus');
     var goalsMeta    = document.getElementById('goalsMeta');
@@ -216,8 +276,8 @@ var settings = (function() {
             recalcBtn.disabled = false;
             recalcBtn.textContent = 'Recalculate';
             if (res.ok) {
-              if (recalcStatus) { recalcStatus.textContent = '✓ Goals recalculated — reload to see updated values'; recalcStatus.className = 'settings-save-status ok'; }
-              if (goalsMeta) { goalsMeta.textContent = 'Recalculated just now · Reload to see updated values'; }
+              if (recalcStatus) { recalcStatus.textContent = '✓ Rolling + YoY goals recalculated — reload to see updated values'; recalcStatus.className = 'settings-save-status ok'; }
+              if (goalsMeta)   { goalsMeta.textContent = 'Recalculated just now · Reload to see updated values'; }
             } else {
               if (recalcStatus) { recalcStatus.textContent = '✗ ' + (res.error || 'Recalculation failed'); recalcStatus.className = 'settings-save-status err'; }
             }
@@ -231,8 +291,8 @@ var settings = (function() {
     }
 
     // Stretch multiplier — live preview + Apply
-    var stretchSelect    = document.getElementById('stretchSelect');
-    var applyStretchBtn  = document.getElementById('applyStretchBtn');
+    var stretchSelect   = document.getElementById('stretchSelect');
+    var applyStretchBtn = document.getElementById('applyStretchBtn');
 
     function applyStretchDisplay() {
       var mult = 1 + (parseFloat(stretchSelect ? stretchSelect.value : 0) || 0);
@@ -245,7 +305,7 @@ var settings = (function() {
         el.textContent = base ? '$' + Math.round(base * mult).toLocaleString('en-US') : '—';
       });
       document.querySelectorAll('.settings-dow-cell[data-base-dow]').forEach(function(el) {
-        var base = parseFloat(el.getAttribute('data-base-dow')) || 0;
+        var base  = parseFloat(el.getAttribute('data-base-dow')) || 0;
         var inner = el.querySelector('.settings-dow-val');
         if (inner) inner.textContent = base ? '$' + Math.round(base * mult).toLocaleString('en-US') : '—';
       });
@@ -273,6 +333,46 @@ var settings = (function() {
             applyStretchBtn.disabled = false;
             applyStretchBtn.textContent = 'Apply';
             if (recalcStatus) { recalcStatus.textContent = '✗ ' + err.message; recalcStatus.className = 'settings-save-status err'; }
+          });
+      });
+    }
+
+    // Goal basis selector
+    var saveBasisBtn = document.getElementById('saveBasisBtn');
+    var basisStatus  = document.getElementById('basisStatus');
+    if (saveBasisBtn) {
+      saveBasisBtn.addEventListener('click', function() {
+        var selected = document.querySelector('input[name="goalBasis"]:checked');
+        if (!selected) return;
+        var basis = selected.value;
+        saveBasisBtn.disabled = true;
+        saveBasisBtn.textContent = 'Saving…';
+        if (basisStatus) { basisStatus.textContent = ''; basisStatus.className = 'settings-save-status'; }
+
+        GC.api.gasCall('savesettings', { basis: basis })
+          .then(function(res) {
+            saveBasisBtn.disabled = false;
+            saveBasisBtn.textContent = 'Save Basis';
+            if (basisStatus) {
+              basisStatus.textContent = res.ok
+                ? '✓ Now using ' + (basis === 'yoy' ? 'Year-over-Year' : 'Rolling 12-PP') + ' basis'
+                : '✗ ' + (res.error || 'Save failed');
+              basisStatus.className = 'settings-save-status ' + (res.ok ? 'ok' : 'err');
+            }
+            // Highlight the active column
+            if (res.ok) {
+              document.querySelectorAll('.settings-basis-col').forEach(function(th) {
+                th.classList.remove('active-basis');
+              });
+              var activeIdx = basis === 'rolling' ? 0 : 1;
+              var cols = document.querySelectorAll('.settings-basis-col');
+              if (cols[activeIdx]) cols[activeIdx].classList.add('active-basis');
+            }
+          })
+          .catch(function(err) {
+            saveBasisBtn.disabled = false;
+            saveBasisBtn.textContent = 'Save Basis';
+            if (basisStatus) { basisStatus.textContent = '✗ ' + err.message; basisStatus.className = 'settings-save-status err'; }
           });
       });
     }
