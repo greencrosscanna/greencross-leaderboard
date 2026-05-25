@@ -133,6 +133,15 @@ function doGet(e) {
       return jsonOut({ ok: true, ts: new Date().toISOString() }, params.callback);
     }
 
+    // ── Read-only goals for Sales Dashboard (API key auth) ─
+    if (params.action === 'goals') {
+      var storedKey = PropertiesService.getScriptProperties().getProperty('GC_API_READONLY_KEY');
+      if (storedKey && params.apiKey !== storedKey) {
+        return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
+      }
+      return jsonOut(getGoalsForDashboard_(), params.callback);
+    }
+
     // ── Auth required from here ────────────────────────────
     const auth = requireAuth_(params);
     if (!auth.ok) return jsonOut(auth, params.callback);
@@ -2660,6 +2669,34 @@ function saveManualGoals_(params) {
   PropertiesService.getScriptProperties().setProperty(GC_MANUAL_PP_KEY, JSON.stringify(clean));
   Logger.log('[manualGoals] saved: ' + JSON.stringify(clean));
   return { ok: true };
+}
+
+/**
+ * Returns monthly revenue goals for all 12 months of the current year, keyed by
+ * Dutchie store name (matching the Sales Dashboard's STORES[].name convention).
+ * Uses the same max(rolling, yoy) + stretch + manual override logic as the leaderboard.
+ * Response: { ok: true, goals: { dutchieName: { Jan: X, Feb: Y, ... } } }
+ */
+function getGoalsForDashboard_() {
+  var MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var year = ptNow_().year;
+  var dashGoals = {};
+  STORES.forEach(function(s) {
+    try {
+      var res = resolveGoal_(s.slug);  // { g, effectivePP, useManual, stretch }
+      var g   = res.g;
+      if (!g || !g.dowAvg) return;
+      var monthly = {};
+      MONTH_NAMES.forEach(function(name, i) {
+        var base = computeAccurateMonthly_(g.dowAvg, year, i);
+        monthly[name] = Math.round(base * (1 + res.stretch));
+      });
+      dashGoals[s.dutchieName] = monthly;
+    } catch(e) {
+      Logger.log('getGoalsForDashboard_ error for ' + s.slug + ': ' + e.message);
+    }
+  });
+  return { ok: true, goals: dashGoals };
 }
 
 function saveSettings_(params) {
