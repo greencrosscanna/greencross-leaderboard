@@ -76,11 +76,22 @@ var settings = (function() {
       return '$' + Math.round(val).toLocaleString('en-US');
     }
 
+    // Pull current PP dates from first goal entry (same for all stores)
+    var firstGoal = (goals || [])[0] || {};
+    var ppRangeStr = firstGoal.ppStart
+      ? 'Current PP: ' + fmtDate(firstGoal.ppStart) + ' – ' + fmtDate(firstGoal.ppEnd)
+      : '';
+    var reportRangeStr = (reportFrom && reportTo)
+      ? 'Report range: ' + fmtDate(reportFrom) + ' – ' + fmtDate(reportTo)
+      : '';
+    var metaLine = computedAt
+      ? [ppRangeStr, reportRangeStr, 'Computed ' + fmtDate(computedAt)].filter(Boolean).join(' · ')
+      : 'Not yet computed — click Recalculate to fetch from Dutchie';
+
     var rows = (goals || []).map(function(g) {
       var dowCells = DOW_ORDER.map(function(d) {
         var val = g.dowAvg && g.dowAvg[d] ? g.dowAvg[d] : 0;
         return '<td class="settings-dow-cell">'
-          + '<div class="settings-dow-lbl">' + DOW_LABELS[d] + '</div>'
           + '<div class="settings-dow-val">' + fmtDow(val) + '</div>'
           + '</td>';
       }).join('');
@@ -89,34 +100,23 @@ var settings = (function() {
         + '<td class="settings-derived">' + (g.ppGoal  ? fmt(g.ppGoal)  : '—') + '</td>'
         + '<td class="settings-derived">' + (g.monthly ? fmt(g.monthly) : '—') + '</td>'
         + dowCells
-        + '<td class="settings-pp-range">'
-        +   (g.ppStart ? fmtDate(g.ppStart) + ' – ' + fmtDate(g.ppEnd) : '—')
-        + '</td>'
         + '</tr>';
     }).join('');
-
-    var rangeStr = (reportFrom && reportTo)
-      ? 'Report range: ' + fmtDate(reportFrom) + ' to ' + fmtDate(reportTo) + ' · '
-      : '';
-    var metaLine = computedAt
-      ? rangeStr + 'Computed ' + fmtDate(computedAt) + ' · Updates at each new pay period'
-      : 'Not yet computed — click Recalculate to fetch from Dutchie';
 
     return '<div class="settings-card" id="goalsCard">'
       + '<div class="settings-card-head">'
       +   '<div>'
       +     '<div class="settings-card-title">Revenue Goals</div>'
-      +     '<div class="settings-card-sub">Auto-computed from last 12 pay periods. Daily goals are day-of-week averages (last 24 occurrences).</div>'
+      +     '<div class="settings-card-sub">Auto-computed from last 12 pay periods · Daily goals are day-of-week averages (24 samples)</div>'
+      +     '<div class="settings-goals-meta" id="goalsMeta">' + e(metaLine) + '</div>'
       +   '</div>'
       +   '<button class="btn-secondary" id="recalcBtn">Recalculate</button>'
       + '</div>'
-      + '<div class="settings-goals-meta" id="goalsMeta">' + e(metaLine) + '</div>'
       + '<div class="settings-table-wrap">'
       + '<table class="settings-table settings-goals-table" id="goalsTable">'
       + '<thead><tr>'
       +   '<th>Store</th><th>Pay Period</th><th>Monthly</th>'
       +   '<th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th>'
-      +   '<th>Current PP</th>'
       + '</tr></thead>'
       + '<tbody>' + rows + '</tbody>'
       + '</table>'

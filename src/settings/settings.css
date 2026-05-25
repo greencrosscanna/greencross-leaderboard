@@ -44,6 +44,10 @@
 .settings-card-head {
   padding: 20px 24px 16px;
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
 }
 .settings-card-title {
   font-size: 13px;
@@ -192,12 +196,25 @@
 .settings-goals-meta {
   font-size: 11px;
   color: var(--text-mute);
-  padding: 10px 24px 12px;
+  margin-top: 6px;
   font-style: italic;
+  line-height: 1.5;
 }
 
 .settings-table-wrap {
-  overflow-x: auto;
+  overflow-x: hidden;
+}
+
+/* Goals table — tighter padding so all 10 cols fit without scroll */
+.settings-goals-table thead th {
+  padding: 10px 8px;
+}
+.settings-goals-table tbody td {
+  padding: 8px 8px;
+}
+.settings-goals-table thead th:first-child,
+.settings-goals-table tbody td:first-child {
+  padding-left: 20px;
 }
 
 .settings-goals-table th,
@@ -207,26 +224,12 @@
 
 .settings-dow-cell {
   text-align: center;
-  padding: 6px 4px !important;
-}
-.settings-dow-lbl {
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  color: var(--text-mute);
-  font-weight: 700;
-  margin-bottom: 2px;
 }
 .settings-dow-val {
   font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text);
-}
-.settings-pp-range {
-  font-size: 11px;
-  color: var(--text-mute);
-  white-space: nowrap;
 }
 
 /* ── Secondary button ────────────────────────────────────── */
