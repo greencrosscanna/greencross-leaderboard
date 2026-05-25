@@ -32,7 +32,6 @@ const GC_TARGET_CACHE_KEY   = 'GC_ROLLING_TARGET_CACHE_JSON';
 const GC_GOALS_CACHE_KEY    = 'GC_GOALS_CACHE_JSON';
 const GC_STRETCH_KEY        = 'GC_STRETCH_MULTIPLIER';  // stored as decimal, e.g. 0.025 = 2.5%
 const GC_YOY_GOALS_KEY  = 'GC_YOY_GOALS_JSON';
-const GC_GOAL_BASIS_KEY = 'GC_GOAL_BASIS';      // 'rolling' | 'yoy'
 const PP_DAYS                = 14;   // pay-period length in days
 const TARGET_LOOKBACK_MONTHS = 6;    // rolling lookback for target calculation
 const DUTCHIE_BASE          = 'https://api.pos.dutchie.com';
@@ -615,12 +614,16 @@ function applyNickname_(name, nicknames) {
 }
 
 /**
- * Returns the active goal basis: 'rolling' (default) or 'yoy'.
- * 'rolling' = last 12 pay periods; 'yoy' = same seasonal window 52 weeks ago.
+ * Returns which goal set is active for a store: whichever of rolling vs. YoY
+ * produces the higher PP goal. Never lowers the bar.
+ * @param {Object} gr  Rolling goals object for the store
+ * @param {Object} gy  YoY goals object for the store
+ * @returns {'rolling'|'yoy'}
  */
-function getGoalBasis_() {
-  var raw = PropertiesService.getScriptProperties().getProperty(GC_GOAL_BASIS_KEY);
-  return raw === 'yoy' ? 'yoy' : 'rolling';
+function activeGoalSource_(gr, gy) {
+  var rPP = (gr && gr.ppGoal) ? gr.ppGoal : 0;
+  var yPP = (gy && gy.ppGoal) ? gy.ppGoal : 0;
+  return (yPP > rPP) ? 'yoy' : 'rolling';
 }
 
 /**
@@ -947,15 +950,17 @@ function computeAccurateMonthly_(dowAvg, year, month) {
 }
 
 /**
- * Daily revenue goal — uses active goal basis (rolling or YoY) + stretch.
- * Returns today's DOW-specific average.
+ * Daily revenue goal — uses the higher of rolling vs. YoY per store + stretch.
+ * Returns today's DOW-specific average from the winning goal set.
  */
 function getDailyGoal_(slug) {
   var stretch = getStretchMultiplier_();
-  var basis   = getGoalBasis_();
   try {
-    var goals = basis === 'yoy' ? getOrComputeYoYGoals_() : getOrComputeGoals_();
-    var g = goals && goals[slug];
+    var rGoals = getOrComputeGoals_();
+    var yGoals = getOrComputeYoYGoals_();
+    var gr = rGoals && rGoals[slug];
+    var gy = yGoals && yGoals[slug];
+    var g  = (activeGoalSource_(gr, gy) === 'yoy') ? gy : gr;
     if (g && g.dowAvg) {
       var dow  = ptNow_().dow;
       var base = g.dowAvg[dow] || Math.round((g.ppGoal || 0) / PP_DAYS);
@@ -968,13 +973,15 @@ function getDailyGoal_(slug) {
   return 0;
 }
 
-/** Monthly revenue goal — active basis + stretch, exact weekday count for current month. */
+/** Monthly revenue goal — higher of rolling vs. YoY + stretch, exact weekday count for current month. */
 function getMonthlyGoal_(slug) {
   var stretch = getStretchMultiplier_();
-  var basis   = getGoalBasis_();
   try {
-    var goals = basis === 'yoy' ? getOrComputeYoYGoals_() : getOrComputeGoals_();
-    var g = goals && goals[slug];
+    var rGoals = getOrComputeGoals_();
+    var yGoals = getOrComputeYoYGoals_();
+    var gr = rGoals && rGoals[slug];
+    var gy = yGoals && yGoals[slug];
+    var g  = (activeGoalSource_(gr, gy) === 'yoy') ? gy : gr;
     if (g && g.dowAvg) {
       var pt      = ptNow_();
       var monthly = computeAccurateMonthly_(g.dowAvg, pt.year, pt.month);
@@ -987,13 +994,15 @@ function getMonthlyGoal_(slug) {
   return 0;
 }
 
-/** PP revenue target — active basis + stretch. */
+/** PP revenue target — higher of rolling vs. YoY per store + stretch. */
 function getPayPeriodTarget_(slug) {
   var stretch = getStretchMultiplier_();
-  var basis   = getGoalBasis_();
   try {
-    var goals = basis === 'yoy' ? getOrComputeYoYGoals_() : getOrComputeGoals_();
-    var g = goals && goals[slug];
+    var rGoals = getOrComputeGoals_();
+    var yGoals = getOrComputeYoYGoals_();
+    var gr = rGoals && rGoals[slug];
+    var gy = yGoals && yGoals[slug];
+    var g  = (activeGoalSource_(gr, gy) === 'yoy') ? gy : gr;
     return g && g.ppGoal ? Math.round(g.ppGoal * (1 + stretch)) : 0;
   } catch(e) {
     Logger.log('getPayPeriodTarget_ error: ' + e.message);
@@ -2520,7 +2529,6 @@ function getSettings_(params) {
   } catch(e) { Logger.log('getSettings_: yoy load failed: ' + e.message); }
 
   var DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var basis      = getGoalBasis_();
 
   // Flatten roster
   var empMap = {};
@@ -2557,7 +2565,6 @@ function getSettings_(params) {
 
   return {
     ok:               true,
-    basis:            basis,
     stretch:          getStretchMultiplier_(),
     rollingComputedAt: rollingComputedAt,
     yoyComputedAt:    yoyComputedAt,
@@ -2569,13 +2576,14 @@ function getSettings_(params) {
     goals:            STORES.map(function(s) {
       var gr = rollingGoals[s.slug] || {};
       var gy = yoyGoals[s.slug]    || {};
+      var src = activeGoalSource_(gr, gy);   // 'rolling' | 'yoy'
       return {
-        slug:    s.slug,
-        name:    s.name,
-        rolling: buildGoalRow(gr, null),
-        yoy:     buildGoalRow(gy, gr),
-        // active = whichever basis is selected
-        active:  buildGoalRow(basis === 'yoy' ? gy : gr, null),
+        slug:         s.slug,
+        name:         s.name,
+        rolling:      buildGoalRow(gr, null),
+        yoy:          buildGoalRow(gy, gr),
+        active:       buildGoalRow(src === 'yoy' ? gy : gr, null),
+        activeSource: src,
       };
     }),
     nicknames:        nicknames,
@@ -2604,13 +2612,6 @@ function saveSettings_(params) {
     s = Math.max(0, Math.min(0.05, s));
     props.setProperty(GC_STRETCH_KEY, String(s));
     Logger.log('[stretch] saved: ' + (s * 100).toFixed(1) + '%');
-  }
-
-  // Save goal basis
-  if (params.basis !== undefined) {
-    var b = params.basis === 'yoy' ? 'yoy' : 'rolling';
-    props.setProperty(GC_GOAL_BASIS_KEY, b);
-    Logger.log('[basis] saved: ' + b);
   }
 
   return { ok: true };
