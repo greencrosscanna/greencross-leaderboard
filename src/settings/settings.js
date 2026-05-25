@@ -145,8 +145,8 @@ var settings = (function() {
       var rStyle = src === 'rolling' ? ' class="settings-active-col"' : ' class="settings-dim"';
       var yStyle = src === 'yoy'     ? ' class="settings-active-col"' : ' class="settings-dim"';
       var baselineCell = '<td class="settings-baseline-cell">'
-        + '<div' + rStyle + ' data-base-pp="' + rBase + '">' + rFmt + '</div>'
-        + '<div' + yStyle + ' data-base-pp="' + yBase + '">' + (yBase ? yFmt : '<span class="settings-dim">—</span>') + '</div>'
+        + '<div' + rStyle + ' data-base-pp="' + rBase + '"><span class="settings-baseline-label">R</span>' + rFmt + '</div>'
+        + '<div' + yStyle + ' data-base-pp="' + yBase + '"><span class="settings-baseline-label">Y</span>' + (yBase ? yFmt : '<span class="settings-dim">—</span>') + '</div>'
         + '</td>';
 
       // Goal PP input — pre-filled with effectivePP (manual if set, else computed active × stretch)
@@ -190,7 +190,7 @@ var settings = (function() {
       + '<table class="settings-table settings-goals-table" id="goalsTable">'
       + '<thead><tr>'
       +   '<th>Store</th>'
-      +   '<th title="R = Rolling 12-PP avg · Y = YoY same-season · Green = prevailing">Baseline (R / Y)</th>'
+      +   '<th title="R = Rolling 12-PP avg · Y = YoY same-season · Green = prevailing">Baseline</th>'
       +   '<th title="Active goal — edit to override">Goal PP</th>'
       +   '<th>Monthly</th>'
       +   '<th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th>'
