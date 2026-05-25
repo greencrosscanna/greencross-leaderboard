@@ -656,6 +656,9 @@ function getOrComputeGoals_(forceRecompute) {
     var toMs   = fromMs + PP_MS - 1;
     ranges.push({ fromUTC: new Date(fromMs).toISOString(), toUTC: new Date(toMs).toISOString() });
   }
+  // Report range: oldest PP start → newest completed PP end
+  var reportFromStr = Utilities.formatDate(new Date(ppStartMs - 12 * PP_MS), STORE_TZ, 'yyyy-MM-dd');
+  var reportToStr   = Utilities.formatDate(new Date(ppStartMs - 1), STORE_TZ, 'yyyy-MM-dd');
 
   // 72 parallel requests (12 PP ranges × 6 stores)
   Logger.log('[goals] Firing ' + (ranges.length * STORES.length) + ' parallel requests…');
@@ -722,9 +725,11 @@ function getOrComputeGoals_(forceRecompute) {
 
   // Persist to ScriptProperties
   props.setProperty(GC_GOALS_CACHE_KEY, JSON.stringify({
-    ppStart:    ppStartStr,
-    computedAt: new Date().toISOString(),
-    goals:      goals,
+    ppStart:     ppStartStr,
+    computedAt:  new Date().toISOString(),
+    reportFrom:  reportFromStr,
+    reportTo:    reportToStr,
+    goals:       goals,
   }));
   _goalsCache_ = goals;
   return goals;
@@ -2282,13 +2287,17 @@ function getSettings_(params) {
 
   // Load computed goals (lazy, cached for PP)
   var goals = {};
-  var computedAt = null;
+  var computedAt  = null;
+  var reportFrom  = null;
+  var reportTo    = null;
   try {
     goals = getOrComputeGoals_();
     var props = PropertiesService.getScriptProperties();
     var cacheMeta = {};
     try { cacheMeta = JSON.parse(props.getProperty(GC_GOALS_CACHE_KEY) || '{}'); } catch(e) {}
-    computedAt = cacheMeta.computedAt || null;
+    computedAt = cacheMeta.computedAt  || null;
+    reportFrom = cacheMeta.reportFrom  || null;
+    reportTo   = cacheMeta.reportTo    || null;
   } catch(e) {
     Logger.log('getSettings_: goal load failed: ' + e.message);
   }
@@ -2313,6 +2322,8 @@ function getSettings_(params) {
   return {
     ok:         true,
     computedAt: computedAt,
+    reportFrom: reportFrom,
+    reportTo:   reportTo,
     dowLabels:  DOW_LABELS,
     goals:      STORES.map(function(s) {
       var g = goals[s.slug] || {};

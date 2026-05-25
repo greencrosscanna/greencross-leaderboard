@@ -58,14 +58,22 @@ var settings = (function() {
   }
 
   // ── Goals section (auto-computed, read-only) ───────────────
-  function renderGoalsSection(goals, computedAt) {
+  function renderGoalsSection(goals, computedAt, reportFrom, reportTo) {
     var DOW_ORDER = [1,2,3,4,5,6,0]; // Mon first
     var DOW_LABELS = {0:'Sun',1:'Mon',2:'Tue',3:'Wed',4:'Thu',5:'Fri',6:'Sat'};
 
     function fmtDate(iso) {
       if (!iso) return '—';
-      var d = new Date(iso);
-      return (d.getMonth()+1) + '/' + d.getDate() + '/' + String(d.getFullYear()).slice(2);
+      // Accept both ISO timestamps and YYYY-MM-DD strings
+      var s = String(iso).slice(0, 10); // take YYYY-MM-DD portion
+      var parts = s.split('-');
+      if (parts.length !== 3) return iso;
+      return parts[1].replace(/^0/, '') + '-' + parts[2].replace(/^0/, '') + '-' + parts[0].slice(2);
+    }
+
+    function fmtDow(val) {
+      if (!val) return '—';
+      return '$' + Math.round(val).toLocaleString('en-US');
     }
 
     var rows = (goals || []).map(function(g) {
@@ -73,7 +81,7 @@ var settings = (function() {
         var val = g.dowAvg && g.dowAvg[d] ? g.dowAvg[d] : 0;
         return '<td class="settings-dow-cell">'
           + '<div class="settings-dow-lbl">' + DOW_LABELS[d] + '</div>'
-          + '<div class="settings-dow-val">' + (val ? '$' + Math.round(val/1000) + 'k' : '—') + '</div>'
+          + '<div class="settings-dow-val">' + fmtDow(val) + '</div>'
           + '</td>';
       }).join('');
       return '<tr>'
@@ -87,8 +95,11 @@ var settings = (function() {
         + '</tr>';
     }).join('');
 
+    var rangeStr = (reportFrom && reportTo)
+      ? 'Report range: ' + fmtDate(reportFrom) + ' to ' + fmtDate(reportTo) + ' · '
+      : '';
     var metaLine = computedAt
-      ? 'Computed ' + fmtDate(computedAt) + ' · Updates at each new pay period'
+      ? rangeStr + 'Computed ' + fmtDate(computedAt) + ' · Updates at each new pay period'
       : 'Not yet computed — click Recalculate to fetch from Dutchie';
 
     return '<div class="settings-card" id="goalsCard">'
@@ -154,7 +165,7 @@ var settings = (function() {
     return '<div class="app-page settings-page">'
       + renderHeader()
       + '<div class="settings-body">'
-      +   renderGoalsSection(data.goals, data.computedAt)
+      +   renderGoalsSection(data.goals, data.computedAt, data.reportFrom, data.reportTo)
       +   renderNicknames(data.employees, data.nicknames)
       + '</div>'
       + '</div>';
