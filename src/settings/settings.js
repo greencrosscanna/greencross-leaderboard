@@ -219,17 +219,15 @@ var settings = (function() {
       var nameParts = (emp.name || '').split(' ');
       var initials  = (nameParts[0] || '').slice(0, 1)
                     + (nameParts.length > 1 ? nameParts[nameParts.length - 1].slice(0, 1) : '');
-      var puck     = GC.lbAvaPuck(emp.key, config, initials || '??', false);
+      var puck     = GC.lbAvaPuck(emp.key, config, initials || '??', true);
       var encKey   = e(emp.key);
       return '<tr>'
-        + '<td class="settings-emp-ava">' + puck + '</td>'
+        + '<td class="settings-emp-ava" title="Click to edit avatar">' + puck + '</td>'
         + '<td class="settings-emp-name">' + e(emp.name) + '</td>'
         + '<td><input class="settings-input settings-nick-input"'
         +   ' type="text" data-key="' + encKey + '"'
         +   ' value="' + e(nick) + '" placeholder="Nickname"></td>'
         + '<td class="settings-emp-store">' + e(emp.store) + '</td>'
-        + '<td><a class="settings-ava-edit" href="#/avatar?employee=' + encKey + '"'
-        + ' onclick="event.preventDefault();GC.navToAvatar(\'' + encKey + '\')">Avatar →</a></td>'
         + '</tr>';
     }).join('');
 
@@ -242,7 +240,7 @@ var settings = (function() {
       + '</div>'
       + '<table class="settings-table settings-emp-table" id="nickTable">'
       + '<thead><tr>'
-      +   '<th></th><th>Dutchie Name</th><th>Nickname</th><th>Store</th><th></th>'
+      +   '<th></th><th>Dutchie Name</th><th>Nickname</th><th>Store</th>'
       + '</tr></thead>'
       + '<tbody>' + rows + '</tbody>'
       + '</table>'
