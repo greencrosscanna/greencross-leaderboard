@@ -1204,7 +1204,7 @@ function getDailyGoals_() {
     }
     result[s.locationName] = { monthly: getMonthlyGoal_(s.slug), dow: dow };
   });
-  return { month: MONTHS[pt.month - 1], year: pt.year, stores: result };
+  return { month: MONTHS[pt.month], year: pt.year, stores: result };  // pt.month is 0-indexed
 }
 
 /**
