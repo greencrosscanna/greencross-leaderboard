@@ -1783,9 +1783,11 @@ function getDirectorStores(params, pre) {
 
     // Tags: top / watch / flag (mutually exclusive, escalating severity)
     const tags = [];
-    if (vsplan >  0.05) tags.push('top');
-    else if (vsplan < -0.08) tags.push('flag');   // ≥8% behind plan → flag
-    else if (vsplan <  0)    tags.push('watch');  // any behind plan  → watch
+    const tagTooltips = [];
+    const vsplanPct = Math.abs(Math.round(vsplan * 100));
+    if (vsplan >  0.05) { tags.push('top');  tagTooltips.push('+' + vsplanPct + '% over plan MTD'); }
+    else if (vsplan < -0.08) { tags.push('flag');  tagTooltips.push(vsplanPct + '% behind plan MTD'); }
+    else if (vsplan <  0)    { tags.push('watch'); tagTooltips.push(vsplanPct + '% behind plan MTD'); }
 
     return {
       slug:          store.slug,
@@ -1802,6 +1804,7 @@ function getDirectorStores(params, pre) {
       discountRate:  agg.discountRate,
       ...trendFromByDay_(byStore30d ? aggregateByDay_(byStore30d[store.slug] || []) : {}),
       tags:          tags,
+      tagTooltips:   tagTooltips,
       today:         { revenue: aggToday.sales, goal: dailyGoal, pace: todayPace, pctToGoal: dailyGoal > 0 ? r3_(aggToday.sales / dailyGoal) : 0 },
       flagCount:     flaggedEmps.length,
     };
@@ -1878,8 +1881,10 @@ function getDirectorStaff(params, pre) {
     const trend  = trendFromByDay_(empDailyBuckets[empKey] || {});
 
     const tags = [];
-    if      (disc > DISCOUNT_WATCH_THRESHOLD) tags.push('flag');   // >8%       → flag (serious)
-    else if (disc > DISCOUNT_FLAG_THRESHOLD)  tags.push('watch');  // 6.5–8%   → watch (mild)
+    const staffTagTooltips = [];
+    const discPct = Math.round(disc * 1000) / 10;  // e.g. 0.082 → 8.2
+    if      (disc > DISCOUNT_WATCH_THRESHOLD) { tags.push('flag');  staffTagTooltips.push(discPct + '% avg discount — above 8% threshold'); }
+    else if (disc > DISCOUNT_FLAG_THRESHOLD)  { tags.push('watch'); staffTagTooltips.push(discPct + '% avg discount — above 6.5% threshold'); }
 
     return {
       initials:      emp.initials,
@@ -1897,6 +1902,7 @@ function getDirectorStaff(params, pre) {
       trendPct:      trend.trendPct,
       trend30d:      trend.trend30d,
       tags:          tags,
+      tagTooltips:   staffTagTooltips,
     };
   });
 

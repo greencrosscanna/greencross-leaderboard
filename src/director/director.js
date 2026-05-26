@@ -103,12 +103,13 @@ var director = (function() {
     return '<span class="store-dot ' + e(slug) + '"></span>';
   }
 
-  function tagsHtml(tags, tagLabels) {
+  function tagsHtml(tags, tagLabels, tagTooltips) {
     if (!tags || !tags.length) return '';
     var labels = tagLabels || tags;
     return '<span class="tags">'
       + tags.map(function(t, i) {
-          return '<span class="tag ' + e(t) + '">' + e(labels[i] || t) + '</span>';
+          var tip = tagTooltips && tagTooltips[i] ? ' data-tip="' + e(tagTooltips[i]) + '"' : '';
+          return '<span class="tag ' + e(t) + '"' + tip + '>' + e(labels[i] || t) + '</span>';
         }).join('')
       + '</span>';
   }
@@ -327,6 +328,7 @@ var director = (function() {
     var rows = stores.map(function(s) {
       var rpClass = GC.rankPillClass(s.rank, total);
       var tLabels = s.tagLabels || s.tags;
+      var tTips   = s.tagTooltips || [];
       return '<tr data-slug="' + e(s.slug) + '">'
         + '<td>' + rankPillHtml(s.rank, total) + '</td>'
         + '<td><div class="store-cell">'
@@ -345,7 +347,7 @@ var director = (function() {
         + '<td class="num">' + e(GC.fmtDecimal(s.avgUPT)) + '</td>'
         + '<td>' + discountCell(s.discountRate) + '</td>'
         + '<td>' + sparklineSvg(s.trend30d, s.trendPct) + '</td>'
-        + '<td>' + tagsHtml(s.tags, tLabels) + '</td>'
+        + '<td>' + tagsHtml(s.tags, tLabels, tTips) + '</td>'
         + '</tr>';
     }).join('');
 
@@ -378,15 +380,16 @@ var director = (function() {
     var total    = staff.length;  // rank pill relative to full list
 
     var rows = filtered.map(function(s) {
-      var isNew = GC.isNewHire(s.hireDate);
-      var tags  = s.tags.slice();
-      if (isNew && tags.indexOf('new') === -1) tags.push('new');
+      var isNew  = GC.isNewHire(s.hireDate);
+      var tags   = s.tags.slice();
+      var sTips  = (s.tagTooltips || []).slice();
+      if (isNew && tags.indexOf('new') === -1) { tags.push('new'); sTips.push('Recently hired'); }
       return '<tr data-employee="' + e(s.id) + '">'
         + '<td>' + rankPillHtml(s.rank, total) + '</td>'
         + '<td><div class="who">'
           + avatarHtml(s.initials, null, s.name)
           + '<div>'
-          + '<div class="who-name">' + e(s.name) + tagsHtml(tags) + '</div>'
+          + '<div class="who-name">' + e(s.name) + tagsHtml(tags, null, sTips) + '</div>'
           + '<div class="who-sub">' + e(s.hoursWorked) + 'h this PP</div>'
           + '</div></div></td>'
         + '<td><div class="store-cell">'
@@ -681,14 +684,15 @@ var director = (function() {
     var maxSales = filtered.length ? filtered[0].sales : 1;
     var total    = staff.length;
     tbody.innerHTML = filtered.map(function(s) {
-      var isNew = GC.isNewHire(s.hireDate);
-      var tags  = s.tags.slice();
-      if (isNew && tags.indexOf('new') === -1) tags.push('new');
+      var isNew  = GC.isNewHire(s.hireDate);
+      var tags   = s.tags.slice();
+      var sTips  = (s.tagTooltips || []).slice();
+      if (isNew && tags.indexOf('new') === -1) { tags.push('new'); sTips.push('Recently hired'); }
       return '<tr data-employee="' + e(s.id) + '">'
         + '<td>' + rankPillHtml(s.rank, total) + '</td>'
         + '<td><div class="who">'
           + avatarHtml(s.initials, null, s.name)
-          + '<div><div class="who-name">' + e(s.name) + tagsHtml(tags) + '</div>'
+          + '<div><div class="who-name">' + e(s.name) + tagsHtml(tags, null, sTips) + '</div>'
           + '<div class="who-sub">' + e(s.hoursWorked) + 'h this PP</div>'
           + '</div></div></td>'
         + '<td><div class="store-cell">' + storeDotHtml(s.storeSlug) + '<span>' + e(s.storeName) + '</span></div></td>'
@@ -898,14 +902,15 @@ var director = (function() {
     var total    = staff.length;
 
     tbody.innerHTML = filtered.map(function(s) {
-      var isNew = GC.isNewHire(s.hireDate);
-      var tags  = s.tags.slice();
-      if (isNew && tags.indexOf('new') === -1) tags.push('new');
+      var isNew  = GC.isNewHire(s.hireDate);
+      var tags   = s.tags.slice();
+      var sTips  = (s.tagTooltips || []).slice();
+      if (isNew && tags.indexOf('new') === -1) { tags.push('new'); sTips.push('Recently hired'); }
       return '<tr data-employee="' + e(s.id) + '">'
         + '<td>' + rankPillHtml(s.rank, total) + '</td>'
         + '<td><div class="who">'
           + avatarHtml(s.initials, null, s.name)
-          + '<div><div class="who-name">' + e(s.name) + tagsHtml(tags) + '</div>'
+          + '<div><div class="who-name">' + e(s.name) + tagsHtml(tags, null, sTips) + '</div>'
           + '<div class="who-sub">' + e(s.hoursWorked) + 'h this PP</div>'
           + '</div></div></td>'
         + '<td><div class="store-cell">' + storeDotHtml(s.storeSlug) + '<span>' + e(s.storeName) + '</span></div></td>'
