@@ -215,7 +215,11 @@ var settings = (function() {
     avatarConfigs = avatarConfigs || {};
     var rows = (employees || []).map(function(emp) {
       var nick     = nicknames[emp.key] || '';
-      var config   = avatarConfigs[emp.key] || null;
+      // Avatar configs may be keyed by first-name only (from kiosk/Dutchie display name)
+      // while the roster key uses the full name. Try full key first, then first segment.
+      var config   = avatarConfigs[emp.key]
+                  || avatarConfigs[emp.key.split('_')[0]]
+                  || null;
       var nameParts = (emp.name || '').split(' ');
       var initials  = (nameParts[0] || '').slice(0, 1)
                     + (nameParts.length > 1 ? nameParts[nameParts.length - 1].slice(0, 1) : '');

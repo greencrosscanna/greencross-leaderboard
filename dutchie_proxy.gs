@@ -2681,7 +2681,7 @@ function getSettings_(params) {
     nicknames:        nicknames,
     employees:        employees,
     manualGoals:      getManualPPGoals_(),
-    avatarConfigs:    getAvatarConfigs_(),
+    avatarConfigs:    resolveAvatarConfigs_(employees, getAvatarConfigs_()),
   };
 }
 
@@ -2708,6 +2708,23 @@ function saveManualGoals_(params) {
 }
 
 /** Returns the full avatar config map { nameKey: configObject }. */
+/**
+ * Resolves avatarConfigs against a roster employee list.
+ * Dutchie transaction data often uses first-name-only display names (e.g. "Sunshine"),
+ * so configs may be stored under "sunshine" while the roster key is "sunshine_morales".
+ * For each roster employee, falls back to the first-name segment if the full key misses.
+ * Returns a new map keyed by roster emp.key so callers can do a direct lookup.
+ */
+function resolveAvatarConfigs_(employees, rawConfigs) {
+  var resolved = {};
+  (employees || []).forEach(function(emp) {
+    var key  = emp.key;
+    var cfg  = rawConfigs[key] || rawConfigs[key.split('_')[0]] || null;
+    if (cfg) resolved[key] = cfg;
+  });
+  return resolved;
+}
+
 function getAvatarConfigs_() {
   var raw = PropertiesService.getScriptProperties().getProperty(GC_AVATAR_CONFIGS_KEY);
   if (!raw) return {};
