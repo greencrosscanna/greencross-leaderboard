@@ -100,6 +100,18 @@ function ptHourNow_() {
 const DISCOUNT_FLAG_THRESHOLD  = 0.065;
 const DISCOUNT_WATCH_THRESHOLD = 0.080;
 
+// Discount names to exclude from the staff discount-rate calculation.
+// These are applied by the store system (loyalty, promos) — not by the budtender.
+// Case-insensitive substring match against tx.discounts[].discountName.
+const EXCLUDED_DISCOUNT_KEYWORDS = [
+  'loyalty',
+  'points',
+  'reward',
+  'member',
+  'alpine',   // Alpine IQ loyalty
+  'springbig',
+];
+
 // Canonical store list — slugs must match src/fixtures/ filenames
 // and the frontend GC.STORES registry in utils.js.
 // dutchieName = the key used in DUTCHIE_STORE_KEYS_JSON ScriptProperty.
@@ -1458,6 +1470,24 @@ function txNet_(tx)      { return Number(tx.totalBeforeTax || tx.subtotal || tx.
 function txTotal_(tx)    { return txNet_(tx); }   // alias — all revenue uses net
 function txSubtotal_(tx) { return txNet_(tx) + txDiscount_(tx); }  // gross = net + discounts
 function txDiscount_(tx) { return Number(tx.totalDiscount  || tx.discountTotal || 0); }
+
+/**
+ * Returns only the portion of the discount that counts against a budtender —
+ * i.e. total discount minus any system-applied discounts (loyalty, points, etc.).
+ * Used for discount-rate flagging; revenue calculations still use txDiscount_().
+ */
+function txDiscountBudtender_(tx) {
+  var discountList = tx.discounts || [];
+  if (!discountList.length) return txDiscount_(tx);  // no detail → use total
+  var excluded = 0;
+  discountList.forEach(function(d) {
+    var name = (d.discountName || d.discountReason || '').toLowerCase();
+    if (EXCLUDED_DISCOUNT_KEYWORDS.some(function(kw) { return name.indexOf(kw) !== -1; })) {
+      excluded += Number(d.amount || 0);
+    }
+  });
+  return Math.max(0, txDiscount_(tx) - excluded);
+}
 function txItems_(tx) {
   // Count distinct line items (SKUs) — cannabis sells flower by weight (3.5g, 7g)
   // so summing li.quantity gives fractional UPT like 7.5. Each SKU = 1 unit.
@@ -1475,6 +1505,7 @@ function aggregateTransactions_(txns) {
     const sales    = txTotal_(tx);
     const sub      = txSubtotal_(tx);
     const disc     = txDiscount_(tx);
+    const discBdt  = txDiscountBudtender_(tx);  // excludes loyalty/system discounts
     const items    = txItems_(tx);
     const emp      = txEmployee_(tx);
     const empKey   = emp.name.toLowerCase().replace(/\s+/g, '_');
@@ -1490,7 +1521,7 @@ function aggregateTransactions_(txns) {
         name:         emp.name,
         initials:     emp.initials,
         sales:        0, transactions: 0,
-        items:        0, discounts:    0, subtotal: 0,
+        items:        0, discounts:    0, discountsBdt: 0, subtotal: 0,
       };
     }
     const e = byEmployee[empKey];
@@ -1498,16 +1529,17 @@ function aggregateTransactions_(txns) {
     e.transactions += 1;
     e.items        += items;
     e.discounts    += disc;
+    e.discountsBdt += discBdt;
     e.subtotal     += sub;
   });
 
   const count = txns.length;
 
-  // Derive per-employee metrics
+  // Derive per-employee metrics — discount rate uses budtender-only discounts
   Object.values(byEmployee).forEach(function(e) {
     e.avgOrderValue = e.transactions > 0 ? r2_(e.sales / e.transactions) : 0;
     e.avgUPT        = e.transactions > 0 ? r1_(e.items / e.transactions) : 0;
-    e.discountRate  = e.subtotal     > 0 ? r3_(e.discounts / e.subtotal) : 0;
+    e.discountRate  = e.subtotal     > 0 ? r3_(e.discountsBdt / e.subtotal) : 0;
   });
 
   return {
