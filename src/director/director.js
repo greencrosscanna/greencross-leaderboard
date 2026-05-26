@@ -174,6 +174,19 @@ var director = (function() {
     }, 400);
   }
 
+  // ── AOV zone: ±5% vs. group average ─────────────────────
+  var AOV_TOLERANCE = 0.05;
+  function avgOf(arr, key) {
+    var vals = arr.map(function(x) { return x[key] || 0; }).filter(Boolean);
+    return vals.length ? vals.reduce(function(a, b) { return a + b; }, 0) / vals.length : 0;
+  }
+  function aovClass(aov, avg) {
+    if (!avg || !aov) return '';
+    if (aov > avg * (1 + AOV_TOLERANCE)) return ' v-green';
+    if (aov < avg * (1 - AOV_TOLERANCE)) return ' v-red';
+    return '';
+  }
+
   // ── Render: Loading ────────────────────────────────────
   function renderLoading() {
     return '<div class="app-page">'
@@ -323,7 +336,8 @@ var director = (function() {
 
   // ── Render: Store Leaderboard Table ───────────────────
   function renderStoreTable(stores, range) {
-    var total = stores.length;
+    var total  = stores.length;
+    var avgAov = avgOf(stores, 'avgOrderValue');
 
     var rows = stores.map(function(s) {
       var rpClass = GC.rankPillClass(s.rank, total);
@@ -342,7 +356,7 @@ var director = (function() {
         + '<td>' + salesBarHtml(s.sales, s.vsplan) + '</td>'
         + '<td>' + vsPlanHtml(s.vsplan) + '</td>'
         + '<td class="num">' + e(GC.fmtNum(s.transactions)) + '</td>'
-        + '<td class="num' + (s.avgOrderValue > 79 ? ' v-green' : s.avgOrderValue < 74 ? ' v-red' : '') + '">'
+        + '<td class="num' + aovClass(s.avgOrderValue, avgAov) + '">'
           + e(GC.fmtCurrency(s.avgOrderValue)) + '</td>'
         + '<td class="num">' + e(GC.fmtDecimal(s.avgUPT)) + '</td>'
         + '<td>' + discountCell(s.discountRate) + '</td>'
@@ -378,6 +392,7 @@ var director = (function() {
     var filtered = applyStaffFilters(staff);
     var maxSales = filtered.length ? filtered[0].sales : 1;
     var total    = staff.length;  // rank pill relative to full list
+    var avgAov   = avgOf(filtered, 'avgOrderValue');
 
     var rows = filtered.map(function(s) {
       var isNew  = GC.isNewHire(s.hireDate);
@@ -399,7 +414,7 @@ var director = (function() {
         + '<td>' + e(s.roleLabel) + '</td>'
         + '<td class="num">' + e(GC.fmtCurrency(s.sales)) + '</td>'
         + '<td class="num">' + e(GC.fmtNum(s.transactions)) + '</td>'
-        + '<td class="num' + (s.avgOrderValue > 80 ? ' v-green' : '') + '">'
+        + '<td class="num' + aovClass(s.avgOrderValue, avgAov) + '">'
           + e(GC.fmtCurrency(s.avgOrderValue)) + '</td>'
         + '<td class="num' + (s.avgUPT >= 2.6 ? ' v-green' : '') + '">'
           + e(GC.fmtDecimal(s.avgUPT)) + '</td>'
@@ -683,6 +698,7 @@ var director = (function() {
     // Full replace (simple and safe for this data size)
     var maxSales = filtered.length ? filtered[0].sales : 1;
     var total    = staff.length;
+    var avgAov   = avgOf(filtered, 'avgOrderValue');
     tbody.innerHTML = filtered.map(function(s) {
       var isNew  = GC.isNewHire(s.hireDate);
       var tags   = s.tags.slice();
@@ -699,7 +715,7 @@ var director = (function() {
         + '<td>' + e(s.roleLabel) + '</td>'
         + '<td class="num">' + e(GC.fmtCurrency(s.sales)) + '</td>'
         + '<td class="num">' + e(GC.fmtNum(s.transactions)) + '</td>'
-        + '<td class="num' + (s.avgOrderValue > 80 ? ' v-green' : '') + '">' + e(GC.fmtCurrency(s.avgOrderValue)) + '</td>'
+        + '<td class="num' + aovClass(s.avgOrderValue, avgAov) + '">' + e(GC.fmtCurrency(s.avgOrderValue)) + '</td>'
         + '<td class="num' + (s.avgUPT >= 2.6 ? ' v-green' : '') + '">' + e(GC.fmtDecimal(s.avgUPT)) + '</td>'
         + '<td>' + discountCell(s.discountRate) + '</td>'
         + '<td>' + sparklineSvg(s.trend30d, s.trendPct) + '</td>'
@@ -900,6 +916,7 @@ var director = (function() {
     var filtered = applyStaffFilters(staff);
     var maxSales = filtered.length ? filtered[0].sales : 1;
     var total    = staff.length;
+    var avgAov   = avgOf(filtered, 'avgOrderValue');
 
     tbody.innerHTML = filtered.map(function(s) {
       var isNew  = GC.isNewHire(s.hireDate);
@@ -917,7 +934,7 @@ var director = (function() {
         + '<td>' + e(s.roleLabel) + '</td>'
         + '<td class="num">' + e(GC.fmtCurrency(s.sales)) + '</td>'
         + '<td class="num">' + e(GC.fmtNum(s.transactions)) + '</td>'
-        + '<td class="num' + (s.avgOrderValue > 80 ? ' v-green' : '') + '">' + e(GC.fmtCurrency(s.avgOrderValue)) + '</td>'
+        + '<td class="num' + aovClass(s.avgOrderValue, avgAov) + '">' + e(GC.fmtCurrency(s.avgOrderValue)) + '</td>'
         + '<td class="num' + (s.avgUPT >= 2.6 ? ' v-green' : '') + '">' + e(GC.fmtDecimal(s.avgUPT)) + '</td>'
         + '<td>' + discountCell(s.discountRate) + '</td>'
         + '<td>' + sparklineSvg(s.trend30d, s.trendPct) + '</td>'
