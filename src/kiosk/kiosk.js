@@ -111,6 +111,10 @@ var kiosk = (function() {
       + '  <div class="kc-time num" id="kioskTime">—</div>'
       + '  <div class="kc-date" id="kioskDate">—</div>'
       + '</div>'
+      + '<span class="user-chip" id="kioskUserChip" title="Sign out">'
+      +   '<span class="uc-avatar">' + e(sess.initials || '??') + '</span>'
+      +   e(sess.displayName || sess.user || '')
+      + '</span>'
       + '</header>';
   }
 
@@ -858,6 +862,15 @@ var kiosk = (function() {
     updateClosingBanner(data.today.today);
     initConfetti();
     startPolling(slug);
+
+    // User chip → sign out
+    var kioskChip = document.getElementById('kioskUserChip');
+    if (kioskChip) kioskChip.addEventListener('click', function() {
+      if (confirm('Sign out?')) {
+        GC.auth.clear();
+        GC.router.navigate('#/login');
+      }
+    });
 
     // Seed celebration flag — if goal is already hit on load, fire confetti once
     _goalCelebrated = (data.today.today.pctToGoal || 0) >= GC.THRESHOLDS.goalCelebrationAt;
