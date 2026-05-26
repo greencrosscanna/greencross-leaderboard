@@ -57,6 +57,7 @@ var kiosk = (function() {
   var _confettiRunning    = false;
   var _avatarConfigs      = {};   // set in normalize(), used in renderHeader
   var _goalCelebrated    = false;  // true once confetti has fired for today's goal
+  var _bigTxnLastFired  = 0;      // timestamp of last big-txn mini-celebration (throttle)
 
   // ── Helpers ────────────────────────────────────────────
   function e(s) { return GC.esc(String(s)); }
@@ -1055,9 +1056,12 @@ var kiosk = (function() {
         leaderAmtEl.classList.add('pulse-once');
       }
 
-      // Trigger rare-drop overlay for high-value transactions
-      if ((t.price || 0) >= GC.THRESHOLDS.rareDropMinTransaction) {
-        showRareDrop(t.who || '', t.item || '', t.price || 0);
+      // Trigger celebration overlays for high-value transactions
+      var txnPrice = t.price || 0;
+      if (txnPrice >= GC.THRESHOLDS.rareDropMinTransaction) {
+        showRareDrop(t.who || '', t.item || '', txnPrice);
+      } else if (txnPrice >= GC.THRESHOLDS.bigTransactionMin) {
+        fireBigTxnCelebration(t.who || '', txnPrice);
       }
     });
 
@@ -1394,6 +1398,41 @@ var kiosk = (function() {
           console.warn('[kiosk] leaderboard refresh failed:', err);
         });
     }, 5 * 60 * 1000);
+  }
+
+  // ── Big-transaction mini celebration ───────────────────
+  // Fires for transactions >= $100 (below the rare-drop threshold).
+  // Throttled to once every 8 seconds so rapid multi-item rings don't stack.
+  function fireBigTxnCelebration(who, price) {
+    var now = Date.now();
+    if (now - _bigTxnLastFired < 8000) return;
+    _bigTxnLastFired = now;
+
+    // Small confetti burst (~55 particles, spread along bottom third)
+    var cv = document.getElementById('kioskConfetti');
+    if (cv) {
+      var cx = window.innerWidth  / 2;
+      var cy = window.innerHeight * 0.72;
+      for (var i = 0; i < 55; i++) {
+        _confettiParticles.push({
+          x:       cx + (Math.random() - 0.5) * 200,
+          y:       cy,
+          vx:      (Math.random() - 0.5) * 8,
+          vy:      -Math.random() * 9 - 3,
+          size:    Math.random() * 5 + 2,
+          color:   CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+          rot:     Math.random() * Math.PI * 2,
+          vrot:    (Math.random() - 0.5) * 0.28,
+          life:    0,
+          maxLife: 100 + Math.random() * 50,
+        });
+      }
+    }
+
+    // Toast banner naming the employee and amount
+    var label = who ? who.split(' ')[0] + ' — ' + fmtDollars(price) + '! 🎉'
+                    : fmtDollars(price) + ' sale! 🎉';
+    GC.toast(label, 'success', 3200);
   }
 
   // ── Rare drop ──────────────────────────────────────────

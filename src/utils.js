@@ -23,6 +23,7 @@ GC.STORE_SLUGS = Object.keys(GC.STORES);
 GC.THRESHOLDS = {
   discountWatch:            0.065,   // 6.5% — flag for discount watch panel
   discountUnusual:          0.15,    // 15% — per-transaction line flag
+  bigTransactionMin:        100,     // $ — mini celebration trigger
   rareDropMinTransaction:   400,     // $ — celebration trigger
   rareDropMinLineItem:      300,     // $ — alt trigger (single SKU line)
   rareDropMaxPerShift:      3,       // throttle rare drops per shift
