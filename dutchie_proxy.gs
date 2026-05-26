@@ -144,6 +144,11 @@ function doGet(e) {
     if (params.action === 'ping') {
       return jsonOut({ ok: true, ts: new Date().toISOString() }, params.callback);
     }
+    // Public: computed daily + monthly goals for all stores, keyed by Sales Dashboard names.
+    // No auth required — consumed by greencross-dashboard for the current pay period.
+    if (params.action === 'getdailygoals') {
+      return jsonOut(getDailyGoals_(), params.callback);
+    }
 
     // ── One-time API key bootstrap (only works if key not yet set) ─
     if (params.action === 'initapikey') {
@@ -1169,6 +1174,37 @@ function getMonthlyGoal_(slug) {
   if (plan.monthly) return Math.round(plan.monthly * (1 + stretch));
   if (plan.daily)   return Math.round(plan.daily * 30.4 * (1 + stretch));
   return 0;
+}
+
+/**
+ * Public endpoint payload — computed daily goals (all 7 DOWs, 0=Sun) and monthly goal
+ * for every store, keyed by the Sales Dashboard's budget-sheet store names (locationName).
+ * Uses the same resolveGoal_() logic as the kiosk / leaderboard.
+ */
+function getDailyGoals_() {
+  var pt       = ptNow_();
+  var MONTHS   = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var result   = {};
+  STORES.forEach(function(s) {
+    var res     = resolveGoal_(s.slug);
+    var g       = res.g;
+    var stretch = res.stretch;
+    var dow     = [];
+    for (var d = 0; d <= 6; d++) {
+      if (g && g.dowAvg) {
+        var base = g.dowAvg[d] || Math.round((g.ppGoal || 0) / PP_DAYS);
+        dow.push(Math.round(base * (1 + stretch)));
+      } else {
+        var plan  = (getStorePlans_())[s.slug] || {};
+        var daily = plan.daily   ? Math.round(plan.daily   * (1 + stretch))
+                  : plan.monthly ? Math.round(plan.monthly / 30.4 * (1 + stretch))
+                  : 0;
+        dow.push(daily);
+      }
+    }
+    result[s.locationName] = { monthly: getMonthlyGoal_(s.slug), dow: dow };
+  });
+  return { month: MONTHS[pt.month - 1], year: pt.year, stores: result };
 }
 
 /**
