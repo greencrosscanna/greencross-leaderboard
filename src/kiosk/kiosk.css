@@ -811,6 +811,14 @@ body.kiosk-bg {
   border-left-color: var(--yellow);
   animation: kiosk-slide-in 0.45s ease-out;
 }
+.ticker-item--big {
+  border-color: var(--amber);
+  border-left-color: var(--amber);
+}
+.ticker-item--big .t-amt {
+  color: var(--amber);
+  font-weight: 700;
+}
 @keyframes kiosk-slide-in {
   from { transform: translateY(-10px); opacity: 0; }
   to   { transform: translateY(0);     opacity: 1; }

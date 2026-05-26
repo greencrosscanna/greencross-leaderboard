@@ -717,7 +717,8 @@ var kiosk = (function() {
   // ── Render: Live ticker ────────────────────────────────
   function renderTicker(items) {
     var rows = (items || []).map(function(t) {
-      return '<div class="ticker-item">'
+      var big = (t.amount || 0) >= GC.THRESHOLDS.bigTransactionMin;
+      return '<div class="ticker-item' + (big ? ' ticker-item--big' : '') + '">'
         + '<span class="t-time">' + e(t.time) + '</span>'
         + '<span class="t-who"><span class="t-who-name">' + e(t.firstName || '') + '</span>'
         +                        '<span class="t-who-init">' + e(nameToInitials(t.firstName)) + '</span></span>'
@@ -1051,8 +1052,9 @@ var kiosk = (function() {
 
       var qty     = t.qty || 0;
       var qtyStr  = qty > 0 ? (qty + (qty === 1 ? ' item' : ' items')) : '';
+      var big = (t.price || 0) >= GC.THRESHOLDS.bigTransactionMin;
       var el = document.createElement('div');
-      el.className = 'ticker-item fresh';
+      el.className = 'ticker-item fresh' + (big ? ' ticker-item--big' : '');
       el.innerHTML = '<span class="t-time">' + GC.esc(fmtTxnTime(t.ts)) + '</span>'
         + '<span class="t-who"><span class="t-who-name">' + GC.esc(t.who || '') + '</span>'
         +                     '<span class="t-who-init">' + GC.esc(nameToInitials(t.who || '')) + '</span></span>'
