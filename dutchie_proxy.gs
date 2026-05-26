@@ -962,9 +962,10 @@ function getOrComputeYoYGoals_(forceRecompute) {
   }
 
   // Equivalent base: 52 weeks (364 days) ago — preserves day-of-week alignment
-  var YEAR_MS    = 364 * 24 * 60 * 60 * 1000;
-  var yoyBaseMs  = ppStartMs - YEAR_MS;        // 1 year ago
-  var yoy2BaseMs = ppStartMs - 2 * YEAR_MS;   // 2 years ago (for realized growth rate)
+  var YEAR_MS         = 364 * 24 * 60 * 60 * 1000;
+  var HALF_YEAR_MS    = 182 * 24 * 60 * 60 * 1000; // 26 weeks — Y2 lookback
+  var yoyBaseMs       = ppStartMs - YEAR_MS;         // Y1: 1 year ago
+  var yoy2BaseMs      = yoyBaseMs - HALF_YEAR_MS;    // Y2: 6 months before Y1 (~18 months ago)
 
   // 6 bi-weekly windows around each anchor (−3 to +2 PPs)
   var ranges = [];   // year-ago windows
@@ -979,9 +980,13 @@ function getOrComputeYoYGoals_(forceRecompute) {
   var yoyFrom = Utilities.formatDate(new Date(yoyBaseMs - 3 * PP_MS), STORE_TZ, 'yyyy-MM-dd');
   var yoyTo   = Utilities.formatDate(new Date(yoyBaseMs + 3 * PP_MS - 1), STORE_TZ, 'yyyy-MM-dd');
 
-  Logger.log('[yoy] Computing YoY goals for PP ' + ppStartStr + ' (window: ' + yoyFrom + ' – ' + yoyTo + ')…');
+  var yoy2From = Utilities.formatDate(new Date(yoy2BaseMs - 3 * PP_MS), STORE_TZ, 'yyyy-MM-dd');
+  var yoy2To   = Utilities.formatDate(new Date(yoy2BaseMs + 3 * PP_MS - 1), STORE_TZ, 'yyyy-MM-dd');
+  Logger.log('[yoy] Computing YoY goals for PP ' + ppStartStr
+    + ' | Y1 window: ' + yoyFrom + ' – ' + yoyTo
+    + ' | Y2 window: ' + yoy2From + ' – ' + yoy2To + ' (6mo prior to Y1)');
 
-  // Y2 data (2 years ago) is purely historical — cache aggregated PP totals permanently.
+  // Y2 data (~18 months ago) is purely historical — cache aggregated PP totals permanently.
   // Key on the range start dates so a new PP automatically busts the cache.
   var y2CacheKey = ranges2.map(function(r) { return r.fromUTC.slice(0,10); }).join(',');
   var ppTotalsY2ByStore = null; // { slug: avgPPSales }
@@ -1199,8 +1204,10 @@ function prefetchYoY2_() {
     var daysSince = Math.round((todayMs - anchorMs) / (24 * 60 * 60 * 1000));
     var ppOffset  = daysSince >= 0 ? Math.floor(daysSince / PP_DAYS) : Math.ceil(daysSince / PP_DAYS) - 1;
     var ppStartMs = anchorMs + ppOffset * PP_MS;
-    var YEAR_MS   = 364 * 24 * 60 * 60 * 1000;
-    var yoy2BaseMs = ppStartMs - 2 * YEAR_MS;
+    var YEAR_MS      = 364 * 24 * 60 * 60 * 1000;
+    var HALF_YEAR_MS = 182 * 24 * 60 * 60 * 1000;
+    var yoyBaseMs    = ppStartMs - YEAR_MS;
+    var yoy2BaseMs   = yoyBaseMs - HALF_YEAR_MS; // 6 months before Y1 (~18 months ago)
 
     var ranges2 = [];
     for (var i = -3; i <= 2; i++) {
