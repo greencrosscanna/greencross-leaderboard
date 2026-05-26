@@ -290,6 +290,13 @@ function doGet(e) {
       return jsonOut({ ok: true, employees: allAvEmployees, avatarConfigs: resolveAvatarConfigs_(allAvEmployees, getAvatarConfigs_()) }, params.callback);
     }
 
+    // ── One-shot: seed director accounts (owner only, safe to re-run) ──
+    if (params.action === 'bootstrapdirectors') {
+      requireRole_(auth, ['owner','director']);
+      bootstrapDirectors();
+      return jsonOut({ ok: true, message: 'Directors bootstrapped' }, params.callback);
+    }
+
     // ── Admin: user & key management (director only) ───────
     if (params.action === 'setuser') {
       requireRole_(auth, ['owner','director']);
