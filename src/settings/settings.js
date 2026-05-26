@@ -362,6 +362,13 @@ var settings = (function() {
       document.querySelectorAll('#goalsTable tbody tr').forEach(function(row) {
         var inp        = row.querySelector('.settings-pp-override');
         var computedPP = inp ? (parseFloat(inp.getAttribute('data-base-computed-pp')) || 0) : 0;
+        var hasManual  = inp && inp.getAttribute('data-manual') === '1';
+
+        // If no manual override, recalculate the PP input itself from base × stretch
+        if (inp && !hasManual && computedPP) {
+          inp.value = Math.round(computedPP * mult).toLocaleString('en-US');
+        }
+
         var rawVal     = inp ? (inp.value || '').replace(/[^0-9.]/g, '') : '';
         var overrideVal = rawVal ? parseFloat(rawVal) : NaN;
 
@@ -385,7 +392,25 @@ var settings = (function() {
       });
     }
 
-    if (stretchSelect) stretchSelect.addEventListener('change', applyStretchDisplay);
+    // Auto-save stretch when dropdown changes, then refresh display
+    if (stretchSelect) stretchSelect.addEventListener('change', function() {
+      applyStretchDisplay();
+      var stretch = parseFloat(stretchSelect.value) || 0;
+      if (applyStretchBtn) { applyStretchBtn.disabled = true; applyStretchBtn.textContent = 'Saving…'; }
+      if (recalcStatus) { recalcStatus.textContent = ''; recalcStatus.className = 'settings-save-status'; }
+      GC.api.gasCall('savesettings', { stretch: stretch })
+        .then(function(res) {
+          if (applyStretchBtn) { applyStretchBtn.disabled = false; applyStretchBtn.textContent = 'Apply'; }
+          if (recalcStatus) {
+            recalcStatus.textContent = res.ok ? '✓ Saved' : '✗ ' + (res.error || 'Save failed');
+            recalcStatus.className   = 'settings-save-status ' + (res.ok ? 'ok' : 'err');
+          }
+        })
+        .catch(function(err) {
+          if (applyStretchBtn) { applyStretchBtn.disabled = false; applyStretchBtn.textContent = 'Apply'; }
+          if (recalcStatus) { recalcStatus.textContent = '✗ ' + err.message; recalcStatus.className = 'settings-save-status err'; }
+        });
+    });
 
     // Live-update monthly + DOW when override input changes
     document.querySelectorAll('.settings-pp-override').forEach(function(inp) {
