@@ -2859,6 +2859,14 @@ function getAvatarConfigs_() {
  * Returns director/owner users as employee-like objects for the Management section.
  * Derives the list from existing GC_USERS_KEY entries with role director/owner.
  */
+// Job titles for management users — keyed by username (login name)
+const MANAGEMENT_JOB_TITLES = {
+  'sky':   'President',
+  'mike':  'Director of Retail',
+  'shawn': 'Director of Internal Operations',
+  'tawny': 'Inventory Manager',
+};
+
 function getManagementEmployees_() {
   var props = PropertiesService.getScriptProperties();
   var users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}');
@@ -2868,10 +2876,12 @@ function getManagementEmployees_() {
     if (u.role === 'director' || u.role === 'owner') {
       var key = nameToKey_(u.displayName || username);
       mgmt.push({
-        key:      key,
-        name:     u.displayName || username,
-        initials: u.initials || username.slice(0, 2).toUpperCase(),
-        section:  'management',
+        key:       key,
+        name:      u.displayName || username,
+        initials:  u.initials || username.slice(0, 2).toUpperCase(),
+        section:   'management',
+        roleLabel: 'Admin',
+        jobTitle:  MANAGEMENT_JOB_TITLES[username] || '',
       });
     }
   });

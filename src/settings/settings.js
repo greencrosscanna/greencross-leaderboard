@@ -275,7 +275,8 @@ var settings = (function() {
             +     (isExcluded ? 'Excluded' : 'Active')
             +   '</button>'
             + '</td>'
-          : '<td colspan="3" class="settings-emp-store" style="color:var(--text-dim);font-size:12px">Director</td>'
+          : '<td class="settings-emp-store" style="color:var(--text-dim);font-size:12px">' + e(emp.roleLabel || 'Admin') + '</td>'
+            + '<td class="settings-emp-store" style="font-size:12px">' + e(emp.jobTitle || '') + '</td>'
         )
       + '</tr>';
   }
@@ -293,7 +294,7 @@ var settings = (function() {
       +   '</div>'
       + '</div>'
       + '<table class="settings-table settings-emp-table">'
-      + '<thead><tr><th></th><th>Name</th><th colspan="2">Role</th></tr></thead>'
+      + '<thead><tr><th></th><th>Name</th><th>Role</th><th>Job Title</th></tr></thead>'
       + '<tbody>' + rows + '</tbody>'
       + '</table>'
       + '</div>';
