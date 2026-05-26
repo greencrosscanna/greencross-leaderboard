@@ -234,7 +234,10 @@ var director = (function() {
   function renderStatusStrip(stores) {
     var html = '<div class="status-strip">'
       + '<div class="ss-label">Today</div>';
-    stores.forEach(function(s) {
+    var sorted = stores.slice().sort(function(a, b) {
+      return (b.today.pace || 0) - (a.today.pace || 0);
+    });
+    sorted.forEach(function(s) {
       var dotCls = GC.paceDotClass(s.today.pace);
       var revenue = GC.fmtCurrency(s.today.revenue);
       var goal    = GC.fmtCurrency(s.today.goal);

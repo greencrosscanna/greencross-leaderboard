@@ -76,6 +76,8 @@
   cursor: pointer;
   transition: background 0.15s;
 }
+.ss-store { animation: ss-fadein 0.35s ease both; }
+@keyframes ss-fadein { from { opacity: 0; transform: translateX(6px); } to { opacity: 1; transform: none; } }
 .ss-store:hover { background: var(--surface-2); }
 .ss-store + .ss-store { border-left: 1px solid var(--border); }
 .ss-store .ss-dot {
