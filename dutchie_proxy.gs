@@ -117,12 +117,12 @@ const EXCLUDED_DISCOUNT_KEYWORDS = [
 //   Bend       → Baseline
 //   Hillsboro  → Century
 const STORES = [
-  { slug: 'baseline',   name: 'Baseline',   dutchieName: 'Bend'        },
-  { slug: 'center',     name: 'Center',     dutchieName: 'Center'      },
-  { slug: 'century',    name: 'Century',    dutchieName: 'Hillsboro'   },
-  { slug: 'commercial', name: 'Commercial', dutchieName: 'Commercial'  },
-  { slug: 'portland',   name: 'Portland',   dutchieName: 'Portland Rd' },
-  { slug: 'river',      name: 'River',      dutchieName: 'River'       },
+  { slug: 'baseline',   name: 'Baseline',   dutchieName: 'Bend',        locationName: 'Hillsboro'   },
+  { slug: 'center',     name: 'Center',     dutchieName: 'Center',      locationName: 'Center'      },
+  { slug: 'century',    name: 'Century',    dutchieName: 'Hillsboro',   locationName: 'Bend'        },
+  { slug: 'commercial', name: 'Commercial', dutchieName: 'Commercial',  locationName: 'Commercial'  },
+  { slug: 'portland',   name: 'Portland',   dutchieName: 'Portland Rd', locationName: 'Portland Rd' },
+  { slug: 'river',      name: 'River',      dutchieName: 'River',       locationName: 'River'       },
 ];
 
 // ── Router ────────────────────────────────────────────────────
@@ -2962,7 +2962,7 @@ function getGoalsForDashboard_() {
         var base = computeAccurateMonthly_(g.dowAvg, year, i);
         monthly[name] = Math.round(base * (1 + res.stretch));
       });
-      dashGoals[s.dutchieName] = monthly;
+      dashGoals[s.locationName || s.dutchieName] = monthly;
     } catch(e) {
       Logger.log('getGoalsForDashboard_ error for ' + s.slug + ': ' + e.message);
     }
