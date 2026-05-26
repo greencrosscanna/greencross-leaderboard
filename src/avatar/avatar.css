@@ -325,3 +325,23 @@
 
 .ava-save-status.ok  { color: var(--green, #4ade80); }
 .ava-save-status.err { color: #ef4444; }
+
+/* ── Clear / remove avatar ───────────────────────────────── */
+.ava-clear-wrap {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.ava-clear {
+  background: none;
+  border: none;
+  color: var(--text-dim, #a8aba6);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ava-clear:hover { color: #ef4444; }
+.ava-clear:disabled { opacity: 0.5; cursor: default; text-decoration: none; }

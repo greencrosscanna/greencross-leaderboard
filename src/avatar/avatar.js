@@ -129,6 +129,7 @@ var ava = (function() {
       +     '<button id="avaRandom" class="ava-btn">↻ Surprise me</button>'
       +     '<button id="avaSave" class="ava-btn primary">Save</button>'
       +   '</div>'
+      +   (savedConfig ? '<div class="ava-clear-wrap"><button id="avaClear" class="ava-clear">Remove avatar — revert to initials</button></div>' : '')
       +   '<div class="ava-lb-preview">'
       +     '<h4>How it\'ll look on the leaderboard</h4>'
       +     '<div class="ava-lb-row">'
@@ -353,6 +354,48 @@ var ava = (function() {
             saveBtn.textContent = 'Save';
             if (statusEl) {
               statusEl.textContent = '✗ ' + (err.message || 'Save failed');
+              statusEl.className = 'ava-save-status err';
+            }
+          });
+      });
+    }
+
+    // Clear avatar
+    var clearBtn = document.getElementById('avaClear');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function() {
+        if (!confirm('Remove ' + (emp.name || 'this employee') + '\'s avatar? They\'ll show initials on the leaderboard.')) return;
+        clearBtn.disabled = true;
+        clearBtn.textContent = 'Removing…';
+        if (statusEl) { statusEl.textContent = ''; statusEl.className = 'ava-save-status'; }
+
+        GC.api.gasCall('clearavatar', { nameKey: nameKey })
+          .then(function(res) {
+            if (res && res.ok) {
+              // Remove the clear button and show confirmation, then navigate back
+              clearBtn.parentNode.removeChild(clearBtn);
+              if (statusEl) {
+                statusEl.textContent = '✓ Avatar removed';
+                statusEl.className = 'ava-save-status ok';
+              }
+              setTimeout(function() {
+                var from = (queryParams && queryParams.from) ? '#' + queryParams.from : '#/settings';
+                GC.router.navigate(from);
+              }, 1200);
+            } else {
+              clearBtn.disabled = false;
+              clearBtn.textContent = 'Remove avatar — revert to initials';
+              if (statusEl) {
+                statusEl.textContent = '✗ ' + ((res && res.error) || 'Remove failed');
+                statusEl.className = 'ava-save-status err';
+              }
+            }
+          })
+          .catch(function(err) {
+            clearBtn.disabled = false;
+            clearBtn.textContent = 'Remove avatar — revert to initials';
+            if (statusEl) {
+              statusEl.textContent = '✗ ' + (err.message || 'Remove failed');
               statusEl.className = 'ava-save-status err';
             }
           });

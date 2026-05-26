@@ -269,6 +269,9 @@ function doGet(e) {
     if (params.action === 'saveavatar') {
       return jsonOut(saveAvatarConfig_(params), params.callback);
     }
+    if (params.action === 'clearavatar') {
+      return jsonOut(clearAvatarConfig_(params), params.callback);
+    }
     // Lightweight endpoint for the avatar picker — all authenticated roles.
     // Returns the employee roster + avatar config map without computing goals.
     if (params.action === 'getavatardata') {
@@ -2757,6 +2760,25 @@ function saveAvatarConfig_(params) {
   PropertiesService.getScriptProperties().setProperty(GC_AVATAR_CONFIGS_KEY, JSON.stringify(configs));
   Logger.log('[avatar] saved config for ' + params.nameKey);
   return { ok: true, nameKey: params.nameKey };
+}
+
+/**
+ * Remove one employee's avatar config so they revert to showing initials.
+ * Deletes every key that matches any segment of params.nameKey (handles the
+ * first-name-only key mismatch between kiosk and roster).
+ */
+function clearAvatarConfig_(params) {
+  if (!params.nameKey) return { ok: false, error: 'nameKey required' };
+  var configs = getAvatarConfigs_();
+  var segments = params.nameKey.split('_');
+  // Delete exact key and any single-segment variant (e.g. "sunshine" from "maria_sunshine")
+  var deleted = [];
+  [params.nameKey].concat(segments).forEach(function(k) {
+    if (configs[k]) { delete configs[k]; deleted.push(k); }
+  });
+  PropertiesService.getScriptProperties().setProperty(GC_AVATAR_CONFIGS_KEY, JSON.stringify(configs));
+  Logger.log('[avatar] cleared config for ' + params.nameKey + ' (keys removed: ' + deleted.join(', ') + ')');
+  return { ok: true, nameKey: params.nameKey, deleted: deleted };
 }
 
 /**
