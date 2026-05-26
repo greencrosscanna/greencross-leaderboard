@@ -396,7 +396,11 @@ var settings = (function() {
         el.textContent = base ? '$' + Math.round(base * mult).toLocaleString('en-US') : '—';
       });
 
-      // Monthly + DOW — per-row, scaled by override when one is set
+      // Monthly + DOW — always preview as base × mult (pure stretch scaling)
+      // Manual PP overrides are per-period fine-tuning; the stretch preview for
+      // monthly/DOW should show what the new stretch target implies for those horizons.
+      // (scale was previously applied here but caused monthly/DOW to barely move
+      //  when all stores had saved stretch-adjusted values as manual overrides.)
       document.querySelectorAll('#goalsTable tbody tr').forEach(function(row) {
         var inp        = row.querySelector('.settings-pp-override');
         var computedPP = inp ? (parseFloat(inp.getAttribute('data-base-computed-pp')) || 0) : 0;
@@ -407,25 +411,16 @@ var settings = (function() {
           inp.value = Math.round(computedPP * mult).toLocaleString('en-US');
         }
 
-        var rawVal     = inp ? (inp.value || '').replace(/[^0-9.]/g, '') : '';
-        var overrideVal = rawVal ? parseFloat(rawVal) : NaN;
-
-        // scale = ratio of override final goal to what computed final goal would be
-        // When no override, overrideVal ≈ computedPP * mult → scale = 1
-        var scale = (overrideVal > 0 && computedPP > 0)
-          ? overrideVal / (computedPP * mult)
-          : 1;
-
         var monthlyEl = row.querySelector('[data-base-monthly]');
         if (monthlyEl) {
           var base = parseFloat(monthlyEl.getAttribute('data-base-monthly')) || 0;
-          monthlyEl.textContent = base ? '$' + Math.round(base * mult * scale).toLocaleString('en-US') : '—';
+          monthlyEl.textContent = base ? '$' + Math.round(base * mult).toLocaleString('en-US') : '—';
         }
 
         row.querySelectorAll('.settings-dow-cell[data-base-dow]').forEach(function(el) {
           var base  = parseFloat(el.getAttribute('data-base-dow')) || 0;
           var inner = el.querySelector('.settings-dow-val');
-          if (inner) inner.textContent = base ? '$' + Math.round(base * mult * scale).toLocaleString('en-US') : '—';
+          if (inner) inner.textContent = base ? '$' + Math.round(base * mult).toLocaleString('en-US') : '—';
         });
       });
 
