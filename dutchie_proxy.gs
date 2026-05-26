@@ -32,7 +32,8 @@ const GC_TARGET_CACHE_KEY   = 'GC_ROLLING_TARGET_CACHE_JSON';
 const GC_GOALS_CACHE_KEY    = 'GC_GOALS_CACHE_JSON';
 const GC_STRETCH_KEY        = 'GC_STRETCH_MULTIPLIER';  // stored as decimal, e.g. 0.025 = 2.5%
 const GC_YOY_GOALS_KEY      = 'GC_YOY_GOALS_JSON';
-const GC_YOY2_CACHE_KEY     = 'GC_YOY2_CACHE_JSON'; // permanent cache for 2-year-ago data
+const GC_YOY1_CACHE_KEY     = 'GC_YOY1_CACHE_JSON'; // permanent cache for 1-year-ago data (busts each PP)
+const GC_YOY2_CACHE_KEY     = 'GC_YOY2_CACHE_JSON'; // permanent cache for 2-year-ago data (busts each PP)
 const GC_EXCLUDED_KEY       = 'GC_EXCLUDED_JSON';   // array of excluded employee nameKeys
 const GC_MANUAL_PP_KEY      = 'GC_MANUAL_PP_GOALS_JSON'; // slug→final PP goal overrides
 const GC_AVATAR_CONFIGS_KEY  = 'GC_AVATAR_CONFIGS_JSON'; // { nameKey: { ...avatar_config } }
@@ -1006,8 +1007,53 @@ function getOrComputeYoYGoals_(forceRecompute) {
     } catch(e2) { Logger.log('[yoy] Y2 cache save failed: ' + e2.message); }
   }
 
-  // 36 parallel requests for Y1 (current season, 1 year ago)
-  var fetchedY1 = fetchAllStoresTransactionsMulti_(ranges);
+  // Y1 data (1 year ago) is also historical within a PP — cache aggregated totals + DOW buckets.
+  var y1CacheKey = ranges.map(function(r) { return r.fromUTC.slice(0,10); }).join(',');
+  var y1Cache = null; // { ppTotals: { slug: avg }, dowByDay: { slug: { 'YYYY-MM-DD': sales } } }
+  try {
+    var y1Cached = JSON.parse(props.getProperty(GC_YOY1_CACHE_KEY) || '{}');
+    if (y1Cached.key === y1CacheKey && y1Cached.ppTotals && y1Cached.dowByDay) {
+      Logger.log('[yoy] Y1 cache hit — skipping 36 Dutchie requests');
+      y1Cache = y1Cached;
+    }
+  } catch(e1) { /* ignore, will refetch */ }
+
+  var ppTotalsY1ByStore = {};
+  var dowByDayByStore   = {}; // { slug: { 'YYYY-MM-DD': sales } }
+
+  if (y1Cache) {
+    ppTotalsY1ByStore = y1Cache.ppTotals;
+    dowByDayByStore   = y1Cache.dowByDay;
+  } else {
+    Logger.log('[yoy] Y1 cache miss — fetching 36 historical requests');
+    var fetchedY1 = fetchAllStoresTransactionsMulti_(ranges);
+    STORES.forEach(function(store) {
+      var allByDay = {};
+      var ppTotals = [];
+      fetchedY1.forEach(function(byStore) {
+        var txns  = byStore[store.slug] || [];
+        var ppDay = aggregateByDay_(txns);
+        var ppSum = 0;
+        Object.keys(ppDay).forEach(function(day) {
+          allByDay[day] = (allByDay[day] || 0) + ppDay[day];
+          ppSum += ppDay[day];
+        });
+        ppTotals.push(ppSum);
+      });
+      ppTotalsY1ByStore[store.slug] = ppTotals.length > 0
+        ? ppTotals.reduce(function(a, b) { return a + b; }, 0) / ppTotals.length
+        : 0;
+      dowByDayByStore[store.slug] = allByDay;
+    });
+    try {
+      props.setProperty(GC_YOY1_CACHE_KEY, JSON.stringify({
+        key:      y1CacheKey,
+        ppTotals: ppTotalsY1ByStore,
+        dowByDay: dowByDayByStore,
+      }));
+      Logger.log('[yoy] Y1 aggregates cached for key: ' + y1CacheKey);
+    } catch(e1) { Logger.log('[yoy] Y1 cache save failed: ' + e1.message); }
+  }
 
   // Max realized growth applied to YoY baseline (caps outlier years — new stores, one-off events)
   var MAX_REALIZED_GROWTH = 0.20; // 20%
@@ -1016,22 +1062,9 @@ function getOrComputeYoYGoals_(forceRecompute) {
   var pt    = ptNow_();
 
   STORES.forEach(function(store) {
-    // ── Year-ago baseline ──────────────────────────────────
-    var allByDayY1 = {};
-    var ppTotalsY1 = [];
-    fetchedY1.forEach(function(byStore) {
-      var txns  = byStore[store.slug] || [];
-      var ppDay = aggregateByDay_(txns);
-      var ppSum = 0;
-      Object.keys(ppDay).forEach(function(day) {
-        allByDayY1[day] = (allByDayY1[day] || 0) + ppDay[day];
-        ppSum += ppDay[day];
-      });
-      ppTotalsY1.push(ppSum);
-    });
-    var ppY1 = ppTotalsY1.length > 0
-      ? ppTotalsY1.reduce(function(a, b) { return a + b; }, 0) / ppTotalsY1.length
-      : 0;
+    // ── Year-ago baseline (from cache) ────────────────────
+    var allByDayY1 = dowByDayByStore[store.slug] || {};
+    var ppY1       = ppTotalsY1ByStore[store.slug] || 0;
 
     // ── Two-years-ago baseline (for realized growth rate) — from cache ──
     var ppY2 = ppTotalsY2ByStore[store.slug] || 0;
