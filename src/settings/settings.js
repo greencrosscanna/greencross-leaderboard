@@ -215,11 +215,16 @@ var settings = (function() {
     avatarConfigs = avatarConfigs || {};
     var rows = (employees || []).map(function(emp) {
       var nick     = nicknames[emp.key] || '';
-      // Avatar configs may be keyed by first-name only (from kiosk/Dutchie display name)
-      // while the roster key uses the full name. Try full key first, then first segment.
-      var config   = avatarConfigs[emp.key]
-                  || avatarConfigs[emp.key.split('_')[0]]
-                  || null;
+      // Avatar configs may be keyed by a single display name (e.g. "sunshine") while
+      // the roster key uses the full legal name (e.g. "maria_sunshine"). Try the full
+      // key first, then each individual segment so any position can match.
+      var config = avatarConfigs[emp.key] || null;
+      if (!config) {
+        var _segs = emp.key.split('_');
+        for (var _si = 0; _si < _segs.length; _si++) {
+          if (avatarConfigs[_segs[_si]]) { config = avatarConfigs[_segs[_si]]; break; }
+        }
+      }
       var nameParts = (emp.name || '').split(' ');
       var initials  = (nameParts[0] || '').slice(0, 1)
                     + (nameParts.length > 1 ? nameParts[nameParts.length - 1].slice(0, 1) : '');
