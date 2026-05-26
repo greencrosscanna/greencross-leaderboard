@@ -99,6 +99,18 @@
 }
 .settings-table tbody tr:hover { background: rgba(74,222,128,0.03); }
 
+/* ── Goals total row ─────────────────────────────────────── */
+.settings-total-row td {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  padding-bottom: 10px;
+  font-weight: 700;
+  color: var(--text);
+  font-size: 12px;
+}
+.settings-total-row .settings-store-name { color: var(--text-mute); letter-spacing: 0.5px; font-size: 10px; text-transform: uppercase; }
+.settings-total-pp { font-variant-numeric: tabular-nums; }
+
 .settings-store-name,
 .settings-emp-name {
   font-weight: 600;

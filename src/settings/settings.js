@@ -120,6 +120,10 @@ var settings = (function() {
     var fullMeta = [ppRangeStr, reportLine, metaLine].filter(Boolean).join(' · ');
 
     // Table rows
+    // Accumulate totals for the tfoot row
+    var totBase = 0, totMonthly = 0;
+    var totDow  = { Mon:0, Tue:0, Wed:0, Thu:0, Fri:0, Sat:0, Sun:0 };
+
     var rows = goals.map(function(g) {
       var r      = g.rolling      || {};
       var y      = g.yoy          || {};
@@ -164,6 +168,14 @@ var settings = (function() {
         + '>'
         + '</div>';
 
+      // Accumulate for totals row
+      var computedBasePP2 = (g.active && g.active.ppGoal) ? g.active.ppGoal : (rBase || yBase);
+      totBase    += computedBasePP2;
+      totMonthly += mBase;
+      DOW_ORDER.forEach(function(d) {
+        totDow[d] = (totDow[d] || 0) + ((activeG.dowAvg && activeG.dowAvg[d]) ? activeG.dowAvg[d] : 0);
+      });
+
       return '<tr>'
         + '<td class="settings-store-name">' + e(g.name) + '</td>'
         + baselineCell
@@ -173,6 +185,26 @@ var settings = (function() {
         + dowCells
         + '</tr>';
     }).join('');
+
+    // Total footer row
+    var totDowCells = DOW_ORDER.map(function(d) {
+      var base = totDow[d] || 0;
+      return '<td class="settings-dow-cell settings-total-dow" data-base-dow="' + base + '">'
+        + '<div class="settings-dow-val">' + fmtDow(Math.round(base * mult)) + '</div>'
+        + '</td>';
+    }).join('');
+
+    var totalRow = '<tr class="settings-total-row">'
+      + '<td class="settings-store-name">Total</td>'
+      + '<td class="settings-baseline-cell">'
+      +   '<div><span data-base-pp="' + totBase + '">' + fmtGoal(Math.round(totBase * mult)) + '</span></div>'
+      + '</td>'
+      + '<td id="goalsTotalPP" class="settings-total-pp">' + fmtGoal(Math.round(totBase * mult)) + '</td>'
+      + '<td class="settings-derived settings-total-monthly" data-base-monthly="' + totMonthly + '">'
+      +   fmtGoal(Math.round(totMonthly * mult))
+      + '</td>'
+      + totDowCells
+      + '</tr>';
 
     return '<div class="settings-card" id="goalsCard">'
       + '<div class="settings-card-head">'
@@ -200,6 +232,7 @@ var settings = (function() {
       +   '<th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th>'
       + '</tr></thead>'
       + '<tbody>' + rows + '</tbody>'
+      + '<tfoot>' + totalRow + '</tfoot>'
       + '</table>'
       + '</div>'
       + '<div class="settings-card-foot">'
@@ -390,6 +423,36 @@ var settings = (function() {
           if (inner) inner.textContent = base ? '$' + Math.round(base * mult * scale).toLocaleString('en-US') : '—';
         });
       });
+
+      // Update total PP cell — live sum of all PP override input values
+      var totalPPEl = document.getElementById('goalsTotalPP');
+      if (totalPPEl) {
+        var ppSum = 0;
+        document.querySelectorAll('.settings-pp-override').forEach(function(inp) {
+          ppSum += parseFloat((inp.value || '').replace(/[^0-9.]/g, '')) || 0;
+        });
+        totalPPEl.textContent = ppSum ? '$' + Math.round(ppSum).toLocaleString('en-US') : '—';
+      }
+
+      // Update total monthly and DOW cells in tfoot (same data-attribute pattern as tbody)
+      var tfoot = document.querySelector('#goalsTable tfoot');
+      if (tfoot) {
+        var mTot = tfoot.querySelector('[data-base-monthly]');
+        if (mTot) {
+          var mBase2 = parseFloat(mTot.getAttribute('data-base-monthly')) || 0;
+          mTot.textContent = mBase2 ? '$' + Math.round(mBase2 * mult).toLocaleString('en-US') : '—';
+        }
+        tfoot.querySelectorAll('.settings-dow-cell[data-base-dow]').forEach(function(el) {
+          var base  = parseFloat(el.getAttribute('data-base-dow')) || 0;
+          var inner = el.querySelector('.settings-dow-val');
+          if (inner) inner.textContent = base ? '$' + Math.round(base * mult).toLocaleString('en-US') : '—';
+        });
+        var bTot = tfoot.querySelector('[data-base-pp]');
+        if (bTot) {
+          var bBase = parseFloat(bTot.getAttribute('data-base-pp')) || 0;
+          bTot.textContent = bBase ? '$' + Math.round(bBase * mult).toLocaleString('en-US') : '—';
+        }
+      }
     }
 
     // Auto-save stretch when dropdown changes, then refresh display
