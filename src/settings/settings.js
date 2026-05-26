@@ -383,6 +383,8 @@ var settings = (function() {
     // Stretch multiplier — live preview + Apply
     var stretchSelect   = document.getElementById('stretchSelect');
     var applyStretchBtn = document.getElementById('applyStretchBtn');
+    console.log('[settings.init] stretchSelect=', stretchSelect, 'applyStretchBtn=', applyStretchBtn);
+    console.log('[settings.init] goalsCard=', document.getElementById('goalsCard'), 'goalsTable=', document.getElementById('goalsTable'));
 
     function applyStretchDisplay() {
       var mult = 1 + (parseFloat((stretchSelect && stretchSelect.value) || 0) || 0);
