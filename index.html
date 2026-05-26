@@ -6559,6 +6559,15 @@ var kiosk = (function() {
               if (el) countUp(el, s.sales || 0, 1000);
             });
           }
+          // Re-render the leader card with fresh sales/margin/target data
+          var leaderCard = document.querySelector('.leader-card');
+          if (leaderCard && staff.length) {
+            leaderCard.outerHTML = renderLeaderCard(staff[0], staff, _onShift, _badges, null);
+            animateBars();
+            var leaderEl = document.getElementById('kioskLeaderAmt');
+            if (leaderEl) countUp(leaderEl, staff[0].sales || 0, 1000);
+            _leaderName = staff[0].name || '';
+          }
         })
         .catch(function(err) {
           console.warn('[kiosk] leaderboard refresh failed:', err);
