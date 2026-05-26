@@ -1025,45 +1025,48 @@ function getOrComputeYoYGoals_(forceRecompute) {
   var y1Cache = null; // { ppTotals: { slug: avg }, dowByDay: { slug: { 'YYYY-MM-DD': sales } } }
   try {
     var y1Cached = JSON.parse(props.getProperty(GC_YOY1_CACHE_KEY) || '{}');
-    if (y1Cached.key === y1CacheKey && y1Cached.ppTotals && y1Cached.dowByDay) {
+    if (y1Cached.key === y1CacheKey && y1Cached.ppTotals && y1Cached.dowAvg) {
       Logger.log('[yoy] Y1 cache hit — skipping 36 Dutchie requests');
       y1Cache = y1Cached;
     }
   } catch(e1) { /* ignore, will refetch */ }
 
   var ppTotalsY1ByStore = {};
-  var dowByDayByStore   = {}; // { slug: { 'YYYY-MM-DD': sales } }
+  var dowAvgByStore     = {}; // { slug: { 0..6: avgSales } } — pre-aggregated, tiny payload
 
   if (y1Cache) {
     ppTotalsY1ByStore = y1Cache.ppTotals;
-    dowByDayByStore   = y1Cache.dowByDay;
+    dowAvgByStore     = y1Cache.dowAvg;
   } else {
     Logger.log('[yoy] Y1 cache miss — fetching 36 historical requests');
     var fetchedY1 = fetchAllStoresTransactionsMulti_(ranges);
     STORES.forEach(function(store) {
-      var allByDay = {};
-      var ppTotals = [];
+      var allByDay = {}, ppTotals = [];
       fetchedY1.forEach(function(byStore) {
         var txns  = byStore[store.slug] || [];
         var ppDay = aggregateByDay_(txns);
         var ppSum = 0;
-        Object.keys(ppDay).forEach(function(day) {
-          allByDay[day] = (allByDay[day] || 0) + ppDay[day];
-          ppSum += ppDay[day];
-        });
+        Object.keys(ppDay).forEach(function(day) { allByDay[day] = (allByDay[day] || 0) + ppDay[day]; ppSum += ppDay[day]; });
         ppTotals.push(ppSum);
       });
-      ppTotalsY1ByStore[store.slug] = ppTotals.length > 0
-        ? ppTotals.reduce(function(a, b) { return a + b; }, 0) / ppTotals.length
-        : 0;
-      dowByDayByStore[store.slug] = allByDay;
+      var ppAvg = ppTotals.length > 0 ? ppTotals.reduce(function(a,b){return a+b;},0)/ppTotals.length : 0;
+      ppTotalsY1ByStore[store.slug] = ppAvg;
+      var dowBuckets = {0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
+      Object.keys(allByDay).forEach(function(day) {
+        var d   = new Date(Date.UTC(Number(day.slice(0,4)), Number(day.slice(5,7))-1, Number(day.slice(8,10)), 12));
+        var dow = parseInt(Utilities.formatDate(d, STORE_TZ, 'u'), 10) % 7;
+        dowBuckets[dow].push(allByDay[day]);
+      });
+      var flatD = ppAvg > 0 ? ppAvg / PP_DAYS : 0;
+      var dAvg = {};
+      for (var d = 0; d <= 6; d++) {
+        var vals = dowBuckets[d];
+        dAvg[d] = vals.length > 0 ? Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length) : Math.round(flatD);
+      }
+      dowAvgByStore[store.slug] = dAvg;
     });
     try {
-      props.setProperty(GC_YOY1_CACHE_KEY, JSON.stringify({
-        key:      y1CacheKey,
-        ppTotals: ppTotalsY1ByStore,
-        dowByDay: dowByDayByStore,
-      }));
+      props.setProperty(GC_YOY1_CACHE_KEY, JSON.stringify({ key: y1CacheKey, ppTotals: ppTotalsY1ByStore, dowAvg: dowAvgByStore }));
       Logger.log('[yoy] Y1 aggregates cached for key: ' + y1CacheKey);
     } catch(e1) { Logger.log('[yoy] Y1 cache save failed: ' + e1.message); }
   }
@@ -1076,8 +1079,8 @@ function getOrComputeYoYGoals_(forceRecompute) {
 
   STORES.forEach(function(store) {
     // ── Year-ago baseline (from cache) ────────────────────
-    var allByDayY1 = dowByDayByStore[store.slug] || {};
-    var ppY1       = ppTotalsY1ByStore[store.slug] || 0;
+    var ppY1        = ppTotalsY1ByStore[store.slug] || 0;
+    var dowAvgY1    = dowAvgByStore[store.slug]     || {};
 
     // ── Two-years-ago baseline (for realized growth rate) — from cache ──
     var ppY2 = ppTotalsY2ByStore[store.slug] || 0;
@@ -1089,24 +1092,13 @@ function getOrComputeYoYGoals_(forceRecompute) {
     }
 
     // ── Forward goal = Y1 × (1 + realizedGrowth) ──────────
-    // Stretch is applied on top separately in resolveGoal_ / getDailyGoalForDow_.
     var ppGoal    = ppY1 > 0 ? Math.round(ppY1 * (1 + realizedGrowth)) : 0;
     var flatDaily = ppGoal > 0 ? Math.round(ppGoal / PP_DAYS) : 0;
 
-    // ── DOW averages from Y1 data, scaled by realized growth ──
-    var dowBuckets = {0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
-    Object.keys(allByDayY1).forEach(function(day) {
-      var d   = new Date(Date.UTC(Number(day.slice(0,4)), Number(day.slice(5,7))-1, Number(day.slice(8,10)), 12));
-      var dow = parseInt(Utilities.formatDate(d, STORE_TZ, 'u'), 10) % 7;
-      dowBuckets[dow].push(allByDayY1[day]);
-    });
-
+    // ── Scale cached DOW averages by realized growth ──────
     var dowAvg = {};
     for (var d = 0; d <= 6; d++) {
-      var vals  = dowBuckets[d];
-      var base  = vals.length > 0
-        ? vals.reduce(function(a, b) { return a + b; }, 0) / vals.length
-        : flatDaily / (1 + realizedGrowth); // un-scale so scaling below is consistent
+      var base  = dowAvgY1[d] != null ? dowAvgY1[d] : flatDaily / (1 + realizedGrowth);
       dowAvg[d] = Math.round(base * (1 + realizedGrowth));
     }
 
@@ -1171,7 +1163,7 @@ function prefetchYoY1_() {
 
     var y1CacheKey = ranges.map(function(r) { return r.fromUTC.slice(0,10); }).join(',');
     var fetched = fetchAllStoresTransactionsMulti_(ranges);
-    var ppTotalsY1ByStore = {}, dowByDayByStore = {};
+    var ppTotalsY1ByStore = {}, dowAvgByStore = {};
     STORES.forEach(function(store) {
       var allByDay = {}, ppTotals = [];
       fetched.forEach(function(byStore) {
@@ -1181,11 +1173,26 @@ function prefetchYoY1_() {
         Object.keys(ppDay).forEach(function(day) { allByDay[day] = (allByDay[day] || 0) + ppDay[day]; ppSum += ppDay[day]; });
         ppTotals.push(ppSum);
       });
-      ppTotalsY1ByStore[store.slug] = ppTotals.length > 0 ? ppTotals.reduce(function(a,b){return a+b;},0)/ppTotals.length : 0;
-      dowByDayByStore[store.slug]   = allByDay;
+      var ppAvg = ppTotals.length > 0 ? ppTotals.reduce(function(a,b){return a+b;},0)/ppTotals.length : 0;
+      ppTotalsY1ByStore[store.slug] = ppAvg;
+      // Pre-compute DOW averages (7 numbers) instead of caching raw daily data (84+ entries)
+      var dowBuckets = {0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
+      Object.keys(allByDay).forEach(function(day) {
+        var d   = new Date(Date.UTC(Number(day.slice(0,4)), Number(day.slice(5,7))-1, Number(day.slice(8,10)), 12));
+        var dow = parseInt(Utilities.formatDate(d, STORE_TZ, 'u'), 10) % 7;
+        dowBuckets[dow].push(allByDay[day]);
+      });
+      var flatDaily = ppAvg > 0 ? ppAvg / PP_DAYS : 0;
+      var dowAvg = {};
+      for (var d = 0; d <= 6; d++) {
+        var vals = dowBuckets[d];
+        dowAvg[d] = vals.length > 0 ? Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length) : Math.round(flatDaily);
+      }
+      dowAvgByStore[store.slug] = dowAvg;
     });
-    props.setProperty(GC_YOY1_CACHE_KEY, JSON.stringify({ key: y1CacheKey, ppTotals: ppTotalsY1ByStore, dowByDay: dowByDayByStore }));
-    Logger.log('[prefetchYoY1_] cached Y1 for key: ' + y1CacheKey);
+    // ~1KB payload — well within 9KB script property limit
+    props.setProperty(GC_YOY1_CACHE_KEY, JSON.stringify({ key: y1CacheKey, ppTotals: ppTotalsY1ByStore, dowAvg: dowAvgByStore }));
+    Logger.log('[prefetchYoY1_] cached Y1 (ppTotals + dowAvg) for key: ' + y1CacheKey);
     return { ok: true };
   } catch(e) {
     Logger.log('prefetchYoY1_ error: ' + e.message);
