@@ -209,29 +209,40 @@ var settings = (function() {
       + '</div>';
   }
 
-  // ── Nickname section ──────────────────────────────────────
-  function renderNicknames(employees, nicknames) {
+  // ── Employees card (nicknames + avatars combined) ─────────
+  function renderEmployees(employees, nicknames, avatarConfigs) {
+    nicknames     = nicknames     || {};
+    avatarConfigs = avatarConfigs || {};
     var rows = (employees || []).map(function(emp) {
-      var nick = (nicknames || {})[emp.key] || '';
+      var nick     = nicknames[emp.key] || '';
+      var config   = avatarConfigs[emp.key] || null;
+      var nameParts = (emp.name || '').split(' ');
+      var initials  = (nameParts[0] || '').slice(0, 1)
+                    + (nameParts.length > 1 ? nameParts[nameParts.length - 1].slice(0, 1) : '');
+      var puck     = GC.lbAvaPuck(emp.key, config, initials || '??', false);
+      var encKey   = e(emp.key);
       return '<tr>'
+        + '<td class="settings-emp-ava">' + puck + '</td>'
         + '<td class="settings-emp-name">' + e(emp.name) + '</td>'
         + '<td><input class="settings-input settings-nick-input"'
-        +   ' type="text" data-key="' + e(emp.key) + '"'
-        +   ' value="' + e(nick) + '" placeholder="Same as Dutchie name"></td>'
+        +   ' type="text" data-key="' + encKey + '"'
+        +   ' value="' + e(nick) + '" placeholder="Nickname"></td>'
         + '<td class="settings-emp-store">' + e(emp.store) + '</td>'
+        + '<td><a class="settings-ava-edit" href="#/avatar?employee=' + encKey + '"'
+        + ' onclick="event.preventDefault();GC.navToAvatar(\'' + encKey + '\')">Avatar →</a></td>'
         + '</tr>';
     }).join('');
 
     return '<div class="settings-card" id="nickCard">'
       + '<div class="settings-card-head">'
       +   '<div>'
-      +     '<div class="settings-card-title">Employee Nicknames</div>'
-      +     '<div class="settings-card-sub">Map Dutchie full names to preferred display names — e.g. Zachary → Zach. Leave blank to use the Dutchie name.</div>'
+      +     '<div class="settings-card-title">Employees</div>'
+      +     '<div class="settings-card-sub">Set a nickname (e.g. Zachary → Zach) and build a leaderboard avatar for each employee.</div>'
       +   '</div>'
       + '</div>'
-      + '<table class="settings-table" id="nickTable">'
+      + '<table class="settings-table settings-emp-table" id="nickTable">'
       + '<thead><tr>'
-      +   '<th>Full Name (Dutchie)</th><th>Nickname</th><th>Store</th>'
+      +   '<th></th><th>Dutchie Name</th><th>Nickname</th><th>Store</th><th></th>'
       + '</tr></thead>'
       + '<tbody>' + rows + '</tbody>'
       + '</table>'
@@ -242,46 +253,13 @@ var settings = (function() {
       + '</div>';
   }
 
-  // ── Employee Avatars card ─────────────────────────────────
-  function renderAvatars(employees, avatarConfigs) {
-    avatarConfigs = avatarConfigs || {};
-    var rows = (employees || []).map(function(emp) {
-      var config   = avatarConfigs[emp.key] || null;
-      var initials = (emp.name || '??').replace(/\s+\S+$/, '').slice(0, 1)
-                   + ((emp.name || '').indexOf(' ') > -1 ? emp.name.split(' ').pop().slice(0, 1) : '');
-      var puck     = GC.lbAvaPuck(emp.key, config, initials || '??', false);
-      var encKey   = e(emp.key);
-      return '<tr>'
-        + '<td style="width:44px">' + puck + '</td>'
-        + '<td class="settings-emp-name">' + e(emp.name) + '</td>'
-        + '<td class="settings-emp-store">' + e(emp.store) + '</td>'
-        + '<td><a class="settings-ava-edit" href="#/avatar?employee=' + encKey + '"'
-        + ' onclick="event.preventDefault();GC.navToAvatar(\'' + encKey + '\')">Edit →</a></td>'
-        + '</tr>';
-    }).join('');
-
-    return '<div class="settings-card" id="avatarCard">'
-      + '<div class="settings-card-head">'
-      +   '<div>'
-      +     '<div class="settings-card-title">Employee Avatars</div>'
-      +     '<div class="settings-card-sub">Personal avatars appear on the leaderboard. Click Edit to open the picker for any employee.</div>'
-      +   '</div>'
-      + '</div>'
-      + '<table class="settings-table" id="avatarTable">'
-      + '<thead><tr><th></th><th>Name</th><th>Store</th><th></th></tr></thead>'
-      + '<tbody>' + rows + '</tbody>'
-      + '</table>'
-      + '</div>';
-  }
-
   // ── Full page render ──────────────────────────────────────
   function render(data) {
     return '<div class="app-page settings-page">'
       + renderHeader()
       + '<div class="settings-body">'
       +   renderGoalsSection(data)
-      +   renderNicknames(data.employees, data.nicknames)
-      +   renderAvatars(data.employees, data.avatarConfigs)
+      +   renderEmployees(data.employees, data.nicknames, data.avatarConfigs)
       + '</div>'
       + '</div>';
   }

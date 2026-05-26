@@ -321,7 +321,7 @@
 
 .settings-dim { color: var(--text-dim); }
 
-/* ── Avatar card ─────────────────────────────────────────── */
+/* ── Combined employees card (nicknames + avatars) ───────── */
 .settings-ava-edit {
   color: var(--green);
   text-decoration: none;
@@ -331,6 +331,7 @@
 }
 .settings-ava-edit:hover { text-decoration: underline; }
 
-#avatarTable td { vertical-align: middle; padding: 8px 12px; }
-#avatarTable .lb-ava { cursor: default; }
-#avatarTable .lb-ava:hover { transform: none; }
+.settings-emp-table td { vertical-align: middle; }
+.settings-emp-ava { width: 44px; padding-right: 4px; }
+.settings-emp-ava .lb-ava { cursor: default; }
+.settings-emp-ava .lb-ava:hover { transform: none; }
