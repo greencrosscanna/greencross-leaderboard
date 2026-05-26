@@ -221,16 +221,24 @@
 .settings-goals-table thead th {
   padding: 10px 8px;
 }
-.settings-goals-table tbody td {
+.settings-goals-table tbody td,
+.settings-goals-table tfoot td {
   padding: 8px 8px;
 }
 .settings-goals-table thead th:first-child,
-.settings-goals-table tbody td:first-child {
+.settings-goals-table tbody td:first-child,
+.settings-goals-table tfoot td:first-child {
   padding-left: 20px;
 }
 .settings-goals-table thead th:last-child,
-.settings-goals-table tbody td:last-child {
+.settings-goals-table tbody td:last-child,
+.settings-goals-table tfoot td:last-child {
   padding-right: 20px;
+}
+
+/* Align total PP text with the number inside the input boxes above */
+#goalsTotalPP {
+  padding-left: 36px;
 }
 
 .settings-goals-table th,
