@@ -543,10 +543,9 @@ var director = (function() {
     var pctStr   = (pace >= 0 ? '+' : '−') + Math.abs(Math.round(pace * 100)) + '%';
     var subLabel = zone === 'red' ? 'Behind plan' : zone === 'green' ? 'Ahead of plan' : 'Near plan';
 
-    var proj     = today.revenue || 0;
-    var gap      = today.toGo || 0;
-    var gapCls   = gap > 0 ? ' down' : ' up';
-    var gapStr   = GC.fmtCurrency(gap);
+    var proj     = today.projectedRevenue || today.revenue || 0;
+    var pacePct  = (pace >= 0 ? '+' : '−') + Math.abs(Math.round(pace * 100)) + '%';
+    var paceCls  = zone === 'red' ? ' down' : zone === 'green' ? ' up' : '';
 
     return '<div class="dir-today-card">'
       + '<div class="kcard-label">Pace · vs. Plan</div>'
@@ -566,8 +565,8 @@ var director = (function() {
       +   '<div class="dir-gauge-sub" style="color:' + zoneColor + '">' + e(subLabel) + '</div>'
       + '</div>'
       + '<div class="kcard-stats">'
-      +   '<div class="kstat"><div class="kstat-v num">' + e(GC.fmtCurrency(proj)) + '</div><div class="kstat-l">Revenue</div></div>'
-      +   '<div class="kstat' + gapCls + '"><div class="kstat-v num">' + e(gapStr) + '</div><div class="kstat-l">' + e(gap > 0 ? 'Short by' : 'Ahead by') + '</div></div>'
+      +   '<div class="kstat"><div class="kstat-v num">' + e(GC.fmtCurrency(proj)) + '</div><div class="kstat-l">Projected</div></div>'
+      +   '<div class="kstat' + paceCls + '"><div class="kstat-v num">' + e(pacePct) + '</div><div class="kstat-l">Pace</div></div>'
       + '</div>'
       + '</div>';
   }
