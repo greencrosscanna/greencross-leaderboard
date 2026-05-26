@@ -265,6 +265,14 @@ function doGet(e) {
       requireRole_(auth, ['owner','director']);
       return jsonOut(recalculateYoYGoals_(), params.callback);
     }
+    if (params.action === 'prefetchyoy1') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(prefetchYoY1_(), params.callback);
+    }
+    if (params.action === 'prefetchyoy2') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(prefetchYoY2_(), params.callback);
+    }
 
     // ── Plan management ────────────────────────────────────
     if (params.action === 'setplan') {
@@ -1132,6 +1140,92 @@ function recalculateYoYGoals_() {
     return { ok: true, stores: Object.keys(goals).length };
   } catch(e) {
     Logger.log('recalculateYoYGoals_ error: ' + e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+/** Prefetch + cache Y1 data only (36 requests). Called from frontend before recalculate. */
+function prefetchYoY1_() {
+  try {
+    var props     = PropertiesService.getScriptProperties();
+    var anchorStr = props.getProperty(GC_PAY_PERIOD_ANCHOR) || '2026-05-11';
+    var anchorMs  = ptDateToUtcMs_(anchorStr);
+    var PP_MS     = PP_DAYS * 24 * 60 * 60 * 1000;
+    var todayMs   = ptDateToUtcMs_(ptNow_().dateStr);
+    var daysSince = Math.round((todayMs - anchorMs) / (24 * 60 * 60 * 1000));
+    var ppOffset  = daysSince >= 0 ? Math.floor(daysSince / PP_DAYS) : Math.ceil(daysSince / PP_DAYS) - 1;
+    var ppStartMs = anchorMs + ppOffset * PP_MS;
+    var YEAR_MS   = 364 * 24 * 60 * 60 * 1000;
+    var yoyBaseMs = ppStartMs - YEAR_MS;
+
+    var ranges = [];
+    for (var i = -3; i <= 2; i++) {
+      var f = yoyBaseMs + i * PP_MS;
+      ranges.push({ fromUTC: new Date(f).toISOString(), toUTC: new Date(f + PP_MS - 1).toISOString() });
+    }
+
+    var y1CacheKey = ranges.map(function(r) { return r.fromUTC.slice(0,10); }).join(',');
+    var fetched = fetchAllStoresTransactionsMulti_(ranges);
+    var ppTotalsY1ByStore = {}, dowByDayByStore = {};
+    STORES.forEach(function(store) {
+      var allByDay = {}, ppTotals = [];
+      fetched.forEach(function(byStore) {
+        var txns  = byStore[store.slug] || [];
+        var ppDay = aggregateByDay_(txns);
+        var ppSum = 0;
+        Object.keys(ppDay).forEach(function(day) { allByDay[day] = (allByDay[day] || 0) + ppDay[day]; ppSum += ppDay[day]; });
+        ppTotals.push(ppSum);
+      });
+      ppTotalsY1ByStore[store.slug] = ppTotals.length > 0 ? ppTotals.reduce(function(a,b){return a+b;},0)/ppTotals.length : 0;
+      dowByDayByStore[store.slug]   = allByDay;
+    });
+    props.setProperty(GC_YOY1_CACHE_KEY, JSON.stringify({ key: y1CacheKey, ppTotals: ppTotalsY1ByStore, dowByDay: dowByDayByStore }));
+    Logger.log('[prefetchYoY1_] cached Y1 for key: ' + y1CacheKey);
+    return { ok: true };
+  } catch(e) {
+    Logger.log('prefetchYoY1_ error: ' + e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+/** Prefetch + cache Y2 data only (36 requests). Called from frontend before recalculate. */
+function prefetchYoY2_() {
+  try {
+    var props     = PropertiesService.getScriptProperties();
+    var anchorStr = props.getProperty(GC_PAY_PERIOD_ANCHOR) || '2026-05-11';
+    var anchorMs  = ptDateToUtcMs_(anchorStr);
+    var PP_MS     = PP_DAYS * 24 * 60 * 60 * 1000;
+    var todayMs   = ptDateToUtcMs_(ptNow_().dateStr);
+    var daysSince = Math.round((todayMs - anchorMs) / (24 * 60 * 60 * 1000));
+    var ppOffset  = daysSince >= 0 ? Math.floor(daysSince / PP_DAYS) : Math.ceil(daysSince / PP_DAYS) - 1;
+    var ppStartMs = anchorMs + ppOffset * PP_MS;
+    var YEAR_MS   = 364 * 24 * 60 * 60 * 1000;
+    var yoy2BaseMs = ppStartMs - 2 * YEAR_MS;
+
+    var ranges2 = [];
+    for (var i = -3; i <= 2; i++) {
+      var f = yoy2BaseMs + i * PP_MS;
+      ranges2.push({ fromUTC: new Date(f).toISOString(), toUTC: new Date(f + PP_MS - 1).toISOString() });
+    }
+
+    var y2CacheKey = ranges2.map(function(r) { return r.fromUTC.slice(0,10); }).join(',');
+    var fetched = fetchAllStoresTransactionsMulti_(ranges2);
+    var ppTotalsY2ByStore = {};
+    STORES.forEach(function(store) {
+      var ppTotals = [];
+      fetched.forEach(function(byStore) {
+        var txns = byStore[store.slug] || [];
+        var ppSum = 0;
+        Object.keys(aggregateByDay_(txns)).forEach(function(day) { ppSum += aggregateByDay_(txns)[day]; });
+        ppTotals.push(ppSum);
+      });
+      ppTotalsY2ByStore[store.slug] = ppTotals.length > 0 ? ppTotals.reduce(function(a,b){return a+b;},0)/ppTotals.length : 0;
+    });
+    props.setProperty(GC_YOY2_CACHE_KEY, JSON.stringify({ key: y2CacheKey, totals: ppTotalsY2ByStore }));
+    Logger.log('[prefetchYoY2_] cached Y2 for key: ' + y2CacheKey);
+    return { ok: true };
+  } catch(e) {
+    Logger.log('prefetchYoY2_ error: ' + e.message);
     return { ok: false, error: e.message };
   }
 }

@@ -7545,17 +7545,34 @@ var settings = (function() {
       GC.router.navigate('#/director');
     });
 
-    // Recalculate button (triggers both rolling + YoY)
+    // Recalculate button — chains prefetchY2 → prefetchY1 → recalculategoals
+    // Each step fires only 36 Dutchie requests (well under the 45s JSONP timeout).
+    // After the first cold run both Y1 and Y2 are cached, so recalculate is instant.
     var recalcBtn    = document.getElementById('recalcBtn');
     var recalcStatus = document.getElementById('recalcStatus');
     var goalsMeta    = document.getElementById('goalsMeta');
     if (recalcBtn) {
       recalcBtn.addEventListener('click', function() {
         recalcBtn.disabled = true;
-        recalcBtn.textContent = 'Recalculating…';
         if (recalcStatus) { recalcStatus.textContent = ''; recalcStatus.className = 'settings-save-status'; }
 
-        GC.api.gasCall('recalculategoals', {})
+        function setStatus(msg) {
+          recalcBtn.textContent = msg;
+          if (recalcStatus) recalcStatus.textContent = msg;
+        }
+
+        setStatus('Fetching Y2 data…');
+        GC.api.gasCall('prefetchyoy2', {})
+          .then(function(r2) {
+            if (!r2.ok) throw new Error(r2.error || 'Y2 prefetch failed');
+            setStatus('Fetching Y1 data…');
+            return GC.api.gasCall('prefetchyoy1', {});
+          })
+          .then(function(r1) {
+            if (!r1.ok) throw new Error(r1.error || 'Y1 prefetch failed');
+            setStatus('Computing goals…');
+            return GC.api.gasCall('recalculategoals', {});
+          })
           .then(function(res) {
             recalcBtn.disabled = false;
             recalcBtn.textContent = 'Recalculate';
