@@ -255,7 +255,7 @@ var settings = (function() {
       + '</table>'
       + '<div class="settings-card-foot">'
       +   '<div class="settings-save-status" id="nickStatus"></div>'
-      +   '<button class="btn-primary" id="saveNicksBtn">Save Nicknames</button>'
+      +   '<button class="btn-primary" id="saveNicksBtn">Save</button>'
       + '</div>'
       + '</div>';
   }
@@ -434,7 +434,7 @@ var settings = (function() {
         GC.api.saveSettings(null, nicknames)
           .then(function(res) {
             saveNicksBtn.disabled = false;
-            saveNicksBtn.textContent = 'Save Nicknames';
+            saveNicksBtn.textContent = 'Save';
             if (res.ok) {
               nickStatus.textContent = '✓ Saved';
               nickStatus.className = 'settings-save-status ok';
@@ -445,7 +445,7 @@ var settings = (function() {
           })
           .catch(function(err) {
             saveNicksBtn.disabled = false;
-            saveNicksBtn.textContent = 'Save Nicknames';
+            saveNicksBtn.textContent = 'Save';
             nickStatus.textContent = '✗ ' + err.message;
             nickStatus.className = 'settings-save-status err';
           });
