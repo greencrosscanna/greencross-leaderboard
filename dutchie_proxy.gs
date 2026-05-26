@@ -2343,6 +2343,7 @@ function getStoreToday(store, params) {
       timeRemainingLabel: timeRemainingLabel,
       latestTxnTs:       latestTxnTs,
       newTicker:         newTxns.map(makeTicker_),
+      hourly:            hourly,
     };
   }
 

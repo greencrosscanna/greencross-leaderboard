@@ -1331,6 +1331,21 @@ var kiosk = (function() {
     // Closing push
     updateClosingBanner(td);
 
+    // Hourly heatmap — re-render in place when fresh hourly data arrives
+    if (td.hourly && td.hourly.length) {
+      var heatCard = document.querySelector('.heatmap-card');
+      if (heatCard) {
+        // Derive peak from the hourly array (exclude projected hours)
+        var peak = td.hourly.reduce(function(best, h) {
+          if (!h.projected && (h.revenue || 0) > (best ? best.revenue : 0)) return h;
+          return best;
+        }, null);
+        var newPeakHour    = peak ? peak.hour    : null;
+        var newPeakRevenue = peak ? peak.revenue : 0;
+        heatCard.outerHTML = renderHeatmap(td.hourly, newPeakHour, newPeakRevenue);
+      }
+    }
+
     // Goal celebration — fire confetti the first time pctToGoal crosses the threshold
     if (!_goalCelebrated && pctToGoal >= GC.THRESHOLDS.goalCelebrationAt) {
       _goalCelebrated = true;
