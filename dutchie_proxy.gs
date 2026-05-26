@@ -117,9 +117,9 @@ const EXCLUDED_DISCOUNT_KEYWORDS = [
 //   Bend       → Baseline
 //   Hillsboro  → Century
 const STORES = [
-  { slug: 'baseline',   name: 'Baseline',   dutchieName: 'Bend'        },
+  { slug: 'baseline',   name: 'Baseline',   dutchieName: 'Hillsboro'   },
   { slug: 'center',     name: 'Center',     dutchieName: 'Center'      },
-  { slug: 'century',    name: 'Century',    dutchieName: 'Hillsboro'   },
+  { slug: 'century',    name: 'Century',    dutchieName: 'Bend'        },
   { slug: 'commercial', name: 'Commercial', dutchieName: 'Commercial'  },
   { slug: 'portland',   name: 'Portland',   dutchieName: 'Portland Rd' },
   { slug: 'river',      name: 'River',      dutchieName: 'River'       },
