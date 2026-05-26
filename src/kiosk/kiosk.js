@@ -401,7 +401,7 @@ var kiosk = (function() {
       + '    <path d="M 169 37 A 98 98 0 0 1 218 122"'
       + '          stroke="#4ade80" stroke-width="14" fill="none" stroke-linecap="round" opacity="0.62"/>'
       // Apex anchor tick
-      + '    <line x1="120" y1="14" x2="120" y2="22" stroke="#5e6864" stroke-width="2" stroke-linecap="round"/>'
+      + '    <line x1="120" y1="14" x2="120" y2="22" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>'
       // Pill position indicator — rotates around arc center (120, 122)
       + '    <g id="kioskPaceNeedle"'
       + '       style="transform-origin:120px 122px;transform:rotate(' + tickDeg + 'deg);'

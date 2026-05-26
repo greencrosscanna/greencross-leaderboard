@@ -557,7 +557,7 @@ var director = (function() {
       +     '<path d="M 22 122 A 98 98 0 0 1 71 37"   stroke="var(--red)"   stroke-width="10" fill="none" stroke-linecap="butt" opacity="0.62"/>'
       +     '<path d="M 71 37  A 98 98 0 0 1 169 37"  stroke="var(--amber)" stroke-width="10" fill="none" stroke-linecap="butt" opacity="0.62"/>'
       +     '<path d="M 169 37 A 98 98 0 0 1 218 122" stroke="var(--green)" stroke-width="10" fill="none" stroke-linecap="butt" opacity="0.62"/>'
-      +     '<line x1="120" y1="18" x2="120" y2="26" stroke="var(--text-mute)" stroke-width="2"/>'
+      +     '<line x1="120" y1="18" x2="120" y2="26" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>'
       +     '<g id="dirPaceTick" style="transform-origin:120px 122px;transform:rotate(' + deg + 'deg);transition:transform 1.4s cubic-bezier(.2,.7,.3,1)">'
       +       '<rect x="113" y="11" width="14" height="26" rx="7" fill="#0a0e0d" opacity="0.55"/>'
       +       '<rect x="115" y="13" width="10" height="22" rx="5" fill="#e6ece9" stroke="#0a0e0d" stroke-width="1.5"/>'
