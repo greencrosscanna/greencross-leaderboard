@@ -42,6 +42,13 @@ html, body {
 }
 .gc-logo .green { color: var(--green); }
 
+.gc-logo-img {
+  display: block;
+  height: 28px;
+  width: auto;
+  flex-shrink: 0;
+}
+
 /* ── Buttons ─────────────────────────────────────────────── */
 .btn-ghost {
   background: transparent;

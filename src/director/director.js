@@ -158,7 +158,7 @@ var director = (function() {
     var range   = data ? GC.fmtDateRange(data.summary.dateRange.from, data.summary.dateRange.to) : '';
     var period  = data ? GC.periodLabel('mtd') : 'Month-to-Date';
     return '<header class="director-header">'
-      + '<div class="gc-logo"><span class="green">GREEN</span>CROSS</div>'
+      + '<img class="gc-logo-img" src="' + GC.LOGO_PNG + '" alt="Green Cross" height="28">'
       + '<span class="breadcrumb">Period: <b>' + e(period) + '</b>'
       + (range ? ' · ' + e(range) : '') + '</span>'
       + '<div class="header-right">'

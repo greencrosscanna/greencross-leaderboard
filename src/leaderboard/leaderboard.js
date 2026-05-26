@@ -47,7 +47,7 @@ var lb = (function() {
     var displayName = sess.displayName || 'Director';
 
     return '<nav class="lb-nav">'
-      + '<div class="gc-logo"><span class="green">GREEN</span>CROSS</div>'
+      + '<img class="gc-logo-img" src="' + GC.LOGO_PNG + '" alt="Green Cross" height="28">'
       + '<div class="lb-nav-tabs">'
       + '  <button class="lb-nav-tab" onclick="GC.router.navigate(\'#/director\')">← Director</button>'
       + '  <button class="lb-nav-tab active">Leaderboard</button>'

@@ -99,7 +99,7 @@ var kiosk = (function() {
       : '';
     return '<header class="kiosk-header">'
       + backBtn
-      + '<div class="kiosk-logo"><span class="gc-green">GREEN</span>CROSS</div>'
+      + '<img class="gc-logo-img" src="' + GC.LOGO_PNG + '" alt="Green Cross" height="28">'
       + '<span class="store-live-badge">' + e(store.name) + '</span>'
       + '<div class="kiosk-clock">'
       + '  <div class="kc-time num" id="kioskTime">—</div>'
