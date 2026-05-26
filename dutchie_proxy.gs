@@ -1865,8 +1865,8 @@ function getDirectorStores(params, pre) {
     };
   });
 
-  // Sort by today's % of goal descending (goal performance), assign ranks
-  storeSummaries.sort((a, b) => (b.today.pctToGoal || 0) - (a.today.pctToGoal || 0));
+  // Sort by MTD % of plan descending (goal performance), assign ranks
+  storeSummaries.sort((a, b) => (b.vsplan || 0) - (a.vsplan || 0));
   storeSummaries.forEach((s, i) => { s.rank = i + 1; });
 
   return {
