@@ -1171,6 +1171,22 @@ function getMonthlyGoal_(slug) {
   return 0;
 }
 
+/**
+ * Daily revenue goal for a specific day-of-week (0=Sun,1=Mon,...,6=Sat).
+ * Used to look up yesterday's goal when displaying pre-open stats.
+ */
+function getDailyGoalForDow_(slug, dow) {
+  try {
+    var res = resolveGoal_(slug);
+    var g   = res.g;
+    if (g && g.dowAvg) {
+      var base = g.dowAvg[dow] || Math.round((g.ppGoal || 0) / PP_DAYS);
+      return Math.round(base * (1 + res.stretch));
+    }
+  } catch(e) { Logger.log('getDailyGoalForDow_ error: ' + e.message); }
+  return getDailyGoal_(slug);
+}
+
 /** PP revenue target — manual override if set, otherwise max(rolling, yoy) + stretch. */
 function getPayPeriodTarget_(slug) {
   try {
@@ -2226,8 +2242,24 @@ function computeEmpTargets_(storeSlug, dailyGoal) {
 // ============================================================
 
 function getStoreToday(store, params) {
+  const { hour: nowHour, minute: nowMinute } = ptHourNow_();
+
+  // Pre-open: before 8 am show previous day's final stats so openers can
+  // see what the closing shift accomplished without fetching empty today data.
+  const isPreOpen = nowHour < STORE_OPEN_HOUR;
+
   const todayR = getDateRange_('today');
-  const txns   = fetchStoreTransactions_(store.slug, todayR.fromUTC, todayR.toUTC);
+
+  // Yesterday's UTC window (DST-correct)
+  const todayStartMs = ptDateToUtcMs_(ptNow_().dateStr);
+  const ydayMs       = todayStartMs - 24 * 60 * 60 * 1000;
+  const ydayRange    = {
+    fromUTC: new Date(ydayMs).toISOString(),
+    toUTC:   new Date(todayStartMs - 1).toISOString(),
+  };
+
+  const fetchRange = isPreOpen ? ydayRange : todayR;
+  const txns   = fetchStoreTransactions_(store.slug, fetchRange.fromUTC, fetchRange.toUTC);
   const agg    = aggregateTransactions_(txns);
   const hourMap = aggregateByHour_(txns);
 
@@ -2253,41 +2285,43 @@ function getStoreToday(store, params) {
     return parts[0] || name;
   }
 
-  const dailyGoal = getDailyGoal_(store.slug);
+  // Goal: use yesterday's DOW when pre-open so % reflects how yesterday did
+  // vs yesterday's target. Pre-open DOW: (today.dow + 6) % 7 (e.g. Mon→Sun).
+  const todayDow    = ptNow_().dow;
+  const yesterdayDow = (todayDow + 6) % 7;
+  const dailyGoal = isPreOpen
+    ? getDailyGoalForDow_(store.slug, yesterdayDow)
+    : getDailyGoal_(store.slug);
 
-  // Pace: how far ahead/behind goal given elapsed store time (PT, DST-aware)
-  const { hour: nowHour, minute: nowMinute } = ptHourNow_();
+  // Pace & projection
   const elapsedHours = Math.max(0, Math.min(nowHour + nowMinute / 60 - STORE_OPEN_HOUR, STORE_HOURS));
   const dayFrac      = STORE_HOURS > 0 ? elapsedHours / STORE_HOURS : 0;
   const paceGoal     = dailyGoal * dayFrac;
-  const pace         = paceGoal > 0.5 ? r3_((agg.sales - paceGoal) / paceGoal) : 0;
-  const pctToGoal    = dailyGoal > 0  ? r3_(agg.sales / dailyGoal)              : 0;
+  // Pre-open: pace = how far above/below yesterday's goal the final result was
+  const pace = isPreOpen
+    ? (dailyGoal > 0 ? r3_((agg.sales - dailyGoal) / dailyGoal) : 0)
+    : (paceGoal > 0.5 ? r3_((agg.sales - paceGoal) / paceGoal) : 0);
+  const pctToGoal = dailyGoal > 0 ? r3_(agg.sales / dailyGoal) : 0;
 
-  // Time remaining (PT, store hours 8 am – 10 pm)
-  const minutesLeft  = STORE_CLOSE_HOUR * 60 - (nowHour * 60 + nowMinute);
-  const storeClosed  = minutesLeft <= 0;
-  // Format as H:MM (e.g. "5:47", "0:23"), with special cases near close
+  // Time remaining label
+  const minutesLeft = STORE_CLOSE_HOUR * 60 - (nowHour * 60 + nowMinute);
+  const storeClosed = !isPreOpen && minutesLeft <= 0;
   const _remH   = Math.floor(Math.max(0, minutesLeft) / 60);
   const _remM   = Math.max(0, minutesLeft) % 60;
   const _remFmt = _remH + ':' + String(_remM).padStart(2, '0');
-  const timeRemainingLabel =
-    storeClosed         ? 'Closed'
-    : minutesLeft <= 0  ? 'Closed'
+  const timeRemainingLabel = isPreOpen  ? 'Pre-open'
+    : storeClosed                       ? 'Closed'
     : _remFmt;
 
-  // Project EOD revenue (straight-line); after close it's the actual final number.
-  // Require at least MIN_PROJ_HOURS of elapsed store time before extrapolating —
-  // before that threshold the multiplier is too large (e.g. 14× at the 1-hour mark)
-  // and one big early transaction blows up the projection. Below the threshold we
-  // return 0 so the kiosk renders "—" instead of a misleading number.
+  // Project EOD revenue
   const MIN_PROJ_HOURS = 2;
-  const projectedRevenue = storeClosed
+  const projectedRevenue = (isPreOpen || storeClosed)
     ? agg.sales
     : elapsedHours >= MIN_PROJ_HOURS
       ? Math.round(agg.sales / dayFrac)
       : 0;
 
-  // Hourly bar chart
+  // Hourly bar chart — when pre-open, all bars are "final" (no current/projected)
   const maxRevenue = Math.max(1, ...Object.values(hourMap).map(h => h.revenue));
   const hourly = [];
   for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
@@ -2297,8 +2331,8 @@ function getStoreToday(store, params) {
       hour:      lbl,
       revenue:   Math.round(d.revenue),
       pct:       r1_((d.revenue / maxRevenue) * 100),
-      current:   h === nowHour,
-      projected: h > nowHour,
+      current:   !isPreOpen && h === nowHour,
+      projected: !isPreOpen && h > nowHour,
     });
   }
 
@@ -2357,19 +2391,22 @@ function getStoreToday(store, params) {
   // sinceTs: lightweight delta response (only new transactions + updated totals)
   const sinceTs = params && params.sinceTs;
   if (sinceTs) {
-    const newTxns = txns
+    // Pre-open: no new transactions arriving — return updated labels/goal only
+    const newTxns = isPreOpen ? [] : txns
       .filter(tx => (tx.transactionDateLocalTime || tx.transactionDate || '') > sinceTs)
       .filter(tx => !_excluded.has(nameToKey_(txEmployee_(tx).name)))
       .reverse();   // newest first for ticker display
     return {
       isUpdate:          true,
+      isPreOpen:         isPreOpen,
       revenue:           agg.sales,
       transactions:      agg.transactions,
       avgOrderValue:     agg.avgOrderValue,
       pctToGoal:         pctToGoal,
       pace:              pace,
       projectedRevenue:  projectedRevenue,
-      toGo:              storeClosed ? 0 : Math.max(0, dailyGoal - agg.sales),
+      goal:              dailyGoal,
+      toGo:              (storeClosed || isPreOpen) ? Math.max(0, dailyGoal - agg.sales) : Math.max(0, dailyGoal - agg.sales),
       timeRemainingLabel: timeRemainingLabel,
       latestTxnTs:       latestTxnTs,
       newTicker:         newTxns.map(makeTicker_),
@@ -2393,6 +2430,7 @@ function getStoreToday(store, params) {
     projectedRevenue:   projectedRevenue,
     toGo:               Math.max(0, dailyGoal - agg.sales),
     timeRemainingLabel: timeRemainingLabel,
+    isPreOpen:          isPreOpen,
     transactions:       agg.transactions,
     avgOrderValue:      agg.avgOrderValue,
     onShift:            onShift,
@@ -2404,15 +2442,26 @@ function getStoreToday(store, params) {
 }
 
 function getStoreLeaderboard(store, params) {
-  const todayR = getDateRange_('today');
-  const txns   = fetchStoreTransactions_(store.slug, todayR.fromUTC, todayR.toUTC);
-  const agg    = aggregateTransactions_(txns);
-  const today  = todayR.toLocal;
+  const { hour: nowHour } = ptHourNow_();
+  const isPreOpen = nowHour < STORE_OPEN_HOUR;
 
-  // Load and update streaks
+  // Pre-open: show yesterday's leaderboard so openers can see closing staff results
+  const todayR = getDateRange_('today');
+  const todayStartMs = ptDateToUtcMs_(ptNow_().dateStr);
+  const ydayRange = {
+    fromUTC: new Date(todayStartMs - 24 * 60 * 60 * 1000).toISOString(),
+    toUTC:   new Date(todayStartMs - 1).toISOString(),
+  };
+  const fetchRange = isPreOpen ? ydayRange : todayR;
+
+  const txns = fetchStoreTransactions_(store.slug, fetchRange.fromUTC, fetchRange.toUTC);
+  const agg  = aggregateTransactions_(txns);
+  const today = todayR.toLocal;   // always use real today for streak date tracking
+
+  // Load streaks — only write updates when showing real today data
   const props     = PropertiesService.getScriptProperties();
   const streaks   = JSON.parse(props.getProperty(GC_STREAKS_KEY) || '{}');
-  const yesterday = fmtDate_(new Date(today).getTime() - 24 * 60 * 60 * 1000);
+  const yesterday = fmtDate_(new Date(todayStartMs - 24 * 60 * 60 * 1000));
 
   const empList = Object.values(agg.byEmployee)
     .sort((a, b) => b.sales - a.sales);
@@ -2453,7 +2502,8 @@ function getStoreLeaderboard(store, params) {
     }
   });
 
-  props.setProperty(GC_STREAKS_KEY, JSON.stringify(streaks));
+  // Only persist streak updates when showing live today data
+  if (!isPreOpen) props.setProperty(GC_STREAKS_KEY, JSON.stringify(streaks));
 
   // Compute "leading since" — walk txns chronologically, find when the
   // current day-leader last took the #1 spot and hasn't lost it since.

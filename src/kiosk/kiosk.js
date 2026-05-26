@@ -296,11 +296,28 @@ var kiosk = (function() {
     var pct      = today.pctToGoal || 0;
     var pctDisp  = Math.round(pct * 100) + '%';
     var closed   = today.timeRemainingLabel === 'Closed';
+    var preOpen  = today.isPreOpen || today.timeRemainingLabel === 'Pre-open';
+    var isFinal  = closed || preOpen;
     // Arc for "M 22 122 A 98 98 0 0 1 218 122" ≈ π × 98 = 308
     var ARC_LEN  = 308;
 
+    // Card label: "Yesterday's Results" pre-open, "Daily Goal · $X" otherwise
+    var cardLabel = preOpen
+      ? 'Yesterday\'s Results · <span id="kioskDailyGoalAmt">' + e(fmtDollars(today.goal)) + '</span>'
+      : 'Daily Goal · <span id="kioskDailyGoalAmt">' + e(fmtDollars(today.goal)) + '</span>';
+
+    // "Remain" slot: pre-open shows "Pre-open", closed shows "Closed", else time
+    var remainCls  = preOpen ? '' : (closed ? ' store-closed-label' : (' ' + timeZoneClass(today.timeRemainingLabel)).trimRight());
+    var remainText = preOpen ? 'Pre-open' : e(today.timeRemainingLabel || '—');
+
+    // "To Go" slot: show shortfall (0 if goal was hit) for both closed and pre-open
+    var toGoHtml = isFinal
+      ? '<div class="kstat-v num" id="kioskGoalToGo">' + fmtDollars(today.toGo || 0) + '</div>'
+      : '<div class="kstat-v num" id="kioskGoalToGo" data-target="' + (today.toGo || 0) + '">' + fmtDollars(0) + '</div>';
+    var toGoLabel = isFinal ? 'Shortfall' : 'To Go';
+
     return '<div class="goal-card' + (closed ? ' store-closed' : '') + '">'
-      + '<div class="kcard-label">Daily Goal · <span id="kioskDailyGoalAmt">' + e(fmtDollars(today.goal)) + '</span></div>'
+      + '<div class="kcard-label">' + cardLabel + '</div>'
       + '<div class="gauge-wrap">'
       + '  <svg width="240" height="130" viewBox="0 0 240 130">'
       + '    <path d="M 22 122 A 98 98 0 0 1 218 122"'
@@ -319,7 +336,7 @@ var kiosk = (function() {
       + '  </svg>'
       + '  <div class="gauge-pct">'
       + '    <div class="gp-big num" id="kioskGoalPct">0%</div>'
-      + '    <div class="gp-small">' + (closed ? 'final' : 'to goal') + '</div>'
+      + '    <div class="gp-small">' + (isFinal ? 'final' : 'to goal') + '</div>'
       + '  </div>'
       + '</div>'
       + '<div class="kcard-stats">'
@@ -328,13 +345,11 @@ var kiosk = (function() {
       + '    <div class="kstat-l">Sold</div>'
       + '  </div>'
       + '  <div class="kstat">'
-      + (closed
-          ? '<div class="kstat-v store-closed-label" id="kioskGoalToGo">Closed</div>'
-          : '<div class="kstat-v num" id="kioskGoalToGo" data-target="' + (today.toGo || 0) + '">' + fmtDollars(0) + '</div>')
-      + '    <div class="kstat-l" id="kioskToGoLabel">' + (closed ? '10 pm' : 'To Go') + '</div>'
+      + toGoHtml
+      + '    <div class="kstat-l" id="kioskToGoLabel">' + toGoLabel + '</div>'
       + '  </div>'
       + '  <div class="kstat">'
-      + '    <div class="kstat-v' + (closed ? ' store-closed-label' : (' ' + timeZoneClass(today.timeRemainingLabel)).trimRight()) + '" id="kioskTimeRemaining">' + e(today.timeRemainingLabel || '—') + '</div>'
+      + '    <div class="kstat-v' + remainCls + '" id="kioskTimeRemaining">' + remainText + '</div>'
       + '    <div class="kstat-l">Remain</div>'
       + '  </div>'
       + '</div>'
@@ -1133,6 +1148,7 @@ var kiosk = (function() {
           projectedRevenue:   td.projectedRevenue    || 0,
           toGo:               td.toGo                || 0,
           timeRemainingLabel: td.timeRemainingLabel  || '',
+          isPreOpen:          td.isPreOpen           || false,
         },
         onShift: (td.onShift || []).map(function(p) {
           var nameKey = GC.nameToKey(p.name || '');
