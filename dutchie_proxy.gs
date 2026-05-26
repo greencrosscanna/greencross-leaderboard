@@ -267,6 +267,31 @@ function doGet(e) {
       requireRole_(auth, ['owner','director']);
       return jsonOut(saveManualGoals_(params), params.callback);
     }
+    // Diagnostic: logs one raw transaction to Apps Script execution log.
+    // Director-only. Call from browser: ?action=txdiag&store=baseline&token=TOKEN
+    if (params.action === 'txdiag') {
+      requireRole_(auth, ['owner','director']);
+      var diagSlug  = params.store || STORES[0].slug;
+      var diagRange = getDateRange_('mtd');
+      var diagTxns  = fetchStoreTransactions_(diagSlug, diagRange.fromUTC, diagRange.toUTC);
+      // Find a transaction that has a non-zero discount
+      var diagTx = diagTxns.find(function(t) { return txDiscount_(t) > 0; }) || diagTxns[0];
+      if (diagTx) {
+        Logger.log('=== RAW TRANSACTION (store: ' + diagSlug + ') ===');
+        Logger.log(JSON.stringify(diagTx, null, 2));
+      } else {
+        Logger.log('No transactions found for ' + diagSlug);
+      }
+      return jsonOut({ ok: true, found: !!diagTx, store: diagSlug,
+        discountFields: diagTx ? {
+          totalDiscount: diagTx.totalDiscount,
+          discountTotal: diagTx.discountTotal,
+          discounts:     diagTx.discounts,
+          lineItemSample: (diagTx.items || diagTx.lineItems || diagTx.lineitemList || []).slice(0,2),
+        } : null
+      }, params.callback);
+    }
+
     if (params.action === 'saveavatar') {
       return jsonOut(saveAvatarConfig_(params), params.callback);
     }
