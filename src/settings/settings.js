@@ -52,7 +52,7 @@ var settings = (function() {
   // ── Header ────────────────────────────────────────────────
   function renderHeader() {
     return '<header class="settings-header">'
-      + '<button class="btn-ghost settings-back" id="settingsBack">← Director</button>'
+      + '<button class="btn-ghost settings-back" id="settingsBack">← Back</button>'
       + '<h1 class="settings-title">Settings</h1>'
       + '</header>';
   }
