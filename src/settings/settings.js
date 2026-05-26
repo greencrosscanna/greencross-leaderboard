@@ -256,7 +256,7 @@ var settings = (function() {
         + '<td class="settings-emp-name">' + e(emp.name) + '</td>'
         + '<td class="settings-emp-store">' + e(emp.store) + '</td>'
         + '<td><a class="settings-ava-edit" href="#/avatar?employee=' + encKey + '"'
-        + ' onclick="event.preventDefault();GC.router.navigate(\'#/avatar?employee=' + encKey + '\')">Edit →</a></td>'
+        + ' onclick="event.preventDefault();GC.navToAvatar(\'' + encKey + '\')">Edit →</a></td>'
         + '</tr>';
     }).join('');
 

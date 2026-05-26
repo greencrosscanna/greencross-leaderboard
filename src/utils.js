@@ -327,13 +327,22 @@ GC.avaFallback = function(img) {
  * @param {string}  initials     - fallback text (2–3 chars)
  * @param {boolean} clickable    - if true, adds data-ava-nav so the chip navigates to picker
  */
+/**
+ * Navigate to the avatar picker, encoding the current route as `from`
+ * so the picker's back button returns to the right place.
+ */
+GC.navToAvatar = function(nameKey) {
+  var from = (window.location.hash || '').replace(/^#/, '') || '/';
+  GC.router.navigate('#/avatar?employee=' + encodeURIComponent(nameKey) + '&from=' + encodeURIComponent(from));
+};
+
 GC.lbAvaPuck = function(nameKey, avatarConfig, initials, clickable) {
   var esc      = GC.esc;
   var safeInit = esc(initials || '??');
-  // data-ava-nav drives CSS cursor + hover scale; onclick is the reliable nav trigger
+  // data-ava-nav drives CSS cursor + hover scale; onclick uses GC.navToAvatar
   var navAttr = clickable ? ' data-ava-nav="' + esc(nameKey) + '"' : '';
   var clickHandler = clickable
-    ? ' onclick="GC.router.navigate(\'#/avatar?employee=' + encodeURIComponent(nameKey) + '\')"'
+    ? ' onclick="GC.navToAvatar(\'' + esc(nameKey) + '\')"'
     : '';
 
   if (avatarConfig) {

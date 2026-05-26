@@ -26,11 +26,11 @@ GC.views.renderAvatar = function(queryParams) {
       }
       var savedConfig = (data.avatarConfigs || {})[nameKey];
       app.innerHTML = ava.render(emp, savedConfig);
-      ava.init(emp);
+      ava.init(emp, queryParams);
     })
     .catch(function(err) {
       app.innerHTML = ava.renderError(err.message);
-      ava.initBack();
+      ava.initBack(queryParams);
     });
 };
 
@@ -95,9 +95,9 @@ var ava = (function() {
   // ── Header ─────────────────────────────────────────────────
   function renderHeader(empName) {
     return '<header class="avatar-header">'
-      + '<button id="avatarBack" class="ava-back">← Settings</button>'
+      + '<button id="avatarBack" class="ava-back">← Back</button>'
       + '<h1>Build your avatar</h1>'
-      + '<div class="avatar-crumb">Settings · Avatars · ' + e(empName) + '</div>'
+      + '<div class="avatar-crumb">' + e(empName) + ' · Avatar</div>'
       + '</header>';
   }
 
@@ -182,13 +182,15 @@ var ava = (function() {
   }
 
   // ── initBack (for not-found / error states) ────────────────
-  function initBack() {
+  function initBack(queryParams) {
     var btn = document.getElementById('avatarBack');
-    if (btn) btn.addEventListener('click', function() { GC.router.navigate('#/settings'); });
+    var from = (queryParams && queryParams.from) ? queryParams.from : null;
+    var backRoute = from ? '#' + from : '#/settings';
+    if (btn) btn.addEventListener('click', function() { GC.router.navigate(backRoute); });
   }
 
   // ── init (full interactive wiring after render) ────────────
-  function init(emp) {
+  function init(emp, queryParams) {
     var nameKey = emp.key;
 
     // Read saved config from the embedded JSON script tag (written by render())
@@ -208,7 +210,7 @@ var ava = (function() {
     }
 
     // Back button
-    initBack();
+    initBack(queryParams);
 
     // Render both avatar images
     function renderImg() {
