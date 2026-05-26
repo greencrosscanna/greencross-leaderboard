@@ -544,11 +544,9 @@ var director = (function() {
     var subLabel = zone === 'red' ? 'Behind plan' : zone === 'green' ? 'Ahead of plan' : 'Near plan';
 
     var proj     = today.projectedRevenue || today.revenue || 0;
-    var gap      = today.toGo || 0;
-    var gapAmt   = pace >= 0
-      ? GC.fmtCurrency(Math.abs(gap))          // ahead — toGo is 0 or negative overage
-      : GC.fmtCurrency(gap);                   // short — toGo is dollars still needed
-    var gapLabel = pace >= 0 ? 'Ahead by' : 'Short by';
+    var paceGap  = today.paceGap || 0;   // + = ahead of pace, − = behind pace (dollars)
+    var gapAmt   = GC.fmtCurrency(Math.abs(paceGap));
+    var gapLabel = paceGap >= 0 ? 'Ahead of pace' : 'Behind pace';
     var paceCls  = zone === 'red' ? ' down' : zone === 'green' ? ' up' : '';
 
     return '<div class="dir-today-card">'
