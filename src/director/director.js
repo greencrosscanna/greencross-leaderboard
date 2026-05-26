@@ -577,8 +577,8 @@ var director = (function() {
       + renderDiscountWatch(alerts)
       + '</div>'
       + '<div class="footer-note director-footer">'
-      + 'Mock data · Director · All Stores · '
-      + '<span id="lastRefreshed">—</span>'
+      + 'v1.0 · Director Mode · '
+      + '<span id="lastRefreshed">Last refresh —</span>'
       + '</div>'
       + '</div>';
   }
