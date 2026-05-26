@@ -1,0 +1,327 @@
+/* ============================================================
+   Green Cross — Avatar Picker Styles
+   ============================================================ */
+
+/* ── Page layout ─────────────────────────────────────────── */
+.avatar-page {
+  min-height: 100vh;
+}
+
+.avatar-header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 24px 24px 20px;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.avatar-header h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.avatar-crumb {
+  color: var(--text-dim, #a8aba6);
+  font-size: 13px;
+}
+
+.ava-back {
+  background: none;
+  border: none;
+  color: var(--text-dim, #a8aba6);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+.ava-back:hover {
+  color: var(--text, #f0efea);
+}
+
+/* ── Two-column grid ─────────────────────────────────────── */
+.avatar-grid {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 24px;
+  align-items: start;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 24px 64px;
+}
+
+@media (max-width: 880px) {
+  .avatar-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Preview card ────────────────────────────────────────── */
+.avatar-preview {
+  padding: 20px;
+  position: sticky;
+  top: 16px;
+}
+
+.avatar-preview h3 {
+  margin: 0 0 12px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text-dim, #a8aba6);
+  font-weight: 600;
+}
+
+/* Big green gradient avatar frame */
+.avatar-frame {
+  width: 100%;
+  aspect-ratio: 1/1;
+  border-radius: 12px;
+  border: 1px solid var(--border, #2a312d);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: radial-gradient(circle at 30% 25%, #7dd49a 0%, #3a8b5a 45%, #1a4d2f 100%);
+  box-shadow: 0 0 32px rgba(102,197,133,0.18), inset 0 0 0 1px rgba(125,212,154,0.2);
+}
+
+.avatar-frame img {
+  width: 88%;
+  height: 88%;
+  display: block;
+}
+
+/* ── Action buttons ──────────────────────────────────────── */
+.avatar-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.ava-btn {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  border: 1px solid var(--border, #2a312d);
+  background: var(--surface-2, #1f2420);
+  color: var(--text, #f0efea);
+}
+
+.ava-btn:hover { background: #272d29; }
+
+.ava-btn.primary {
+  background: var(--green, #4ade80);
+  border-color: var(--green, #4ade80);
+  color: #0d100e;
+}
+
+.ava-btn.primary:hover { opacity: 0.9; }
+
+/* ── Leaderboard preview block ───────────────────────────── */
+.ava-lb-preview {
+  margin-top: 18px;
+  padding: 14px;
+  background: var(--surface-2, #1f2420);
+  border-radius: 12px;
+  border: 1px solid var(--border, #2a312d);
+}
+
+.ava-lb-preview h4 {
+  margin: 0 0 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text-dim, #a8aba6);
+  font-weight: 600;
+}
+
+.ava-lb-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.ava-lb-rank {
+  width: 18px;
+  color: var(--text-dim, #a8aba6);
+  font-weight: 600;
+  font-size: 12px;
+  text-align: right;
+}
+
+.ava-lb-name {
+  flex: 1;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.ava-lb-val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.ava-lb-row.you {
+  background: rgba(102,197,133,0.08);
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin: 0 -8px;
+}
+
+/* ── Small avatar circle (shared with leaderboard) ───────── */
+.lb-ava {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 30% 25%, #7dd49a 0%, #3a8b5a 45%, #1a4d2f 100%);
+  transition: transform 100ms ease;
+}
+
+.lb-ava img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.lb-ava.initials {
+  background: #2d4a37;
+  color: #a7d9b9;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+[data-ava-nav] { cursor: pointer; }
+[data-ava-nav]:hover { transform: scale(1.05); }
+
+/* ── Controls card ───────────────────────────────────────── */
+.avatar-controls {
+  padding: 0;
+}
+
+/* Tabs */
+.ava-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 12px 16px 0;
+  border-bottom: 1px solid var(--border, #2a312d);
+}
+
+.ava-tab {
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim, #a8aba6);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.ava-tab.active {
+  color: var(--green, #4ade80);
+  border-bottom-color: var(--green, #4ade80);
+}
+
+/* Panels */
+.ava-panel {
+  padding: 20px 20px 4px;
+  display: none;
+}
+
+.ava-panel.active { display: block; }
+
+/* Fields */
+.ava-field {
+  padding: 12px 0;
+  border-bottom: 1px dashed var(--border, #2a312d);
+}
+
+.ava-field:last-child { border-bottom: 0; }
+
+.ava-field-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-dim, #a8aba6);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+/* ── Swatches ────────────────────────────────────────────── */
+.ava-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ava-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid var(--surface-1, #161a17);
+  box-shadow: 0 0 0 1px var(--border, #2a312d);
+  transition: transform .1s;
+}
+
+.ava-swatch.selected {
+  box-shadow: 0 0 0 2px var(--green, #4ade80);
+  transform: scale(1.08);
+}
+
+.ava-swatch:hover { transform: scale(1.08); }
+
+/* ── Chips ───────────────────────────────────────────────── */
+.ava-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.ava-chips::-webkit-scrollbar { width: 6px; }
+.ava-chips::-webkit-scrollbar-thumb {
+  background: var(--border, #2a312d);
+  border-radius: 3px;
+}
+
+.ava-chip {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--surface-2, #1f2420);
+  border: 1px solid var(--border, #2a312d);
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-dim, #a8aba6);
+}
+
+.ava-chip:hover {
+  background: #272d29;
+  color: var(--text, #f0efea);
+}
+
+.ava-chip.selected {
+  background: var(--green, #4ade80);
+  border-color: var(--green, #4ade80);
+  color: #0d100e;
+}
+
+/* ── Save status ─────────────────────────────────────────── */
+.ava-save-status {
+  text-align: center;
+  margin: 8px 24px;
+  font-size: 13px;
+  min-height: 20px;
+}
+
+.ava-save-status.ok  { color: var(--green, #4ade80); }
+.ava-save-status.err { color: #ef4444; }

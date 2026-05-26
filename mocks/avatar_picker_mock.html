@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Green Cross — Avatar Builder (Mock)</title>
+<style>
+  :root {
+    --bg: #0d100e;
+    --card: #161a17;
+    --card-2: #1f2420;
+    --ink: #f0efea;
+    --ink-2: #a8aba6;
+    --ink-3: #6a6e6a;
+    --line: #2a312d;
+    --line-2: #3a423c;
+    --green: #66c585;
+    --green-2: #4faa6e;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.45);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif; }
+  .page { max-width: 1180px; margin: 0 auto; padding: 32px 24px 64px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 24px; }
+  header h1 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
+  header .crumb { color: var(--ink-3); font-size: 13px; }
+
+  .grid { display: grid; grid-template-columns: 360px 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 880px) { .grid { grid-template-columns: 1fr; } }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+
+  /* PREVIEW PANEL */
+  .preview { padding: 20px; position: sticky; top: 16px; }
+  .preview h3 { margin: 0 0 12px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); font-weight: 600; }
+  .avatar-frame { width: 100%; aspect-ratio: 1/1; border-radius: 12px; border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+    background: radial-gradient(circle at 30% 25%, #7dd49a 0%, #3a8b5a 45%, #1a4d2f 100%);
+    box-shadow: 0 0 32px rgba(102, 197, 133, 0.18), inset 0 0 0 1px rgba(125, 212, 154, 0.2); }
+  .avatar-frame img { width: 88%; height: 88%; display: block; }
+  .actions { display: flex; gap: 8px; margin-top: 14px; }
+  .btn { flex: 1; padding: 10px 14px; border-radius: 10px; font-weight: 600; font-size: 14px; cursor: pointer; border: 1px solid var(--line-2); background: var(--card-2); color: var(--ink); }
+  .btn:hover { background: #272d29; }
+  .btn.primary { background: var(--green); border-color: var(--green); color: #0d100e; }
+  .btn.primary:hover { background: var(--green-2); }
+  .btn.ghost { background: transparent; }
+
+  /* LEADERBOARD PREVIEW */
+  .lb-preview { margin-top: 18px; padding: 14px; background: var(--card-2); border-radius: 12px; border: 1px solid var(--line); }
+  .lb-preview h4 { margin: 0 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); font-weight: 600; }
+  .lb-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  .lb-rank { width: 18px; color: var(--ink-3); font-weight: 600; font-size: 12px; text-align: right; }
+  .lb-ava { width: 32px; height: 32px; border-radius: 50%; overflow: hidden; flex: none; display:flex; align-items:center; justify-content:center;
+    background: radial-gradient(circle at 30% 25%, #7dd49a 0%, #3a8b5a 45%, #1a4d2f 100%); }
+  .lb-ava img { width: 100%; height: 100%; }
+  .lb-ava.initials { background: #2d4a37; color: #a7d9b9; font-weight: 700; font-size: 12px; }
+  .lb-name { flex: 1; font-weight: 500; }
+  .lb-name small { color: var(--ink-3); display:block; font-weight:400; font-size: 11px; }
+  .lb-val { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
+  .lb-row.you { background: rgba(102, 197, 133, 0.08); border-radius: 8px; padding: 6px 8px; margin: 0 -8px; }
+
+  /* CONTROLS */
+  .controls { padding: 8px 0 20px; }
+  .tabs { display: flex; gap: 4px; padding: 12px 16px 0; border-bottom: 1px solid var(--line); }
+  .tab { padding: 10px 14px; font-size: 13px; font-weight: 600; color: var(--ink-3); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab.active { color: var(--green); border-bottom-color: var(--green); }
+  .panel { padding: 20px 20px 4px; display: none; }
+  .panel.active { display: block; }
+
+  .field { padding: 12px 0; border-bottom: 1px dashed var(--line); }
+  .field:last-child { border-bottom: 0; }
+  .field-label { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); font-weight: 600; margin-bottom: 10px; }
+
+  /* Swatches (colors) */
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+  .swatch { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; border: 2px solid var(--card); box-shadow: 0 0 0 1px var(--line-2); transition: transform .1s; }
+  .swatch.selected { box-shadow: 0 0 0 2px var(--green); transform: scale(1.08); }
+  .swatch:hover { transform: scale(1.08); }
+
+  /* Chips (style options) */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 220px; overflow-y: auto; padding-right: 4px; }
+  .chips::-webkit-scrollbar { width: 6px; }
+  .chips::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
+  .chip { padding: 6px 10px; border-radius: 999px; background: var(--card-2); border: 1px solid var(--line); font-size: 12px; cursor: pointer; color: var(--ink-2); }
+  .chip:hover { background: #272d29; color: var(--ink); }
+  .chip.selected { background: var(--green); border-color: var(--green); color: #0d100e; }
+
+  .footer-note { margin-top: 16px; padding: 12px 16px; background: #2a2410; border: 1px solid #5a4a18; color: #fbbf24; font-size: 12px; border-radius: 10px; }
+  .footer-note code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>Build your avatar</h1>
+    <div class="crumb">Settings · Profile · Avatar</div>
+  </header>
+
+  <div class="grid">
+    <!-- PREVIEW + LEADERBOARD CONTEXT -->
+    <div class="card preview">
+      <h3>Preview</h3>
+      <div class="avatar-frame">
+        <img id="avatar" alt="Your avatar" />
+      </div>
+      <div class="actions">
+        <button class="btn ghost" id="randomBtn" title="Reroll all features">↻ Surprise me</button>
+        <button class="btn primary" id="saveBtn">Save</button>
+      </div>
+
+      <div class="lb-preview">
+        <h4>How it'll look on the leaderboard</h4>
+        <div class="lb-row">
+          <div class="lb-rank">1</div>
+          <div class="lb-ava"><img src="https://api.dicebear.com/9.x/avataaars/svg?seed=Jordan&skinColor=edb98a&top=straight01&hairColor=2c1b18&clothing=hoodie&clothesColor=ff5c5c&accessoriesProbability=0&facialHairProbability=0" /></div>
+          <div class="lb-name">Jordan M. <small>Capitol Hill</small></div>
+          <div class="lb-val">$4,820</div>
+        </div>
+        <div class="lb-row you">
+          <div class="lb-rank">2</div>
+          <div class="lb-ava"><img id="avatarLb" /></div>
+          <div class="lb-name">You <small>Belltown</small></div>
+          <div class="lb-val">$4,210</div>
+        </div>
+        <div class="lb-row">
+          <div class="lb-rank">3</div>
+          <div class="lb-ava"><img src="https://api.dicebear.com/9.x/avataaars/svg?seed=Devon&skinColor=ae5d29&top=shortCurly&hairColor=2c1b18&clothing=shirtCrewNeck&clothesColor=3c4f5c&accessoriesProbability=0&facialHairProbability=0" /></div>
+          <div class="lb-name">Devon T. <small>Ballard</small></div>
+          <div class="lb-val">$3,945</div>
+        </div>
+        <div class="lb-row">
+          <div class="lb-rank">4</div>
+          <div class="lb-ava initials">RB</div>
+          <div class="lb-name">Riley B. <small>Greenwood</small></div>
+          <div class="lb-val">$3,510</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONTROLS -->
+    <div class="card controls">
+      <div class="tabs">
+        <div class="tab active" data-tab="face">Face</div>
+        <div class="tab" data-tab="hair">Hair</div>
+        <div class="tab" data-tab="extras">Extras</div>
+      </div>
+
+      <!-- FACE -->
+      <div class="panel active" data-panel="face">
+        <div class="field">
+          <div class="field-label">Skin tone</div>
+          <div class="swatches" id="skinSwatches"></div>
+        </div>
+        <div class="field">
+          <div class="field-label">Eyes</div>
+          <div class="chips" data-key="eyes"></div>
+        </div>
+        <div class="field">
+          <div class="field-label">Eyebrows</div>
+          <div class="chips" data-key="eyebrows"></div>
+        </div>
+        <div class="field">
+          <div class="field-label">Mouth</div>
+          <div class="chips" data-key="mouth"></div>
+        </div>
+      </div>
+
+      <!-- HAIR -->
+      <div class="panel" data-panel="hair">
+        <div class="field">
+          <div class="field-label">Hair / hat style</div>
+          <div class="chips" data-key="top"></div>
+        </div>
+        <div class="field">
+          <div class="field-label">Hair color</div>
+          <div class="swatches" id="hairColorSwatches"></div>
+        </div>
+        <div class="field">
+          <div class="field-label">Facial hair</div>
+          <div class="chips" data-key="facialHair"></div>
+        </div>
+        <div class="field">
+          <div class="field-label">Facial hair color</div>
+          <div class="swatches" id="facialHairColorSwatches"></div>
+        </div>
+      </div>
+
+      <!-- EXTRAS (clothing + accessories) -->
+      <div class="panel" data-panel="extras">
+        <div class="field">
+          <div class="field-label">Clothing</div>
+          <div class="chips" data-key="clothing"></div>
+        </div>
+        <div class="field">
+          <div class="field-label">Clothing color</div>
+          <div class="swatches" id="clothesColorSwatches"></div>
+        </div>
+        <div class="field">
+          <div class="field-label">Accessories</div>
+          <div class="chips" data-key="accessories"></div>
+        </div>
+        <div class="field">
+          <div class="field-label">Accessory color</div>
+          <div class="swatches" id="accessoriesColorSwatches"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    Mock note for Code: save action currently writes to <code>localStorage["gc_avatar_config"]</code>. Swap for real persistence (e.g. Sheets via Apps Script). Config is a JSON object with the keys below — render anywhere with <code>&lt;img src="https://api.dicebear.com/9.x/avataaars/svg?seed=...&amp;...config"&gt;</code>.
+  </div>
+</div>
+
+<script>
+  // DiceBear Avataaars v9 — curated option lists.
+  // Filtered for workplace context. To remove more, delete from these arrays.
+  const OPTIONS = {
+    skinColor:    ['ffdbb4','f8d25c','fd9841','edb98a','d08b5b','ae5d29','614335'],
+    top: [
+      '_none','hat','winterHat1',
+      'bigHair','bob','bun','curly','curvy','dreads','dreads01','dreads02','frida','frizzle','fro','froBand','longButNotTooLong','miaWallace','shaggy','shaggyMullet','shavedSides','shortCurly','shortFlat','shortRound','shortWaved','sides','straight01','straight02','straightAndStrand','theCaesar','theCaesarAndSidePart'
+    ],
+    hairColor:    ['2c1b18','4a312c','724133','a55728','b58143','c93305','d6b370','e8e1e1','ecdcbf','f59797'],
+    eyes:         ['default','eyeRoll','happy','hearts','side','squint','surprised','wink'],
+    eyebrows:     ['default','defaultNatural','flatNatural','frownNatural','raisedExcited','raisedExcitedNatural','upDown','upDownNatural'],
+    mouth:        ['default','smile','twinkle','tongue','serious','disbelief'],
+    facialHair:        ['_none','beardLight','beardMajestic','beardMedium','moustacheFancy','moustacheMagnum'],
+    facialHairColor:   ['2c1b18','4a312c','724133','a55728','b58143','c93305','d6b370','e8e1e1','ecdcbf','f59797'],
+    clothing:     ['blazerAndShirt','blazerAndSweater','collarAndSweater','graphicShirt','hoodie','shirtCrewNeck','shirtScoopNeck','shirtVNeck'],
+    clothesColor: ['3c4f5c','65c9ff','262e33','5199e4','25557c','929598','a7ffc4','b1e2ff','e6e6e6','ff5c5c','ff488e','ffafb9','ffdeb5','ffffb1','ffffff'],
+    accessories:  ['_none','prescription01','prescription02','round','sunglasses','wayfarers'],
+    accessoriesColor: ['3c4f5c','65c9ff','262e33','5199e4','25557c','929598','a7ffc4','b1e2ff','e6e6e6','ff5c5c','ff488e','ffafb9','ffdeb5','ffffb1','ffffff']
+  };
+
+  // Friendly labels for chip text
+  function humanize(s) {
+    if (s === '_none') return 'None';
+    return s.replace(/([A-Z])/g,' $1').replace(/^./, c => c.toUpperCase()).replace(/(\d+)/, ' $1').trim();
+  }
+
+  // Default config (a reasonable starting avatar)
+  const DEFAULT = {
+    skinColor: 'edb98a',
+    top: 'shortFlat',
+    hairColor: '2c1b18',
+    eyes: 'default',
+    eyebrows: 'default',
+    mouth: 'smile',
+    facialHair: '_none',
+    facialHairColor: '2c1b18',
+    clothing: 'hoodie',
+    clothesColor: '3c4f5c',
+    accessories: '_none',
+    accessoriesColor: '262e33'
+  };
+
+  // Load saved or default. Reset if saved config has keys from a different style.
+  let config = {};
+  try { config = JSON.parse(localStorage.getItem('gc_avatar_config')) || {}; } catch(_) {}
+  for (const k of Object.keys(config)) {
+    if (!(k in DEFAULT)) { config = {}; break; }
+  }
+  config = Object.assign({}, DEFAULT, config);
+
+  const SEED = 'sky-greencross';
+
+  function buildUrl(cfg) {
+    const p = new URLSearchParams();
+    p.set('seed', SEED);
+
+    const noAccessories = cfg.accessories === '_none';
+    const noFacialHair  = cfg.facialHair === '_none';
+    const noHair        = cfg.top === '_none';
+
+    for (const k in cfg) {
+      const v = cfg[k];
+      if (v == null || v === '_none') continue;
+      if (k === 'accessoriesColor' && noAccessories) continue;
+      if (k === 'facialHairColor' && noFacialHair) continue;
+      if (k === 'hairColor' && noHair) continue;
+      p.set(k, v);
+    }
+
+    p.set('accessoriesProbability', noAccessories ? '0' : '100');
+    p.set('facialHairProbability',  noFacialHair  ? '0' : '100');
+    p.set('topProbability',         noHair        ? '0' : '100');
+
+    return `https://api.dicebear.com/9.x/avataaars/svg?${p.toString()}`;
+  }
+
+  function render() {
+    const url = buildUrl(config);
+    console.log('[avatar] →', url);
+    const main = document.getElementById('avatar');
+    const lb = document.getElementById('avatarLb');
+    main.onerror = async () => {
+      console.warn('[avatar] image failed to load — fetching to see API response…');
+      try {
+        const r = await fetch(url);
+        const text = await r.text();
+        console.warn('[avatar] DiceBear responded:', r.status, text.slice(0, 800));
+      } catch(e) {
+        console.warn('[avatar] fetch also failed:', e);
+      }
+    };
+    main.src = url;
+    lb.src = url;
+  }
+
+  // -- Build swatch sets --
+  function buildSwatches(containerId, key) {
+    const c = document.getElementById(containerId);
+    c.innerHTML = '';
+    OPTIONS[key].forEach(hex => {
+      const s = document.createElement('div');
+      s.className = 'swatch' + (config[key] === hex ? ' selected' : '');
+      s.style.background = '#' + hex;
+      s.title = '#' + hex;
+      s.addEventListener('click', () => {
+        config[key] = hex;
+        c.querySelectorAll('.swatch').forEach(el => el.classList.remove('selected'));
+        s.classList.add('selected');
+        render();
+      });
+      c.appendChild(s);
+    });
+  }
+  buildSwatches('skinSwatches','skinColor');
+  buildSwatches('hairColorSwatches','hairColor');
+  buildSwatches('facialHairColorSwatches','facialHairColor');
+  buildSwatches('clothesColorSwatches','clothesColor');
+  buildSwatches('accessoriesColorSwatches','accessoriesColor');
+
+  // -- Build chip sets --
+  document.querySelectorAll('.chips[data-key]').forEach(group => {
+    const key = group.dataset.key;
+    OPTIONS[key].forEach(val => {
+      const chip = document.createElement('div');
+      chip.className = 'chip' + (config[key] === val ? ' selected' : '');
+      chip.textContent = humanize(val);
+      chip.dataset.val = val;
+      chip.addEventListener('click', () => {
+        config[key] = val;
+        group.querySelectorAll('.chip').forEach(el => el.classList.remove('selected'));
+        chip.classList.add('selected');
+        render();
+      });
+      group.appendChild(chip);
+    });
+  });
+
+  // -- Tabs --
+  document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(el => el.classList.remove('active'));
+      t.classList.add('active');
+      document.querySelector(`.panel[data-panel="${t.dataset.tab}"]`).classList.add('active');
+    });
+  });
+
+  // -- Buttons --
+  document.getElementById('randomBtn').addEventListener('click', () => {
+    for (const k in OPTIONS) {
+      const arr = OPTIONS[k];
+      config[k] = arr[Math.floor(Math.random() * arr.length)];
+    }
+    buildSwatches('skinSwatches','skinColor');
+    buildSwatches('hairColorSwatches','hairColor');
+    buildSwatches('facialHairColorSwatches','facialHairColor');
+    buildSwatches('clothesColorSwatches','clothesColor');
+    buildSwatches('accessoriesColorSwatches','accessoriesColor');
+    document.querySelectorAll('.chips[data-key]').forEach(group => {
+      const key = group.dataset.key;
+      group.querySelectorAll('.chip').forEach(c => c.classList.toggle('selected', c.dataset.val === config[key]));
+    });
+    render();
+  });
+
+  document.getElementById('saveBtn').addEventListener('click', () => {
+    localStorage.setItem('gc_avatar_config', JSON.stringify(config));
+    const btn = document.getElementById('saveBtn');
+    const orig = btn.textContent;
+    btn.textContent = '✓ Saved';
+    setTimeout(() => btn.textContent = orig, 1400);
+  });
+
+  render();
+</script>
+</body>
+</html>
