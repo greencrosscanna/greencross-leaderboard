@@ -331,3 +331,31 @@
   cursor: pointer;
 }
 .settings-emp-ava .lb-ava img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ── Status (exclude) toggle ─────────────────────────────── */
+.settings-emp-excl { width: 88px; text-align: center; }
+
+.excl-toggle {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--green, #4ade80);
+  background: transparent;
+  color: var(--green, #4ade80);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.excl-toggle:hover { background: rgba(74,222,128,0.10); }
+
+.excl-toggle.excluded {
+  border-color: var(--text-dim, #5a6860);
+  color: var(--text-dim, #5a6860);
+}
+.excl-toggle.excluded:hover { background: rgba(255,255,255,0.05); }
+
+/* Mute entire row when excluded */
+.emp-row-excluded td { opacity: 0.45; }
+.emp-row-excluded .settings-emp-excl { opacity: 1; }  /* keep toggle readable */

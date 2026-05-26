@@ -32,6 +32,7 @@ const GC_TARGET_CACHE_KEY   = 'GC_ROLLING_TARGET_CACHE_JSON';
 const GC_GOALS_CACHE_KEY    = 'GC_GOALS_CACHE_JSON';
 const GC_STRETCH_KEY        = 'GC_STRETCH_MULTIPLIER';  // stored as decimal, e.g. 0.025 = 2.5%
 const GC_YOY_GOALS_KEY      = 'GC_YOY_GOALS_JSON';
+const GC_EXCLUDED_KEY       = 'GC_EXCLUDED_JSON';   // array of excluded employee nameKeys
 const GC_MANUAL_PP_KEY      = 'GC_MANUAL_PP_GOALS_JSON'; // slug→final PP goal overrides
 const GC_AVATAR_CONFIGS_KEY  = 'GC_AVATAR_CONFIGS_JSON'; // { nameKey: { ...avatar_config } }
 const PP_DAYS                = 14;   // pay-period length in days
@@ -645,6 +646,12 @@ function getNicknames_() {
     });
     return out;
   } catch(e) { return {}; }
+}
+
+/** Returns a Set of excluded employee nameKeys. */
+function getExcluded_() {
+  const raw = PropertiesService.getScriptProperties().getProperty(GC_EXCLUDED_KEY);
+  try { return new Set(raw ? JSON.parse(raw) : []); } catch(e) { return new Set(); }
 }
 
 /** Normalise a Dutchie name into a lookup key (lowercase, no periods, spaces→underscore). */
@@ -1827,13 +1834,15 @@ function getDirectorStaff(params, pre) {
     });
   }
 
-  // Aggregate employees globally across all stores
+  // Aggregate employees globally across all stores (skip excluded employees)
   const globalEmps = {};
+  const _dirExcluded = getExcluded_();
 
   STORES.forEach(function(store) {
     const agg = aggregateTransactions_(byStore[store.slug] || []);
     Object.values(agg.byEmployee).forEach(function(emp) {
       const key = emp.name.toLowerCase().replace(/\s+/g, '_');
+      if (_dirExcluded.has(nameToKey_(emp.name))) return;
       if (!globalEmps[key]) {
         globalEmps[key] = Object.assign({}, emp, {
           storeSlug: store.slug,
@@ -2196,7 +2205,9 @@ function getStoreToday(store, params) {
 
   // Build shift strip: active employees (have transactions today) + known
   // roster employees who haven't transacted yet (shown as off-shift).
+  const _excluded = getExcluded_();
   const activeEmps = Object.values(agg.byEmployee)
+    .filter(emp => !_excluded.has(nameToKey_(emp.name)))
     .sort((a, b) => b.sales - a.sales)
     .map(emp => ({
       initials: emp.initials,
@@ -2216,7 +2227,7 @@ function getStoreToday(store, params) {
   // Pull in roster employees not yet seen today (apply nicknames so display is consistent)
   const _rosterNicks = getNicknames_();
   const rosterEmps = (getEmployeeRoster_()[store.slug] || [])
-    .filter(e => !activeIds.has(String(e.id)) && !activeNames.has(e.name.toLowerCase()))
+    .filter(e => !activeIds.has(String(e.id)) && !activeNames.has(e.name.toLowerCase()) && !_excluded.has(nameToKey_(e.name)))
     .map(e => ({
       initials: e.initials,
       name:     applyNickname_(e.name, _rosterNicks),
@@ -2248,6 +2259,7 @@ function getStoreToday(store, params) {
   if (sinceTs) {
     const newTxns = txns
       .filter(tx => (tx.transactionDateLocalTime || tx.transactionDate || '') > sinceTs)
+      .filter(tx => !_excluded.has(nameToKey_(txEmployee_(tx).name)))
       .reverse();   // newest first for ticker display
     return {
       isUpdate:          true,
@@ -2264,8 +2276,10 @@ function getStoreToday(store, params) {
     };
   }
 
-  // Full response: ticker seed = last 10 transactions newest-first
-  const recentTxns = txns.slice().reverse().slice(0, 10);
+  // Full response: ticker seed = last 10 transactions newest-first (exclude excluded employees)
+  const recentTxns = txns.slice().reverse()
+    .filter(tx => !_excluded.has(nameToKey_(txEmployee_(tx).name)))
+    .slice(0, 10);
   const ticker = recentTxns.map(makeTicker_);
 
   return {
@@ -2670,6 +2684,7 @@ function getSettings_(params) {
   }
 
   var allEmployees = employees.concat(getManagementEmployees_());
+  var excluded = Array.from(getExcluded_());
   return {
     ok:               true,
     stretch:          getStretchMultiplier_(),
@@ -2704,6 +2719,7 @@ function getSettings_(params) {
     }),
     nicknames:        nicknames,
     employees:        allEmployees,
+    excluded:         excluded,
     manualGoals:      getManualPPGoals_(),
     avatarConfigs:    resolveAvatarConfigs_(allEmployees, getAvatarConfigs_()),
   };
@@ -2864,6 +2880,17 @@ function saveSettings_(params) {
       props.setProperty(GC_NICKNAMES_KEY, JSON.stringify(n));
     } catch(e) {
       return { ok: false, error: 'Invalid nicknames JSON: ' + e.message };
+    }
+  }
+
+  // Save excluded employees
+  if (params.excluded !== undefined) {
+    try {
+      var ex = JSON.parse(params.excluded);
+      if (!Array.isArray(ex)) throw new Error('not an array');
+      props.setProperty(GC_EXCLUDED_KEY, JSON.stringify(ex));
+    } catch(e) {
+      return { ok: false, error: 'Invalid excluded JSON: ' + e.message };
     }
   }
 

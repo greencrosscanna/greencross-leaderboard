@@ -210,7 +210,7 @@ var settings = (function() {
   }
 
   // ── Shared: build a table row for one employee ────────────
-  function empRow(emp, nicknames, avatarConfigs, showNick) {
+  function empRow(emp, nicknames, avatarConfigs, showNick, excludedSet) {
     var nick   = (nicknames || {})[emp.key] || '';
     var config = (avatarConfigs || {})[emp.key] || null;
     if (!config) {
@@ -222,9 +222,11 @@ var settings = (function() {
     var nameParts = (emp.name || '').split(' ');
     var initials  = (nameParts[0] || '').slice(0, 1)
                   + (nameParts.length > 1 ? nameParts[nameParts.length - 1].slice(0, 1) : '');
-    var puck   = GC.lbAvaPuck(emp.key, config, emp.initials || initials || '??', true);
-    var encKey = e(emp.key);
-    return '<tr>'
+    var puck      = GC.lbAvaPuck(emp.key, config, emp.initials || initials || '??', true);
+    var encKey    = e(emp.key);
+    var isExcluded = excludedSet && excludedSet[emp.key];
+    var rowCls    = isExcluded ? ' class="emp-row-excluded"' : '';
+    return '<tr' + rowCls + '>'
       + '<td class="settings-emp-ava" title="Click to edit avatar">' + puck + '</td>'
       + '<td class="settings-emp-name">' + e(emp.name) + '</td>'
       + (showNick
@@ -232,7 +234,14 @@ var settings = (function() {
             +   ' type="text" data-key="' + encKey + '"'
             +   ' value="' + e(nick) + '" placeholder="Nickname"></td>'
             + '<td class="settings-emp-store">' + e(emp.store || '') + '</td>'
-          : '<td colspan="2" class="settings-emp-store" style="color:var(--text-dim);font-size:12px">Director</td>'
+            + '<td class="settings-emp-excl">'
+            +   '<button class="excl-toggle' + (isExcluded ? ' excluded' : '') + '"'
+            +           ' data-key="' + encKey + '"'
+            +           ' title="' + (isExcluded ? 'Re-activate employee' : 'Exclude from dashboard') + '">'
+            +     (isExcluded ? 'Excluded' : 'Active')
+            +   '</button>'
+            + '</td>'
+          : '<td colspan="3" class="settings-emp-store" style="color:var(--text-dim);font-size:12px">Director</td>'
         )
       + '</tr>';
   }
@@ -257,22 +266,25 @@ var settings = (function() {
   }
 
   // ── Employees card (nicknames + avatars combined) ─────────
-  function renderEmployees(employees, nicknames, avatarConfigs) {
+  function renderEmployees(employees, nicknames, avatarConfigs, excluded) {
     nicknames     = nicknames     || {};
     avatarConfigs = avatarConfigs || {};
+    // excluded is an array of keys from GAS — convert to a set-like object for fast lookup
+    var excludedSet = {};
+    (excluded || []).forEach(function(k) { excludedSet[k] = true; });
     var staff = (employees || []).filter(function(emp) { return emp.section !== 'management'; });
-    var rows  = staff.map(function(emp) { return empRow(emp, nicknames, avatarConfigs, true); }).join('');
+    var rows  = staff.map(function(emp) { return empRow(emp, nicknames, avatarConfigs, true, excludedSet); }).join('');
 
     return '<div class="settings-card" id="nickCard">'
       + '<div class="settings-card-head">'
       +   '<div>'
       +     '<div class="settings-card-title">Employees</div>'
-      +     '<div class="settings-card-sub">Set a nickname (e.g. Zachary → Zach) and build a leaderboard avatar for each employee.</div>'
+      +     '<div class="settings-card-sub">Set a nickname and build an avatar. Toggle <strong>Active/Excluded</strong> to show or hide an employee on the dashboard.</div>'
       +   '</div>'
       + '</div>'
       + '<table class="settings-table settings-emp-table" id="nickTable">'
       + '<thead><tr>'
-      +   '<th></th><th>Dutchie Name</th><th>Nickname</th><th>Store</th>'
+      +   '<th></th><th>Dutchie Name</th><th>Nickname</th><th>Store</th><th>Status</th>'
       + '</tr></thead>'
       + '<tbody>' + rows + '</tbody>'
       + '</table>'
@@ -290,7 +302,7 @@ var settings = (function() {
       + '<div class="settings-body">'
       +   renderGoalsSection(data)
       +   renderManagement(data.employees, data.avatarConfigs)
-      +   renderEmployees(data.employees, data.nicknames, data.avatarConfigs)
+      +   renderEmployees(data.employees, data.nicknames, data.avatarConfigs, data.excluded)
       + '</div>'
       + '</div>';
   }
@@ -438,7 +450,21 @@ var settings = (function() {
       });
     }
 
-    // Save nicknames
+    // Exclude toggle — live toggle, saved with the Save button
+    var nickTable = document.getElementById('nickTable');
+    if (nickTable) {
+      nickTable.addEventListener('click', function(evt) {
+        var btn = evt.target.closest('.excl-toggle');
+        if (!btn) return;
+        var isExcluded = btn.classList.toggle('excluded');
+        btn.textContent = isExcluded ? 'Excluded' : 'Active';
+        btn.title       = isExcluded ? 'Re-activate employee' : 'Exclude from dashboard';
+        var row = btn.closest('tr');
+        if (row) row.classList.toggle('emp-row-excluded', isExcluded);
+      });
+    }
+
+    // Save nicknames + excluded state
     var saveNicksBtn = document.getElementById('saveNicksBtn');
     var nickStatus   = document.getElementById('nickStatus');
     if (saveNicksBtn) {
@@ -450,12 +476,17 @@ var settings = (function() {
           if (val) nicknames[inp.dataset.key] = val;
         });
 
+        var excluded = [];
+        document.querySelectorAll('#nickTable .excl-toggle.excluded').forEach(function(btn) {
+          excluded.push(btn.dataset.key);
+        });
+
         saveNicksBtn.disabled = true;
         saveNicksBtn.textContent = 'Saving…';
         nickStatus.textContent = '';
         nickStatus.className = 'settings-save-status';
 
-        GC.api.saveSettings(null, nicknames)
+        GC.api.saveSettings(null, nicknames, excluded)
           .then(function(res) {
             saveNicksBtn.disabled = false;
             saveNicksBtn.textContent = 'Save';

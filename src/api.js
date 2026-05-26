@@ -211,10 +211,11 @@ GC.api = (function() {
     return gasCall('getavatardata', {});
   }
 
-  function saveSettings(plans, nicknames) {
+  function saveSettings(plans, nicknames, excluded) {
     var params = {};
-    if (plans)     params.plans     = JSON.stringify(plans);
-    if (nicknames) params.nicknames = JSON.stringify(nicknames);
+    if (plans)              params.plans     = JSON.stringify(plans);
+    if (nicknames)          params.nicknames = JSON.stringify(nicknames);
+    if (excluded !== undefined) params.excluded  = JSON.stringify(excluded);
     return gasCall('savesettings', params);
   }
 
