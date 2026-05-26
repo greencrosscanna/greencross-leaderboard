@@ -32,6 +32,7 @@ const GC_TARGET_CACHE_KEY   = 'GC_ROLLING_TARGET_CACHE_JSON';
 const GC_GOALS_CACHE_KEY    = 'GC_GOALS_CACHE_JSON';
 const GC_STRETCH_KEY        = 'GC_STRETCH_MULTIPLIER';  // stored as decimal, e.g. 0.025 = 2.5%
 const GC_YOY_GOALS_KEY      = 'GC_YOY_GOALS_JSON';
+const GC_YOY2_CACHE_KEY     = 'GC_YOY2_CACHE_JSON'; // permanent cache for 2-year-ago data
 const GC_EXCLUDED_KEY       = 'GC_EXCLUDED_JSON';   // array of excluded employee nameKeys
 const GC_MANUAL_PP_KEY      = 'GC_MANUAL_PP_GOALS_JSON'; // slug→final PP goal overrides
 const GC_AVATAR_CONFIGS_KEY  = 'GC_AVATAR_CONFIGS_JSON'; // { nameKey: { ...avatar_config } }
@@ -971,10 +972,42 @@ function getOrComputeYoYGoals_(forceRecompute) {
 
   Logger.log('[yoy] Computing YoY goals for PP ' + ppStartStr + ' (window: ' + yoyFrom + ' – ' + yoyTo + ')…');
 
-  // 72 parallel requests: 12 ranges × 6 stores (first 6 = Y1, next 6 = Y2)
-  var fetchedAll = fetchAllStoresTransactionsMulti_(ranges.concat(ranges2));
-  var fetchedY1  = fetchedAll.slice(0, 6);
-  var fetchedY2  = fetchedAll.slice(6, 12);
+  // Y2 data (2 years ago) is purely historical — cache aggregated PP totals permanently.
+  // Key on the range start dates so a new PP automatically busts the cache.
+  var y2CacheKey = ranges2.map(function(r) { return r.fromUTC.slice(0,10); }).join(',');
+  var ppTotalsY2ByStore = null; // { slug: avgPPSales }
+  try {
+    var y2Cached = JSON.parse(props.getProperty(GC_YOY2_CACHE_KEY) || '{}');
+    if (y2Cached.key === y2CacheKey && y2Cached.totals) {
+      Logger.log('[yoy] Y2 cache hit — skipping 36 Dutchie requests');
+      ppTotalsY2ByStore = y2Cached.totals;
+    }
+  } catch(e2) { /* ignore, will refetch */ }
+
+  if (!ppTotalsY2ByStore) {
+    Logger.log('[yoy] Y2 cache miss — fetching 36 historical requests');
+    var fetchedY2 = fetchAllStoresTransactionsMulti_(ranges2);
+    ppTotalsY2ByStore = {};
+    STORES.forEach(function(store) {
+      var ppTotals = [];
+      fetchedY2.forEach(function(byStore) {
+        var txns  = byStore[store.slug] || [];
+        var ppSum = 0;
+        Object.keys(aggregateByDay_(txns)).forEach(function(day) { ppSum += aggregateByDay_(txns)[day]; });
+        ppTotals.push(ppSum);
+      });
+      ppTotalsY2ByStore[store.slug] = ppTotals.length > 0
+        ? ppTotals.reduce(function(a, b) { return a + b; }, 0) / ppTotals.length
+        : 0;
+    });
+    try {
+      props.setProperty(GC_YOY2_CACHE_KEY, JSON.stringify({ key: y2CacheKey, totals: ppTotalsY2ByStore }));
+      Logger.log('[yoy] Y2 aggregates cached for key: ' + y2CacheKey);
+    } catch(e2) { Logger.log('[yoy] Y2 cache save failed: ' + e2.message); }
+  }
+
+  // 36 parallel requests for Y1 (current season, 1 year ago)
+  var fetchedY1 = fetchAllStoresTransactionsMulti_(ranges);
 
   // Max realized growth applied to YoY baseline (caps outlier years — new stores, one-off events)
   var MAX_REALIZED_GROWTH = 0.20; // 20%
@@ -1000,17 +1033,8 @@ function getOrComputeYoYGoals_(forceRecompute) {
       ? ppTotalsY1.reduce(function(a, b) { return a + b; }, 0) / ppTotalsY1.length
       : 0;
 
-    // ── Two-years-ago baseline (for realized growth rate) ──
-    var ppTotalsY2 = [];
-    fetchedY2.forEach(function(byStore) {
-      var txns  = byStore[store.slug] || [];
-      var ppSum = 0;
-      Object.keys(aggregateByDay_(txns)).forEach(function(day) { ppSum += aggregateByDay_(txns)[day]; });
-      ppTotalsY2.push(ppSum);
-    });
-    var ppY2 = ppTotalsY2.length > 0
-      ? ppTotalsY2.reduce(function(a, b) { return a + b; }, 0) / ppTotalsY2.length
-      : 0;
+    // ── Two-years-ago baseline (for realized growth rate) — from cache ──
+    var ppY2 = ppTotalsY2ByStore[store.slug] || 0;
 
     // ── Realized growth rate (Y1 vs Y2, floored at 0, capped at MAX) ──
     var realizedGrowth = 0;
