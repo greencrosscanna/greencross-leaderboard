@@ -286,7 +286,8 @@ function doGet(e) {
         });
       });
       var avEmployees = Object.values(avEmpMap).sort(function(a, b) { return a.name.localeCompare(b.name); });
-      return jsonOut({ ok: true, employees: avEmployees, avatarConfigs: resolveAvatarConfigs_(avEmployees, getAvatarConfigs_()) }, params.callback);
+      var allAvEmployees = avEmployees.concat(getManagementEmployees_());
+      return jsonOut({ ok: true, employees: allAvEmployees, avatarConfigs: resolveAvatarConfigs_(allAvEmployees, getAvatarConfigs_()) }, params.callback);
     }
 
     // ── Admin: user & key management (director only) ───────
@@ -430,7 +431,10 @@ function bootstrapAllUsers() {
   props.setProperty(GC_USERS_KEY, JSON.stringify(users));
 
   // Set real users
-  setUserPassword_('sky',     'gcadmin', 'director',      null,         'Sky Pinnick',   'SP');
+  setUserPassword_('sky',    '0762ZW', 'director',      null,         'Sky Pinnick',   'SP');
+  setUserPassword_('mike',   'Q6564J', 'director',      null,         'Mike Kettler',  'MK');
+  setUserPassword_('shawn',  'XY1112', 'director',      null,         'Shawn Todd',    'ST');
+  setUserPassword_('tawny',  '13C19U', 'director',      null,         'Tawny Vierra',  'TV');
   setUserPassword_('dean',    'gc123',   'store_manager', 'baseline',   'Dean Deloof',   'DD');
   setUserPassword_('tj',      'gc123',   'store_manager', 'river',      'TJ Peterson',   'TP');
   setUserPassword_('scott',   'gc123',   'store_manager', 'portland',   'Scott Penner',  'SP');
@@ -438,6 +442,16 @@ function bootstrapAllUsers() {
   setUserPassword_('mariana', 'gc123',   'store_manager', 'commercial', 'Mariana Moxie', 'MM');
   setUserPassword_('chris',   'gc123',   'store_manager', 'century',    'Chris Carney',  'CC');
   Logger.log('All users bootstrapped.');
+}
+
+// ── Run once from Script Editor to add/update director accounts ──
+// Safe to re-run — only updates the listed users, leaves others intact.
+function bootstrapDirectors() {
+  setUserPassword_('sky',   '0762ZW', 'director', null, 'Sky Pinnick',  'SP');
+  setUserPassword_('mike',  'Q6564J', 'director', null, 'Mike Kettler', 'MK');
+  setUserPassword_('shawn', 'XY1112', 'director', null, 'Shawn Todd',   'ST');
+  setUserPassword_('tawny', '13C19U', 'director', null, 'Tawny Vierra', 'TV');
+  Logger.log('Directors bootstrapped.');
 }
 
 function bootstrapStorePlans() {
@@ -2648,6 +2662,7 @@ function getSettings_(params) {
     };
   }
 
+  var allEmployees = employees.concat(getManagementEmployees_());
   return {
     ok:               true,
     stretch:          getStretchMultiplier_(),
@@ -2665,7 +2680,6 @@ function getSettings_(params) {
       var stretch  = getStretchMultiplier_();
       var manuals  = getManualPPGoals_();
       var manualPP = manuals[s.slug] ? parseFloat(manuals[s.slug]) : null;
-      // effectivePP = manual override (if set) else computed active × (1+stretch)
       var computedActivePP = (src === 'yoy' ? gy : gr).ppGoal || 0;
       var effectivePP = (manualPP && manualPP > 0)
         ? manualPP
@@ -2677,14 +2691,14 @@ function getSettings_(params) {
         yoy:          buildGoalRow(gy, gr),
         active:       buildGoalRow(src === 'yoy' ? gy : gr, null),
         activeSource: src,
-        effectivePP:  effectivePP,   // pre-fill value for override input
+        effectivePP:  effectivePP,
         hasManual:    !!(manualPP && manualPP > 0),
       };
     }),
     nicknames:        nicknames,
-    employees:        employees,
+    employees:        allEmployees,
     manualGoals:      getManualPPGoals_(),
-    avatarConfigs:    resolveAvatarConfigs_(employees, getAvatarConfigs_()),
+    avatarConfigs:    resolveAvatarConfigs_(allEmployees, getAvatarConfigs_()),
   };
 }
 
@@ -2741,6 +2755,29 @@ function getAvatarConfigs_() {
   var raw = PropertiesService.getScriptProperties().getProperty(GC_AVATAR_CONFIGS_KEY);
   if (!raw) return {};
   try { return JSON.parse(raw); } catch(e) { return {}; }
+}
+
+/**
+ * Returns director/owner users as employee-like objects for the Management section.
+ * Derives the list from existing GC_USERS_KEY entries with role director/owner.
+ */
+function getManagementEmployees_() {
+  var props = PropertiesService.getScriptProperties();
+  var users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}');
+  var mgmt = [];
+  Object.keys(users).forEach(function(username) {
+    var u = users[username];
+    if (u.role === 'director' || u.role === 'owner') {
+      var key = nameToKey_(u.displayName || username);
+      mgmt.push({
+        key:      key,
+        name:     u.displayName || username,
+        initials: u.initials || username.slice(0, 2).toUpperCase(),
+        section:  'management',
+      });
+    }
+  });
+  return mgmt.sort(function(a, b) { return a.name.localeCompare(b.name); });
 }
 
 /**

@@ -215,9 +215,18 @@ var director = (function() {
       +   '</svg>'
       + '</button>'
       + (session
-          ? '<span class="user-chip" id="userChip">'
-            + '<span class="uc-avatar">' + e(session.initials || '??') + '</span>'
-            + e(session.displayName || session.user || '') + '</span>'
+          ? (function() {
+              var nameKey = GC.nameToKey(session.displayName || session.user || '');
+              var cfg     = data && data.avatarConfigs ? (data.avatarConfigs[nameKey] || null) : null;
+              var avatarInner = cfg
+                ? '<span class="uc-avatar" style="overflow:hidden;padding:0">'
+                  + '<img src="' + GC.esc(GC.buildAvatarUrl(cfg, nameKey)) + '" style="width:100%;height:100%;object-fit:cover" onerror="this.parentNode.textContent=\'' + e(session.initials || '??') + '\'">'
+                  + '</span>'
+                : '<span class="uc-avatar">' + e(session.initials || '??') + '</span>';
+              return '<span class="user-chip" id="userChip">'
+                + avatarInner
+                + e(session.displayName || session.user || '') + '</span>';
+            })()
           : '')
       + '</div>'
       + '</header>';

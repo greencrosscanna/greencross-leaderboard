@@ -209,36 +209,59 @@ var settings = (function() {
       + '</div>';
   }
 
+  // ── Shared: build a table row for one employee ────────────
+  function empRow(emp, nicknames, avatarConfigs, showNick) {
+    var nick   = (nicknames || {})[emp.key] || '';
+    var config = (avatarConfigs || {})[emp.key] || null;
+    if (!config) {
+      var _segs = emp.key.split('_');
+      for (var _si = 0; _si < _segs.length; _si++) {
+        if ((avatarConfigs || {})[_segs[_si]]) { config = (avatarConfigs || {})[_segs[_si]]; break; }
+      }
+    }
+    var nameParts = (emp.name || '').split(' ');
+    var initials  = (nameParts[0] || '').slice(0, 1)
+                  + (nameParts.length > 1 ? nameParts[nameParts.length - 1].slice(0, 1) : '');
+    var puck   = GC.lbAvaPuck(emp.key, config, emp.initials || initials || '??', true);
+    var encKey = e(emp.key);
+    return '<tr>'
+      + '<td class="settings-emp-ava" title="Click to edit avatar">' + puck + '</td>'
+      + '<td class="settings-emp-name">' + e(emp.name) + '</td>'
+      + (showNick
+          ? '<td><input class="settings-input settings-nick-input"'
+            +   ' type="text" data-key="' + encKey + '"'
+            +   ' value="' + e(nick) + '" placeholder="Nickname"></td>'
+            + '<td class="settings-emp-store">' + e(emp.store || '') + '</td>'
+          : '<td colspan="2" class="settings-emp-store" style="color:var(--text-dim);font-size:12px">Director</td>'
+        )
+      + '</tr>';
+  }
+
+  // ── Management card ────────────────────────────────────────
+  function renderManagement(employees, avatarConfigs) {
+    var mgmt = (employees || []).filter(function(e) { return e.section === 'management'; });
+    if (!mgmt.length) return '';
+    var rows = mgmt.map(function(emp) { return empRow(emp, {}, avatarConfigs, false); }).join('');
+    return '<div class="settings-card" id="mgmtCard">'
+      + '<div class="settings-card-head">'
+      +   '<div>'
+      +     '<div class="settings-card-title">Management</div>'
+      +     '<div class="settings-card-sub">Directors — click an avatar to customize.</div>'
+      +   '</div>'
+      + '</div>'
+      + '<table class="settings-table settings-emp-table">'
+      + '<thead><tr><th></th><th>Name</th><th colspan="2">Role</th></tr></thead>'
+      + '<tbody>' + rows + '</tbody>'
+      + '</table>'
+      + '</div>';
+  }
+
   // ── Employees card (nicknames + avatars combined) ─────────
   function renderEmployees(employees, nicknames, avatarConfigs) {
     nicknames     = nicknames     || {};
     avatarConfigs = avatarConfigs || {};
-    var rows = (employees || []).map(function(emp) {
-      var nick     = nicknames[emp.key] || '';
-      // Avatar configs may be keyed by a single display name (e.g. "sunshine") while
-      // the roster key uses the full legal name (e.g. "maria_sunshine"). Try the full
-      // key first, then each individual segment so any position can match.
-      var config = avatarConfigs[emp.key] || null;
-      if (!config) {
-        var _segs = emp.key.split('_');
-        for (var _si = 0; _si < _segs.length; _si++) {
-          if (avatarConfigs[_segs[_si]]) { config = avatarConfigs[_segs[_si]]; break; }
-        }
-      }
-      var nameParts = (emp.name || '').split(' ');
-      var initials  = (nameParts[0] || '').slice(0, 1)
-                    + (nameParts.length > 1 ? nameParts[nameParts.length - 1].slice(0, 1) : '');
-      var puck     = GC.lbAvaPuck(emp.key, config, initials || '??', true);
-      var encKey   = e(emp.key);
-      return '<tr>'
-        + '<td class="settings-emp-ava" title="Click to edit avatar">' + puck + '</td>'
-        + '<td class="settings-emp-name">' + e(emp.name) + '</td>'
-        + '<td><input class="settings-input settings-nick-input"'
-        +   ' type="text" data-key="' + encKey + '"'
-        +   ' value="' + e(nick) + '" placeholder="Nickname"></td>'
-        + '<td class="settings-emp-store">' + e(emp.store) + '</td>'
-        + '</tr>';
-    }).join('');
+    var staff = (employees || []).filter(function(emp) { return emp.section !== 'management'; });
+    var rows  = staff.map(function(emp) { return empRow(emp, nicknames, avatarConfigs, true); }).join('');
 
     return '<div class="settings-card" id="nickCard">'
       + '<div class="settings-card-head">'
@@ -266,6 +289,7 @@ var settings = (function() {
       + renderHeader()
       + '<div class="settings-body">'
       +   renderGoalsSection(data)
+      +   renderManagement(data.employees, data.avatarConfigs)
       +   renderEmployees(data.employees, data.nicknames, data.avatarConfigs)
       + '</div>'
       + '</div>';

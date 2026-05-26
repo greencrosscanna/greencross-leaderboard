@@ -53,8 +53,9 @@ var kiosk = (function() {
   var _clockTimer   = null;
   var _lastTxnTs    = '';    // cursor for incremental ticker polling
   var _seenTxnKeys  = {};    // dedup set: "ts|who|price" → true, prevents re-injection on repeat polls
-  var _confettiParticles = [];
-  var _confettiRunning   = false;
+  var _confettiParticles  = [];
+  var _confettiRunning    = false;
+  var _avatarConfigs      = {};   // set in normalize(), used in renderHeader
   var _goalCelebrated    = false;  // true once confetti has fired for today's goal
 
   // ── Helpers ────────────────────────────────────────────
@@ -111,10 +112,19 @@ var kiosk = (function() {
       + '  <div class="kc-time num" id="kioskTime">—</div>'
       + '  <div class="kc-date" id="kioskDate">—</div>'
       + '</div>'
-      + '<span class="user-chip" id="kioskUserChip" title="Sign out">'
-      +   '<span class="uc-avatar">' + e(sess.initials || '??') + '</span>'
-      +   e(sess.displayName || sess.user || '')
-      + '</span>'
+      + (function() {
+          var nameKey = GC.nameToKey(sess.displayName || sess.user || '');
+          var cfg     = _avatarConfigs[nameKey] || null;
+          var avatarInner = cfg
+            ? '<span class="uc-avatar" style="overflow:hidden;padding:0">'
+              + '<img src="' + GC.esc(GC.buildAvatarUrl(cfg, nameKey)) + '" style="width:100%;height:100%;object-fit:cover" onerror="this.parentNode.textContent=\'' + e(sess.initials || '??') + '\'">'
+              + '</span>'
+            : '<span class="uc-avatar">' + e(sess.initials || '??') + '</span>';
+          return '<span class="user-chip" id="kioskUserChip" title="Sign out">'
+            + avatarInner
+            + e(sess.displayName || sess.user || '')
+            + '</span>';
+        })()
       + '</header>';
   }
 
@@ -1075,6 +1085,7 @@ var kiosk = (function() {
 
     // Avatar config map — declared early so onShift + staff normalization can both use it
     var kioskAvatarConfigs = lb.avatarConfigs || {};
+    _avatarConfigs = kioskAvatarConfigs; // store for user chip in renderHeader
 
     // ── today block ──
     var normalizedToday;
