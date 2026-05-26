@@ -533,10 +533,24 @@ var director = (function() {
 
     var soldStr = GC.fmtCurrency(today.revenue || 0);
     var toGoStr = GC.fmtCurrency(today.toGo   || 0);
+    var goalStr = GC.fmtCurrency(today.goal   || 0);
     var remStr  = today.timeRemainingLabel || '—';
 
+    // Time remaining label with zone colour
+    var remMins = (function() {
+      var m = remStr.match(/^(\d+):(\d+)$/);
+      return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null;
+    })();
+    var remColor = closed ? 'var(--text-dim)'
+      : remMins !== null && remMins <= 30 ? 'var(--red)'
+      : remMins !== null && remMins <= 60 ? 'var(--amber)'
+      : '';
+    var remSpan  = closed
+      ? ''
+      : ' · <span style="font-weight:700' + (remColor ? ';color:' + remColor : '') + '">' + e(remStr) + ' remain</span>';
+
     return '<div class="dir-today-card">'
-      + '<div class="kcard-label">Daily Goal · ' + e(GC.fmtCurrency(today.goal)) + '</div>'
+      + '<div class="kcard-label">Daily Goal · ' + e(goalStr) + remSpan + '</div>'
       + '<div class="dir-gauge-wrap">'
       +   '<svg width="200" height="108" viewBox="0 0 240 130" style="overflow:visible">'
       +     '<path d="M 22 122 A 98 98 0 0 1 218 122" stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="butt"/>'
@@ -549,8 +563,8 @@ var director = (function() {
       + '</div>'
       + '<div class="kcard-stats">'
       +   '<div class="kstat"><div class="kstat-v num">' + e(soldStr) + '</div><div class="kstat-l">Sold</div></div>'
-      +   '<div class="kstat"><div class="kstat-v num' + (closed ? '' : '') + '">' + e(toGoStr) + '</div><div class="kstat-l">To go</div></div>'
-      +   '<div class="kstat"><div class="kstat-v num">' + e(remStr) + '</div><div class="kstat-l">Remain</div></div>'
+      +   '<div class="kstat"><div class="kstat-v num">' + e(toGoStr) + '</div><div class="kstat-l">To go</div></div>'
+      +   '<div class="kstat"><div class="kstat-v num">' + e(goalStr) + '</div><div class="kstat-l">Goal</div></div>'
       + '</div>'
       + '</div>';
   }
