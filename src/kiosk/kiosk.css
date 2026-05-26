@@ -382,10 +382,10 @@ body.kiosk-bg {
 }
 .gauge-pct .gp-big   { font-size: 46px; font-weight: 800; letter-spacing: -1.2px; line-height: 1; font-variant-numeric: tabular-nums; }
 .gauge-pct .gp-small { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.1px; margin-top: 4px; font-weight: 600; }
-/* Zone-based coloring for pace big number */
-.gp-big.zone-red   { color: var(--red); }
-.gp-big.zone-amber { color: var(--amber); }
-.gp-big.zone-green { color: var(--green); }
+/* Zone-based coloring for pace big number and time remaining */
+.gp-big.zone-red,   .kstat-v.zone-red   { color: var(--red); }
+.gp-big.zone-amber, .kstat-v.zone-amber { color: var(--amber); }
+.gp-big.zone-green, .kstat-v.zone-green { color: var(--green); }
 
 /* Bigger kcard-label in the two metric cards */
 .goal-card .kcard-label,

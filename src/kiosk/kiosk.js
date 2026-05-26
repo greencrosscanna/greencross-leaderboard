@@ -334,7 +334,7 @@ var kiosk = (function() {
       + '    <div class="kstat-l" id="kioskToGoLabel">' + (closed ? '10 pm' : 'To Go') + '</div>'
       + '  </div>'
       + '  <div class="kstat">'
-      + '    <div class="kstat-v' + (closed ? ' store-closed-label' : '') + '" id="kioskTimeRemaining">' + e(today.timeRemainingLabel || '—') + '</div>'
+      + '    <div class="kstat-v' + (closed ? ' store-closed-label' : (' ' + timeZoneClass(today.timeRemainingLabel)).trimRight()) + '" id="kioskTimeRemaining">' + e(today.timeRemainingLabel || '—') + '</div>'
       + '    <div class="kstat-l">Remain</div>'
       + '  </div>'
       + '</div>'
@@ -344,6 +344,22 @@ var kiosk = (function() {
   // PACE_RANGE: ±N% maps to ±90° rotation on the arc.
   // Zones: |deg| > 30 → red (left) or green (right); |deg| ≤ 30 → amber.
   var PACE_RANGE = 30;
+
+  // Parse "H:MM" label → total minutes; returns null for "Closed" / invalid
+  function parseLabelMins(label) {
+    var m = (label || '').match(/^(\d+):(\d+)$/);
+    if (!m) return null;
+    return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  }
+
+  // CSS class for time-remaining colour coding
+  function timeZoneClass(label) {
+    var mins = parseLabelMins(label);
+    if (mins === null) return '';
+    if (mins <= 30) return 'zone-red';
+    if (mins <= 60) return 'zone-amber';
+    return '';
+  }
 
   function paceZone(pace) {
     var pct     = (pace || 0) * 100;           // convert decimal to percentage
@@ -1279,11 +1295,13 @@ var kiosk = (function() {
     var card = document.querySelector('.goal-card');
     if (card) card.classList.toggle('store-closed', closed);
 
-    // Update the status label
+    // Update the status label + time-zone colour
     var lblEl = document.getElementById('kioskTimeRemaining');
     if (lblEl) {
       lblEl.textContent = label || '—';
       lblEl.classList.toggle('store-closed-label', closed);
+      lblEl.classList.toggle('zone-red',   !closed && timeZoneClass(label) === 'zone-red');
+      lblEl.classList.toggle('zone-amber', !closed && timeZoneClass(label) === 'zone-amber');
     }
 
     // Pace tick position
