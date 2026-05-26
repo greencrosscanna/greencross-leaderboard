@@ -300,7 +300,7 @@ var kiosk = (function() {
     var ARC_LEN  = 308;
 
     return '<div class="goal-card' + (closed ? ' store-closed' : '') + '">'
-      + '<div class="kcard-label">Daily Goal · ' + e(fmtDollars(today.goal)) + '</div>'
+      + '<div class="kcard-label">Daily Goal · <span id="kioskDailyGoalAmt">' + e(fmtDollars(today.goal)) + '</span></div>'
       + '<div class="gauge-wrap">'
       + '  <svg width="240" height="130" viewBox="0 0 240 130">'
       + '    <path d="M 22 122 A 98 98 0 0 1 218 122"'
@@ -1289,6 +1289,13 @@ var kiosk = (function() {
     }
 
     setGoalArcs(pctToGoal);
+
+    // Goal amount in card header
+    if (td.goal) {
+      var goalAmtEl = document.getElementById('kioskDailyGoalAmt');
+      if (goalAmtEl) goalAmtEl.textContent = fmtDollars(td.goal);
+      _goal = td.goal;   // keep module var in sync for pace gap calc
+    }
 
     // Dim the card when store is closed
     var card = document.querySelector('.goal-card');
