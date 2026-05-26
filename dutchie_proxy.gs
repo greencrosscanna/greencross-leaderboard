@@ -1651,6 +1651,12 @@ function getDirectorToday(byStoreToday) {
   const paceGoal   = totalGoal * dayFrac;
   const pace       = paceGoal > 0.5 ? r3_((totalRevenue - paceGoal) / paceGoal) : 0;
   const toGo       = Math.max(0, totalGoal - totalRevenue);
+  const MIN_PROJ_HOURS = 2;
+  const projectedRevenue = storeClosed
+    ? totalRevenue
+    : elapsedHours >= MIN_PROJ_HOURS
+      ? Math.round(totalRevenue / dayFrac)
+      : 0;
 
   // Build hourly array (same shape as getStoreToday hourly)
   const maxRevenue = Math.max(1, ...Object.values(combinedHourMap).map(h => h.revenue));
@@ -1673,6 +1679,7 @@ function getDirectorToday(byStoreToday) {
     pctToGoal:          pctToGoal,
     pace:               pace,
     toGo:               toGo,
+    projectedRevenue:   projectedRevenue,
     timeRemainingLabel: timeRemainingLabel,
     hourly:             hourly,
   };
