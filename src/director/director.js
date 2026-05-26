@@ -544,7 +544,11 @@ var director = (function() {
     var subLabel = zone === 'red' ? 'Behind plan' : zone === 'green' ? 'Ahead of plan' : 'Near plan';
 
     var proj     = today.projectedRevenue || today.revenue || 0;
-    var pacePct  = (pace >= 0 ? '+' : '−') + Math.abs(Math.round(pace * 100)) + '%';
+    var gap      = today.toGo || 0;
+    var gapAmt   = pace >= 0
+      ? GC.fmtCurrency(Math.abs(gap))          // ahead — toGo is 0 or negative overage
+      : GC.fmtCurrency(gap);                   // short — toGo is dollars still needed
+    var gapLabel = pace >= 0 ? 'Ahead by' : 'Short by';
     var paceCls  = zone === 'red' ? ' down' : zone === 'green' ? ' up' : '';
 
     return '<div class="dir-today-card">'
@@ -566,7 +570,7 @@ var director = (function() {
       + '</div>'
       + '<div class="kcard-stats">'
       +   '<div class="kstat"><div class="kstat-v num">' + e(GC.fmtCurrency(proj)) + '</div><div class="kstat-l">Projected</div></div>'
-      +   '<div class="kstat' + paceCls + '"><div class="kstat-v num">' + e(pacePct) + '</div><div class="kstat-l">Pace</div></div>'
+      +   '<div class="kstat' + paceCls + '"><div class="kstat-v num">' + e(gapAmt) + '</div><div class="kstat-l">' + e(gapLabel) + '</div></div>'
       + '</div>'
       + '</div>';
   }
