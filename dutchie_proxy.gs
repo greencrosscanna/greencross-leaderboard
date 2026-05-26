@@ -2997,11 +2997,45 @@ function saveSettings_(params) {
 
   // Save stretch multiplier (0–0.05)
   if (params.stretch !== undefined) {
-    var s = parseFloat(params.stretch);
-    if (isNaN(s)) return { ok: false, error: 'Invalid stretch value' };
-    s = Math.max(0, Math.min(0.05, s));
-    props.setProperty(GC_STRETCH_KEY, String(s));
-    Logger.log('[stretch] saved: ' + (s * 100).toFixed(1) + '%');
+    var newS = parseFloat(params.stretch);
+    if (isNaN(newS)) return { ok: false, error: 'Invalid stretch value' };
+    newS = Math.max(0, Math.min(0.05, newS));
+
+    // Auto-rescale stretch-derived manual PP overrides to the new stretch level.
+    // "Stretch-derived" = stored value is within $50 of computedBase × (1 + oldStretch).
+    // True manual overrides (e.g. Portland intentionally set above computed) are left alone.
+    var oldS = parseFloat(props.getProperty(GC_STRETCH_KEY) || '0') || 0;
+    if (Math.abs(newS - oldS) > 0.0001) {
+      try {
+        var manuals  = getManualPPGoals_();
+        var rGoals   = getOrComputeGoals_();
+        var yGoals   = getOrComputeYoYGoals_();
+        var newManuals = {};
+        Object.keys(manuals).forEach(function(slug) {
+          var storedPP = parseFloat(manuals[slug]) || 0;
+          if (!storedPP) return;
+          var gr           = (rGoals && rGoals[slug]) || {};
+          var gy           = (yGoals && yGoals[slug]) || {};
+          var g            = (activeGoalSource_(gr, gy) === 'yoy') ? gy : gr;
+          var computedBase = g.ppGoal || 0;
+          if (!computedBase) { newManuals[slug] = storedPP; return; }
+          // Is the stored value close to what computedBase × (1+oldStretch) would be?
+          var stretchDerived = Math.abs(storedPP - computedBase * (1 + oldS)) < 50;
+          newManuals[slug] = stretchDerived
+            ? Math.round(computedBase * (1 + newS))   // rescale to new stretch
+            : storedPP;                                // preserve true manual override
+          Logger.log('[stretch rescale] ' + slug
+            + ' stored=$' + storedPP + ' base=$' + computedBase
+            + ' derived=' + stretchDerived + ' → $' + newManuals[slug]);
+        });
+        props.setProperty(GC_MANUAL_PP_KEY, JSON.stringify(newManuals));
+      } catch(rescaleErr) {
+        Logger.log('[stretch rescale] error (non-fatal): ' + rescaleErr.message);
+      }
+    }
+
+    props.setProperty(GC_STRETCH_KEY, String(newS));
+    Logger.log('[stretch] saved: ' + (newS * 100).toFixed(1) + '%');
   }
 
   return { ok: true };
