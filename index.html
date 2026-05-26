@@ -7413,7 +7413,7 @@ var settings = (function() {
       +     '<div class="settings-stretch-group">'
       +       '<label class="settings-stretch-label">Stretch</label>'
       +       '<select class="settings-stretch-select" id="stretchSelect">' + stretchOpts + '</select>'
-      +       '<button class="btn-secondary" id="applyStretchBtn">Apply</button>'
+      +       ''
       +     '</div>'
       +   '</div>'
       + '</div>'
@@ -7575,14 +7575,10 @@ var settings = (function() {
     }
 
     // Stretch multiplier — live preview + Apply
-    var stretchSelect   = document.getElementById('stretchSelect');
-    var applyStretchBtn = document.getElementById('applyStretchBtn');
-    console.log('[settings.init] stretchSelect=', stretchSelect, 'applyStretchBtn=', applyStretchBtn);
-    console.log('[settings.init] goalsCard=', document.getElementById('goalsCard'), 'goalsTable=', document.getElementById('goalsTable'));
+    var stretchSelect = document.getElementById('stretchSelect');
 
     function applyStretchDisplay() {
       var mult = 1 + (parseFloat((stretchSelect && stretchSelect.value) || 0) || 0);
-      console.log('[applyStretchDisplay] mult=', mult, 'stretchSelect=', stretchSelect && stretchSelect.value);
 
       // Baseline PP spans (Rolling / YoY) — pure stretch, no override involved
       document.querySelectorAll('[data-base-pp]').forEach(function(el) {
@@ -7649,56 +7645,15 @@ var settings = (function() {
       }
     }
 
-    // Auto-save stretch when dropdown changes, then refresh display
+    // Live-preview stretch when dropdown changes (no save — committed with Save Goal Overrides)
     if (stretchSelect) stretchSelect.addEventListener('change', function() {
-      console.log('[stretch] change → value:', stretchSelect.value);
       applyStretchDisplay();
-      var stretch = parseFloat(stretchSelect.value) || 0;
-      if (applyStretchBtn) { applyStretchBtn.disabled = true; applyStretchBtn.textContent = 'Saving…'; }
-      if (recalcStatus) { recalcStatus.textContent = ''; recalcStatus.className = 'settings-save-status'; }
-      GC.api.gasCall('savesettings', { stretch: stretch })
-        .then(function(res) {
-          if (applyStretchBtn) { applyStretchBtn.disabled = false; applyStretchBtn.textContent = 'Apply'; }
-          if (recalcStatus) {
-            recalcStatus.textContent = res.ok ? '✓ Saved' : '✗ ' + (res.error || 'Save failed');
-            recalcStatus.className   = 'settings-save-status ' + (res.ok ? 'ok' : 'err');
-          }
-        })
-        .catch(function(err) {
-          if (applyStretchBtn) { applyStretchBtn.disabled = false; applyStretchBtn.textContent = 'Apply'; }
-          if (recalcStatus) { recalcStatus.textContent = '✗ ' + err.message; recalcStatus.className = 'settings-save-status err'; }
-        });
     });
 
     // Live-update monthly + DOW when override input changes
     document.querySelectorAll('.settings-pp-override').forEach(function(inp) {
       inp.addEventListener('input', applyStretchDisplay);
     });
-
-    if (applyStretchBtn) {
-      applyStretchBtn.addEventListener('click', function() {
-        applyStretchDisplay();   // update table immediately on Apply click
-        var stretch = parseFloat(stretchSelect ? stretchSelect.value : 0) || 0;
-        applyStretchBtn.disabled = true;
-        applyStretchBtn.textContent = 'Saving…';
-        if (recalcStatus) { recalcStatus.textContent = ''; recalcStatus.className = 'settings-save-status'; }
-
-        GC.api.gasCall('savesettings', { stretch: stretch })
-          .then(function(res) {
-            applyStretchBtn.disabled = false;
-            applyStretchBtn.textContent = 'Apply';
-            if (recalcStatus) {
-              recalcStatus.textContent = res.ok ? '✓ Stretch saved' : '✗ ' + (res.error || 'Save failed');
-              recalcStatus.className   = 'settings-save-status ' + (res.ok ? 'ok' : 'err');
-            }
-          })
-          .catch(function(err) {
-            applyStretchBtn.disabled = false;
-            applyStretchBtn.textContent = 'Apply';
-            if (recalcStatus) { recalcStatus.textContent = '✗ ' + err.message; recalcStatus.className = 'settings-save-status err'; }
-          });
-      });
-    }
 
     // Save Goal Overrides
     var saveGoalsBtn = document.getElementById('saveGoalsBtn');
@@ -7717,6 +7672,9 @@ var settings = (function() {
         saveGoalsBtn.textContent = 'Saving…';
         if (recalcStatus) { recalcStatus.textContent = ''; recalcStatus.className = 'settings-save-status'; }
 
+        var stretch = parseFloat(stretchSelect ? stretchSelect.value : 0) || 0;
+        // Save stretch first, then manual goals — both committed together on one button press
+        GC.api.gasCall('savesettings', { stretch: stretch }).catch(function() {});
         GC.api.gasCall('savemanualgoals', { goals: JSON.stringify(payload) })
           .then(function(res) {
             saveGoalsBtn.disabled = false;
