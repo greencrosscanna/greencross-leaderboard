@@ -850,9 +850,6 @@ var kiosk = (function() {
           renderHeatmap(hourly, peakHour, peakRevenue),
           renderTicker(ticker),
         '</div>',
-        '<div class="kiosk-footer">Live data · ' + e(store.name) + ' Store · '
-          + '<span id="kioskRefresh">Last refresh ' + GC.fmtTime(new Date()) + '</span>'
-          + '</div>',
       '</div>',
       renderRareDrop(),
     ].join('');
@@ -1398,8 +1395,6 @@ var kiosk = (function() {
             updateNumbers(data.today.today);
             if (resp.latestTxnTs) _lastTxnTs = resp.latestTxnTs;
           }
-          var refreshEl = document.getElementById('kioskRefresh');
-          if (refreshEl) refreshEl.textContent = 'Last refresh ' + GC.fmtTime(new Date());
         })
         .catch(function(err) {
           console.warn('[kiosk] ticker poll failed:', err);
