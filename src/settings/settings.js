@@ -121,6 +121,7 @@ var settings = (function() {
 
     // Table rows
     // Accumulate totals for the tfoot row
+    var mult    = 1 + currentStretch;   // hoisted — used in rows AND totalRow
     var totBase = 0, totMonthly = 0;
     var totDow  = { Mon:0, Tue:0, Wed:0, Thu:0, Fri:0, Sat:0, Sun:0 };
 
@@ -128,7 +129,7 @@ var settings = (function() {
       var r      = g.rolling      || {};
       var y      = g.yoy          || {};
       var src    = g.activeSource || 'rolling';  // 'rolling' | 'yoy' — whichever is higher
-      var mult   = 1 + currentStretch;
+      // mult is in outer scope
 
       // DOW cells always use the winning (active) goal set
       var activeG  = src === 'yoy' ? y : r;
