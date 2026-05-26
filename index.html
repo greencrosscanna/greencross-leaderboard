@@ -5421,9 +5421,9 @@ var kiosk = (function() {
       ? 'Yesterday\'s Results · <span id="kioskDailyGoalAmt">' + e(fmtDollars(today.goal)) + '</span>'
       : 'Daily Goal · <span id="kioskDailyGoalAmt">' + e(fmtDollars(today.goal)) + '</span>';
 
-    // "Remain" slot: pre-open shows "Pre-open", closed shows "Closed", else time
-    var remainCls  = preOpen ? '' : (closed ? ' store-closed-label' : (' ' + timeZoneClass(today.timeRemainingLabel)).trimRight());
-    var remainText = preOpen ? 'Pre-open' : e(today.timeRemainingLabel || '—');
+    // "Remain" slot: outside open hours (pre-open OR closed) → "Closed"; else countdown
+    var remainCls  = (preOpen || closed) ? ' store-closed-label' : (' ' + timeZoneClass(today.timeRemainingLabel)).trimRight();
+    var remainText = (preOpen || closed) ? 'Closed' : e(today.timeRemainingLabel || '—');
 
     // "To Go" slot: show shortfall (0 if goal was hit) for both closed and pre-open
     var toGoHtml = isFinal
@@ -6440,12 +6440,14 @@ var kiosk = (function() {
     if (card) card.classList.toggle('store-closed', closed);
 
     // Update the status label + time-zone colour
+    // Outside open hours (pre-open OR after close) → always show "Closed"
+    var outsideHours = isPreOpen || closed;
     var lblEl = document.getElementById('kioskTimeRemaining');
     if (lblEl) {
-      lblEl.textContent = label || '—';
-      lblEl.classList.toggle('store-closed-label', closed);
-      lblEl.classList.toggle('zone-red',   !closed && timeZoneClass(label) === 'zone-red');
-      lblEl.classList.toggle('zone-amber', !closed && timeZoneClass(label) === 'zone-amber');
+      lblEl.textContent = outsideHours ? 'Closed' : (label || '—');
+      lblEl.classList.toggle('store-closed-label', outsideHours);
+      lblEl.classList.toggle('zone-red',   !outsideHours && timeZoneClass(label) === 'zone-red');
+      lblEl.classList.toggle('zone-amber', !outsideHours && timeZoneClass(label) === 'zone-amber');
     }
 
     // Pace tick position
