@@ -1807,8 +1807,8 @@ function getDirectorStores(params, pre) {
     };
   });
 
-  // Sort by sales descending, assign ranks
-  storeSummaries.sort((a, b) => b.sales - a.sales);
+  // Sort by today's pace vs. goal descending (goal performance), assign ranks
+  storeSummaries.sort((a, b) => (b.today.pace || 0) - (a.today.pace || 0));
   storeSummaries.forEach((s, i) => { s.rank = i + 1; });
 
   return {
