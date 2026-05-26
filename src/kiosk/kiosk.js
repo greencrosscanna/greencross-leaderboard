@@ -1276,7 +1276,7 @@ var kiosk = (function() {
     setGoalArcs(pctToGoal);
 
     // Dim the card when store is closed
-    var card = arc && arc.closest('.goal-card');
+    var card = document.querySelector('.goal-card');
     if (card) card.classList.toggle('store-closed', closed);
 
     // Update the status label
