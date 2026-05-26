@@ -4915,8 +4915,10 @@ var director = (function() {
         // Re-render dynamic sections only (avoid full page flash)
         var app = document.getElementById('app');
         if (app) {
+          var scrollY = window.scrollY; // preserve scroll position across re-render
           app.innerHTML = render(data);
           init(data);
+          window.scrollTo(0, scrollY);
         }
         if (showToast) GC.toast('Dashboard refreshed', 'success');
 
