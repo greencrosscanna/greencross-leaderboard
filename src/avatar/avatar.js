@@ -66,11 +66,11 @@ var ava = (function() {
   };
 
   var DEFAULT_CONFIG = {
-    skinColor: 'edb98a', top: 'shortFlat', hairColor: '2c1b18',
-    eyes: 'default', eyebrows: 'default', mouth: 'smile',
+    skinColor: 'f8d25c', top: '_none', hairColor: '2c1b18',
+    eyes: 'wink', eyebrows: 'upDown', mouth: 'default',
     facialHair: '_none', facialHairColor: '2c1b18',
-    clothing: 'hoodie', clothesColor: '3c4f5c',
-    accessories: '_none', accessoriesColor: '262e33'
+    clothing: 'shirtCrewNeck', clothesColor: '929598',
+    accessories: '_none', accessoriesColor: '3c4f5c'
   };
 
   function humanize(s) {
