@@ -1305,22 +1305,26 @@ function resolveGoal_(slug) {
   var yGoals  = getOrComputeYoYGoals_();
   var gr = (rGoals && rGoals[slug]) || {};
   var gy = (yGoals && yGoals[slug]) || {};
-  var g  = (activeGoalSource_(gr, gy) === 'yoy') ? gy : gr;
+  var rPP = gr.ppGoal || 0;
+  var yPP = gy.ppGoal || 0;
+  var g   = (yPP > rPP) ? gy : gr; // use the higher source for DOW shape
+  var computedMaxPP = Math.max(rPP, yPP);
 
   var manualRaw = manuals[slug];
   var manualPP  = manualRaw ? parseFloat(manualRaw) : NaN;
   if (!isNaN(manualPP) && manualPP > 0) {
-    var computedPP = g.ppGoal || 1;
-    // If the stored override is within 1% of computedPP × (1+stretch), treat it as
-    // stretch-derived rather than a true manual override. This prevents stale manual
-    // values from drifting when goals are recalculated (new ppGoal in cache) while
-    // still preserving true manual overrides like Portland's intentional $39k target.
-    var expectedPP      = computedPP * (1 + stretch);
-    var isStretchDerived = Math.abs(manualPP - expectedPP) / Math.max(expectedPP, 1) < 0.01;
-    if (isStretchDerived) {
-      // Fall through → use computed × stretch (same as no manual override)
-    } else {
+    // Treat as stretch-derived (not a true manual) if it matches ANY of:
+    //   rolling×stretch, yoy×stretch, or max(r,y)×stretch — within 1%.
+    // This prevents stale manuals from blocking an updated computed goal
+    // after a recalculate that changed which source is active.
+    function closeEnough_(a, b) { return b > 0 && Math.abs(a - b) / b < 0.01; }
+    var isStretchDerived =
+      closeEnough_(manualPP, rPP * (1 + stretch)) ||
+      closeEnough_(manualPP, yPP * (1 + stretch)) ||
+      closeEnough_(manualPP, computedMaxPP * (1 + stretch));
+    if (!isStretchDerived) {
       // True manual override — scale DOW averages proportionally to the override PP
+      var computedPP = g.ppGoal || 1;
       var scale = manualPP / computedPP;
       var scaledAvg = {};
       if (g.dowAvg) {
@@ -3083,20 +3087,27 @@ function getSettings_(params) {
     goals:            STORES.map(function(s) {
       var gr       = rollingGoals[s.slug] || {};
       var gy       = yoyGoals[s.slug]    || {};
-      var src      = activeGoalSource_(gr, gy);   // 'rolling' | 'yoy'
       var stretch  = getStretchMultiplier_();
       var manuals  = getManualPPGoals_();
       var manualPP = manuals[s.slug] ? parseFloat(manuals[s.slug]) : null;
-      var computedActivePP = (src === 'yoy' ? gy : gr).ppGoal || 0;
-      // If stored manual is within 1% of computed×stretch, treat as stretch-derived
-      // (not a true manual). This keeps settings input in sync after goals recalculate.
-      var expectedPP       = computedActivePP * (1 + stretch);
-      var isStretchDerived = manualPP && manualPP > 0 && computedActivePP > 0 &&
-        Math.abs(manualPP - expectedPP) / Math.max(expectedPP, 1) < 0.01;
+      // Always use max(rolling, yoy) as the computed base
+      var rPP = gr.ppGoal || 0;
+      var yPP = gy.ppGoal || 0;
+      var computedActivePP = Math.max(rPP, yPP);
+      // Treat saved manual as auto-derived (not a true override) if it matches
+      // either rolling×stretch or yoy×stretch within 1% — handles source switches
+      // after recalculate without requiring the user to re-save.
+      function withinOnePct(a, b) { return b > 0 && Math.abs(a - b) / b < 0.01; }
+      var isStretchDerived = !!(manualPP && manualPP > 0 && (
+        withinOnePct(manualPP, rPP * (1 + stretch)) ||
+        withinOnePct(manualPP, yPP * (1 + stretch)) ||
+        withinOnePct(manualPP, computedActivePP * (1 + stretch))
+      ));
       var effectivePP = (manualPP && manualPP > 0 && !isStretchDerived)
         ? manualPP
         : Math.round(computedActivePP * (1 + stretch));
       var hasManual = !!(manualPP && manualPP > 0 && !isStretchDerived);
+      var src = (yPP > rPP) ? 'yoy' : 'rolling'; // for activeSource label only
       return {
         slug:         s.slug,
         name:         s.name,
