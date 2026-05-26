@@ -203,8 +203,6 @@ var director = (function() {
     var period  = data ? GC.periodLabel('mtd') : 'Month-to-Date';
     return '<header class="director-header">'
       + '<img class="gc-logo-img" src="' + GC.LOGO_PNG + '" alt="Green Cross" height="28">'
-      + '<span class="breadcrumb">Period: <b>' + e(period) + '</b>'
-      + (range ? ' · ' + e(range) : '') + '</span>'
       + '<div class="header-right">'
       + '<div class="clock-mini">'
       + '<div class="cm-time" id="directorClock">—</div>'
@@ -313,7 +311,7 @@ var director = (function() {
   }
 
   // ── Render: Store Leaderboard Table ───────────────────
-  function renderStoreTable(stores) {
+  function renderStoreTable(stores, range) {
     var total = stores.length;
 
     var rows = stores.map(function(s) {
@@ -342,7 +340,7 @@ var director = (function() {
     }).join('');
 
     return '<div class="section-head">'
-      + '<h2>Store Leaderboard · MTD</h2><span class="sh-sep">/</span>'
+      + '<h2>Store Leaderboard · MTD' + (range ? ' · ' + e(range) : '') + '</h2><span class="sh-sep">/</span>'
       + '<span class="sh-meta">Click any store to drill down</span>'
       + '</div>'
       + '<table class="gc-table" id="storeTable">'
@@ -364,7 +362,7 @@ var director = (function() {
   }
 
   // ── Render: Cross-store Staff Table ───────────────────
-  function renderStaffTable(staff) {
+  function renderStaffTable(staff, range) {
     var filtered = applyStaffFilters(staff);
     var maxSales = filtered.length ? filtered[0].sales : 1;
     var total    = staff.length;  // rank pill relative to full list
@@ -398,7 +396,7 @@ var director = (function() {
     }).join('');
 
     return '<div class="section-head">'
-      + '<h2>Top Performers · All Stores · Pay Period</h2>'
+      + '<h2>Top Performers · All Stores · Pay Period' + (range ? ' · ' + e(range) : '') + '</h2>'
       + '<span class="sh-sep">/</span>'
       + '<span class="sh-meta">Across ' + total + ' active staff</span>'
       + '<a class="sh-link" id="viewFullLeaderboard">View full leaderboard →</a>'
@@ -612,9 +610,9 @@ var director = (function() {
             + '</div>'
           : '')
       + renderKPIs(sum)
-      + renderStoreTable(stores)
+      + renderStoreTable(stores, range)
       + renderFilterPills()
-      + renderStaffTable(staff)
+      + renderStaffTable(staff, range)
       + '<div class="director-lower">'
       + renderAlerts(alerts)
       + renderDiscountWatch(alerts)
