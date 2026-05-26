@@ -1107,17 +1107,27 @@ function resolveGoal_(slug) {
   var manualRaw = manuals[slug];
   var manualPP  = manualRaw ? parseFloat(manualRaw) : NaN;
   if (!isNaN(manualPP) && manualPP > 0) {
-    // Scale DOW averages proportionally to the manual PP total (preserves day-of-week pattern)
     var computedPP = g.ppGoal || 1;
-    var scale      = manualPP / computedPP;
-    var scaledAvg  = {};
-    if (g.dowAvg) {
-      for (var d = 0; d <= 6; d++) {
-        scaledAvg[d] = (g.dowAvg[d] || 0) * scale;
+    // If the stored override is within 1% of computedPP × (1+stretch), treat it as
+    // stretch-derived rather than a true manual override. This prevents stale manual
+    // values from drifting when goals are recalculated (new ppGoal in cache) while
+    // still preserving true manual overrides like Portland's intentional $39k target.
+    var expectedPP      = computedPP * (1 + stretch);
+    var isStretchDerived = Math.abs(manualPP - expectedPP) / Math.max(expectedPP, 1) < 0.01;
+    if (isStretchDerived) {
+      // Fall through → use computed × stretch (same as no manual override)
+    } else {
+      // True manual override — scale DOW averages proportionally to the override PP
+      var scale = manualPP / computedPP;
+      var scaledAvg = {};
+      if (g.dowAvg) {
+        for (var d = 0; d <= 6; d++) {
+          scaledAvg[d] = (g.dowAvg[d] || 0) * scale;
+        }
       }
+      var scaledG = { ppGoal: manualPP, dowAvg: scaledAvg };
+      return { g: scaledG, effectivePP: manualPP, useManual: true, stretch: 0 };
     }
-    var scaledG = { ppGoal: manualPP, dowAvg: scaledAvg };
-    return { g: scaledG, effectivePP: manualPP, useManual: true, stretch: 0 };
   }
   return { g: g, effectivePP: g.ppGoal || 0, useManual: false, stretch: stretch };
 }
@@ -2794,9 +2804,15 @@ function getSettings_(params) {
       var manuals  = getManualPPGoals_();
       var manualPP = manuals[s.slug] ? parseFloat(manuals[s.slug]) : null;
       var computedActivePP = (src === 'yoy' ? gy : gr).ppGoal || 0;
-      var effectivePP = (manualPP && manualPP > 0)
+      // If stored manual is within 1% of computed×stretch, treat as stretch-derived
+      // (not a true manual). This keeps settings input in sync after goals recalculate.
+      var expectedPP       = computedActivePP * (1 + stretch);
+      var isStretchDerived = manualPP && manualPP > 0 && computedActivePP > 0 &&
+        Math.abs(manualPP - expectedPP) / Math.max(expectedPP, 1) < 0.01;
+      var effectivePP = (manualPP && manualPP > 0 && !isStretchDerived)
         ? manualPP
         : Math.round(computedActivePP * (1 + stretch));
+      var hasManual = !!(manualPP && manualPP > 0 && !isStretchDerived);
       return {
         slug:         s.slug,
         name:         s.name,
@@ -2805,7 +2821,7 @@ function getSettings_(params) {
         active:       buildGoalRow(src === 'yoy' ? gy : gr, null),
         activeSource: src,
         effectivePP:  effectivePP,
-        hasManual:    !!(manualPP && manualPP > 0),
+        hasManual:    hasManual,
       };
     }),
     nicknames:        nicknames,
