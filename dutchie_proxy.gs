@@ -278,6 +278,22 @@ function doGet(e) {
       return jsonOut(saveManualGoals_(params), params.callback);
     }
     // Diagnostic: logs one raw transaction to Apps Script execution log.
+    // Director-only. Dumps Script Property keys + goal cache structure.
+    if (params.action === 'goalsdiag') {
+      requireRole_(auth, ['owner','director']);
+      var props = PropertiesService.getScriptProperties();
+      var allKeys = Object.keys(props.getProperties());
+      var cacheRaw = props.getProperty('GC_GOALS_CACHE_JSON') || '{}';
+      var cache = {};
+      try { cache = JSON.parse(cacheRaw); } catch(e) {}
+      var result = {};
+      ['baseline','century'].forEach(function(slug) {
+        var g = cache[slug] || {};
+        result[slug] = { ppGoal: g.ppGoal, dowAvg: g.dowAvg, computedAt: g.computedAt };
+      });
+      return jsonOut({ propKeys: allKeys, goalsBySlug: result, cacheTopKeys: Object.keys(cache) }, params.callback);
+    }
+
     // Director-only. Call from browser: ?action=txdiag&store=baseline&token=TOKEN
     if (params.action === 'txdiag') {
       requireRole_(auth, ['owner','director']);
