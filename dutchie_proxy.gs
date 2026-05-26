@@ -283,7 +283,7 @@ function doGet(e) {
         });
       });
       var avEmployees = Object.values(avEmpMap).sort(function(a, b) { return a.name.localeCompare(b.name); });
-      return jsonOut({ ok: true, employees: avEmployees, avatarConfigs: getAvatarConfigs_() }, params.callback);
+      return jsonOut({ ok: true, employees: avEmployees, avatarConfigs: resolveAvatarConfigs_(avEmployees, getAvatarConfigs_()) }, params.callback);
     }
 
     // ── Admin: user & key management (director only) ───────
@@ -2710,16 +2710,25 @@ function saveManualGoals_(params) {
 /** Returns the full avatar config map { nameKey: configObject }. */
 /**
  * Resolves avatarConfigs against a roster employee list.
- * Dutchie transaction data often uses first-name-only display names (e.g. "Sunshine"),
- * so configs may be stored under "sunshine" while the roster key is "sunshine_morales".
- * For each roster employee, falls back to the first-name segment if the full key misses.
+ * Dutchie transaction data often uses a single display name (e.g. "Sunshine") while the
+ * roster stores the full legal name (e.g. "Maria Sunshine" → key "maria_sunshine").
+ * Tries the full roster key first, then each individual segment, so "sunshine" config
+ * is found regardless of which position it occupies in the roster key.
  * Returns a new map keyed by roster emp.key so callers can do a direct lookup.
  */
 function resolveAvatarConfigs_(employees, rawConfigs) {
   var resolved = {};
   (employees || []).forEach(function(emp) {
-    var key  = emp.key;
-    var cfg  = rawConfigs[key] || rawConfigs[key.split('_')[0]] || null;
+    var key = emp.key;
+    // 1. Exact match
+    var cfg = rawConfigs[key] || null;
+    // 2. Try each name segment (handles first-name-only keys saved from kiosk)
+    if (!cfg) {
+      var segments = key.split('_');
+      for (var i = 0; i < segments.length; i++) {
+        if (rawConfigs[segments[i]]) { cfg = rawConfigs[segments[i]]; break; }
+      }
+    }
     if (cfg) resolved[key] = cfg;
   });
   return resolved;

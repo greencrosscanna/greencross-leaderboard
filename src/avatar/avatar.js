@@ -24,7 +24,17 @@ GC.views.renderAvatar = function(queryParams) {
         var displayName = nameKey.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
         emp = { key: nameKey, name: displayName, store: '' };
       }
-      var savedConfig = (data.avatarConfigs || {})[nameKey];
+      // Configs may be stored under a short display-name key (e.g. "sunshine") while
+      // the roster/URL key uses the full name ("maria_sunshine"). Try exact match first,
+      // then each name segment so any position can match.
+      var _rawCfgs = data.avatarConfigs || {};
+      var savedConfig = _rawCfgs[nameKey] || null;
+      if (!savedConfig) {
+        var _segs = nameKey.split('_');
+        for (var _si = 0; _si < _segs.length; _si++) {
+          if (_rawCfgs[_segs[_si]]) { savedConfig = _rawCfgs[_segs[_si]]; break; }
+        }
+      }
       app.innerHTML = ava.render(emp, savedConfig);
       ava.init(emp, queryParams);
     })
