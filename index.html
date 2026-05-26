@@ -6388,6 +6388,7 @@ var kiosk = (function() {
     var toGo      = td.toGo      || 0;
     var label     = td.timeRemainingLabel || '';
     var closed    = label === 'Closed';
+    var isPreOpen = td.isPreOpen || false;
 
     var soldEl = document.getElementById('kioskGoalSold');
     if (soldEl) countUp(soldEl, revenue, 800);
@@ -6406,7 +6407,7 @@ var kiosk = (function() {
       }
     }
     var toGoLblEl = document.getElementById('kioskToGoLabel');
-    if (toGoLblEl) toGoLblEl.textContent = closed ? '10 pm' : 'To Go';
+    if (toGoLblEl) toGoLblEl.textContent = closed ? '10 pm' : (isPreOpen ? 'Shortfall' : 'To Go');
 
     var pctEl = document.getElementById('kioskGoalPct');
     if (pctEl) pctEl.textContent = Math.round(pctToGoal * 100) + '%';
@@ -6419,11 +6420,17 @@ var kiosk = (function() {
 
     setGoalArcs(pctToGoal);
 
-    // Goal amount in card header
+    // Goal amount in card header + pre-open → live label flip
     if (td.goal) {
-      var goalAmtEl = document.getElementById('kioskDailyGoalAmt');
-      if (goalAmtEl) goalAmtEl.textContent = fmtDollars(td.goal);
       _goal = td.goal;   // keep module var in sync for pace gap calc
+      // If store just opened (isPreOpen flipped false), swap "Yesterday's Results" → "Daily Goal"
+      var kcardLbl = document.querySelector('.goal-card .kcard-label');
+      if (kcardLbl && !isPreOpen && (kcardLbl.textContent || '').indexOf('Yesterday') >= 0) {
+        kcardLbl.innerHTML = 'Daily Goal · <span id="kioskDailyGoalAmt">' + fmtDollars(td.goal) + '</span>';
+      } else {
+        var goalAmtEl = document.getElementById('kioskDailyGoalAmt');
+        if (goalAmtEl) goalAmtEl.textContent = fmtDollars(td.goal);
+      }
     }
 
     // Dim the card when store is closed
