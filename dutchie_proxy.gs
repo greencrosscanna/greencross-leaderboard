@@ -1802,13 +1802,13 @@ function getDirectorStores(params, pre) {
       discountRate:  agg.discountRate,
       ...trendFromByDay_(byStore30d ? aggregateByDay_(byStore30d[store.slug] || []) : {}),
       tags:          tags,
-      today:         { revenue: aggToday.sales, goal: dailyGoal, pace: todayPace },
+      today:         { revenue: aggToday.sales, goal: dailyGoal, pace: todayPace, pctToGoal: dailyGoal > 0 ? r3_(aggToday.sales / dailyGoal) : 0 },
       flagCount:     flaggedEmps.length,
     };
   });
 
-  // Sort by today's pace vs. goal descending (goal performance), assign ranks
-  storeSummaries.sort((a, b) => (b.today.pace || 0) - (a.today.pace || 0));
+  // Sort by today's % of goal descending (goal performance), assign ranks
+  storeSummaries.sort((a, b) => (b.today.pctToGoal || 0) - (a.today.pctToGoal || 0));
   storeSummaries.forEach((s, i) => { s.rank = i + 1; });
 
   return {
