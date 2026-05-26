@@ -159,7 +159,6 @@ var director = (function() {
     var period  = data ? GC.periodLabel('mtd') : 'Month-to-Date';
     return '<header class="director-header">'
       + '<div class="gc-logo"><span class="green">GREEN</span>CROSS</div>'
-      + '<span class="view-badge">Director · All Stores</span>'
       + '<span class="breadcrumb">Period: <b>' + e(period) + '</b>'
       + (range ? ' · ' + e(range) : '') + '</span>'
       + '<div class="header-right">'
@@ -168,9 +167,9 @@ var director = (function() {
       + '<div class="cm-date" id="directorDate">—</div>'
       + '</div>'
       + '<button class="btn-icon dir-settings-btn" id="btnSettings" title="Settings">'
-      +   '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'
-      +     '<circle cx="8" cy="8" r="2.2"/>'
-      +     '<path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M2.93 2.93l1.06 1.06M12.01 12.01l1.06 1.06M2.93 13.07l1.06-1.06M12.01 3.99l1.06-1.06"/>'
+      +   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+      +     '<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>'
+      +     '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'
       +   '</svg>'
       + '</button>'
       + (session
