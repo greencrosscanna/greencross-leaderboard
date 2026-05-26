@@ -101,15 +101,13 @@ const DISCOUNT_FLAG_THRESHOLD  = 0.065;
 const DISCOUNT_WATCH_THRESHOLD = 0.080;
 
 // Discount names to exclude from the staff discount-rate calculation.
-// These are applied by the store system (loyalty, promos) — not by the budtender.
+// These are applied by the loyalty system — not by the budtender.
 // Case-insensitive substring match against tx.discounts[].discountName.
+// Source: 2026-05-25-Discounts export — all Type=Loyalty entries.
 const EXCLUDED_DISCOUNT_KEYWORDS = [
-  'loyalty',
-  'points',
-  'reward',
-  'member',
-  'alpine',   // Alpine IQ loyalty
-  'springbig',
+  'point redemption',  // "$X off - X point redemption" (all point tiers)
+  'reward 1',          // "Reward 1 - Green Cross Edible - 100 point redemption"
+  'reward 2',          // "Reward 2 - Green Cross Preroll - 100 point redemption"
 ];
 
 // Canonical store list — slugs must match src/fixtures/ filenames
