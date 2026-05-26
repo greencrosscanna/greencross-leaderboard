@@ -812,11 +812,11 @@ body.kiosk-bg {
   animation: kiosk-slide-in 0.45s ease-out;
 }
 .ticker-item--big {
-  border-color: var(--amber);
-  border-left-color: var(--amber);
+  border-color: #f97316;
+  border-left-color: #f97316;
 }
 .ticker-item--big .t-amt {
-  color: var(--amber);
+  color: #f97316;
   font-weight: 700;
 }
 @keyframes kiosk-slide-in {
