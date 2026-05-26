@@ -952,15 +952,18 @@ function getOrComputeYoYGoals_(forceRecompute) {
   }
 
   // Equivalent base: 52 weeks (364 days) ago — preserves day-of-week alignment
-  var YEAR_MS   = 364 * 24 * 60 * 60 * 1000;
-  var yoyBaseMs = ppStartMs - YEAR_MS;
+  var YEAR_MS    = 364 * 24 * 60 * 60 * 1000;
+  var yoyBaseMs  = ppStartMs - YEAR_MS;        // 1 year ago
+  var yoy2BaseMs = ppStartMs - 2 * YEAR_MS;   // 2 years ago (for realized growth rate)
 
-  // 6 bi-weekly windows: -3 to +2 PPs relative to the equivalent PP last year
-  var ranges = [];
+  // 6 bi-weekly windows around each anchor (−3 to +2 PPs)
+  var ranges = [];   // year-ago windows
+  var ranges2 = [];  // two-years-ago windows
   for (var i = -3; i <= 2; i++) {
-    var fromMs = yoyBaseMs + i * PP_MS;
-    var toMs   = fromMs + PP_MS - 1;
-    ranges.push({ fromUTC: new Date(fromMs).toISOString(), toUTC: new Date(toMs).toISOString() });
+    var f1 = yoyBaseMs  + i * PP_MS;
+    var f2 = yoy2BaseMs + i * PP_MS;
+    ranges.push ({ fromUTC: new Date(f1).toISOString(), toUTC: new Date(f1 + PP_MS - 1).toISOString() });
+    ranges2.push({ fromUTC: new Date(f2).toISOString(), toUTC: new Date(f2 + PP_MS - 1).toISOString() });
   }
 
   var yoyFrom = Utilities.formatDate(new Date(yoyBaseMs - 3 * PP_MS), STORE_TZ, 'yyyy-MM-dd');
@@ -968,60 +971,90 @@ function getOrComputeYoYGoals_(forceRecompute) {
 
   Logger.log('[yoy] Computing YoY goals for PP ' + ppStartStr + ' (window: ' + yoyFrom + ' – ' + yoyTo + ')…');
 
-  // 36 parallel requests (6 ranges × 6 stores)
-  var fetched = fetchAllStoresTransactionsMulti_(ranges);
+  // 72 parallel requests: 12 ranges × 6 stores (first 6 = Y1, next 6 = Y2)
+  var fetchedAll = fetchAllStoresTransactionsMulti_(ranges.concat(ranges2));
+  var fetchedY1  = fetchedAll.slice(0, 6);
+  var fetchedY2  = fetchedAll.slice(6, 12);
+
+  // Max realized growth applied to YoY baseline (caps outlier years — new stores, one-off events)
+  var MAX_REALIZED_GROWTH = 0.20; // 20%
 
   var goals = {};
   var pt    = ptNow_();
 
   STORES.forEach(function(store) {
-    var allByDay = {};
-    var ppTotals = [];
-
-    fetched.forEach(function(byStore) {
+    // ── Year-ago baseline ──────────────────────────────────
+    var allByDayY1 = {};
+    var ppTotalsY1 = [];
+    fetchedY1.forEach(function(byStore) {
       var txns  = byStore[store.slug] || [];
       var ppDay = aggregateByDay_(txns);
       var ppSum = 0;
       Object.keys(ppDay).forEach(function(day) {
-        allByDay[day] = (allByDay[day] || 0) + ppDay[day];
+        allByDayY1[day] = (allByDayY1[day] || 0) + ppDay[day];
         ppSum += ppDay[day];
       });
-      ppTotals.push(ppSum);
+      ppTotalsY1.push(ppSum);
     });
-
-    var ppGoal = ppTotals.length > 0
-      ? Math.round(ppTotals.reduce(function(a, b) { return a + b; }, 0) / ppTotals.length)
+    var ppY1 = ppTotalsY1.length > 0
+      ? ppTotalsY1.reduce(function(a, b) { return a + b; }, 0) / ppTotalsY1.length
       : 0;
 
-    var flatDaily   = ppGoal > 0 ? Math.round(ppGoal / PP_DAYS) : 0;
-    var dowBuckets  = {0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
-    Object.keys(allByDay).forEach(function(day) {
+    // ── Two-years-ago baseline (for realized growth rate) ──
+    var ppTotalsY2 = [];
+    fetchedY2.forEach(function(byStore) {
+      var txns  = byStore[store.slug] || [];
+      var ppSum = 0;
+      Object.keys(aggregateByDay_(txns)).forEach(function(day) { ppSum += aggregateByDay_(txns)[day]; });
+      ppTotalsY2.push(ppSum);
+    });
+    var ppY2 = ppTotalsY2.length > 0
+      ? ppTotalsY2.reduce(function(a, b) { return a + b; }, 0) / ppTotalsY2.length
+      : 0;
+
+    // ── Realized growth rate (Y1 vs Y2, floored at 0, capped at MAX) ──
+    var realizedGrowth = 0;
+    if (ppY2 > 0 && ppY1 > 0) {
+      realizedGrowth = Math.max(0, Math.min(MAX_REALIZED_GROWTH, (ppY1 - ppY2) / ppY2));
+    }
+
+    // ── Forward goal = Y1 × (1 + realizedGrowth) ──────────
+    // Stretch is applied on top separately in resolveGoal_ / getDailyGoalForDow_.
+    var ppGoal    = ppY1 > 0 ? Math.round(ppY1 * (1 + realizedGrowth)) : 0;
+    var flatDaily = ppGoal > 0 ? Math.round(ppGoal / PP_DAYS) : 0;
+
+    // ── DOW averages from Y1 data, scaled by realized growth ──
+    var dowBuckets = {0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
+    Object.keys(allByDayY1).forEach(function(day) {
       var d   = new Date(Date.UTC(Number(day.slice(0,4)), Number(day.slice(5,7))-1, Number(day.slice(8,10)), 12));
       var dow = parseInt(Utilities.formatDate(d, STORE_TZ, 'u'), 10) % 7;
-      dowBuckets[dow].push(allByDay[day]);
+      dowBuckets[dow].push(allByDayY1[day]);
     });
 
     var dowAvg = {};
     for (var d = 0; d <= 6; d++) {
-      var vals   = dowBuckets[d];
-      dowAvg[d]  = vals.length > 0
-        ? Math.round(vals.reduce(function(a, b) { return a + b; }, 0) / vals.length)
-        : flatDaily;
+      var vals  = dowBuckets[d];
+      var base  = vals.length > 0
+        ? vals.reduce(function(a, b) { return a + b; }, 0) / vals.length
+        : flatDaily / (1 + realizedGrowth); // un-scale so scaling below is consistent
+      dowAvg[d] = Math.round(base * (1 + realizedGrowth));
     }
 
     var monthly = computeAccurateMonthly_(dowAvg, pt.year, pt.month);
 
     goals[store.slug] = {
-      ppGoal:     ppGoal,
-      dowAvg:     dowAvg,
-      monthly:    monthly,
-      yoyFrom:    yoyFrom,
-      yoyTo:      yoyTo,
-      ppStart:    ppStartStr,
-      computedAt: new Date().toISOString(),
+      ppGoal:        ppGoal,
+      dowAvg:        dowAvg,
+      monthly:       monthly,
+      yoyFrom:       yoyFrom,
+      yoyTo:         yoyTo,
+      ppStart:       ppStartStr,
+      realizedGrowth: Math.round(realizedGrowth * 1000) / 1000, // stored for display (e.g. 0.124 = 12.4%)
+      computedAt:    new Date().toISOString(),
     };
 
-    Logger.log('[yoy] ' + store.slug + ' pp=$' + ppGoal + ' mon=$' + monthly);
+    Logger.log('[yoy] ' + store.slug + ' Y1=$' + Math.round(ppY1) + ' Y2=$' + Math.round(ppY2)
+      + ' growth=' + Math.round(realizedGrowth * 100) + '% → pp=$' + ppGoal + ' mon=$' + monthly);
   });
 
   props.setProperty(GC_YOY_GOALS_KEY, JSON.stringify({
