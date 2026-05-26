@@ -2208,11 +2208,14 @@ function getStoreToday(store, params) {
   // First-name frequency map so ticker can show "Zachary B." vs "Zachary R."
   // Use the full employee roster (all known staff at this store) so that
   // an off-shift Zachary still triggers disambiguation for the on-shift one.
+  // Apply nicknames first so we disambiguate on display names, not raw Dutchie names.
+  const _tickerNicks = getNicknames_();
   const tickerFirstNames = {};
   const fullRoster = (getEmployeeRoster_()[store.slug] || []);
   const rosterSource = fullRoster.length > 0 ? fullRoster : Object.values(agg.byEmployee);
   rosterSource.forEach(emp => {
-    const fn = (emp.name || '').split(' ')[0].toLowerCase();
+    const displayName = applyNickname_(emp.name, _tickerNicks);
+    const fn = (displayName || '').split(' ')[0].toLowerCase();
     tickerFirstNames[fn] = (tickerFirstNames[fn] || 0) + 1;
   });
   function disambiguateTicker_(name) {
@@ -2311,8 +2314,9 @@ function getStoreToday(store, params) {
   // Helper: build a ticker item from a transaction
   function makeTicker_(tx) {
     const emp = txEmployee_(tx);
+    const displayName = applyNickname_(emp.name, _tickerNicks);
     return {
-      who:   disambiguateTicker_(emp.name),
+      who:   disambiguateTicker_(displayName),
       qty:   txItems_(tx),   // distinct SKUs — see txItems_ for cannabis UPT rationale
       price: txTotal_(tx),
       ts:    tx.transactionDateLocalTime || tx.transactionDate || '',
