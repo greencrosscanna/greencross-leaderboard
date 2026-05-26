@@ -574,7 +574,7 @@ var director = (function() {
       + '</div>'
       + '<div class="kcard-stats">'
       +   '<div class="kstat"><div class="kstat-v num">' + e(GC.fmtCurrency(proj)) + '</div><div class="kstat-l">Projected</div></div>'
-      +   '<div class="kstat' + paceCls + '"><div class="kstat-v num">' + e(gapAmt) + '</div><div class="kstat-l">' + e(gapLabel) + '</div></div>'
+      +   '<div class="kstat"><div class="kstat-v num" style="color:' + zoneColor + '">' + e(gapAmt) + '</div><div class="kstat-l">' + e(gapLabel) + '</div></div>'
       + '</div>'
       + '</div>';
   }
