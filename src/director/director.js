@@ -199,8 +199,6 @@ var director = (function() {
   // ── Render: Header ─────────────────────────────────────
   function renderHeader(data) {
     var session = GC.auth.load();
-    var range   = data ? GC.fmtDateRange(data.summary.dateRange.from, data.summary.dateRange.to) : '';
-    var period  = data ? GC.periodLabel('mtd') : 'Month-to-Date';
     return '<header class="director-header">'
       + '<img class="gc-logo-img" src="' + GC.LOGO_PNG + '" alt="Green Cross" height="28">'
       + '<div class="header-right">'
@@ -607,6 +605,8 @@ var director = (function() {
     var sum    = data.summary;
     var alerts = data.alerts;
     var today  = data.today || {};
+    var range  = sum && sum.dateRange
+      ? GC.fmtDateRange(sum.dateRange.from, sum.dateRange.to) : '';
 
     return '<div class="app-page">'
       + renderHeader(data)
