@@ -25,6 +25,51 @@ GC.api = (function() {
   // Fixtures base path (relative to index.html)
   var FX = 'src/fixtures/';
 
+  // ── Cache (two-tier: memory + localStorage) ───────────────
+  // Serves stale data instantly while a background fetch updates the cache.
+  var _mem = {};  // { key: { data, ts } }  — cleared on page reload
+
+  function _getCached(key, ttlMs) {
+    // 1. In-memory (fastest — same-session navigation)
+    var m = _mem[key];
+    if (m && (Date.now() - m.ts) < ttlMs) return m.data;
+    // 2. localStorage (survives page reload / returning visit)
+    try {
+      var raw = localStorage.getItem('gc_cache_' + key);
+      if (raw) {
+        var entry = JSON.parse(raw);
+        if (Date.now() - entry.ts < ttlMs) {
+          _mem[key] = entry; // promote to memory
+          return entry.data;
+        }
+      }
+    } catch(e) {}
+    return null;
+  }
+
+  function _setCache(key, data) {
+    var entry = { data: data, ts: Date.now() };
+    _mem[key] = entry;
+    try { localStorage.setItem('gc_cache_' + key, JSON.stringify(entry)); } catch(e) {}
+  }
+
+  // Stale-while-revalidate wrapper.
+  // Returns a Promise that resolves immediately with cached data (if fresh),
+  // or with the network response if no cache. Either way a background network
+  // request always runs; when it lands, onFresh(data) is called if provided.
+  function _withCache(key, ttlMs, fetcher, onFresh) {
+    var cached = _getCached(key, ttlMs);
+    var networkPromise = fetcher().then(function(data) {
+      _setCache(key, data);
+      return data;
+    });
+    if (cached) {
+      if (onFresh) networkPromise.then(onFresh).catch(function() {});
+      return Promise.resolve(cached);
+    }
+    return networkPromise;
+  }
+
   // ── JSONP helper (same pattern as greencross-inventory) ──
   var _cbIndex = 0;
   function jsonp(url, params) {
@@ -173,8 +218,9 @@ GC.api = (function() {
     return gasCall('savesettings', params);
   }
 
-  // Convenience: single GAS round-trip returning all four director payloads
-  function fetchDirectorAll(period) {
+  // Convenience: single GAS round-trip returning all four director payloads.
+  // onFresh(data) — optional callback fired when background network refresh lands.
+  function fetchDirectorAll(period, onFresh) {
     period = period || 'mtd';
     if (USE_FIXTURES) {
       return Promise.all([
@@ -186,11 +232,11 @@ GC.api = (function() {
         return { summary: results[0], stores: results[1], staff: results[2], alerts: results[3] };
       });
     }
-    return gasCall('directorall', { period: period })
-      .then(function(r) {
-        // GAS returns { summary, stores, staff, alerts } in one call
-        return r;
-      });
+    var cacheKey = 'director_' + period;
+    var TTL = 5 * 60 * 1000; // 5 minutes
+    return _withCache(cacheKey, TTL, function() {
+      return gasCall('directorall', { period: period });
+    }, onFresh);
   }
 
   // ── Public: Store / Kiosk endpoints ───────────────────
@@ -220,14 +266,28 @@ GC.api = (function() {
     return gasCall('leaderboardstaff', { period: period || 'mtd' });
   }
 
-  function fetchKioskAll(storeSlug) {
-    return Promise.all([
-      fetchStoreToday(storeSlug),
-      fetchStoreLeaderboard(storeSlug),
-      fetchStoreBadges(storeSlug, 'week'),
-    ]).then(function(results) {
-      return { today: results[0], leaderboard: results[1], badges: results[2] };
-    });
+  // onFresh(data) — optional callback fired when background network refresh lands.
+  function fetchKioskAll(storeSlug, onFresh) {
+    var cacheKey = 'kiosk_' + storeSlug;
+    var TTL = 3 * 60 * 1000; // 3 minutes (kiosk data changes more frequently)
+    if (USE_FIXTURES) {
+      return Promise.all([
+        fetchStoreToday(storeSlug),
+        fetchStoreLeaderboard(storeSlug),
+        fetchStoreBadges(storeSlug, 'week'),
+      ]).then(function(results) {
+        return { today: results[0], leaderboard: results[1], badges: results[2] };
+      });
+    }
+    return _withCache(cacheKey, TTL, function() {
+      return Promise.all([
+        fetchStoreToday(storeSlug),
+        fetchStoreLeaderboard(storeSlug),
+        fetchStoreBadges(storeSlug, 'week'),
+      ]).then(function(results) {
+        return { today: results[0], leaderboard: results[1], badges: results[2] };
+      });
+    }, onFresh);
   }
 
   return {

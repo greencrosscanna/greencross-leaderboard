@@ -18,10 +18,16 @@ GC.views.renderKiosk = function(slug) {
 
   app.innerHTML = kiosk.renderLoading(slug);
 
-  GC.api.fetchKioskAll(slug)
+  GC.api.fetchKioskAll(slug, function(freshRaw) {
+    // Background refresh landed — re-render quietly if still on this kiosk
+    var currentApp = document.getElementById('app');
+    if (!currentApp) return;
+    if (window.location.hash !== '#/store/' + slug) return;
+    var freshData = kiosk.normalize(freshRaw);
+    currentApp.innerHTML = kiosk.render(freshData, slug);
+    kiosk.init(freshData, slug);
+  })
     .then(function(rawData) {
-      // Normalize GAS flat shape → fixture-compatible nested shape before any
-      // render/init code touches it. Both shapes work after normalization.
       var data = kiosk.normalize(rawData);
       app.innerHTML = kiosk.render(data, slug);
       kiosk.init(data, slug);

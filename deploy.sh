@@ -8,6 +8,11 @@ MSG="${1:-deploy}"
 
 cd "$(dirname "$0")"
 
+# 0. Generate version.js from git commit count (auto-increments every deploy)
+BUILD=$(git rev-list --count HEAD)
+echo "window.GC = window.GC || {}; GC.VERSION = 'v1.${BUILD}';" > src/version.js
+echo "▶ Version: v1.${BUILD}"
+
 # 1. Inline all src/ CSS + JS into index.html.built (what GAS serves)
 echo "▶ Building index.html.built..."
 python3 - << 'PYEOF'

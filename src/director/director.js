@@ -24,8 +24,19 @@ GC.views.renderDirector = function() {
   // Start clock immediately (doesn't need data)
   director.startClock();
 
-  // Fetch MTD data for store rankings/KPIs, then overlay Pay Period staff data
-  GC.api.fetchDirectorAll('mtd')
+  // Fetch MTD data. If cache is warm, renders instantly and fires onFresh
+  // when the background network response lands (updates label + re-renders quietly).
+  GC.api.fetchDirectorAll('mtd', function(freshData) {
+    // Background refresh landed — update view quietly (no loading flash)
+    var currentApp = document.getElementById('app');
+    if (!currentApp) return;
+    if (window.location.hash !== '#/director') return;
+    currentApp.innerHTML = director.render(freshData);
+    director.init(freshData);
+    GC.api.fetchDirectorStaff('pp')
+      .then(function(ppData) { director.updateStaffTable(ppData.staff || []); })
+      .catch(function() {});
+  })
     .then(function(data) {
       app.innerHTML = director.render(data);
       director.init(data);
@@ -577,7 +588,7 @@ var director = (function() {
       + renderDiscountWatch(alerts)
       + '</div>'
       + '<div class="footer-note director-footer">'
-      + 'v1.0 · Director Mode · '
+      + (window.GC && GC.VERSION ? GC.VERSION : 'v1') + ' · Director Mode · '
       + '<span id="lastRefreshed">Last refresh —</span>'
       + '</div>'
       + '</div>';
