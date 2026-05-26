@@ -59,7 +59,7 @@ GC.views.renderLogin = function() {
     '<div class="login-screen">',
     '  <div class="login-card">',
     '    <div class="login-logo">',
-    '      <span class="gc-logo"><span class="green">GREEN</span>CROSS</span>',
+    '      <img src="' + GC.LOGO_PNG + '" alt="Green Cross" style="height:36px;width:auto;display:block;margin:0 auto">',
     '    </div>',
     '    <div class="login-tagline">Sales Performance</div>',
     '    <label class="login-label" for="loginUser">Username</label>',
@@ -68,9 +68,6 @@ GC.views.renderLogin = function() {
     '    <input class="login-input" type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password">',
     '    <button class="login-submit" id="loginBtn">Sign in</button>',
     '    <div class="login-error" id="loginError"></div>',
-    '    <div class="login-hint">',
-    '      Login: <code>sky / gcadmin</code> → Director &nbsp;|&nbsp; manager usernames: dean, tj, scott, tyson, mariana, chris / gc123',
-    '    </div>',
     '  </div>',
     '</div>',
   ].join('\n');
