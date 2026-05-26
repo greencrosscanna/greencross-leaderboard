@@ -132,12 +132,45 @@ var director = (function() {
       + e(pct) + '</span>';
   }
 
-  function salesBarHtml(sales, maxSales) {
-    var pct = maxSales > 0 ? Math.round((sales / maxSales) * 100) : 0;
+  // Kiosk-style bar: shows % of plan target, animates on render,
+  // glows green when over target (same logic + CSS as emp-bar in kiosk).
+  function salesBarHtml(sales, vsplan) {
+    // Derive the plan from actual sales + vsplan delta.
+    // vsplan = (actual - plan) / plan  →  plan = actual / (1 + vsplan)
+    var hasPlan = vsplan !== null && vsplan !== undefined && (1 + vsplan) > 0;
+    var plan    = hasPlan ? sales / (1 + vsplan) : sales;
+    var rawPct  = plan > 0 ? Math.round((sales / plan) * 100) : 0;
+    var barOver = rawPct > 100;
+    var fillPct = barOver ? 100 : rawPct;
+    var markPct = barOver ? Math.round(100 / rawPct * 100) : null;
+    var pctLbl  = rawPct + '%';
+    var fillStyle = barOver
+      ? 'width:0%;--mark-pct:' + markPct + '%'
+      : 'width:0%';
     return '<div class="sales-cell">'
       + '<span class="sales-amt num">' + e(GC.fmtCurrency(sales)) + '</span>'
-      + '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div>'
+      + '<div class="emp-bar-wrap dir-bar' + (barOver ? ' bar-over' : '') + '">'
+      +   '<div class="emp-bar">'
+      +     '<span style="' + fillStyle + '" data-final="' + fillPct + '%"></span>'
+      +   '</div>'
+      +   (markPct !== null ? '<div class="emp-bar-mark" style="left:' + markPct + '%"></div>' : '')
+      +   '<div class="emp-bar-tick" style="left:0%" data-final="' + fillPct + '%">'
+      +     '<span class="emp-bar-pct">' + pctLbl + '</span>'
+      +     '<span class="emp-bar-chevron">▲</span>'
+      +   '</div>'
+      + '</div>'
       + '</div>';
+  }
+
+  function animateBars() {
+    setTimeout(function() {
+      document.querySelectorAll('.emp-bar span[data-final]').forEach(function(s) {
+        s.style.width = s.getAttribute('data-final');
+      });
+      document.querySelectorAll('.emp-bar-tick[data-final]').forEach(function(t) {
+        t.style.left = t.getAttribute('data-final');
+      });
+    }, 400);
   }
 
   // ── Render: Loading ────────────────────────────────────
@@ -281,8 +314,7 @@ var director = (function() {
 
   // ── Render: Store Leaderboard Table ───────────────────
   function renderStoreTable(stores) {
-    var maxSales = stores.length ? stores[0].sales : 1;
-    var total    = stores.length;
+    var total = stores.length;
 
     var rows = stores.map(function(s) {
       var rpClass = GC.rankPillClass(s.rank, total);
@@ -297,7 +329,7 @@ var director = (function() {
           + avatarHtml(s.manager.initials, null, s.manager.name)
           + '<div><div class="who-name">' + e(s.manager.name) + '</div><div class="who-sub">' + e(s.manager.roleLabel || 'Store Mgr') + '</div></div>'
           + '</div></td>'
-        + '<td>' + salesBarHtml(s.sales, maxSales) + '</td>'
+        + '<td>' + salesBarHtml(s.sales, s.vsplan) + '</td>'
         + '<td>' + vsPlanHtml(s.vsplan) + '</td>'
         + '<td class="num">' + e(GC.fmtNum(s.transactions)) + '</td>'
         + '<td class="num' + (s.avgOrderValue > 79 ? ' v-green' : s.avgOrderValue < 74 ? ' v-red' : '') + '">'
@@ -727,6 +759,7 @@ var director = (function() {
     _data = data;
     startClock();
     scheduleRefresh();
+    animateBars();
 
     // Update last-refreshed label
     var lr = document.getElementById('lastRefreshed');

@@ -349,3 +349,9 @@
   justify-content: center;
   gap: 6px;
 }
+
+/* ── Kiosk-style bar in director table (compact variant) ──── */
+.dir-bar.emp-bar-wrap {
+  margin-top: 5px;
+  margin-bottom: 0;
+}
