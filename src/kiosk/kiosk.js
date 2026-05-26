@@ -103,7 +103,7 @@ var kiosk = (function() {
     var sess = GC.auth.load() || {};
     var isDirector = sess.role === 'director' || sess.role === 'owner';
     var backBtn = isDirector
-      ? '<button class="kiosk-back-btn" onclick="GC.router.navigate(\'#/director\')">← Director</button>'
+      ? '<button class="kiosk-back-btn" onclick="GC.router.navigate(\'#/director\')">← Back</button>'
       : '';
     return '<header class="kiosk-header">'
       + backBtn
