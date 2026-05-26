@@ -386,6 +386,7 @@ var settings = (function() {
 
     function applyStretchDisplay() {
       var mult = 1 + (parseFloat((stretchSelect && stretchSelect.value) || 0) || 0);
+      console.log('[applyStretchDisplay] mult=', mult, 'stretchSelect=', stretchSelect && stretchSelect.value);
 
       // Baseline PP spans (Rolling / YoY) — pure stretch, no override involved
       document.querySelectorAll('[data-base-pp]').forEach(function(el) {
@@ -459,6 +460,7 @@ var settings = (function() {
 
     // Auto-save stretch when dropdown changes, then refresh display
     if (stretchSelect) stretchSelect.addEventListener('change', function() {
+      console.log('[stretch] change → value:', stretchSelect.value);
       applyStretchDisplay();
       var stretch = parseFloat(stretchSelect.value) || 0;
       if (applyStretchBtn) { applyStretchBtn.disabled = true; applyStretchBtn.textContent = 'Saving…'; }
@@ -484,6 +486,7 @@ var settings = (function() {
 
     if (applyStretchBtn) {
       applyStretchBtn.addEventListener('click', function() {
+        applyStretchDisplay();   // update table immediately on Apply click
         var stretch = parseFloat(stretchSelect ? stretchSelect.value : 0) || 0;
         applyStretchBtn.disabled = true;
         applyStretchBtn.textContent = 'Saving…';
