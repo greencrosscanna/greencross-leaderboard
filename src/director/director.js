@@ -545,12 +545,13 @@ var director = (function() {
       : remMins !== null && remMins <= 30 ? 'var(--red)'
       : remMins !== null && remMins <= 60 ? 'var(--amber)'
       : '';
-    var remSpan  = closed
-      ? ''
-      : ' · <span style="font-weight:700' + (remColor ? ';color:' + remColor : '') + '">' + e(remStr) + ' remain</span>';
+    var remLabel = closed ? 'Closed' : (e(remStr) + ' remain');
+    var remSpan  = remStr && remStr !== '—'
+      ? ' · <span style="font-weight:700' + (remColor ? ';color:' + remColor : '') + '">' + remLabel + '</span>'
+      : '';
 
     return '<div class="dir-today-card">'
-      + '<div class="kcard-label">Daily Goal · ' + e(goalStr) + remSpan + '</div>'
+      + '<div class="kcard-label">Daily Goal' + remSpan + '</div>'
       + '<div class="dir-gauge-wrap">'
       +   '<svg width="200" height="108" viewBox="0 0 240 130" style="overflow:visible">'
       +     '<path d="M 22 122 A 98 98 0 0 1 218 122" stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="butt"/>'
