@@ -314,10 +314,10 @@ function doGet(e) {
       var diagProps = PropertiesService.getScriptProperties();
       var stretch   = getStretchMultiplier_();
 
-      // Rolling cache
+      // Rolling cache (stored as { ppStart, goals: { slug: {...} } })
       var rollingCache = {};
       try { rollingCache = JSON.parse(diagProps.getProperty(GC_GOALS_CACHE_KEY) || '{}'); } catch(e2) {}
-      var gr = rollingCache[diagSlug] || {};
+      var gr = (rollingCache.goals && rollingCache.goals[diagSlug]) || {};
 
       // YoY cache
       var yoyCache = {};
