@@ -6371,10 +6371,11 @@ var kiosk = (function() {
             note:         p.note     || null,
           };
         }),
-        hourly:       td.hourly       || [],
-        peakHour:     td.peakHour     || null,
-        peakRevenue:  td.peakRevenue  || 0,
-        latestTxnTs:  td.latestTxnTs  || '',
+        hourly:        td.hourly        || [],
+        hourlyTargets: td.hourlyTargets || null,
+        peakHour:      td.peakHour      || null,
+        peakRevenue:   td.peakRevenue   || 0,
+        latestTxnTs:   td.latestTxnTs   || '',
         // GAS ticker: {who,qty,price,ts} → {time,firstName,desc,amount}
         ticker: (td.ticker || []).map(function(t) {
           if (t.firstName !== undefined) return t; // already normalized
