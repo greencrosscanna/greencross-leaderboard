@@ -308,6 +308,69 @@ function doGet(e) {
       });
       return jsonOut({ propKeys: allKeys, goalsBySlug: result, cacheTopKeys: Object.keys(cache) }, params.callback);
     }
+    if (params.action === 'storediag') {
+      requireRole_(auth, ['owner','director']);
+      var diagSlug = params.store || 'river';
+      var diagProps = PropertiesService.getScriptProperties();
+      var stretch   = getStretchMultiplier_();
+
+      // Rolling cache
+      var rollingCache = {};
+      try { rollingCache = JSON.parse(diagProps.getProperty(GC_GOALS_CACHE_KEY) || '{}'); } catch(e2) {}
+      var gr = rollingCache[diagSlug] || {};
+
+      // YoY cache
+      var yoyCache = {};
+      try { yoyCache = JSON.parse(diagProps.getProperty(GC_YOY_GOALS_KEY) || '{}'); } catch(e2) {}
+      var gy = (yoyCache.goals && yoyCache.goals[diagSlug]) || {};
+
+      // Y1 sub-cache
+      var y1Cache = {};
+      try { y1Cache = JSON.parse(diagProps.getProperty(GC_YOY1_CACHE_KEY) || '{}'); } catch(e2) {}
+      var y1PP  = (y1Cache.ppTotals  && y1Cache.ppTotals[diagSlug])  || 0;
+      var y1Dow = (y1Cache.dowAvg    && y1Cache.dowAvg[diagSlug])    || {};
+
+      // Y2 sub-cache
+      var y2Cache = {};
+      try { y2Cache = JSON.parse(diagProps.getProperty(GC_YOY2_CACHE_KEY) || '{}'); } catch(e2) {}
+      var y2PP = (y2Cache.totals && y2Cache.totals[diagSlug]) || 0;
+
+      // Resolved goal (what the kiosk actually uses)
+      var resolved = resolveGoal_(diagSlug);
+      var pt = ptNow_();
+
+      return jsonOut({
+        store:      diagSlug,
+        stretch:    stretch,
+        y1CacheKey: y1Cache.key || null,
+        y2CacheKey: y2Cache.key || null,
+        y1PP:       Math.round(y1PP),
+        y2PP:       Math.round(y2PP),
+        realizedGrowth: gy.realizedGrowth || 0,
+        rolling: {
+          ppGoal:    gr.ppGoal  || 0,
+          monthly:   gr.monthly || 0,
+          dowAvg:    gr.dowAvg  || {},
+          computedAt: gr.computedAt || null,
+        },
+        yoy: {
+          ppGoal:    gy.ppGoal  || 0,
+          monthly:   gy.monthly || 0,
+          dowAvg:    gy.dowAvg  || {},
+          yoyFrom:   gy.yoyFrom || null,
+          yoyTo:     gy.yoyTo   || null,
+          computedAt: gy.computedAt || null,
+        },
+        resolved: {
+          effectivePP: resolved.effectivePP,
+          useManual:   resolved.useManual,
+          stretch:     resolved.stretch,
+          dowAvg:      resolved.g.dowAvg || {},
+          todayDow:    pt.dow,
+          todayGoal:   getDailyGoal_(diagSlug),
+        },
+      }, params.callback);
+    }
 
     // Director-only. Call from browser: ?action=txdiag&store=baseline&token=TOKEN
     if (params.action === 'txdiag') {
