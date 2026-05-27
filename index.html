@@ -7330,7 +7330,7 @@ var settings = (function() {
     // Table rows
     // Accumulate totals for the tfoot row
     var mult    = 1 + currentStretch;   // hoisted — used in rows AND totalRow
-    var totBase = 0, totMonthly = 0;
+    var totBase = 0, totMonthly = 0, totEffective = 0;
     var totDow  = { Mon:0, Tue:0, Wed:0, Thu:0, Fri:0, Sat:0, Sun:0 };
 
     var rows = goals.map(function(g) {
@@ -7379,8 +7379,9 @@ var settings = (function() {
 
       // Accumulate for totals row
       var computedBasePP2 = (g.active && g.active.ppGoal) ? g.active.ppGoal : (rBase || yBase);
-      totBase    += computedBasePP2;
-      totMonthly += mBase;
+      totBase      += computedBasePP2;
+      totEffective += Math.round(overrideVal); // sum of actual input values (incl. manuals)
+      totMonthly   += mBase;
       DOW_ORDER.forEach(function(d) {
         totDow[d] = (totDow[d] || 0) + ((activeG.dowAvg && activeG.dowAvg[d]) ? activeG.dowAvg[d] : 0);
       });
@@ -7408,7 +7409,7 @@ var settings = (function() {
       + '<td class="settings-baseline-cell">'
       +   '<div><span data-base-pp="' + totBase + '">' + fmtGoal(Math.round(totBase * mult)) + '</span></div>'
       + '</td>'
-      + '<td id="goalsTotalPP" class="settings-total-pp">' + fmtGoal(Math.round(totBase * mult)) + '</td>'
+      + '<td id="goalsTotalPP" class="settings-total-pp">' + fmtGoal(totEffective) + '</td>'
       + '<td class="settings-derived settings-total-monthly" data-base-monthly="' + totMonthly + '">'
       +   fmtGoal(Math.round(totMonthly * mult))
       + '</td>'
