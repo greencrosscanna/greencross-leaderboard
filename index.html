@@ -7668,9 +7668,41 @@ var settings = (function() {
       applyStretchDisplay(true);
     });
 
-    // Live-update monthly + DOW when override input changes — does NOT overwrite PP inputs
+    // Live-update monthly + DOW when a PP override input changes.
+    // Scale that row's derived cells by newPP / computedBasePP so daily goals
+    // update proportionally as you type — no overwrite of the PP input itself.
     document.querySelectorAll('.settings-pp-override').forEach(function(inp) {
-      inp.addEventListener('input', function() { applyStretchDisplay(false); });
+      inp.addEventListener('input', function() {
+        var row           = inp.closest('tr');
+        var computedBase  = parseFloat(inp.getAttribute('data-base-computed-pp')) || 0;
+        var newPP         = parseFloat((inp.value || '').replace(/[^0-9.]/g, '')) || 0;
+        // Scale = ratio of new PP to base computed PP; fall back to stretch mult if no base
+        var mult          = 1 + (parseFloat((stretchSelect && stretchSelect.value) || 0) || 0);
+        var scale         = (computedBase > 0 && newPP > 0) ? (newPP / computedBase) : mult;
+
+        if (row) {
+          var monthlyEl = row.querySelector('[data-base-monthly]');
+          if (monthlyEl) {
+            var mBase = parseFloat(monthlyEl.getAttribute('data-base-monthly')) || 0;
+            monthlyEl.textContent = mBase ? '$' + Math.round(mBase * scale).toLocaleString('en-US') : '—';
+          }
+          row.querySelectorAll('.settings-dow-cell[data-base-dow]').forEach(function(el) {
+            var base  = parseFloat(el.getAttribute('data-base-dow')) || 0;
+            var inner = el.querySelector('.settings-dow-val');
+            if (inner) inner.textContent = base ? '$' + Math.round(base * scale).toLocaleString('en-US') : '—';
+          });
+        }
+
+        // Update total PP cell
+        var totalPPEl = document.getElementById('goalsTotalPP');
+        if (totalPPEl) {
+          var ppSum = 0;
+          document.querySelectorAll('.settings-pp-override').forEach(function(i) {
+            ppSum += parseFloat((i.value || '').replace(/[^0-9.]/g, '')) || 0;
+          });
+          totalPPEl.textContent = ppSum ? '$' + Math.round(ppSum).toLocaleString('en-US') : '—';
+        }
+      });
     });
 
     // Save Goal Overrides
