@@ -1971,10 +1971,36 @@ body.kiosk-bg {
   z-index: 3;
   transition: bottom 0.3s ease;
 }
-/* Miss indicator: bar is below target — notch floats above, tinted red-amber */
+/* Miss indicator: bar is below target — notch floats above, tinted orange */
 .hm-notch--miss {
   background: var(--orange);
   opacity: 0.85;
+}
+/* Tooltip on the notch — shown on bar hover */
+.hm-notch-tip {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 3px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--amber);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+  z-index: 11; /* above .hm-tooltip */
+}
+.hm-bar:hover .hm-notch-tip { opacity: 1; }
+/* Targets-loading hint in legend */
+.hm-targets-loading {
+  color: var(--text-mute);
+  font-size: 10px;
+  margin-left: 6px;
 }
 .hm-bar {
   flex: 1;
@@ -5846,15 +5872,16 @@ var kiosk = (function() {
       return 'rgb(' + r + ',' + g + ',' + b + ')';
     }
 
-    var numHours   = (hourly && hourly.length) || 13;
-    // Per-bar targets: use same-DOW historical weights if available, else flat average
-    var targets = hourlyTargets && hourlyTargets.length === numHours
-      ? hourlyTargets
-      : (goal > 0 ? hourly.map(function() { return goal / numHours; }) : null);
+    var numHours = (hourly && hourly.length) || 13;
+    // Only use targets when real same-DOW historical data is available.
+    // No flat fallback — without history the chart shows normally with no notches,
+    // avoiding the bar-compression artifact from a flat goal ÷ hours estimate.
+    var targets = (hourlyTargets && hourlyTargets.length === numHours)
+      ? hourlyTargets : null;
 
-    // Chart scale: tall enough to fit the tallest target AND the tallest actual bar
-    var maxTarget  = targets ? Math.max.apply(null, targets) : 0;
-    var effectiveMax = Math.max(peakRevenue || 0, maxTarget || 0) || 1;
+    // Chart scale: only expand for tallest target when we have real targets
+    var maxTarget    = targets ? Math.max.apply(null, targets) : 0;
+    var effectiveMax = Math.max(peakRevenue || 0, maxTarget) || 1;
 
     var bars = (hourly || []).map(function(h, i) {
       var cls = '';
@@ -5866,24 +5893,22 @@ var kiosk = (function() {
                     : Math.round((h.pct || 0) * (peakRevenue || 0) / 100);
       var scaledPct = Math.min(100, (amt / effectiveMax) * 100);
       var color     = pctColor(scaledPct, h.projected);
-      var amtStr    = '$' + amt.toLocaleString() + (h.projected ? ' est.' : '');
 
-      // Per-bar target notch
-      // Position is expressed as % of the BAR's own height so it tracks correctly.
-      // When bar < target the notch is > 100% (floats above the bar top) — this is
-      // the visual signal staff see that "the bar hasn't reached target yet."
+      // Per-bar target notch (only when historical targets are available)
       var notchHtml = '';
       if (targets && targets[i] > 0) {
-        var tgt          = targets[i];
-        var tgtChartPct  = (tgt / effectiveMax) * 100;          // target as % of chart
-        var barChartPct  = scaledPct || 0.01;                   // avoid ÷0
-        var notchOfBar   = (tgtChartPct / barChartPct) * 100;   // target as % of BAR height
-        // Cap: no more than 20px above bar top so overflow stays tidy
-        var notchCapped  = Math.min(notchOfBar, 100 + 2000 / Math.max(scaledPct, 1));
-        var belowTarget  = amt < tgt;
-        notchHtml = '<div class="hm-notch' + (belowTarget ? ' hm-notch--miss' : '') + '"'
-          + ' style="bottom:' + notchCapped.toFixed(1) + '%"'
-          + ' title="Target $' + Math.round(tgt).toLocaleString('en-US') + '"></div>';
+        var tgt         = targets[i];
+        var tgtChartPct = (tgt / effectiveMax) * 100;         // target as % of chart height
+        var barPct      = scaledPct || 0.01;                  // avoid ÷0
+        var notchOfBar  = (tgtChartPct / barPct) * 100;       // target as % of THIS bar's height
+        // Cap overshoot: never float more than ~20 CSS px above bar top
+        var notchCapped = Math.min(notchOfBar, 100 + 1800 / Math.max(barPct, 1));
+        var miss        = amt < tgt;
+        var tipAmt      = '$' + Math.round(tgt).toLocaleString('en-US');
+        notchHtml = '<div class="hm-notch' + (miss ? ' hm-notch--miss' : '') + '"'
+          + ' style="bottom:' + notchCapped.toFixed(1) + '%">'
+          + '<span class="hm-notch-tip">' + e(tipAmt) + '</span>'
+          + '</div>';
       }
 
       return '<div class="hm-bar' + cls + '" style="height:' + scaledPct.toFixed(1) + '%;background:' + color + '">'
@@ -5896,13 +5921,17 @@ var kiosk = (function() {
     var peakStr = peakHour
       ? 'Peak · ' + e(peakHour) + ' · ' + e(fmtDollars(peakRevenue || 0))
       : '';
+    // When targets haven't loaded yet, show a subtle hint in the legend
+    var targetStatus = !targets
+      ? '<span class="hm-targets-loading">· targets loading…</span>'
+      : '';
 
     return '<div class="kiosk-card heatmap-card">'
       + '<div class="kcard-label">Today by Hour</div>'
       + '<div class="heatmap">' + bars + '</div>'
       + '<div class="hm-legend">'
       + '  <span>Open</span>'
-      + '  <span class="hm-peak">' + e(peakStr) + '</span>'
+      + '  <span class="hm-peak">' + e(peakStr) + targetStatus + '</span>'
       + '  <span>Close</span>'
       + '</div>'
       + '</div>';
