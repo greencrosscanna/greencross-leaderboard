@@ -1026,9 +1026,8 @@ function getOrComputeYoYGoals_(forceRecompute) {
 
   // Equivalent base: 52 weeks (364 days) ago — preserves day-of-week alignment
   var YEAR_MS         = 364 * 24 * 60 * 60 * 1000;
-  var HALF_YEAR_MS    = 182 * 24 * 60 * 60 * 1000; // 26 weeks — Y2 lookback
-  var yoyBaseMs       = ppStartMs - YEAR_MS;         // Y1: 1 year ago
-  var yoy2BaseMs      = yoyBaseMs - HALF_YEAR_MS;    // Y2: 6 months before Y1 (~18 months ago)
+  var yoyBaseMs       = ppStartMs - YEAR_MS;          // Y1: 1 year ago (same season)
+  var yoy2BaseMs      = ppStartMs - 2 * YEAR_MS;     // Y2: 2 years ago (same season — avoids Q4 vs Q2 mismatch)
 
   // 6 bi-weekly windows around each anchor (−3 to +2 PPs)
   var ranges = [];   // year-ago windows
@@ -1274,10 +1273,9 @@ function prefetchYoY2_() {
     var daysSince = Math.round((todayMs - anchorMs) / (24 * 60 * 60 * 1000));
     var ppOffset  = daysSince >= 0 ? Math.floor(daysSince / PP_DAYS) : Math.ceil(daysSince / PP_DAYS) - 1;
     var ppStartMs = anchorMs + ppOffset * PP_MS;
-    var YEAR_MS      = 364 * 24 * 60 * 60 * 1000;
-    var HALF_YEAR_MS = 182 * 24 * 60 * 60 * 1000;
-    var yoyBaseMs    = ppStartMs - YEAR_MS;
-    var yoy2BaseMs   = yoyBaseMs - HALF_YEAR_MS; // 6 months before Y1 (~18 months ago)
+    var YEAR_MS    = 364 * 24 * 60 * 60 * 1000;
+    var yoyBaseMs  = ppStartMs - YEAR_MS;
+    var yoy2BaseMs = ppStartMs - 2 * YEAR_MS; // 2 years ago, same season as Y1
 
     var ranges2 = [];
     for (var i = -3; i <= 2; i++) {
