@@ -1122,6 +1122,8 @@ html, body {
   height: 80px;
   display: flex;
   align-items: flex-end;
+  position: relative;
+  overflow: visible;
 }
 
 .dir-hour-bar {
@@ -1996,15 +1998,23 @@ body.kiosk-bg {
   font-size: 10px;
   margin-left: 6px;
 }
-.hm-bar {
+/* Column wrapper — spans full chart height so notch is positioned chart-relative */
+.hm-col {
   flex: 1;
+  display: flex;
+  align-items: flex-end;
+  position: relative;
+  align-self: stretch;
+}
+.hm-bar {
+  width: 100%;
   border-radius: 4px;
   position: relative;
   border: 1px solid transparent;
   cursor: default;
-  overflow: visible; /* allow target notch to float above bar top */
+  overflow: visible;
 }
-.hm-bar:hover { filter: brightness(1.15); }
+.hm-col:hover .hm-bar { filter: brightness(1.15); }
 .hm-bar.now {
   border-color: var(--green);
   box-shadow: 0 0 10px rgba(74,222,128,0.3);
@@ -2040,7 +2050,7 @@ body.kiosk-bg {
   align-items: center;
   gap: 1px;
 }
-.hm-bar:hover .hm-tooltip { opacity: 1; }
+.hm-col:hover .hm-tooltip { opacity: 1; }
 .hm-legend {
   display: flex;
   justify-content: space-between;
@@ -4810,17 +4820,15 @@ var director = (function() {
       var scaledPct = Math.min(100, ((h.revenue || 0) / effectiveMax) * 100);
       var tipVal    = h.revenue > 0 ? GC.fmtCurrency(h.revenue) : '—';
 
-      // Per-bar target notch
+      // Per-bar target notch — placed in bar-wrap (fixed 80px height) so it's
+      // always chart-relative. Works for future hours that have 0 revenue.
       var notchHtml = '';
-      if (targets && targets[i] > 0 && !h.projected) {
+      if (targets && targets[i] > 0) {
         var tgt         = targets[i];
-        var tgtChartPct = (tgt / effectiveMax) * 100;
-        var barPct      = scaledPct || 0.01;
-        var notchOfBar  = (tgtChartPct / barPct) * 100;
-        var notchCapped = Math.min(notchOfBar, 100 + 1800 / Math.max(barPct, 1));
+        var tgtChartPct = Math.min(100, (tgt / effectiveMax) * 100);
         var miss        = (h.revenue || 0) < tgt;
         notchHtml = '<div class="hm-notch' + (miss ? ' hm-notch--miss' : '') + '"'
-          + ' style="bottom:' + notchCapped.toFixed(1) + '%"></div>';
+          + ' style="bottom:' + tgtChartPct.toFixed(1) + '%"></div>';
       }
 
       // Stacked tooltip: revenue + goal
@@ -4834,7 +4842,8 @@ var director = (function() {
       return '<div class="dir-hour-col' + cls + '">'
         +   tipHtml
         +   '<div class="dir-hour-bar-wrap">'
-        +     '<div class="dir-hour-bar" style="height:' + scaledPct.toFixed(1) + '%">' + notchHtml + '</div>'
+        +     notchHtml
+        +     '<div class="dir-hour-bar" style="height:' + scaledPct.toFixed(1) + '%"></div>'
         +   '</div>'
         +   '<div class="dir-hour-lbl">' + e(h.hour) + '</div>'
         + '</div>';
@@ -5919,29 +5928,28 @@ var kiosk = (function() {
       var scaledPct = Math.min(100, (amt / effectiveMax) * 100);
       var color     = pctColor(scaledPct, h.projected);
 
-      // Per-bar target notch (only when historical targets are available)
+      // Per-bar target notch — placed in column wrapper so it's always chart-relative.
+      // This works even for projected bars that have 0 revenue (height ≈ 0).
       var notchHtml = '';
       if (targets && targets[i] > 0) {
         var tgt         = targets[i];
-        var tgtChartPct = (tgt / effectiveMax) * 100;         // target as % of chart height
-        var barPct      = scaledPct || 0.01;                  // avoid ÷0
-        var notchOfBar  = (tgtChartPct / barPct) * 100;       // target as % of THIS bar's height
-        // Cap overshoot: never float more than ~20 CSS px above bar top
-        var notchCapped = Math.min(notchOfBar, 100 + 1800 / Math.max(barPct, 1));
+        var tgtChartPct = Math.min(100, (tgt / effectiveMax) * 100); // % of chart height
         var miss        = amt < tgt;
-        var tipAmt      = '$' + Math.round(tgt).toLocaleString('en-US');
         notchHtml = '<div class="hm-notch' + (miss ? ' hm-notch--miss' : '') + '"'
-          + ' style="bottom:' + notchCapped.toFixed(1) + '%"></div>';
+          + ' style="bottom:' + tgtChartPct.toFixed(1) + '%"></div>';
       }
 
       var tipGoal = (targets && targets[i] > 0)
         ? '<span class="hm-tip-goal">goal $' + e(Math.round(targets[i]).toLocaleString('en-US')) + '</span>'
         : '';
 
-      return '<div class="hm-bar' + cls + '" style="height:' + scaledPct.toFixed(1) + '%;background:' + color + '">'
+      // Notch lives in .hm-col (chart-relative), bar + tooltip live in .hm-bar
+      return '<div class="hm-col">'
         + notchHtml
+        + '<div class="hm-bar' + cls + '" style="height:' + scaledPct.toFixed(1) + '%;background:' + color + '">'
         + '<div class="hm-tooltip"><span class="hm-tip-amt">$' + e(amt.toLocaleString()) + (h.projected ? ' est.' : '') + '</span>' + tipGoal + '</div>'
         + '<span class="hm-hour">' + e(h.hour) + '</span>'
+        + '</div>'
         + '</div>';
     }).join('');
 
