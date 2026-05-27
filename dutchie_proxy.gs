@@ -1313,15 +1313,10 @@ function resolveGoal_(slug) {
   var manualRaw = manuals[slug];
   var manualPP  = manualRaw ? parseFloat(manualRaw) : NaN;
   if (!isNaN(manualPP) && manualPP > 0) {
-    // Treat as stretch-derived (not a true manual) if it matches ANY of:
-    //   rolling×stretch, yoy×stretch, or max(r,y)×stretch — within 1%.
-    // This prevents stale manuals from blocking an updated computed goal
-    // after a recalculate that changed which source is active.
-    function closeEnough_(a, b) { return b > 0 && Math.abs(a - b) / b < 0.01; }
-    var isStretchDerived =
-      closeEnough_(manualPP, rPP * (1 + stretch)) ||
-      closeEnough_(manualPP, yPP * (1 + stretch)) ||
-      closeEnough_(manualPP, computedMaxPP * (1 + stretch));
+    // Treat as stretch-derived only if it matches max(R,Y)×stretch within 1%.
+    var expectedPP_      = computedMaxPP * (1 + stretch);
+    var isStretchDerived = expectedPP_ > 0 &&
+      Math.abs(manualPP - expectedPP_) / expectedPP_ < 0.01;
     if (!isStretchDerived) {
       // True manual override — scale DOW averages proportionally to the override PP
       var computedPP = g.ppGoal || 1;
@@ -3094,15 +3089,11 @@ function getSettings_(params) {
       var rPP = gr.ppGoal || 0;
       var yPP = gy.ppGoal || 0;
       var computedActivePP = Math.max(rPP, yPP);
-      // Treat saved manual as auto-derived (not a true override) if it matches
-      // either rolling×stretch or yoy×stretch within 1% — handles source switches
-      // after recalculate without requiring the user to re-save.
-      function withinOnePct(a, b) { return b > 0 && Math.abs(a - b) / b < 0.01; }
-      var isStretchDerived = !!(manualPP && manualPP > 0 && (
-        withinOnePct(manualPP, rPP * (1 + stretch)) ||
-        withinOnePct(manualPP, yPP * (1 + stretch)) ||
-        withinOnePct(manualPP, computedActivePP * (1 + stretch))
-      ));
+      // Treat saved manual as auto-derived only if it matches max(R,Y)×stretch
+      // within 1% — i.e. the user saved the computed value rather than a true override.
+      var expectedPP = computedActivePP * (1 + stretch);
+      var isStretchDerived = !!(manualPP && manualPP > 0 && expectedPP > 0 &&
+        Math.abs(manualPP - expectedPP) / expectedPP < 0.01);
       var effectivePP = (manualPP && manualPP > 0 && !isStretchDerived)
         ? manualPP
         : Math.round(computedActivePP * (1 + stretch));
