@@ -7594,7 +7594,7 @@ var settings = (function() {
     // Stretch multiplier — live preview + Apply
     var stretchSelect = document.getElementById('stretchSelect');
 
-    function applyStretchDisplay() {
+    function applyStretchDisplay(updatePPInputs) {
       var mult = 1 + (parseFloat((stretchSelect && stretchSelect.value) || 0) || 0);
 
       // Baseline PP spans (Rolling / YoY) — pure stretch, no override involved
@@ -7614,7 +7614,8 @@ var settings = (function() {
         var hasManual  = inp && inp.getAttribute('data-manual') === '1';
 
         // If no manual override, recalculate the PP input itself from base × stretch
-        if (inp && !hasManual && computedPP) {
+        // — but only when triggered by a stretch change, not by the user typing in the input.
+        if (updatePPInputs && inp && !hasManual && computedPP) {
           inp.value = Math.round(computedPP * mult).toLocaleString('en-US');
         }
 
@@ -7662,14 +7663,14 @@ var settings = (function() {
       }
     }
 
-    // Live-preview stretch when dropdown changes (no save — committed with Save Goal Overrides)
+    // Live-preview stretch when dropdown changes — also updates PP inputs
     if (stretchSelect) stretchSelect.addEventListener('change', function() {
-      applyStretchDisplay();
+      applyStretchDisplay(true);
     });
 
-    // Live-update monthly + DOW when override input changes
+    // Live-update monthly + DOW when override input changes — does NOT overwrite PP inputs
     document.querySelectorAll('.settings-pp-override').forEach(function(inp) {
-      inp.addEventListener('input', applyStretchDisplay);
+      inp.addEventListener('input', function() { applyStretchDisplay(false); });
     });
 
     // Save Goal Overrides
