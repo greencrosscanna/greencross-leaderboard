@@ -7716,17 +7716,55 @@ var settings = (function() {
           });
         }
 
-        // Update total PP cell
-        var totalPPEl = document.getElementById('goalsTotalPP');
-        if (totalPPEl) {
-          var ppSum = 0;
-          document.querySelectorAll('.settings-pp-override').forEach(function(i) {
-            ppSum += parseFloat((i.value || '').replace(/[^0-9.]/g, '')) || 0;
-          });
-          totalPPEl.textContent = ppSum ? '$' + Math.round(ppSum).toLocaleString('en-US') : '—';
-        }
+        recomputeTotals();
       });
     });
+
+    // Recompute and refresh all tfoot total cells from current tbody displayed values
+    function recomputeTotals() {
+      var table = document.getElementById('goalsTable');
+      if (!table) return;
+      var tfoot = table.querySelector('tfoot');
+      var tbody = table.querySelector('tbody');
+      if (!tfoot || !tbody) return;
+
+      // Sum Goal PP inputs
+      var ppSum = 0;
+      table.querySelectorAll('.settings-pp-override').forEach(function(i) {
+        ppSum += parseFloat((i.value || '').replace(/[^0-9.]/g, '')) || 0;
+      });
+      var totalPPEl = document.getElementById('goalsTotalPP');
+      if (totalPPEl) totalPPEl.textContent = ppSum ? '$' + Math.round(ppSum).toLocaleString('en-US') : '—';
+
+      // Sum monthly from all tbody rows
+      var mSum = 0;
+      tbody.querySelectorAll('[data-base-monthly]').forEach(function(el) {
+        var v = parseFloat((el.textContent || '').replace(/[^0-9.]/g, '')) || 0;
+        mSum += v;
+      });
+      var mTotEl = tfoot.querySelector('[data-base-monthly]');
+      if (mTotEl) mTotEl.textContent = mSum ? '$' + Math.round(mSum).toLocaleString('en-US') : '—';
+
+      // Sum each DOW column by position across all tbody rows
+      var tfootDowCells = tfoot.querySelectorAll('.settings-total-dow');
+      if (tfootDowCells.length) {
+        var dowSums = [];
+        for (var di = 0; di < tfootDowCells.length; di++) dowSums[di] = 0;
+        tbody.querySelectorAll('tr').forEach(function(r) {
+          var rowDow = r.querySelectorAll('.settings-dow-cell:not(.settings-total-dow)');
+          rowDow.forEach(function(el, di) {
+            var inner = el.querySelector('.settings-dow-val');
+            var v = parseFloat(((inner ? inner.textContent : el.textContent) || '').replace(/[^0-9.]/g, '')) || 0;
+            if (di < dowSums.length) dowSums[di] += v;
+          });
+        });
+        tfootDowCells.forEach(function(el, di) {
+          var inner = el.querySelector('.settings-dow-val');
+          var txt = dowSums[di] ? '$' + Math.round(dowSums[di]).toLocaleString('en-US') : '—';
+          if (inner) inner.textContent = txt; else el.textContent = txt;
+        });
+      }
+    }
 
     // Save Goal Overrides
     var saveGoalsBtn = document.getElementById('saveGoalsBtn');
@@ -7826,6 +7864,8 @@ var settings = (function() {
 
     // Apply override scaling once on load so saved overrides are reflected immediately
     applyStretchDisplay();
+    // Recompute tfoot totals once on load (handles manual overrides already in inputs)
+    recomputeTotals();
   }
 
   return { render: render, renderLoading: renderLoading, renderError: renderError, init: init };
