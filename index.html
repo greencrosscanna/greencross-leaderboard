@@ -6571,7 +6571,11 @@ var kiosk = (function() {
             leaderboard: lb,
             badges:      { badges: [] },
           });
-          var staff   = data.leaderboard.staff;
+          var staff = data.leaderboard.staff;
+
+          // Update on-shift roster so on/off-duty status stays current
+          if (lb.onShift && lb.onShift.length) _onShift = lb.onShift;
+
           var section = document.querySelector('.lb-section');
           if (section) {
             section.outerHTML = renderStaffGrid(staff, _storeName, _onShift, _badges);

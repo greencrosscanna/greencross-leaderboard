@@ -2867,11 +2867,34 @@ function getStoreLeaderboard(store, params) {
     };
   });
 
+  // Build onShift roster: employees active today (on) + roster-only employees (off)
+  // Mirrors the same logic in getStoreToday so _onShift stays fresh on lb refresh.
+  const _excluded    = getExcluded_();
+  const activeNames  = new Set(empList.map(e => e.name.toLowerCase()));
+  const onShiftActive = empList.map(emp => ({
+    initials: emp.initials,
+    name:     applyNickname_(emp.name, _storeNicknames),
+    status:   'on',
+    sales:    emp.sales,
+    note:     null,
+  }));
+  const onShiftRoster = (getEmployeeRoster_()[store.slug] || [])
+    .filter(e => !activeNames.has(e.name.toLowerCase()) && !_excluded.has(nameToKey_(e.name)))
+    .map(e => ({
+      initials: e.initials,
+      name:     applyNickname_(e.name, _storeNicknames),
+      status:   'off',
+      sales:    0,
+      note:     null,
+    }));
+  const onShift = onShiftActive.concat(onShiftRoster);
+
   return {
     storeSlug:    store.slug,
     storeName:    store.name,
     date:         today,
     staff:        staff,
+    onShift:      onShift,
     lastUpdated:  new Date().toISOString(),
     avatarConfigs: getAvatarConfigs_(),
   };
