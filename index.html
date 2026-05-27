@@ -1844,16 +1844,17 @@ body.kiosk-bg {
   animation: none;
 }
 
-/* Off-shift status pills */
+/* Off-shift status pills — pinned to card bottom, matching .emp-extra baseline */
 .emp-status-pill {
   display: inline-block;
-  margin-top: 7px;
+  margin-top: auto;
+  padding: 2px 8px;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.4px;
-  padding: 2px 8px;
   border-radius: 999px;
   text-transform: uppercase;
+  align-self: flex-start;
 }
 .emp-status-pill.status-later {
   background: rgba(249,115,22,0.15);
@@ -5805,7 +5806,7 @@ var kiosk = (function() {
       })
       .map(function(p) {
         var pillCls  = p.status === 'later' ? 'status-later' : 'status-off';
-        var pillTxt  = p.note || (p.status === 'later' ? 'Later today' : 'Off today');
+        var pillTxt  = p.note || (p.status === 'later' ? 'Later today' : 'Off shift');
         var nameKey  = (p.name || '').toLowerCase();
         var fn       = (p.name || '').split(' ')[0].toLowerCase();
         var fnUnique = firstNameCount[fn] === 1;
