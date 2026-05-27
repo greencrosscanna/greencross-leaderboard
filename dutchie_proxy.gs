@@ -37,6 +37,7 @@ const GC_YOY2_CACHE_KEY     = 'GC_YOY2_CACHE_JSON'; // permanent cache for 2-yea
 const GC_EXCLUDED_KEY       = 'GC_EXCLUDED_JSON';   // array of excluded employee nameKeys
 const GC_MANUAL_PP_KEY      = 'GC_MANUAL_PP_GOALS_JSON'; // slug→final PP goal overrides
 const GC_AVATAR_CONFIGS_KEY  = 'GC_AVATAR_CONFIGS_JSON'; // { nameKey: { ...avatar_config } }
+const GC_HOURLY_DIST_KEY     = 'GC_HOURLY_DIST_JSON';   // per-store same-DOW hourly revenue weights, cached per day
 const PP_DAYS                = 14;   // pay-period length in days
 const TARGET_LOOKBACK_MONTHS = 6;    // rolling lookback for target calculation
 const DUTCHIE_BASE          = 'https://api.pos.dutchie.com';
@@ -1664,6 +1665,89 @@ function fetchStoreTransactions_(storeSlug, fromUTC, toUTC) {
 }
 
 /**
+ * Returns hourly revenue weights for a store based on the last 4 same-DOW days.
+ * Result: { 9: 0.045, 10: 0.082, ... 22: 0.031 } — fractions that sum to 1.0.
+ * Cached per store+DOW per calendar day; the first call of each day fires 4
+ * parallel Dutchie requests, subsequent calls are instant reads from cache.
+ */
+function getHourlyDist_(store) {
+  const props = PropertiesService.getScriptProperties();
+  let cache = {};
+  try { cache = JSON.parse(props.getProperty(GC_HOURLY_DIST_KEY) || '{}'); } catch(e) {}
+
+  const now      = ptNow_();
+  const todayMs  = ptDateToUtcMs_(now.dateStr);
+  const dow      = new Date(todayMs).getDay();   // 0 = Sun … 6 = Sat
+  const cacheKey = store.slug + ':' + dow + ':' + now.dateStr;
+
+  if (cache[cacheKey]) return cache[cacheKey];  // hit
+
+  // Fetch last 4 same-DOW days in parallel
+  const MS_DAY   = 24 * 60 * 60 * 1000;
+  const storeKey = getDutchieStoreKey_(store.slug);
+  const auth     = Utilities.base64Encode(storeKey + ':');
+
+  const requests = [];
+  for (let w = 1; w <= 4; w++) {
+    const fromMs = todayMs - w * 7 * MS_DAY;
+    const toMs   = fromMs + MS_DAY - 1;
+    const qs = 'FromDateUTC=' + encodeURIComponent(new Date(fromMs).toISOString())
+      + '&ToDateUTC=' + encodeURIComponent(new Date(toMs).toISOString())
+      + '&IncludeDetail=true&Skip=0&Take=5000';
+    requests.push({
+      url: DUTCHIE_BASE + '/reporting/transactions?' + qs,
+      muteHttpExceptions: true,
+      headers: { Authorization: 'Basic ' + auth, Accept: 'application/json' },
+    });
+  }
+
+  const hourSums = {};
+  let hasData    = false;
+
+  try {
+    const responses = UrlFetchApp.fetchAll(requests);
+    responses.forEach(function(resp) {
+      if (resp.getResponseCode() !== 200) return;
+      let data;
+      try { data = JSON.parse(resp.getContentText()); } catch(e) { return; }
+      const txns = (Array.isArray(data) ? data : (data.transactions || data.data || []))
+        .filter(tx => tx.transactionType === 'Retail');
+      txns.forEach(function(tx) {
+        const ts = tx.transactionDateLocalTime || tx.transactionDate || '';
+        if (!ts || ts.length < 14) return;
+        const h   = parseInt(ts.substring(11, 13), 10);
+        if (h < STORE_OPEN_HOUR || h >= STORE_CLOSE_HOUR) return;
+        const amt = txTotal_(tx);
+        if (amt <= 0) return;
+        hourSums[h] = (hourSums[h] || 0) + amt;
+        hasData = true;
+      });
+    });
+  } catch(e) {
+    Logger.log('getHourlyDist_ fetch error: ' + e);
+    return null;
+  }
+
+  if (!hasData) return null;
+
+  const total = Object.values(hourSums).reduce((s, v) => s + v, 0);
+  if (total === 0) return null;
+
+  const dist = {};
+  for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
+    dist[h] = Math.round((hourSums[h] || 0) / total * 10000) / 10000; // 4 dp
+  }
+
+  // Cache — purge stale keys (keep ≤ 60 entries: 6 stores × 7 DOWs × ~1.4 safety)
+  cache[cacheKey] = dist;
+  const keys = Object.keys(cache).sort();
+  while (keys.length > 60) { delete cache[keys.shift()]; }
+  try { props.setProperty(GC_HOURLY_DIST_KEY, JSON.stringify(cache)); } catch(e) {}
+
+  return dist;
+}
+
+/**
  * Fetch transactions for ALL stores in parallel using UrlFetchApp.fetchAll().
  * Returns an object keyed by storeSlug: { baseline: [...], center: [...], ... }
  */
@@ -2632,6 +2716,21 @@ function getStoreToday(store, params) {
     });
   }
 
+  // Per-hour targets: scale daily goal by same-DOW historical hourly weights.
+  // Falls back to flat (dailyGoal / numHours) if no historical data available.
+  let hourlyTargets = null;
+  try {
+    const dist = getHourlyDist_(store);
+    if (dist) {
+      hourlyTargets = [];
+      for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
+        hourlyTargets.push(Math.round(dailyGoal * (dist[h] || 0)));
+      }
+    }
+  } catch(e) {
+    Logger.log('hourlyTargets error: ' + e);
+  }
+
   // Build shift strip: active employees (have transactions today) + known
   // roster employees who haven't transacted yet (shown as off-shift).
   const _excluded = getExcluded_();
@@ -2731,6 +2830,7 @@ function getStoreToday(store, params) {
     avgOrderValue:      agg.avgOrderValue,
     onShift:            onShift,
     hourly:             hourly,
+    hourlyTargets:      hourlyTargets,
     ticker:             ticker,
     latestTxnTs:        latestTxnTs,
     lastUpdated:        new Date().toISOString(),

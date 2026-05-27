@@ -1960,26 +1960,21 @@ body.kiosk-bg {
   min-height: 100px;
   position: relative; /* needed for absolute target line */
 }
-.hm-target-line {
+/* Per-bar target notch — amber tick showing the hour's revenue target */
+.hm-notch {
   position: absolute;
-  left: 0; right: 0;
-  height: 0;
-  border-top: 1px dashed var(--amber);
+  left: -1px; right: -1px;  /* slight overhang so it's visible on thin bars */
+  height: 2px;
+  background: var(--amber);
+  border-radius: 1px;
   pointer-events: none;
-  z-index: 2;
+  z-index: 3;
+  transition: bottom 0.3s ease;
 }
-.hm-target-line::after {
-  content: attr(data-label);
-  position: absolute;
-  right: 2px;
-  top: -14px;
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--amber);
-  letter-spacing: 0.4px;
-  background: var(--surface);
-  padding: 0 3px;
-  border-radius: 2px;
+/* Miss indicator: bar is below target — notch floats above, tinted red-amber */
+.hm-notch--miss {
+  background: var(--orange);
+  opacity: 0.85;
 }
 .hm-bar {
   flex: 1;
@@ -1987,6 +1982,7 @@ body.kiosk-bg {
   position: relative;
   border: 1px solid transparent;
   cursor: default;
+  overflow: visible; /* allow target notch to float above bar top */
 }
 .hm-bar:hover { filter: brightness(1.15); }
 .hm-bar.now {
@@ -5198,6 +5194,7 @@ var kiosk = (function() {
   var _onShift      = [];    // full roster array (all statuses) — used by lb refresh
   var _badges       = [];    // current week's badges — used by lb refresh
   var _goal         = 0;     // daily revenue goal — used by pace projection updates
+  var _hourlyTargets = null; // per-hour target amounts from same-DOW history; null = flat fallback
   var _leaderName    = '';    // disambiguated display name of today's leader
   var _pollTimer    = null;
   var _lbTimer      = null;
@@ -5838,7 +5835,7 @@ var kiosk = (function() {
   }
 
   // ── Render: Hourly heatmap ─────────────────────────────
-  function renderHeatmap(hourly, peakHour, peakRevenue, goal) {
+  function renderHeatmap(hourly, peakHour, peakRevenue, goal, hourlyTargets) {
     // Color interpolation: 0% → #1a2c21, 100% → #4ade80
     function pctColor(pct, projected) {
       if (projected) return '#232a27';
@@ -5849,35 +5846,52 @@ var kiosk = (function() {
       return 'rgb(' + r + ',' + g + ',' + b + ')';
     }
 
-    // Target line: spread daily goal evenly across operating hours
-    var numHours     = (hourly && hourly.length) || 13;
-    var hourlyTarget = (goal > 0) ? goal / numHours : 0;
-    // Scale chart so target line is always visible, even if no bar has hit it yet
-    var effectiveMax = Math.max(peakRevenue || 0, hourlyTarget || 0) || 1;
+    var numHours   = (hourly && hourly.length) || 13;
+    // Per-bar targets: use same-DOW historical weights if available, else flat average
+    var targets = hourlyTargets && hourlyTargets.length === numHours
+      ? hourlyTargets
+      : (goal > 0 ? hourly.map(function() { return goal / numHours; }) : null);
 
-    var bars = (hourly || []).map(function(h) {
+    // Chart scale: tall enough to fit the tallest target AND the tallest actual bar
+    var maxTarget  = targets ? Math.max.apply(null, targets) : 0;
+    var effectiveMax = Math.max(peakRevenue || 0, maxTarget || 0) || 1;
+
+    var bars = (hourly || []).map(function(h, i) {
       var cls = '';
       if (h.current)   cls = ' now';
       if (h.projected) cls = ' projected';
-      // Rescale bar height against effectiveMax so target line always fits in chart
-      var amt     = h.revenue != null ? h.revenue
-                  : h.amount  != null ? h.amount
-                  : Math.round((h.pct || 0) * (peakRevenue || 0) / 100);
+
+      var amt       = h.revenue != null ? h.revenue
+                    : h.amount  != null ? h.amount
+                    : Math.round((h.pct || 0) * (peakRevenue || 0) / 100);
       var scaledPct = Math.min(100, (amt / effectiveMax) * 100);
-      var color = pctColor(scaledPct, h.projected);
-      var amtStr = '$' + amt.toLocaleString() + (h.projected ? ' est.' : '');
+      var color     = pctColor(scaledPct, h.projected);
+      var amtStr    = '$' + amt.toLocaleString() + (h.projected ? ' est.' : '');
+
+      // Per-bar target notch
+      // Position is expressed as % of the BAR's own height so it tracks correctly.
+      // When bar < target the notch is > 100% (floats above the bar top) — this is
+      // the visual signal staff see that "the bar hasn't reached target yet."
+      var notchHtml = '';
+      if (targets && targets[i] > 0) {
+        var tgt          = targets[i];
+        var tgtChartPct  = (tgt / effectiveMax) * 100;          // target as % of chart
+        var barChartPct  = scaledPct || 0.01;                   // avoid ÷0
+        var notchOfBar   = (tgtChartPct / barChartPct) * 100;   // target as % of BAR height
+        // Cap: no more than 20px above bar top so overflow stays tidy
+        var notchCapped  = Math.min(notchOfBar, 100 + 2000 / Math.max(scaledPct, 1));
+        var belowTarget  = amt < tgt;
+        notchHtml = '<div class="hm-notch' + (belowTarget ? ' hm-notch--miss' : '') + '"'
+          + ' style="bottom:' + notchCapped.toFixed(1) + '%"'
+          + ' title="Target $' + Math.round(tgt).toLocaleString('en-US') + '"></div>';
+      }
+
       return '<div class="hm-bar' + cls + '" style="height:' + scaledPct.toFixed(1) + '%;background:' + color + '">'
-        + '<div class="hm-tooltip">' + e(amtStr) + '</div>'
+        + notchHtml
+        + '<div class="hm-tooltip">$' + e(amt.toLocaleString()) + (h.projected ? ' est.' : '') + '</div>'
         + '<span class="hm-hour">' + e(h.hour) + '</span>'
         + '</div>';
     }).join('');
-
-    // Dashed amber target line — positioned from the bottom of the flex container
-    var targetLinePct = hourlyTarget > 0 ? Math.min(100, (hourlyTarget / effectiveMax) * 100) : 0;
-    var targetLine = targetLinePct > 0
-      ? '<div class="hm-target-line" style="bottom:' + targetLinePct.toFixed(1) + '%"'
-        + ' data-label="$' + Math.round(hourlyTarget).toLocaleString('en-US') + '/hr"></div>'
-      : '';
 
     var peakStr = peakHour
       ? 'Peak · ' + e(peakHour) + ' · ' + e(fmtDollars(peakRevenue || 0))
@@ -5885,7 +5899,7 @@ var kiosk = (function() {
 
     return '<div class="kiosk-card heatmap-card">'
       + '<div class="kcard-label">Today by Hour</div>'
-      + '<div class="heatmap">' + targetLine + bars + '</div>'
+      + '<div class="heatmap">' + bars + '</div>'
       + '<div class="hm-legend">'
       + '  <span>Open</span>'
       + '  <span class="hm-peak">' + e(peakStr) + '</span>'
@@ -6028,7 +6042,7 @@ var kiosk = (function() {
         renderStaffGrid(staff, store.name, onShift, badges),
         '<div class="lower-grid">',
           renderBadges(badges),
-          renderHeatmap(hourly, peakHour, peakRevenue, _goal),
+          renderHeatmap(hourly, peakHour, peakRevenue, _goal, _hourlyTargets),
           renderTicker(ticker),
         '</div>',
       '</div>',
@@ -6042,9 +6056,10 @@ var kiosk = (function() {
     _storeName = (data.today.store && data.today.store.name) || slug || '';
 
     // Full roster + badges — kept for leaderboard refresh re-renders
-    _onShift = data.today.onShift || [];
-    _badges  = data.badges.badges || [];
-    _goal    = (data.today.today && data.today.today.goal) || data.today.goal || 0;
+    _onShift       = data.today.onShift || [];
+    _badges        = data.badges.badges || [];
+    _goal          = (data.today.today && data.today.today.goal) || data.today.goal || 0;
+    _hourlyTargets = data.today.hourlyTargets || null;
 
     // Seed ticker cursor from the most recent transaction timestamp
     _lastTxnTs = data.today.latestTxnTs || '';
@@ -6554,7 +6569,7 @@ var kiosk = (function() {
         }, null);
         var newPeakHour    = peak ? peak.hour    : null;
         var newPeakRevenue = peak ? peak.revenue : 0;
-        heatCard.outerHTML = renderHeatmap(td.hourly, newPeakHour, newPeakRevenue, _goal);
+        heatCard.outerHTML = renderHeatmap(td.hourly, newPeakHour, newPeakRevenue, _goal, _hourlyTargets);
       }
     }
 
