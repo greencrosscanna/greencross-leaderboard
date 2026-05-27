@@ -1131,6 +1131,8 @@ html, body {
   border-radius: 2px 2px 0 0;
   opacity: 0.75;
   transition: height 0.8s ease-out;
+  position: relative;
+  overflow: visible;
 }
 
 /* Current hour — full brightness */
@@ -1976,26 +1978,18 @@ body.kiosk-bg {
   background: var(--orange);
   opacity: 0.85;
 }
-/* Tooltip on the notch — shown on bar hover */
-.hm-notch-tip {
-  position: absolute;
-  bottom: calc(100% + 4px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 5px;
-  padding: 3px 7px;
+/* Tooltip rows — stacked actual + target */
+.hm-tip-amt {
+  display: block;
+  color: var(--text);
+}
+.hm-tip-goal {
+  display: block;
+  color: var(--amber);
   font-size: 10px;
   font-weight: 700;
-  color: var(--amber);
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.12s;
-  z-index: 11; /* above .hm-tooltip */
+  margin-top: 1px;
 }
-.hm-bar:hover .hm-notch-tip { opacity: 1; }
 /* Targets-loading hint in legend */
 .hm-targets-loading {
   color: var(--text-mute);
@@ -2024,24 +2018,27 @@ body.kiosk-bg {
   color: var(--text-mute);
   letter-spacing: 0.4px;
 }
-/* Hover tooltip showing dollar amount */
+/* Hover tooltip — always shows actual + target stacked */
 .hm-tooltip {
   position: absolute;
-  top: -34px;
+  bottom: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  padding: 4px 8px;
+  padding: 5px 9px;
   font-size: 11px;
   font-weight: 700;
-  color: var(--text);
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.12s;
   z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
 }
 .hm-bar:hover .hm-tooltip { opacity: 1; }
 .hm-legend {
@@ -4799,17 +4796,45 @@ var director = (function() {
   }
 
   function renderDirHourlyCard(today) {
-    var hourly = today.hourly || [];
-    var bars   = hourly.map(function(h) {
-      var cls     = h.current ? ' current' : h.projected ? ' proj' : '';
-      var tipVal  = h.revenue > 0 ? GC.fmtCurrency(h.revenue) : '—';
+    var hourly  = today.hourly  || [];
+    var targets = (today.hourlyTargets && today.hourlyTargets.length === hourly.length)
+      ? today.hourlyTargets : null;
+
+    // Scale bars so the tallest target is never clipped off the chart
+    var maxRevenue  = Math.max.apply(null, hourly.map(function(h) { return h.revenue || 0; })) || 1;
+    var maxTarget   = targets ? Math.max.apply(null, targets) : 0;
+    var effectiveMax = Math.max(maxRevenue, maxTarget) || 1;
+
+    var bars = hourly.map(function(h, i) {
+      var cls       = h.current ? ' current' : h.projected ? ' proj' : '';
+      var scaledPct = Math.min(100, ((h.revenue || 0) / effectiveMax) * 100);
+      var tipVal    = h.revenue > 0 ? GC.fmtCurrency(h.revenue) : '—';
+
+      // Per-bar target notch
+      var notchHtml = '';
+      if (targets && targets[i] > 0 && !h.projected) {
+        var tgt         = targets[i];
+        var tgtChartPct = (tgt / effectiveMax) * 100;
+        var barPct      = scaledPct || 0.01;
+        var notchOfBar  = (tgtChartPct / barPct) * 100;
+        var notchCapped = Math.min(notchOfBar, 100 + 1800 / Math.max(barPct, 1));
+        var miss        = (h.revenue || 0) < tgt;
+        notchHtml = '<div class="hm-notch' + (miss ? ' hm-notch--miss' : '') + '"'
+          + ' style="bottom:' + notchCapped.toFixed(1) + '%"></div>';
+      }
+
+      // Stacked tooltip: revenue + goal
+      var tipGoal = (targets && targets[i] > 0)
+        ? '<span class="hm-tip-goal">goal $' + e(Math.round(targets[i]).toLocaleString('en-US')) + '</span>'
+        : '';
       var tipHtml = h.projected
-        ? '<div class="dir-hour-tip proj-tip"><span class="tip-hour">' + e(h.hour) + '</span><span class="tip-val">projected</span></div>'
-        : '<div class="dir-hour-tip"><span class="tip-hour">' + e(h.hour) + '</span><span class="tip-val">' + e(tipVal) + '</span></div>';
+        ? '<div class="dir-hour-tip proj-tip"><span class="tip-hour">' + e(h.hour) + '</span><span class="tip-val">projected</span>' + tipGoal + '</div>'
+        : '<div class="dir-hour-tip"><span class="tip-hour">' + e(h.hour) + '</span><span class="tip-val">' + e(tipVal) + '</span>' + tipGoal + '</div>';
+
       return '<div class="dir-hour-col' + cls + '">'
         +   tipHtml
         +   '<div class="dir-hour-bar-wrap">'
-        +     '<div class="dir-hour-bar" style="height:' + h.pct + '%"></div>'
+        +     '<div class="dir-hour-bar" style="height:' + scaledPct.toFixed(1) + '%">' + notchHtml + '</div>'
         +   '</div>'
         +   '<div class="dir-hour-lbl">' + e(h.hour) + '</div>'
         + '</div>';
@@ -5906,14 +5931,16 @@ var kiosk = (function() {
         var miss        = amt < tgt;
         var tipAmt      = '$' + Math.round(tgt).toLocaleString('en-US');
         notchHtml = '<div class="hm-notch' + (miss ? ' hm-notch--miss' : '') + '"'
-          + ' style="bottom:' + notchCapped.toFixed(1) + '%">'
-          + '<span class="hm-notch-tip">' + e(tipAmt) + '</span>'
-          + '</div>';
+          + ' style="bottom:' + notchCapped.toFixed(1) + '%"></div>';
       }
+
+      var tipGoal = (targets && targets[i] > 0)
+        ? '<span class="hm-tip-goal">goal $' + e(Math.round(targets[i]).toLocaleString('en-US')) + '</span>'
+        : '';
 
       return '<div class="hm-bar' + cls + '" style="height:' + scaledPct.toFixed(1) + '%;background:' + color + '">'
         + notchHtml
-        + '<div class="hm-tooltip">$' + e(amt.toLocaleString()) + (h.projected ? ' est.' : '') + '</div>'
+        + '<div class="hm-tooltip"><span class="hm-tip-amt">$' + e(amt.toLocaleString()) + (h.projected ? ' est.' : '') + '</span>' + tipGoal + '</div>'
         + '<span class="hm-hour">' + e(h.hour) + '</span>'
         + '</div>';
     }).join('');

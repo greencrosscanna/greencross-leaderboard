@@ -2151,6 +2151,24 @@ function getDirectorToday(byStoreToday) {
     });
   }
 
+  // Sum per-store hourly targets (reads from cache — free after kiosk views have primed it)
+  const hourlyTargetMap = {};
+  STORES.forEach(function(store) {
+    const dailyGoal = getDailyGoal_(store.slug);
+    if (dailyGoal <= 0) return;
+    try {
+      const dist = getHourlyDist_(store);
+      if (!dist) return;
+      for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
+        hourlyTargetMap[h] = (hourlyTargetMap[h] || 0) + Math.round(dailyGoal * (dist[h] || 0));
+      }
+    } catch(e) {}
+  });
+  const hasTargets = Object.keys(hourlyTargetMap).length > 0;
+  const hourlyTargets = hasTargets
+    ? hourly.map(function(_, i) { return hourlyTargetMap[STORE_OPEN_HOUR + i] || 0; })
+    : null;
+
   return {
     revenue:            r2_(totalRevenue),
     goal:               totalGoal,
@@ -2161,6 +2179,7 @@ function getDirectorToday(byStoreToday) {
     projectedRevenue:   projectedRevenue,
     timeRemainingLabel: timeRemainingLabel,
     hourly:             hourly,
+    hourlyTargets:      hourlyTargets,
   };
 }
 
