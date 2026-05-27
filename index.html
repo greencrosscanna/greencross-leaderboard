@@ -7630,20 +7630,25 @@ var settings = (function() {
 
         // If no manual override, recalculate the PP input itself from base × stretch
         // — but only when triggered by a stretch change, not by the user typing in the input.
+        var newPP = inp ? (parseFloat((inp.value || '').replace(/[^0-9.]/g, '')) || 0) : 0;
         if (updatePPInputs && inp && !hasManual && computedPP) {
-          inp.value = Math.round(computedPP * mult).toLocaleString('en-US');
+          newPP = Math.round(computedPP * mult);
+          inp.value = newPP.toLocaleString('en-US');
         }
+
+        // Manual rows scale by actual PP / base; non-manual rows scale by stretch mult
+        var scale = (hasManual && computedPP > 0 && newPP > 0) ? (newPP / computedPP) : mult;
 
         var monthlyEl = row.querySelector('[data-base-monthly]');
         if (monthlyEl) {
           var base = parseFloat(monthlyEl.getAttribute('data-base-monthly')) || 0;
-          monthlyEl.textContent = base ? '$' + Math.round(base * mult).toLocaleString('en-US') : '—';
+          monthlyEl.textContent = base ? '$' + Math.round(base * scale).toLocaleString('en-US') : '—';
         }
 
         row.querySelectorAll('.settings-dow-cell[data-base-dow]').forEach(function(el) {
           var base  = parseFloat(el.getAttribute('data-base-dow')) || 0;
           var inner = el.querySelector('.settings-dow-val');
-          if (inner) inner.textContent = base ? '$' + Math.round(base * mult).toLocaleString('en-US') : '—';
+          if (inner) inner.textContent = base ? '$' + Math.round(base * scale).toLocaleString('en-US') : '—';
         });
       });
 
