@@ -7695,11 +7695,13 @@ var settings = (function() {
         GC.api.gasCall('savesettings', { stretch: stretch }).catch(function() {});
         GC.api.gasCall('savemanualgoals', { goals: JSON.stringify(payload) })
           .then(function(res) {
-            saveGoalsBtn.disabled = false;
-            saveGoalsBtn.textContent = 'Save Goal Overrides';
-            if (recalcStatus) {
-              recalcStatus.textContent = res.ok ? '✓ Goal overrides saved' : '✗ ' + (res.error || 'Save failed');
-              recalcStatus.className   = 'settings-save-status ' + (res.ok ? 'ok' : 'err');
+            if (res.ok) {
+              // Reload so all derived values (daily goals, monthly, DOW) reflect the new overrides
+              window.location.reload();
+            } else {
+              saveGoalsBtn.disabled = false;
+              saveGoalsBtn.textContent = 'Save Goal Overrides';
+              if (recalcStatus) { recalcStatus.textContent = '✗ ' + (res.error || 'Save failed'); recalcStatus.className = 'settings-save-status err'; }
             }
           })
           .catch(function(err) {
