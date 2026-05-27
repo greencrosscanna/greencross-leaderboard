@@ -1958,6 +1958,28 @@ body.kiosk-bg {
   align-items: flex-end;
   flex: 1;
   min-height: 100px;
+  position: relative; /* needed for absolute target line */
+}
+.hm-target-line {
+  position: absolute;
+  left: 0; right: 0;
+  height: 0;
+  border-top: 1px dashed var(--amber);
+  pointer-events: none;
+  z-index: 2;
+}
+.hm-target-line::after {
+  content: attr(data-label);
+  position: absolute;
+  right: 2px;
+  top: -14px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--amber);
+  letter-spacing: 0.4px;
+  background: var(--surface);
+  padding: 0 3px;
+  border-radius: 2px;
 }
 .hm-bar {
   flex: 1;
@@ -5816,7 +5838,7 @@ var kiosk = (function() {
   }
 
   // ── Render: Hourly heatmap ─────────────────────────────
-  function renderHeatmap(hourly, peakHour, peakRevenue) {
+  function renderHeatmap(hourly, peakHour, peakRevenue, goal) {
     // Color interpolation: 0% → #1a2c21, 100% → #4ade80
     function pctColor(pct, projected) {
       if (projected) return '#232a27';
@@ -5827,21 +5849,35 @@ var kiosk = (function() {
       return 'rgb(' + r + ',' + g + ',' + b + ')';
     }
 
+    // Target line: spread daily goal evenly across operating hours
+    var numHours     = (hourly && hourly.length) || 13;
+    var hourlyTarget = (goal > 0) ? goal / numHours : 0;
+    // Scale chart so target line is always visible, even if no bar has hit it yet
+    var effectiveMax = Math.max(peakRevenue || 0, hourlyTarget || 0) || 1;
+
     var bars = (hourly || []).map(function(h) {
       var cls = '';
       if (h.current)   cls = ' now';
       if (h.projected) cls = ' projected';
-      var color = pctColor(h.pct || 0, h.projected);
-      // Amount: explicit field → GAS h.revenue → pct × peakRevenue fallback
-      var amt    = h.amount != null ? h.amount
-                 : h.revenue != null ? h.revenue
-                 : Math.round((h.pct || 0) * (peakRevenue || 0) / 100);
+      // Rescale bar height against effectiveMax so target line always fits in chart
+      var amt     = h.revenue != null ? h.revenue
+                  : h.amount  != null ? h.amount
+                  : Math.round((h.pct || 0) * (peakRevenue || 0) / 100);
+      var scaledPct = Math.min(100, (amt / effectiveMax) * 100);
+      var color = pctColor(scaledPct, h.projected);
       var amtStr = '$' + amt.toLocaleString() + (h.projected ? ' est.' : '');
-      return '<div class="hm-bar' + cls + '" style="height:' + (h.pct || 0) + '%;background:' + color + '">'
+      return '<div class="hm-bar' + cls + '" style="height:' + scaledPct.toFixed(1) + '%;background:' + color + '">'
         + '<div class="hm-tooltip">' + e(amtStr) + '</div>'
         + '<span class="hm-hour">' + e(h.hour) + '</span>'
         + '</div>';
     }).join('');
+
+    // Dashed amber target line — positioned from the bottom of the flex container
+    var targetLinePct = hourlyTarget > 0 ? Math.min(100, (hourlyTarget / effectiveMax) * 100) : 0;
+    var targetLine = targetLinePct > 0
+      ? '<div class="hm-target-line" style="bottom:' + targetLinePct.toFixed(1) + '%"'
+        + ' data-label="$' + Math.round(hourlyTarget).toLocaleString('en-US') + '/hr"></div>'
+      : '';
 
     var peakStr = peakHour
       ? 'Peak · ' + e(peakHour) + ' · ' + e(fmtDollars(peakRevenue || 0))
@@ -5849,7 +5885,7 @@ var kiosk = (function() {
 
     return '<div class="kiosk-card heatmap-card">'
       + '<div class="kcard-label">Today by Hour</div>'
-      + '<div class="heatmap">' + bars + '</div>'
+      + '<div class="heatmap">' + targetLine + bars + '</div>'
       + '<div class="hm-legend">'
       + '  <span>Open</span>'
       + '  <span class="hm-peak">' + e(peakStr) + '</span>'
@@ -5992,7 +6028,7 @@ var kiosk = (function() {
         renderStaffGrid(staff, store.name, onShift, badges),
         '<div class="lower-grid">',
           renderBadges(badges),
-          renderHeatmap(hourly, peakHour, peakRevenue),
+          renderHeatmap(hourly, peakHour, peakRevenue, _goal),
           renderTicker(ticker),
         '</div>',
       '</div>',
@@ -6518,7 +6554,7 @@ var kiosk = (function() {
         }, null);
         var newPeakHour    = peak ? peak.hour    : null;
         var newPeakRevenue = peak ? peak.revenue : 0;
-        heatCard.outerHTML = renderHeatmap(td.hourly, newPeakHour, newPeakRevenue);
+        heatCard.outerHTML = renderHeatmap(td.hourly, newPeakHour, newPeakRevenue, _goal);
       }
     }
 
