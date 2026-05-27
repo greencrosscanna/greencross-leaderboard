@@ -2265,11 +2265,18 @@ function getDirectorStores(params, pre) {
     const vsplan     = periodGoal > 0 ? r3_((agg.sales - periodGoal) / periodGoal) : 0;
 
     // Pace for today: (revenue / goal) at current time fraction (PT, DST-aware)
-    const nowLocalHour = ptHourNow_().hour;
-    const elapsed      = Math.max(0, Math.min(nowLocalHour - STORE_OPEN_HOUR, STORE_HOURS));
+    const { hour: nowLocalHour, minute: nowLocalMinute } = ptHourNow_();
+    const elapsed      = Math.max(0, Math.min(nowLocalHour + nowLocalMinute / 60 - STORE_OPEN_HOUR, STORE_HOURS));
     const dayFrac      = elapsed / STORE_HOURS;
     const paceGoal     = dailyGoal * dayFrac;
-    const todayPace    = paceGoal > 0 ? r3_((aggToday.sales - paceGoal) / paceGoal) : 0;
+    const todayPace    = paceGoal > 0.5 ? r3_((aggToday.sales - paceGoal) / paceGoal) : 0;
+
+    // Projected EOD: extrapolate current run rate; requires 2+ hours of data
+    const MIN_PROJ_HOURS = 2;
+    const projectedRevenue = (elapsed >= MIN_PROJ_HOURS && dayFrac > 0)
+      ? Math.round(aggToday.sales / dayFrac) : 0;
+    const projectedPace    = (projectedRevenue > 0 && dailyGoal > 0)
+      ? r3_((projectedRevenue - dailyGoal) / dailyGoal) : null;
 
     // Manager from user records
     const mgr = Object.values(users).find(u => u.storeSlug === store.slug && u.role === 'store_manager') || {};
@@ -2301,7 +2308,7 @@ function getDirectorStores(params, pre) {
       ...trendFromByDay_(byStore30d ? aggregateByDay_(byStore30d[store.slug] || []) : {}),
       tags:          tags,
       tagTooltips:   tagTooltips,
-      today:         { revenue: aggToday.sales, goal: dailyGoal, pace: todayPace, pctToGoal: dailyGoal > 0 ? r3_(aggToday.sales / dailyGoal) : 0 },
+      today:         { revenue: aggToday.sales, goal: dailyGoal, pace: todayPace, pctToGoal: dailyGoal > 0 ? r3_(aggToday.sales / dailyGoal) : 0, projected: projectedRevenue, projectedPace: projectedPace },
       flagCount:     flaggedEmps.length,
     };
   });

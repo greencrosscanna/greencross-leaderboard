@@ -4445,21 +4445,30 @@ var director = (function() {
   function renderStatusStrip(stores) {
     var html = '<div class="status-strip">'
       + '<div class="ss-label">Today</div>';
+    // Sort by projected pace when available, fall back to pace
     var sorted = stores.slice().sort(function(a, b) {
-      return (b.today.pace || 0) - (a.today.pace || 0);
+      var aVal = a.today.projectedPace != null ? a.today.projectedPace : (a.today.pace || 0);
+      var bVal = b.today.projectedPace != null ? b.today.projectedPace : (b.today.pace || 0);
+      return bVal - aVal;
     });
     sorted.forEach(function(s) {
-      var dotCls = GC.paceDotClass(s.today.pace);
-      var revenue = GC.fmtCurrency(s.today.revenue);
-      var goal    = GC.fmtCurrency(s.today.goal);
-      var pctNum  = s.today.pace;
+      var td      = s.today;
+      var hasProj = td.projectedPace != null;
+      var pctNum  = hasProj ? td.projectedPace : td.pace;
+      var dotCls  = GC.paceDotClass(pctNum);
       var pctCls  = pctNum >= 0.005 ? 'up' : pctNum <= -0.005 ? 'down' : 'flat';
-      var pctStr  = (pctNum >= 0 ? '+' : '−') + Math.abs(Math.round(pctNum * 100)) + '%';
+      var pctStr  = hasProj
+        ? (pctNum >= 0 ? '+' : '−') + Math.abs(Math.round(pctNum * 100)) + '%'
+        : '—';
+      var revenue = GC.fmtCurrency(td.revenue);
+      var subLbl  = hasProj
+        ? e(revenue) + ' · proj ' + e(GC.fmtCurrency(td.projected))
+        : e(revenue) + ' / ' + e(GC.fmtCurrency(td.goal));
       html += '<div class="ss-store" data-slug="' + e(s.slug) + '">'
         + '<span class="ss-dot ' + dotCls + '"></span>'
         + '<div class="ss-info">'
         + '<span class="ss-name">' + e(s.name) + '</span>'
-        + '<span class="ss-sub">' + e(revenue) + ' / ' + e(goal) + '</span>'
+        + '<span class="ss-sub">' + subLbl + '</span>'
         + '</div>'
         + '<span class="ss-pct ' + pctCls + '">' + e(pctStr) + '</span>'
         + '</div>';
@@ -4768,22 +4777,31 @@ var director = (function() {
   }
 
   function renderDirPaceCard(today) {
-    var pace     = today.pace || 0;
-    var clamped  = Math.max(-DIR_PACE_RANGE, Math.min(DIR_PACE_RANGE, pace * 100));
+    // Use projected EOD vs goal when enough data exists (2+ hours), else fall back to pace
+    var proj          = today.projectedRevenue || 0;
+    var goal          = today.goal || 0;
+    var hasProj       = proj > 0 && goal > 0;
+    var projectedPace = hasProj ? (proj - goal) / goal : null;
+    var pace          = today.pace || 0;
+    var displayPace   = projectedPace != null ? projectedPace : pace;
+
+    var clamped  = Math.max(-DIR_PACE_RANGE, Math.min(DIR_PACE_RANGE, displayPace * 100));
     var deg      = (clamped / DIR_PACE_RANGE) * 90;
     var zone     = deg <= -30 ? 'red' : deg >= 30 ? 'green' : 'amber';
     var zoneColor = zone === 'red' ? 'var(--red)' : zone === 'green' ? 'var(--green)' : 'var(--amber)';
-    var pctStr   = (pace >= 0 ? '+' : '−') + Math.abs(Math.round(pace * 100)) + '%';
-    var subLabel = zone === 'red' ? 'Behind plan' : zone === 'green' ? 'Ahead of plan' : 'Near plan';
+    var pctStr   = projectedPace != null
+      ? (displayPace >= 0 ? '+' : '−') + Math.abs(Math.round(displayPace * 100)) + '%'
+      : '—';
+    var subLabel = projectedPace != null
+      ? (zone === 'red' ? 'Proj. behind plan' : zone === 'green' ? 'Proj. ahead of plan' : 'Proj. near plan')
+      : (zone === 'red' ? 'Behind plan' : zone === 'green' ? 'Ahead of plan' : 'Near plan');
 
-    var proj     = today.projectedRevenue || today.revenue || 0;
-    var paceGap  = today.paceGap || 0;   // + = ahead of pace, − = behind pace (dollars)
+    var paceGap  = today.paceGap || 0;
     var gapAmt   = GC.fmtCurrency(Math.abs(paceGap));
     var gapLabel = paceGap >= 0 ? 'Ahead of pace' : 'Behind pace';
-    var paceCls  = zone === 'red' ? ' down' : zone === 'green' ? ' up' : '';
 
     return '<div class="dir-today-card">'
-      + '<div class="kcard-label">Pace · vs. Plan</div>'
+      + '<div class="kcard-label">Projected · vs. Plan</div>'
       + '<div class="dir-gauge-wrap">'
       +   '<svg width="200" height="108" viewBox="0 0 240 130" style="overflow:visible">'
       +     '<path d="M 22 122 A 98 98 0 0 1 218 122" stroke="#232a27" stroke-width="10" fill="none" stroke-linecap="butt"/>'
