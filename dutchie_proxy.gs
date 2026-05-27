@@ -1148,8 +1148,10 @@ function getOrComputeYoYGoals_(forceRecompute) {
     var ppY2 = ppTotalsY2ByStore[store.slug] || 0;
 
     // ── Realized growth rate (Y1 vs Y2, floored at 0, capped at MAX) ──
+    // Guard: if Y2 < 50% of Y1 the store was newly open 2 years ago — unreliable
+    // baseline, so treat as growth = 0% rather than projecting a new-store ramp.
     var realizedGrowth = 0;
-    if (ppY2 > 0 && ppY1 > 0) {
+    if (ppY2 > 0 && ppY1 > 0 && ppY2 >= 0.5 * ppY1) {
       realizedGrowth = Math.max(0, Math.min(MAX_REALIZED_GROWTH, (ppY1 - ppY2) / ppY2));
     }
 

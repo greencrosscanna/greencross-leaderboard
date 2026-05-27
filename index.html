@@ -2558,6 +2558,20 @@ body.kiosk-bg {
 .settings-input-wrap:focus-within {
   border-color: var(--green);
 }
+.settings-input-wrap.has-manual {
+  border-color: var(--amber);
+}
+.settings-input-wrap.has-manual .settings-input-prefix {
+  color: var(--amber);
+  border-right-color: var(--amber);
+}
+.settings-input-wrap.has-manual:focus-within {
+  border-color: var(--green);
+}
+.settings-input-wrap.has-manual:focus-within .settings-input-prefix {
+  color: var(--text-mute);
+  border-right-color: var(--border);
+}
 .settings-input-prefix {
   padding: 0 8px;
   color: var(--text-mute);
@@ -7353,7 +7367,7 @@ var settings = (function() {
       // data-base-computed-pp = unscaled computed active PP (pre-stretch, pre-override) for scaling monthly/DOW live
       var computedBasePP = (g.active && g.active.ppGoal) ? g.active.ppGoal : (rBase || yBase);
       var overrideVal    = g.effectivePP || Math.round(computedBasePP * mult);
-      var overrideInput  = '<div class="settings-input-wrap" style="max-width:100px">'
+      var overrideInput  = '<div class="settings-input-wrap' + (g.hasManual ? ' has-manual' : '') + '" style="max-width:100px">'
         + '<span class="settings-input-prefix">$</span>'
         + '<input class="settings-input settings-pp-override" type="text" inputmode="numeric"'
         + ' data-slug="' + e(g.slug) + '"'
@@ -7679,6 +7693,14 @@ var settings = (function() {
         // Scale = ratio of new PP to base computed PP; fall back to stretch mult if no base
         var mult          = 1 + (parseFloat((stretchSelect && stretchSelect.value) || 0) || 0);
         var scale         = (computedBase > 0 && newPP > 0) ? (newPP / computedBase) : mult;
+
+        // Amber border when value differs from computed; clear when back to computed
+        var wrap = inp.closest('.settings-input-wrap');
+        if (wrap && computedBase > 0) {
+          var expectedVal = Math.round(computedBase * mult);
+          var isModified  = newPP > 0 && Math.abs(newPP - expectedVal) > 1;
+          wrap.classList.toggle('has-manual', isModified);
+        }
 
         if (row) {
           var monthlyEl = row.querySelector('[data-base-monthly]');
