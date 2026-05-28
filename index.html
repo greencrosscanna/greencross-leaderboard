@@ -1623,7 +1623,7 @@ body.kiosk-bg {
 /* ── Hero grid ── */
 .hero-grid {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1.2fr;
   gap: 14px;
   margin-top: 14px;
 }
@@ -1861,6 +1861,53 @@ body.kiosk-bg {
 }
 
 
+
+/* ── Store KPI card ─────────────────────────────── */
+.kpi-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.kpi-card .kcard-label { font-size: 12px; letter-spacing: 1px; margin-bottom: 14px; }
+.kpi-card-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 10px;
+  flex: 1;
+  align-content: start;
+}
+.kpi-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.kpi-cell-v {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.kpi-cell-l {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 1.1px;
+}
+.kpi-cell.warn .kpi-cell-v { color: var(--amber); }
+.kpi-cell.good .kpi-cell-v { color: var(--green); }
+.kpi-cell-divider {
+  grid-column: 1 / -1;
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2px 0;
+}
 
 /* ── Staff leaderboard grid ── */
 .lb-section { margin-top: 0; margin-bottom: 14px; }
@@ -2591,9 +2638,8 @@ body.kiosk-bg {
   .shift-strip          { display: none; }
   .hero-grid            { margin-top: 0; }
 
-  /* Hero: hide leader card, Goal + Pace side by side */
-  .leader-card          { display: none; }
-  .hero-grid            { grid-template-columns: 1fr 1fr; gap: 10px; }
+  /* Hero: 3 equal columns */
+  .hero-grid            { grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
   .gauge-wrap           { width: 100%; max-width: 240px; height: 130px; }
   .gauge-pct .gp-big    { font-size: 42px; }
   .kstat-v              { font-size: 16px; }
@@ -6475,6 +6521,40 @@ var kiosk = (function() {
       + '</div>';
   }
 
+  // ── Render: Store KPI summary card ─────────────────────
+  function renderKpiCard(today) {
+    var sales    = today.revenue            || 0;
+    var txns     = today.transactions       || 0;
+    var aov      = today.avgOrderValue      || 0;
+    var upt      = today.avgUPT             || 0;
+    var disc     = today.totalDiscounts     || 0;
+    var discRate = today.discountRate       || 0;
+
+    var discRatePct = (discRate * 100).toFixed(1) + '%';
+    var discCls     = discRate > 0.20 ? ' warn' : '';
+
+    function cell(label, value, id, cls) {
+      return '<div class="kpi-cell' + (cls || '') + '"' + (id ? ' id="' + id + 'Wrap"' : '') + '>'
+        + '<div class="kpi-cell-v num"' + (id ? ' id="' + id + '"' : '') + '>' + value + '</div>'
+        + '<div class="kpi-cell-l">' + label + '</div>'
+        + '</div>';
+    }
+
+    return '<div class="kpi-card">'
+      + '<div class="kcard-label">Store KPIs · Today</div>'
+      + '<div class="kpi-card-grid">'
+      + cell('Total Sales',     fmtDollars(sales),            'kioskKpiSales')
+      + cell('Transactions',    txns.toLocaleString(),         'kioskKpiTxns')
+      + '<hr class="kpi-cell-divider">'
+      + cell('Avg Order Value', aov > 0 ? '$' + aov.toFixed(2) : '—', 'kioskKpiAov')
+      + cell('Units per Txn',   upt > 0 ? upt.toFixed(1) : '—',       'kioskKpiUpt')
+      + '<hr class="kpi-cell-divider">'
+      + cell('Total Discounts', fmtDollars(disc),             'kioskKpiDisc',     ' warn')
+      + cell('Discount Rate',   discRatePct,                  'kioskKpiDiscRate', discCls)
+      + '</div>'
+      + '</div>';
+  }
+
   // ── Render: Goal arc card ──────────────────────────────
   function renderGoalCard(today) {
     var pct      = today.pctToGoal || 0;
@@ -7090,9 +7170,9 @@ var kiosk = (function() {
         renderHeader(store),
         renderStaffGrid(staff, store.name, onShift, badges, _eomKey),
         '<div class="hero-grid">',
-          renderLeaderCard(leader, staff, onShift, badges, today, _eomKey),
           renderGoalCard(today),
           renderPaceCard(today),
+          renderKpiCard(today),
         '</div>',
         renderClosingBanner(),
         '<div class="lower-grid">',
@@ -7199,13 +7279,6 @@ var kiosk = (function() {
   }
 
   function runCountUps(data) {
-    // Leader amount
-    var leaderEl = document.getElementById('kioskLeaderAmt');
-    if (leaderEl) {
-      var target = parseInt(leaderEl.getAttribute('data-target'), 10) || 0;
-      countUp(leaderEl, target);
-    }
-
     // Goal stats
     var soldEl  = document.getElementById('kioskGoalSold');
     var toGoEl  = document.getElementById('kioskGoalToGo');
@@ -7328,14 +7401,6 @@ var kiosk = (function() {
         + '<span class="t-amt">'  + GC.esc(fmtDollars(t.price || 0)) + '</span>';
       feed.insertBefore(el, feed.firstChild);
       setTimeout(function() { el.classList.remove('fresh'); }, 1800);
-
-      // Pulse the leader amount when a sale lands for the current leader
-      var leaderAmtEl = document.getElementById('kioskLeaderAmt');
-      if (leaderAmtEl && _leaderName && (t.who || '').split(' ')[0].toLowerCase() === _leaderName.split(' ')[0].toLowerCase()) {
-        leaderAmtEl.classList.remove('pulse-once');
-        void leaderAmtEl.offsetWidth; // force reflow to restart animation
-        leaderAmtEl.classList.add('pulse-once');
-      }
 
       // Trigger celebration overlays for high-value transactions
       var txnPrice = t.price || 0;
@@ -7648,6 +7713,25 @@ var kiosk = (function() {
     // Closing push
     updateClosingBanner(td);
 
+    // KPI card live updates
+    var kpiSalesEl = document.getElementById('kioskKpiSales');
+    if (kpiSalesEl && td.revenue != null) countUp(kpiSalesEl, td.revenue, 800);
+    var kpiTxnsEl = document.getElementById('kioskKpiTxns');
+    if (kpiTxnsEl && td.transactions != null) kpiTxnsEl.textContent = (td.transactions || 0).toLocaleString();
+    var kpiAovEl = document.getElementById('kioskKpiAov');
+    if (kpiAovEl && td.avgOrderValue != null) kpiAovEl.textContent = td.avgOrderValue > 0 ? '$' + td.avgOrderValue.toFixed(2) : '—';
+    var kpiUptEl = document.getElementById('kioskKpiUpt');
+    if (kpiUptEl && td.avgUPT != null) kpiUptEl.textContent = td.avgUPT > 0 ? td.avgUPT.toFixed(1) : '—';
+    var kpiDiscEl = document.getElementById('kioskKpiDisc');
+    if (kpiDiscEl && td.totalDiscounts != null) countUp(kpiDiscEl, td.totalDiscounts, 800);
+    var kpiDiscRateEl = document.getElementById('kioskKpiDiscRate');
+    if (kpiDiscRateEl && td.discountRate != null) {
+      var dr = td.discountRate || 0;
+      kpiDiscRateEl.textContent = (dr * 100).toFixed(1) + '%';
+      var drWrap = document.getElementById('kioskKpiDiscRateWrap');
+      if (drWrap) drWrap.className = 'kpi-cell' + (dr > 0.20 ? ' warn' : '');
+    }
+
     // Hourly heatmap — re-render in place when fresh hourly data arrives
     if (td.hourly && td.hourly.length) {
       var heatCard = document.querySelector('.heatmap-card');
@@ -7731,13 +7815,7 @@ var kiosk = (function() {
               if (el) countUp(el, s.sales || 0, 1000);
             });
           }
-          // Re-render the leader card with fresh sales/margin/target data
-          var leaderCard = document.querySelector('.leader-card');
-          if (leaderCard && staff.length) {
-            leaderCard.outerHTML = renderLeaderCard(staff[0], staff, _onShift, _badges, null, _eomKey);
-            animateBars();
-            var leaderEl = document.getElementById('kioskLeaderAmt');
-            if (leaderEl) countUp(leaderEl, staff[0].sales || 0, 1000);
+          if (staff.length) {
             _leaderName = staff[0].name || '';
           }
         })
