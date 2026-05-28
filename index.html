@@ -3889,6 +3889,7 @@ GC.buildAvatarUrl = function(cfg, seed) {
   var isGcHat       = cfg.top === '_gchat';
   // _gchat uses shortFlat underneath — hair peeks out from under the hat
   var noHair        = cfg.top === '_none';
+  var isHat         = !!(cfg.top && { hat: true, winterHat1: true }[cfg.top]);  // hat/winterHat1 need hatColor, not hairColor
 
   var keys = Object.keys(cfg);
   for (var i = 0; i < keys.length; i++) {
@@ -3901,7 +3902,8 @@ GC.buildAvatarUrl = function(cfg, seed) {
     }
     if (k === 'accessoriesColor' && noAccessories) continue;
     if (k === 'facialHairColor'  && noFacialHair)  continue;
-    if (k === 'hairColor'        && noHair)         continue;
+    if (k === 'hairColor'        && (noHair || isHat)) continue;  // hats use hatColor instead
+    if (k === 'hatColor'         && !isHat)         continue;     // only send hatColor for hat styles
     params.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
   }
 
@@ -8832,6 +8834,8 @@ GC.views.renderAvatar = function(queryParams) {
 var ava = (function() {
 
   // ── Options (DiceBear Avataaars v9 — curated) ─────────────
+  var HAT_TOPS = { hat: true, winterHat1: true };  // tops that need hatColor, not hairColor
+
   var OPTIONS = {
     skinColor:    ['ffdbb4','f8d25c','fd9841','edb98a','d08b5b','ae5d29','614335'],
     top: [
@@ -8839,6 +8843,7 @@ var ava = (function() {
       'bigHair','bob','bun','curly','curvy','dreads','dreads01','dreads02','frida','frizzle','fro','froBand','longButNotTooLong','miaWallace','shaggy','shaggyMullet','shavedSides','shortCurly','shortFlat','shortRound','shortWaved','sides','straight01','straight02','straightAndStrand','theCaesar','theCaesarAndSidePart'
     ],
     hairColor:    ['2c1b18','4a312c','724133','a55728','b58143','c93305','d6b370','e8e1e1','ecdcbf','f59797'],
+    hatColor:     ['3c4f5c','65c9ff','262e33','5199e4','25557c','929598','a7ffc4','b1e2ff','e6e6e6','ff5c5c','ff488e','ffafb9','ffdeb5','ffffb1','ffffff'],
     eyes:         ['default','eyeRoll','happy','hearts','side','squint','surprised','wink'],
     eyebrows:     ['default','defaultNatural','flatNatural','frownNatural','raisedExcited','raisedExcitedNatural','upDown','upDownNatural'],
     mouth:        ['default','smile','twinkle','tongue','serious','disbelief'],
@@ -8851,7 +8856,7 @@ var ava = (function() {
   };
 
   var DEFAULT_CONFIG = {
-    skinColor: 'f8d25c', top: '_none', hairColor: '2c1b18',
+    skinColor: 'f8d25c', top: '_none', hairColor: '2c1b18', hatColor: '262e33',
     eyes: 'wink', eyebrows: 'upDown', mouth: 'default',
     facialHair: '_none', facialHairColor: '2c1b18',
     clothing: 'shirtCrewNeck', clothesColor: '929598',
@@ -8958,7 +8963,8 @@ var ava = (function() {
       // Hair panel
       +   '<div class="ava-panel" data-panel="hair">'
       +     '<div class="ava-field"><div class="ava-field-label">Hair / hat style</div><div class="ava-chips" data-chips="top"></div></div>'
-      +     '<div class="ava-field"><div class="ava-field-label">Hair color</div><div class="ava-swatches" data-swatches="hairColor"></div></div>'
+      +     '<div class="ava-field" id="avaHairColorField"><div class="ava-field-label">Hair color</div><div class="ava-swatches" data-swatches="hairColor"></div></div>'
+      +     '<div class="ava-field" id="avaHatColorField" style="display:none"><div class="ava-field-label">Hat color</div><div class="ava-swatches" data-swatches="hatColor"></div></div>'
       +     '<div class="ava-field"><div class="ava-field-label">Facial hair</div><div class="ava-chips" data-chips="facialHair"></div></div>'
       +     '<div class="ava-field"><div class="ava-field-label">Facial hair color</div><div class="ava-swatches" data-swatches="facialHairColor"></div></div>'
       +   '</div>'
@@ -9081,14 +9087,34 @@ var ava = (function() {
       });
     }
 
+    // Show/hide hatColor vs hairColor depending on selected top
+    function updateHatColorVisibility() {
+      var isHat = !!(config.top && HAT_TOPS[config.top]);
+      var hairField = document.getElementById('avaHairColorField');
+      var hatField  = document.getElementById('avaHatColorField');
+      if (hairField) hairField.style.display = isHat ? 'none' : '';
+      if (hatField)  hatField.style.display  = isHat ? ''     : 'none';
+    }
+
     // Build all swatches and chips
     buildSwatches('skinColor');
     buildSwatches('hairColor');
+    buildSwatches('hatColor');
     buildSwatches('facialHairColor');
     buildSwatches('clothesColor');
     buildSwatches('accessoriesColor');
 
+    // Set initial hat/hair color visibility based on loaded config
+    updateHatColorVisibility();
+
     buildChips('top');
+    // When top changes, swap hair color ↔ hat color swatch
+    var topContainer = document.querySelector('[data-chips="top"]');
+    if (topContainer) {
+      topContainer.addEventListener('click', function() {
+        updateHatColorVisibility();
+      });
+    }
     buildChips('eyes');
     buildChips('eyebrows');
     buildChips('mouth');
@@ -9118,6 +9144,7 @@ var ava = (function() {
         // Rebuild all swatches and chips with new selections
         buildSwatches('skinColor');
         buildSwatches('hairColor');
+        buildSwatches('hatColor');
         buildSwatches('facialHairColor');
         buildSwatches('clothesColor');
         buildSwatches('accessoriesColor');
@@ -9127,6 +9154,7 @@ var ava = (function() {
             chip.classList.toggle('selected', chip.dataset.val === config[key]);
           });
         });
+        updateHatColorVisibility();
         renderImg();
       });
     }
