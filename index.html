@@ -4731,9 +4731,11 @@ var director = (function() {
       + '</span>';
   }
 
-  function avatarHtml(initials, size, name) {
+  function avatarHtml(initials, size, name, nameKeyOverride) {
     if (name) {
-      var nameKey = GC.nameToKey(name);
+      // Use pre-supplied nameKey (pre-nickname canonical key) when available so avatar
+      // lookup matches the key used by the settings page when saving the config.
+      var nameKey = nameKeyOverride || GC.nameToKey(name);
       var config  = _avatarConfigs[nameKey] || null;
       return GC.lbAvaPuck(nameKey, config, initials, true);
     }
@@ -5033,7 +5035,7 @@ var director = (function() {
       return '<tr data-employee="' + e(s.id) + '">'
         + '<td>' + rankPillHtml(s.rank, total) + '</td>'
         + '<td><div class="who">'
-          + avatarHtml(s.initials, null, s.name)
+          + avatarHtml(s.initials, null, s.name, s.nameKey)
           + '<div>'
           + '<div class="who-name">' + e(s.name) + tagsHtml(tags, null, sTips) + '</div>'
           + '<div class="who-sub">' + e(s.hoursWorked) + 'h this PP</div>'
@@ -5389,7 +5391,7 @@ var director = (function() {
       return '<tr data-employee="' + e(s.id) + '">'
         + '<td>' + rankPillHtml(s.rank, total) + '</td>'
         + '<td><div class="who">'
-          + avatarHtml(s.initials, null, s.name)
+          + avatarHtml(s.initials, null, s.name, s.nameKey)
           + '<div><div class="who-name">' + e(s.name) + tagsHtml(tags, null, sTips) + '</div>'
           + '<div class="who-sub">' + e(s.hoursWorked) + 'h this PP</div>'
           + '</div></div></td>'
@@ -5619,7 +5621,7 @@ var director = (function() {
       return '<tr data-employee="' + e(s.id) + '">'
         + '<td>' + rankPillHtml(s.rank, total) + '</td>'
         + '<td><div class="who">'
-          + avatarHtml(s.initials, null, s.name)
+          + avatarHtml(s.initials, null, s.name, s.nameKey)
           + '<div><div class="who-name">' + e(s.name) + tagsHtml(tags, null, sTips) + '</div>'
           + '<div class="who-sub">' + e(s.hoursWorked) + 'h this PP</div>'
           + '</div></div></td>'
@@ -7043,7 +7045,9 @@ var kiosk = (function() {
           isPreOpen:          td.isPreOpen           || false,
         },
         onShift: (td.onShift || []).map(function(p) {
-          var nameKey = GC.nameToKey(p.name || '');
+          // Prefer nameKey from GAS (pre-nickname, matches settings-page save key).
+          // Fall back to computing from display name for fixture/legacy data.
+          var nameKey = p.nameKey || GC.nameToKey(p.name || '');
           return {
             initials:     p.initials || '',
             name:         p.name     || '',
@@ -7083,7 +7087,9 @@ var kiosk = (function() {
     // Fixture: aov, txns, streak, streakType, role, upt
     var normalizedStaff = (lb.staff || []).map(function(s) {
       var streak  = s.streak != null ? s.streak : (s.streakDays || 0);
-      var nameKey = GC.nameToKey(s.name || '');
+      // Prefer nameKey from GAS (pre-nickname, matches settings-page save key).
+      // Fall back to computing from display name for fixture/legacy data.
+      var nameKey = s.nameKey || GC.nameToKey(s.name || '');
       return {
         rank:            s.rank           || 0,
         initials:        s.initials       || '',

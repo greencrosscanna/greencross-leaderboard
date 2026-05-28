@@ -2403,6 +2403,7 @@ function getDirectorStaff(params, pre) {
     return {
       initials:      emp.initials,
       name:          emp.name,
+      nameKey:       nameToKey_(emp.name),  // canonical key before nickname — matches settings page
       role:          emp.role || '',
       roleLabel:     emp.roleLabel || '',
       storeSlug:     emp.storeSlug,
@@ -2426,6 +2427,7 @@ function getDirectorStaff(params, pre) {
   staffList.forEach(function(s, i) {
     s.rank = i + 1;
     s.name = applyNickname_(s.name, _nicknames);
+    // nameKey stays as the pre-nickname canonical key for avatar lookup
     if (i < 3 && !s.tags.includes('flag')) s.tags.push('top');
   });
 
@@ -3007,12 +3009,13 @@ function getStoreLeaderboard(store, params) {
 
   const _storeNicknames = getNicknames_();
   const staff = empList.map((emp, i) => {
-    const nameKey = emp.name.toLowerCase().replace(/\s+/g, '_');
-    const target  = empTargets[nameKey] || fallbackTgt;
+    const nameKey = nameToKey_(emp.name);  // canonical key before nickname — matches settings page
+    const target  = empTargets[emp.name.toLowerCase().replace(/\s+/g, '_')] || fallbackTgt;
     return {
       rank:          i + 1,
       initials:      emp.initials,
       name:          applyNickname_(emp.name, _storeNicknames),
+      nameKey:       nameKey,   // pre-nickname key for avatar config lookup
       sales:         emp.sales,
       transactions:  emp.transactions,
       avgOrderValue: emp.avgOrderValue,
@@ -3032,6 +3035,7 @@ function getStoreLeaderboard(store, params) {
   const onShiftActive = empList.map(emp => ({
     initials: emp.initials,
     name:     applyNickname_(emp.name, _storeNicknames),
+    nameKey:  nameToKey_(emp.name),   // pre-nickname key for avatar config lookup
     status:   'on',
     sales:    emp.sales,
     note:     null,
@@ -3041,6 +3045,7 @@ function getStoreLeaderboard(store, params) {
     .map(e => ({
       initials: e.initials,
       name:     applyNickname_(e.name, _storeNicknames),
+      nameKey:  nameToKey_(e.name),   // pre-nickname key for avatar config lookup
       status:   'off',
       sales:    0,
       note:     null,
