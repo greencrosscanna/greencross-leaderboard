@@ -1288,6 +1288,78 @@ body.kiosk-bg {
 }
 .kiosk-back-btn:hover { background: var(--surface-2); color: var(--text); }
 
+/* ── Slideshow bar ─────────────────────────────────────── */
+.ss-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 9999;
+  background: rgba(10,14,13,0.88);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--border);
+  padding: 10px 18px 8px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  transition: opacity 0.4s, transform 0.4s;
+}
+.ss-bar.hidden { opacity: 0; pointer-events: none; transform: translateY(8px); }
+.ss-bar-store { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.ss-bar-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.ss-bar-name { font-weight: 700; font-size: 13px; white-space: nowrap; }
+.ss-bar-count { font-size: 11px; color: var(--text-dim); margin-left: 2px; }
+.ss-bar-intervals { display: flex; gap: 4px; }
+.ss-bar-intervals button {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 4px;
+  padding: 3px 7px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ss-bar-intervals button.active { border-color: var(--green); color: var(--green); background: rgba(74,222,128,0.08); }
+.ss-bar-controls { display: flex; gap: 6px; }
+.ss-bar-controls button {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ss-bar-controls button:hover { background: var(--surface-3); }
+.ss-bar-controls .ss-stop { border-color: var(--red); color: var(--red); }
+.ss-bar-controls .ss-stop:hover { background: rgba(239,68,68,0.12); }
+.ss-bar-progress {
+  position: absolute;
+  bottom: 0; left: 0;
+  height: 2px;
+  background: var(--green);
+  width: 0%;
+  transition: none;
+}
+.ss-bar-progress.animating {
+  transition: width linear;
+  width: 100%;
+}
+/* Slideshow button in director header */
+.btn-slideshow {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 6px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-slideshow:hover { border-color: var(--green); color: var(--green); }
+
 .kiosk-logo {
   font-weight: 900;
   font-size: 22px;
@@ -3258,6 +3330,156 @@ GC.STORES = {
 
 GC.STORE_SLUGS = Object.keys(GC.STORES);
 
+// ── Slideshow ────────────────────────────────────────────
+GC.slideshow = (function() {
+  var _active      = false;
+  var _slugs       = GC.STORE_SLUGS;
+  var _idx         = 0;
+  var _intervalMs  = 2 * 60 * 1000;
+  var _timer       = null;
+  var _hideTimer   = null;
+
+  function start(startIdx) {
+    _active = true;
+    _idx    = (startIdx != null) ? startIdx : 0;
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(function() {});
+    }
+    _navigate();
+  }
+
+  function stop() {
+    _active = false;
+    clearTimeout(_timer);
+    clearTimeout(_hideTimer);
+    _timer = _hideTimer = null;
+    var bar = document.getElementById('ssBar');
+    if (bar) bar.remove();
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(function() {});
+    }
+    GC.router.navigate('#/director');
+  }
+
+  function advance(delta) {
+    clearTimeout(_timer);
+    _idx = ((_idx + delta) + _slugs.length) % _slugs.length;
+    _navigate();
+  }
+
+  function setInterval_(ms) {
+    _intervalMs = ms;
+    // Restart the current slide's timer with the new interval
+    clearTimeout(_timer);
+    _scheduleNext();
+    // Update button states
+    var bar = document.getElementById('ssBar');
+    if (!bar) return;
+    bar.querySelectorAll('.ss-bar-intervals button').forEach(function(btn) {
+      btn.classList.toggle('active', parseInt(btn.dataset.ms, 10) === _intervalMs);
+    });
+    _resetProgress();
+  }
+
+  function _navigate() {
+    var slug = _slugs[_idx];
+    GC.router.navigate('#/store/' + slug);
+    // Bar is injected by kiosk.init after render; schedule next
+    _scheduleNext();
+  }
+
+  function _scheduleNext() {
+    clearTimeout(_timer);
+    _timer = setTimeout(function() {
+      if (!_active) return;
+      _idx = (_idx + 1) % _slugs.length;
+      _navigate();
+    }, _intervalMs);
+  }
+
+  function injectBar(slug) {
+    if (!_active) return;
+    // Remove any existing bar
+    var old = document.getElementById('ssBar');
+    if (old) old.remove();
+
+    var store    = GC.STORES[slug] || {};
+    var color    = store.color || 'var(--green)';
+    var name     = store.name  || slug;
+    var total    = _slugs.length;
+    var current  = _idx + 1;
+
+    var intervals = [
+      { label: '1m',  ms: 60000 },
+      { label: '2m',  ms: 120000 },
+      { label: '3m',  ms: 180000 },
+      { label: '5m',  ms: 300000 },
+    ];
+    var intBtns = intervals.map(function(o) {
+      var act = o.ms === _intervalMs ? ' active' : '';
+      return '<button class="' + act + '" data-ms="' + o.ms + '" onclick="GC.slideshow.setInterval(' + o.ms + ')">' + o.label + '</button>';
+    }).join('');
+
+    var bar = document.createElement('div');
+    bar.id        = 'ssBar';
+    bar.className = 'ss-bar';
+    bar.innerHTML =
+      '<div class="ss-bar-store">'
+      + '<span class="ss-bar-dot" style="background:' + color + '"></span>'
+      + '<span class="ss-bar-name">' + GC.esc(name) + '</span>'
+      + '<span class="ss-bar-count">' + current + ' / ' + total + '</span>'
+      + '</div>'
+      + '<div class="ss-bar-intervals">' + intBtns + '</div>'
+      + '<div class="ss-bar-controls">'
+      + '<button onclick="GC.slideshow.advance(-1)">← Prev</button>'
+      + '<button class="ss-stop" onclick="GC.slideshow.stop()">■ Stop</button>'
+      + '<button onclick="GC.slideshow.advance(1)">Next →</button>'
+      + '</div>'
+      + '<div class="ss-bar-progress" id="ssProgress"></div>';
+    document.body.appendChild(bar);
+
+    _resetProgress();
+    _setupAutoHide(bar);
+  }
+
+  function _resetProgress() {
+    var prog = document.getElementById('ssProgress');
+    if (!prog) return;
+    // Restart CSS transition for progress bar
+    prog.classList.remove('animating');
+    prog.style.transition = 'none';
+    prog.style.width = '0%';
+    // Force reflow then start animation
+    void prog.offsetWidth;
+    prog.style.transition = 'width ' + (_intervalMs / 1000) + 's linear';
+    prog.classList.add('animating');
+  }
+
+  function _setupAutoHide(bar) {
+    clearTimeout(_hideTimer);
+    _hideTimer = setTimeout(function() { bar.classList.add('hidden'); }, 3000);
+    document.addEventListener('mousemove', _onMouseMove);
+    document.addEventListener('touchstart', _onMouseMove);
+  }
+
+  function _onMouseMove() {
+    var bar = document.getElementById('ssBar');
+    if (!bar) { document.removeEventListener('mousemove', _onMouseMove); document.removeEventListener('touchstart', _onMouseMove); return; }
+    bar.classList.remove('hidden');
+    clearTimeout(_hideTimer);
+    _hideTimer = setTimeout(function() { bar.classList.add('hidden'); }, 3000);
+  }
+
+  return {
+    get active() { return _active; },
+    start:       start,
+    stop:        stop,
+    advance:     advance,
+    setInterval: setInterval_,
+    injectBar:   injectBar,
+  };
+}());
+
 // ── Thresholds (spec §5) ─────────────────────────────────
 // All UI states are derived from these. In v1.1 these come
 // from GET /api/config/thresholds instead of this constant.
@@ -4417,6 +4639,10 @@ var director = (function() {
       + '<div class="cm-time" id="directorClock">—</div>'
       + '<div class="cm-date" id="directorDate">—</div>'
       + '</div>'
+      + '<button class="btn-slideshow" id="btnSlideshow" title="Slideshow — cycles through all store kiosks">'
+      +   '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'
+      +   'Slideshow'
+      + '</button>'
       + '<button class="btn-icon dir-settings-btn" id="btnSettings" title="Settings">'
       +   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
       +     '<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>'
@@ -5054,6 +5280,12 @@ var director = (function() {
     // Update last-refreshed label
     var lr = document.getElementById('lastRefreshed');
     if (lr) lr.textContent = 'Last refresh ' + GC.fmtTime(new Date());
+
+    // Slideshow button
+    var btnSlideshow = document.getElementById('btnSlideshow');
+    if (btnSlideshow) btnSlideshow.addEventListener('click', function() {
+      GC.slideshow.start(0);
+    });
 
     // Settings gear
     var btnSettings = document.getElementById('btnSettings');
@@ -6174,6 +6406,9 @@ var kiosk = (function() {
         GC.router.navigate('#/login');
       }
     });
+
+    // Inject slideshow bar if active
+    if (GC.slideshow.active) GC.slideshow.injectBar(slug);
 
     // Seed celebration flag — if goal is already hit on load, fire confetti once
     _goalCelebrated = (data.today.today.pctToGoal || 0) >= GC.THRESHOLDS.goalCelebrationAt;
