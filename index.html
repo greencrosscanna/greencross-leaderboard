@@ -2645,8 +2645,10 @@ body.kiosk-bg {
   .kstat-v              { font-size: 16px; }
   .kstat-l              { font-size: 9px; }
 
-  /* Leaderboard: hide off-shift, always 4-column grid (empty tracks = empty slots) */
-  .emp-card.off-shift   { display: none; }
+  /* Leaderboard: hide off-shift unless they had recent activity (top-2 ghost slots) */
+  .emp-card.off-shift:not(.ghost-recent) { display: none; }
+  /* ghost-recent cards: dim slightly to differentiate from on-shift */
+  .emp-card.ghost-recent { opacity: 0.72; }
   .lb-grid              { grid-template-columns: repeat(4, 1fr); }
 
   /* Lower grid: trophies+heatmap stacked left (2fr), live sales full-height right (3fr) */
@@ -6760,6 +6762,20 @@ var kiosk = (function() {
       }
     });
 
+    // Tag the top-2 off-shift employees who had sales today as "recently active"
+    // so iPad mode can show them as ghost placeholders.
+    var recentOffShiftCount = 0;
+    var recentOffShiftSet   = {};
+    staff.forEach(function(s) {
+      var nameKey    = (s.name || '').toLowerCase();
+      var shift      = shiftMap[nameKey] || { status: 'on', note: null };
+      var isOffShift = shift.status !== 'on';
+      if (isOffShift && s.sales > 0 && recentOffShiftCount < 2) {
+        recentOffShiftSet[nameKey] = true;
+        recentOffShiftCount++;
+      }
+    });
+
     var cards = staff.map(function(s) {
       var isLeading  = s.rank === 1;
       var barPct     = s.target > 0 ? Math.min(rawBarPct, 100) : 0;
@@ -6768,6 +6784,7 @@ var kiosk = (function() {
       var nameKey    = (s.name || '').toLowerCase();
       var shift      = shiftMap[nameKey] || { status: 'on', note: null };
       var isOffShift = shift.status !== 'on';
+      var isRecent   = isOffShift && !!recentOffShiftSet[nameKey];
 
       // Trophies this employee currently holds — computed first so icons can appear in streak line.
       // Try full-name key first (fixture holders = "Dean Deloof").
@@ -6839,7 +6856,7 @@ var kiosk = (function() {
         : '';
       // When EoM, the in-flow rank is hidden via CSS (.emp-card.eom > .emp-rank { display:none })
       // and re-rendered inside the corner stack above.
-      return '<div class="emp-card' + (isLeading ? ' leading' : '') + (isOffShift ? ' off-shift' : '') + (isEom ? ' eom' : '') + '">'
+      return '<div class="emp-card' + (isLeading ? ' leading' : '') + (isOffShift ? ' off-shift' : '') + (isRecent ? ' ghost-recent' : '') + (isEom ? ' eom' : '') + '">'
         + (isEom ? '' : '<span class="emp-rank">#' + e(s.rank) + '</span>')
         + eomCorner
         + '<div class="emp-head">'
