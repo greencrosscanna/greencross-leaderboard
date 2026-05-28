@@ -1653,9 +1653,12 @@ body.kiosk-bg {
   margin-top: 6px;
   font-weight: 600;
 }
-.kstat.up   .kstat-v { color: var(--green); }
-.kstat.down .kstat-v { color: var(--red); }
-.kstat.warn .kstat-v { color: var(--amber); }
+.kstat.up   .kstat-v,
+.kstat-v.up            { color: var(--green); }
+.kstat.down .kstat-v,
+.kstat-v.down          { color: var(--red); }
+.kstat.warn .kstat-v,
+.kstat-v.warn          { color: var(--amber); }
 
 /* ── Leader card ────────────────────────────────── */
 .leader-card {
@@ -6576,11 +6579,22 @@ var kiosk = (function() {
     var remainCls  = preOpen ? '' : (closed ? ' store-closed-label' : (' ' + timeZoneClass(today.timeRemainingLabel)).trimRight());
     var remainText = preOpen ? 'Pre-open' : e(today.timeRemainingLabel || '—');
 
-    // "To Go" slot: show shortfall (0 if goal was hit) for both closed and pre-open
-    var toGoHtml = isFinal
-      ? '<div class="kstat-v num" id="kioskGoalToGo">' + fmtDollars(today.toGo || 0) + '</div>'
-      : '<div class="kstat-v num" id="kioskGoalToGo" data-target="' + (today.toGo || 0) + '">' + fmtDollars(0) + '</div>';
-    var toGoLabel = isFinal ? 'Shortfall' : 'To Go';
+    // "To Go" slot: show shortfall, or green "+$N over" when goal is exceeded.
+    // toGo from GAS is always Math.max(0, goal-revenue), so derive overGoal separately.
+    var overGoal   = (today.goal > 0 && today.revenue > today.goal)
+      ? (today.revenue - today.goal) : 0;
+    var isOverGoal = overGoal > 0;
+    var toGoHtml, toGoLabel;
+    if (isOverGoal) {
+      toGoHtml  = '<div class="kstat-v num up" id="kioskGoalToGo">+' + fmtDollars(overGoal) + '</div>';
+      toGoLabel = 'Over Goal';
+    } else if (isFinal) {
+      toGoHtml  = '<div class="kstat-v num" id="kioskGoalToGo">' + fmtDollars(today.toGo || 0) + '</div>';
+      toGoLabel = 'Shortfall';
+    } else {
+      toGoHtml  = '<div class="kstat-v num" id="kioskGoalToGo" data-target="' + (today.toGo || 0) + '">' + fmtDollars(0) + '</div>';
+      toGoLabel = 'To Go';
+    }
 
     return '<div class="goal-card' + (closed ? ' store-closed' : '') + '">'
       + '<div class="kcard-label">' + cardLabel + '</div>'
@@ -7639,21 +7653,33 @@ var kiosk = (function() {
     var soldEl = document.getElementById('kioskGoalSold');
     if (soldEl) countUp(soldEl, revenue, 800);
 
-    // To-Go slot: animates normally while open; shows "Closed" text after 10 pm
+    // To-Go slot: green "+$N Over Goal" when exceeded, "Closed", or countdown
+    var overGoal   = (_goal > 0 && revenue > _goal) ? (revenue - _goal) : 0;
+    var isOverGoal = overGoal > 0;
     var toGoEl = document.getElementById('kioskGoalToGo');
     if (toGoEl) {
       if (closed) {
+        toGoEl.classList.remove('up');
         toGoEl.classList.add('store-closed-label');
         toGoEl.classList.remove('num');
         toGoEl.textContent = 'Closed';
-      } else {
+      } else if (isOverGoal) {
         toGoEl.classList.remove('store-closed-label');
+        toGoEl.classList.add('num', 'up');
+        toGoEl.textContent = '+' + fmtDollars(overGoal);
+      } else {
+        toGoEl.classList.remove('store-closed-label', 'up');
         toGoEl.classList.add('num');
         countUp(toGoEl, toGo, 800);
       }
     }
     var toGoLblEl = document.getElementById('kioskToGoLabel');
-    if (toGoLblEl) toGoLblEl.textContent = closed ? '10 pm' : (isPreOpen ? 'Shortfall' : 'To Go');
+    if (toGoLblEl) {
+      toGoLblEl.textContent = closed ? '10 pm'
+        : isOverGoal ? 'Over Goal'
+        : isPreOpen  ? 'Shortfall'
+        : 'To Go';
+    }
 
     var pctEl = document.getElementById('kioskGoalPct');
     if (pctEl) pctEl.textContent = Math.round(pctToGoal * 100) + '%';
