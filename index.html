@@ -7204,13 +7204,17 @@ var kiosk = (function() {
 
   // ── init ──────────────────────────────────────────────
   // Animate all .hm-bar elements from height:0 to their data-final target.
-  // CSS transition handles the ease; we just need to kick it off after paint.
+  // Force a synchronous layout read first so the browser commits height:0% before
+  // we set the final value — without this, microtask-resolved cache hits let both
+  // rAFs fire before any paint, and the browser skips the transition entirely.
   function animateHeatmap() {
+    var bars = document.querySelectorAll('.hm-bar[data-final]');
+    // Reading offsetHeight forces the browser to flush pending style/layout,
+    // committing the height:0% state so the subsequent style change triggers a transition.
+    bars.forEach(function(bar) { void bar.offsetHeight; });
     requestAnimationFrame(function() {
-      requestAnimationFrame(function() {
-        document.querySelectorAll('.hm-bar[data-final]').forEach(function(bar) {
-          bar.style.height = bar.getAttribute('data-final');
-        });
+      bars.forEach(function(bar) {
+        bar.style.height = bar.getAttribute('data-final');
       });
     });
   }
