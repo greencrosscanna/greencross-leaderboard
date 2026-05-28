@@ -5739,6 +5739,8 @@ var director = (function() {
 
   // ── Historical: wire interactivity ──────────────────────────
   function initHistorical(histData, dateStr) {
+    // Stop live auto-refresh — historical view must not be overwritten
+    if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
     startClock();
 
     var btnBack = document.getElementById('btnBackToLive');

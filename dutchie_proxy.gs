@@ -3804,30 +3804,97 @@ function getHistoricalDirector_(dateStr) {
 }
 
 /**
- * Backfill today's live data as a placeholder for each of the last N days.
- * Useful for testing the historical UI before real nightly snapshots accumulate.
- * The revenue/transactions numbers will reflect the current live state — not actual
- * EOD numbers for those dates — but the UI will work correctly end-to-end.
+ * Fetch real historical data for a specific past PT date (YYYY-MM-DD).
+ * Returns the same shape as what buildSnapshotRow_ expects:
+ *   { revenue, goal, pctToGoal, transactions, avgOrderValue, hourly, onShift }
  *
- * Usage: select backfillRecentDays_ in the GAS editor and click Run.
+ * Uses the actual Dutchie UTC range for the given calendar date in PT,
+ * so numbers reflect what really happened on that day — not today's live data.
+ */
+function getStoreForDate_(store, dateStr) {
+  // PT midnight → PT end-of-day in UTC (DST-correct via ptDateToUtcMs_)
+  var fromMs  = ptDateToUtcMs_(dateStr);
+  var toMs    = fromMs + 24 * 60 * 60 * 1000 - 1;
+  var fromUTC = new Date(fromMs).toISOString();
+  var toUTC   = new Date(toMs).toISOString();
+
+  var txns    = fetchStoreTransactions_(store.slug, fromUTC, toUTC);
+  var agg     = aggregateTransactions_(txns);
+  var hourMap = aggregateByHour_(txns);
+
+  // Daily goal for the day-of-week on that past date (DST-safe noon probe)
+  var d   = new Date(Date.UTC(Number(dateStr.slice(0,4)), Number(dateStr.slice(5,7))-1, Number(dateStr.slice(8,10)), 12));
+  var dow = parseInt(Utilities.formatDate(d, STORE_TZ, 'u'), 10) % 7;  // Mon=1…Sun=0
+  var goal = getDailyGoalForDow_(store.slug, dow);
+
+  var pctToGoal = goal > 0 ? r3_(agg.sales / goal) : 0;
+
+  // Hourly bar array (same shape as getStoreToday hourly, all bars are "final")
+  var maxRevenue = 1;
+  Object.keys(hourMap).forEach(function(h) { if (hourMap[h].revenue > maxRevenue) maxRevenue = hourMap[h].revenue; });
+  var hourly = [];
+  for (var h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
+    var hd  = hourMap[h] || { revenue: 0, count: 0 };
+    var lbl = h === 12 ? '12p' : h < 12 ? h + 'a' : (h - 12) + 'p';
+    hourly.push({
+      hour:      lbl,
+      revenue:   Math.round(hd.revenue),
+      pct:       r1_(hd.revenue / maxRevenue * 100),
+      current:   false,  // historical — no "current" bar
+      projected: false,
+    });
+  }
+
+  // onShift = employees who transacted that day, sorted by sales descending
+  var _excluded = getExcluded_();
+  var _nicks    = getNicknames_();
+  var onShift = Object.values(agg.byEmployee)
+    .filter(function(emp) { return !_excluded.has(nameToKey_(emp.name)); })
+    .sort(function(a, b) { return b.sales - a.sales; })
+    .map(function(emp) {
+      return {
+        initials:     emp.initials,
+        name:         applyNickname_(emp.name, _nicks),
+        status:       'on',
+        sales:        Math.round(emp.sales),
+        transactions: emp.transactions || 0,
+      };
+    });
+
+  return {
+    revenue:       Math.round(agg.sales),
+    goal:          goal,
+    pctToGoal:     pctToGoal,
+    transactions:  agg.transactions,
+    avgOrderValue: agg.avgOrderValue,
+    hourly:        hourly,
+    onShift:       onShift,
+  };
+}
+
+/**
+ * Backfill real historical Dutchie data for each of the last N days.
+ * Fetches actual transaction data for each past date — not today's live numbers.
+ *
+ * Usage: select backfillRecentDays in the GAS editor and click Run.
  * Change NUM_DAYS at the top if you want more or fewer days.
  */
 // Public entry point so GAS editor can run it (functions ending in _ are private)
 function backfillRecentDays() { backfillRecentDays_(); }
 
 function backfillRecentDays_() {
-  var NUM_DAYS = 5;  // ← adjust as needed
+  var NUM_DAYS = 7;  // ← adjust as needed (7 = full week)
   var sheet = getSnapshotSheet_();
 
   for (var d = 1; d <= NUM_DAYS; d++) {
     var pastDate = new Date();
     pastDate.setDate(pastDate.getDate() - d);
     var dateStr = Utilities.formatDate(pastDate, STORE_TZ, 'yyyy-MM-dd');
-    Logger.log('[backfill] Snapshotting as ' + dateStr + ' …');
+    Logger.log('[backfill] Fetching real Dutchie data for ' + dateStr + ' …');
 
     STORES.forEach(function(store) {
       try {
-        var data = getStoreToday(store, {});
+        var data = getStoreForDate_(store, dateStr);
         writeSnapshotRow_(sheet, dateStr, store, data);
         Logger.log('[backfill]   ' + store.slug + ' → ' + dateStr + ' $' + data.revenue);
       } catch(e) {
