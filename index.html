@@ -517,7 +517,8 @@ html, body {
   gap: 4px;
   margin-left: 8px;
 }
-.staff-period-tab {
+.staff-period-tab,
+.store-period-tab {
   font-size: 11px;
   font-weight: 600;
   padding: 2px 9px;
@@ -529,8 +530,10 @@ html, body {
   letter-spacing: 0.03em;
   transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
-.staff-period-tab:hover { color: var(--text); border-color: rgba(255,255,255,0.25); }
-.staff-period-tab.active {
+.staff-period-tab:hover,
+.store-period-tab:hover  { color: var(--text); border-color: rgba(255,255,255,0.25); }
+.staff-period-tab.active,
+.store-period-tab.active {
   background: rgba(72,187,120,0.12);
   border-color: var(--green);
   color: var(--green);
@@ -5015,6 +5018,11 @@ var director = (function() {
   var _staffPeriod   = 'mtd'; // 'mtd' | 'pp'
   var _staffPpData   = null;  // lazy-loaded pay-period staff, cached after first fetch
   var _staffPpRange  = null;  // human-readable PP date range, set when PP data first arrives
+  var _storePeriod   = 'mtd'; // 'mtd' | 'pp'
+  var _storeSortKey  = 'vsplan';
+  var _storeSortDir  = -1;    // -1 = desc, 1 = asc
+  var _storePpRange  = null;  // human-readable PP date range for stores
+  var _storeMtdData  = null;  // preserved MTD store array for tab switching back
 
   // ── Helpers ────────────────────────────────────────────
 
@@ -5308,23 +5316,35 @@ var director = (function() {
   }
 
   // ── Render: Store Leaderboard Table ───────────────────
-  function renderStoreTable(stores, range) {
+  // ── Store table helpers ────────────────────────────────
+  function applyStoreSort(stores) {
+    return stores.slice().sort(function(a, b) {
+      var av = a[_storeSortKey] != null ? a[_storeSortKey] : '';
+      var bv = b[_storeSortKey] != null ? b[_storeSortKey] : '';
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return _storeSortDir * String(av).localeCompare(String(bv));
+      }
+      return _storeSortDir * ((Number(av) || 0) - (Number(bv) || 0));
+    });
+  }
+
+  function storeTableRows(stores) {
     var total  = stores.length;
     var avgAov = avgOf(stores, 'avgOrderValue');
-
-    var rows = stores.map(function(s) {
-      var rpClass = GC.rankPillClass(s.rank, total);
+    return applyStoreSort(stores).map(function(s) {
       var tLabels = s.tagLabels || s.tags;
       var tTips   = s.tagTooltips || [];
       return '<tr data-slug="' + e(s.slug) + '">'
         + '<td>' + rankPillHtml(s.rank, total) + '</td>'
         + '<td><div class="store-cell">'
           + storeDotHtml(s.slug)
-          + '<div class="sc-meta"><div class="sc-name">' + e(s.name) + '</div><div class="sc-sub">' + e(s.address) + ' · ' + s.staffCount + ' staff</div></div>'
+          + '<div class="sc-meta"><div class="sc-name">' + e(s.name) + '</div>'
+          + '<div class="sc-sub">' + s.staffCount + ' staff</div></div>'
           + '</div></td>'
         + '<td><div class="who">'
           + avatarHtml(s.manager.initials, null, s.manager.name)
-          + '<div><div class="who-name">' + e(s.manager.name) + '</div><div class="who-sub">' + e(s.manager.roleLabel || 'Store Mgr') + '</div></div>'
+          + '<div><div class="who-name">' + e(s.manager.name) + '</div>'
+          + '<div class="who-sub">' + e(s.manager.roleLabel || 'Store Mgr') + '</div></div>'
           + '</div></td>'
         + '<td>' + salesBarHtml(s.sales, s.vsplan) + '</td>'
         + '<td>' + vsPlanHtml(s.vsplan) + '</td>'
@@ -5337,26 +5357,69 @@ var director = (function() {
         + '<td>' + tagsHtml(s.tags, tLabels, tTips) + '</td>'
         + '</tr>';
     }).join('');
+  }
+
+  function storeTableHead() {
+    return '<tr>'
+      + stStoreTh('Rank',       'rank',        'width:60px')
+      + stStoreTh('Store',      'name')
+      + '<th>Manager</th>'
+      + stStoreTh('Sales',      'sales')
+      + stStoreTh('vs. Plan',   'vsplan')
+      + stStoreTh('Txns',       'transactions')
+      + stStoreTh('AOV',        'avgOrderValue')
+      + stStoreTh('UPT',        'avgUPT')
+      + stStoreTh('Discount',   'discountRate')
+      + stStoreTh('Trend · 30d','trendPct')
+      + '<th>Flags</th>'
+      + '</tr>';
+  }
+
+  function syncStorePeriodTabs() {
+    document.querySelectorAll('.store-period-tab').forEach(function(btn) {
+      var period = btn.getAttribute('data-store-period');
+      btn.classList.toggle('active', period === _storePeriod);
+      btn.disabled = false;
+      if (period === 'mtd') {
+        btn.textContent = 'MTD';
+      } else if (period === 'pp') {
+        btn.textContent = _storePpRange ? 'Pay Period · ' + _storePpRange : 'Pay Period';
+      }
+    });
+  }
+
+  function refreshStoreTable() {
+    if (!_data) return;
+    var stores = _data.stores.stores;
+    var tbody = document.getElementById('storeTableBody');
+    var thead = document.getElementById('storeTableHead');
+    if (tbody) tbody.innerHTML = storeTableRows(stores);
+    if (thead) thead.innerHTML = storeTableHead();
+  }
+
+  function renderStoreTable(stores, range) {
+    // Preserve MTD data for tab switching
+    if (_storePeriod === 'mtd') _storeMtdData = stores;
+
+    var periodLabel = _storePeriod === 'pp'
+      ? ('Pay Period' + (_storePpRange ? ' · ' + _storePpRange : ''))
+      : ('MTD' + (range ? ' · ' + e(range) : ''));
+    var mtdActive = _storePeriod === 'mtd';
 
     return '<div class="section-head">'
-      + '<h2>Store Leaderboard · MTD' + (range ? ' · ' + e(range) : '') + '</h2><span class="sh-sep">/</span>'
+      + '<h2>Store Leaderboard · ' + periodLabel + '</h2>'
+      + '<span class="sh-sep">/</span>'
       + '<span class="sh-meta">Click any store to drill down</span>'
+      + '<span class="staff-period-tabs">'
+      +   '<button class="store-period-tab' + (mtdActive  ? ' active' : '') + '" data-store-period="mtd">MTD</button>'
+      +   '<button class="store-period-tab' + (!mtdActive ? ' active' : '') + '" data-store-period="pp">'
+      +     (_storePpRange ? 'Pay Period · ' + e(_storePpRange) : 'Pay Period')
+      +   '</button>'
+      + '</span>'
       + '</div>'
       + '<table class="gc-table" id="storeTable">'
-      + '<thead><tr>'
-      + '<th style="width:60px">Rank</th>'
-      + '<th>Store</th>'
-      + '<th>Manager</th>'
-      + '<th>Sales</th>'
-      + '<th>vs. Plan</th>'
-      + '<th>Txns</th>'
-      + '<th>AOV</th>'
-      + '<th>UPT</th>'
-      + '<th>Discount</th>'
-      + '<th>Trend · 30d</th>'
-      + '<th>Flags</th>'
-      + '</tr></thead>'
-      + '<tbody id="storeTableBody">' + rows + '</tbody>'
+      + '<thead id="storeTableHead">' + storeTableHead() + '</thead>'
+      + '<tbody id="storeTableBody">' + storeTableRows(stores) + '</tbody>'
       + '</table>';
   }
 
@@ -5381,6 +5444,14 @@ var director = (function() {
     var arrow    = isActive ? (_staffSortDir === -1 ? ' ▼' : ' ▲') : '';
     var styleStr = style ? ' style="' + style + '"' : '';
     return '<th class="lb-th-sort' + (isActive ? ' active' : '') + '" data-ststaff-sort="' + key + '"' + styleStr + '>'
+      + label + arrow + '</th>';
+  }
+
+  function stStoreTh(label, key, style) {
+    var isActive = _storeSortKey === key;
+    var arrow    = isActive ? (_storeSortDir === -1 ? ' ▼' : ' ▲') : '';
+    var styleStr = style ? ' style="' + style + '"' : '';
+    return '<th class="lb-th-sort' + (isActive ? ' active' : '') + '" data-ststore-sort="' + key + '"' + styleStr + '>'
       + label + arrow + '</th>';
   }
 
@@ -5719,6 +5790,8 @@ var director = (function() {
   function render(data) {
     _data          = data;
     _avatarConfigs = data.avatarConfigs || {};
+    _storePeriod   = 'mtd';  // reset to MTD on full re-render
+    _storeMtdData  = data.stores.stores;
 
     var stores = data.stores.stores;
     var staff  = data.staff.staff;
@@ -6070,6 +6143,64 @@ var director = (function() {
               + '</tr>';
           }
           refreshStaffTable();
+        }
+
+        // Store leaderboard period tab toggle
+        var storePeriodTab = ev.target.closest('.store-period-tab[data-store-period]');
+        if (storePeriodTab && _data) {
+          var newStorePeriod = storePeriodTab.getAttribute('data-store-period');
+          if (newStorePeriod === _storePeriod) return;
+          _storePeriod = newStorePeriod;
+          syncStorePeriodTabs();
+          // Update heading text immediately
+          var storeHeading = document.querySelector('#storeTable')?.previousElementSibling?.querySelector('h2');
+          if (newStorePeriod === 'mtd') {
+            // Restore cached MTD data
+            if (_storeMtdData && _data.stores) {
+              _data.stores.stores = _storeMtdData;
+              refreshStoreTable();
+            }
+          } else {
+            // Fetch PP store data
+            storePeriodTab.textContent = 'Loading…';
+            GC.api.fetchDirectorStores('pp')
+              .then(function(ppData) {
+                var ppStores = ppData.stores || [];
+                if (ppData.dateRange) {
+                  _storePpRange = GC.fmtDateRange(ppData.dateRange.from, ppData.dateRange.to);
+                }
+                // Merge 30d trend from MTD data (trend is independent of period)
+                var trendMap = {};
+                if (_storeMtdData) {
+                  _storeMtdData.forEach(function(s) { trendMap[s.slug] = { trend30d: s.trend30d, trendPct: s.trendPct }; });
+                }
+                ppStores = ppStores.map(function(s) {
+                  var t = trendMap[s.slug];
+                  return t ? Object.assign({}, s, t) : s;
+                });
+                if (_data.stores) _data.stores.stores = ppStores;
+                refreshStoreTable();
+                syncStorePeriodTabs();
+              })
+              .catch(function(err) {
+                _storePeriod = 'mtd';
+                syncStorePeriodTabs();
+                console.warn('[director] PP stores fetch failed:', err);
+              });
+          }
+        }
+
+        // Store table column-header sort
+        var storeSortTh = ev.target.closest('th[data-ststore-sort]');
+        if (storeSortTh && _data) {
+          var key = storeSortTh.getAttribute('data-ststore-sort');
+          if (_storeSortKey === key) {
+            _storeSortDir = _storeSortDir * -1;
+          } else {
+            _storeSortKey = key;
+            _storeSortDir = -1;
+          }
+          refreshStoreTable();
         }
       });
     }
