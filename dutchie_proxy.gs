@@ -2062,26 +2062,35 @@ function aggregateByDay_(txns) {
 /**
  * From a { date: revenue } map, compute:
  *   trend30d  — ordered array of daily revenue values (oldest → newest), incl. today's partial data
- *   trendPct  — (last-7 completed days − prior-7 completed days) / prior-7, clamped to 3 decimals
+ *   trendPct  — delta between last-7 and prior-7 completed working days, clamped to 3 decimals
  *
- * Today is intentionally excluded from the trendPct calculation: including a partial
- * intraday total drags the "last 7 days" average down and produces a misleadingly
- * negative delta throughout the day. The sparkline still shows today so the shape
- * of the current day is visible.
+ * opts.useAverage (default false):
+ *   false — compare raw sums (correct for stores: open same hours every day)
+ *   true  — compare per-working-day averages (correct for employees: eliminates day-off drag)
+ *           Days off produce no bucket entry so they simply don't participate.
+ *
+ * Today is intentionally excluded from trendPct: a partial intraday total would
+ * drag the recent average down. The sparkline still shows today's shape.
  */
-function trendFromByDay_(byDay) {
+function trendFromByDay_(byDay, opts) {
+  const useAvg   = (opts && opts.useAverage) || false;
   const todayStr = ptNow_().dateStr;
   const allDays  = Object.keys(byDay).sort();
   const trend30d = allDays.map(function(d) { return Math.round(byDay[d]); });
 
-  // Use only completed days for the delta %
-  const fullDays = allDays.filter(function(d) { return d < todayStr; });
+  // Use only completed days (with revenue > 0) for the delta %
+  const fullDays = allDays.filter(function(d) { return d < todayStr && byDay[d] > 0; });
   const n        = fullDays.length;
-  if (n < 7) return { trend30d: trend30d, trendPct: 0 };
-  const last7    = fullDays.slice(Math.max(0, n - 7)).reduce(function(s, d) { return s + byDay[d]; }, 0);
-  const prior    = fullDays.slice(Math.max(0, n - 14), Math.max(0, n - 7));
-  if (prior.length === 0) return { trend30d: trend30d, trendPct: 0 };
-  const prior7   = prior.reduce(function(s, d) { return s + byDay[d]; }, 0);
+  if (n < 2) return { trend30d: trend30d, trendPct: 0 };
+
+  const last7Days  = fullDays.slice(Math.max(0, n - 7));
+  const prior7Days = fullDays.slice(Math.max(0, n - 14), Math.max(0, n - 7));
+  if (prior7Days.length === 0) return { trend30d: trend30d, trendPct: 0 };
+
+  const sumFn = function(days) { return days.reduce(function(s, d) { return s + byDay[d]; }, 0); };
+  const last7  = useAvg ? sumFn(last7Days)  / last7Days.length  : sumFn(last7Days);
+  const prior7 = useAvg ? sumFn(prior7Days) / prior7Days.length : sumFn(prior7Days);
+
   const trendPct = prior7 > 0 ? r3_((last7 - prior7) / prior7) : 0;
   return { trend30d: trend30d, trendPct: trendPct };
 }
@@ -2438,7 +2447,7 @@ function getDirectorStaff(params, pre) {
     const upt    = emp.transactions > 0 ? r1_(emp.items / emp.transactions)  : 0;
     const disc   = emp.subtotal     > 0 ? r3_(emp.discounts / emp.subtotal)   : 0;
     const empKey = emp.name.toLowerCase().replace(/\s+/g, '_');
-    const trend  = trendFromByDay_(empDailyBuckets[empKey] || {});
+    const trend  = trendFromByDay_(empDailyBuckets[empKey] || {}, { useAverage: true });
 
     const tags = [];
     const staffTagTooltips = [];
