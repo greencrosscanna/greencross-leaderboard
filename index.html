@@ -1863,7 +1863,7 @@ body.kiosk-bg {
 
 
 /* ── Staff leaderboard grid ── */
-.lb-section { margin-top: 14px; }
+.lb-section { margin-top: 0; margin-bottom: 14px; }
 .lb-head {
   display: flex; align-items: baseline; gap: 12px;
   margin-bottom: 10px;
@@ -7088,13 +7088,13 @@ var kiosk = (function() {
       '<div id="kioskGoalBanner">🎯 DAILY GOAL HIT! · ' + e(store.name.toUpperCase()) + ' TEAM!</div>',
       '<div class="kiosk-wrap">',
         renderHeader(store),
+        renderStaffGrid(staff, store.name, onShift, badges, _eomKey),
         '<div class="hero-grid">',
           renderLeaderCard(leader, staff, onShift, badges, today, _eomKey),
           renderGoalCard(today),
           renderPaceCard(today),
         '</div>',
         renderClosingBanner(),
-        renderStaffGrid(staff, store.name, onShift, badges, _eomKey),
         '<div class="lower-grid">',
           renderBadges(badges),
           renderHeatmap(hourly, peakHour, peakRevenue, _goal, _hourlyTargets),
