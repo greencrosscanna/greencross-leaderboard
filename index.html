@@ -51,6 +51,13 @@
   --purple-soft:  rgba(167, 139, 250, 0.10);
   --pink:         #f472b6;
 
+  /* Gold — Employee of the Month */
+  --gold:         #d4a847;
+  --gold-2:       #b08930;
+  --gold-3:       #f0d27a;
+  --gold-bright:  #ffe68c;
+  --gold-line:    rgba(212, 168, 71, 0.6);
+
   /* Store identity dots (canonical per store) */
   --store-baseline:   #4ade80;
   --store-center:     #60a5fa;
@@ -1984,6 +1991,101 @@ body.kiosk-bg {
 .emp-extra.pb        { color: var(--blue); }
 .emp-extra.muted     { color: var(--text-mute); font-weight: 500; }
 
+/* ══════════════════════════════════════════════════════════════
+   EMPLOYEE OF THE MONTH — animated gold ring + accent treatment
+   Copy the @property, @keyframes, and ::before block VERBATIM.
+   Tuning those by feel breaks the mask-composite border effect.
+   ══════════════════════════════════════════════════════════════ */
+
+/* Animated angle for the conic-gradient ring.
+   @supports wrapper: older browsers / Smart TVs get a static
+   gold border instead of the spinning hot-spot — still legible. */
+@supports (background: conic-gradient(from 0deg, red, blue)) {
+  @property --angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+  }
+  @keyframes border-spin { to { --angle: 360deg; } }
+}
+
+.emp-card.eom {
+  border: 0;
+  background:
+    linear-gradient(180deg, rgba(212,168,71,0.06) 0%, rgba(212,168,71,0.015) 60%, rgba(212,168,71,0) 100%),
+    var(--surface);
+  box-shadow: 0 0 24px rgba(212, 168, 71, 0.10);
+}
+
+/* Static gold border fallback for browsers without @property / conic-gradient */
+@supports not (background: conic-gradient(from 0deg, red, blue)) {
+  .emp-card.eom { border: 1.5px solid var(--gold-line); }
+}
+
+/* Animated ring — verbatim from mock; only selector prefix changed */
+.emp-card.eom::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1.5px;
+  border-radius: inherit;
+  background: conic-gradient(from var(--angle),
+    rgba(212, 168, 71, 0.30) 0deg,
+    rgba(212, 168, 71, 0.30) 270deg,
+    var(--gold-bright) 320deg,
+    rgba(212, 168, 71, 0.30) 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: border-spin 8s linear infinite;
+  pointer-events: none;
+}
+
+/* Gold accents */
+.emp-card.eom .lb-ava   { box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 3px var(--gold-line); }
+.emp-card.eom .emp-n    { color: var(--gold-3); }
+.emp-card.eom .emp-amt  { color: var(--gold-3); }
+.emp-card.eom .emp-bar span  { background: var(--gold); }
+.emp-card.eom .emp-bar-pct   { color: var(--gold-3); }
+.emp-card.eom .emp-bar-chevron { color: var(--gold-3); }
+
+/* Corner stack: EoM pill on top, rank below — hides the normal in-flow rank */
+.emp-card.eom > .emp-rank { display: none; }
+.eom-corner {
+  position: absolute; top: 12px; right: 14px;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  pointer-events: none;
+}
+.eom-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 999px;
+  background: rgba(212,168,71,0.15);
+  border: 1px solid var(--gold-line);
+  color: var(--gold-3); font-size: 9.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .08em;
+}
+.eom-badge .eom-star { color: var(--gold); font-size: 11px; line-height: 0; }
+.eom-corner .eom-rank { font-size: 10px; color: var(--text-mute); font-weight: 500; }
+
+/* EoM takes visual priority over today's-leader green border */
+.emp-card.leading.eom { border: 0; }
+
+/* Off-shift + EoM: gold ring keeps animating, interior stays dim */
+.emp-card.off-shift.eom {
+  opacity: 1;  /* override the base off-shift dim — ring must be vivid */
+  background:
+    linear-gradient(180deg, rgba(212,168,71,0.04) 0%, rgba(212,168,71,0) 80%),
+    transparent;
+}
+.emp-card.off-shift.eom .emp-n    { color: var(--gold-3); opacity: 0.85; }
+.emp-card.off-shift.eom .lb-ava   { opacity: 0.85; }
+
+/* Respect reduced-motion: collapse animation to static border */
+@media (prefers-reduced-motion: reduce) {
+  .emp-card.eom::before { animation: none; }
+  .emp-card.eom { border: 1.5px solid var(--gold-line); }
+}
+
 /* ── Off-shift cards — visible enough to create competition ── */
 .emp-card.off-shift {
   opacity: 0.65;
@@ -2837,6 +2939,49 @@ body.kiosk-bg {
 }
 .settings-save-status.ok  { color: var(--green); }
 .settings-save-status.err { color: var(--red); }
+
+/* ── Employee of the Month settings ──────────────────────── */
+.eom-current {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  background: rgba(212,168,71,0.07);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.eom-current.eom-none {
+  background: transparent;
+  padding: 12px 20px;
+  font-size: 13px;
+}
+.eom-current-info { flex: 1; }
+.eom-current-name { font-size: 14px; font-weight: 600; color: var(--gold-3); }
+.eom-current-since { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
+.eom-clear-btn {
+  font-size: 12px; padding: 5px 12px;
+  border: 1px solid rgba(255,255,255,0.15); border-radius: 6px;
+  color: var(--text-mute); background: transparent; cursor: pointer;
+}
+.eom-clear-btn:hover { color: var(--red); border-color: var(--red); }
+.eom-radio-list {
+  max-height: 320px;
+  overflow-y: auto;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.eom-radio-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.15s;
+}
+.eom-radio-row:last-child { border-bottom: 0; }
+.eom-radio-row:hover { background: rgba(255,255,255,0.04); }
+.eom-radio-row input[type="radio"] { accent-color: var(--gold); flex-shrink: 0; }
+.eom-radio-name { font-size: 13px; flex: 1; }
+.eom-radio-store { flex-shrink: 0; }
 
 /* ── Loading / error states ───────────────────────────────── */
 .settings-loading,
@@ -6012,6 +6157,7 @@ var kiosk = (function() {
   var _goal         = 0;     // daily revenue goal — used by pace projection updates
   var _hourlyTargets = null; // per-hour target amounts from same-DOW history; null = flat fallback
   var _leaderName    = '';    // disambiguated display name of today's leader
+  var _eomKey        = null; // current Employee of the Month nameKey (or null)
   var _pollTimer    = null;
   var _lbTimer      = null;
   var _clockTimer   = null;
@@ -6123,7 +6269,7 @@ var kiosk = (function() {
   // Fixed count of distinct trophy types — denominator for "N / TOTAL trophies" stat.
   var BADGE_TYPE_TOTAL = 7;
 
-  function renderLeaderCard(leader, allStaff, onShift, badges, today) {
+  function renderLeaderCard(leader, allStaff, onShift, badges, today, eomKey) {
     var dispName = leader.name;
 
     // ── Chips ────────────────────────────────────────────
@@ -6217,9 +6363,15 @@ var kiosk = (function() {
         + '</div>'
       : '';
 
+    var isLeaderEom = eomKey && leader.nameKey && leader.nameKey === eomKey;
+    var eomPillHtml = isLeaderEom
+      ? '<span class="eom-badge" style="margin-left:8px"><span class="eom-star">★</span> EoM</span>'
+      : '';
+
     return '<div class="leader-card">'
       + '<div class="leader-header">'
       + '  <span class="kcard-label">Today\'s Leader</span>'
+      + eomPillHtml
       + '  <div class="leader-chips">' + chipsHtml + '</div>'
       + '</div>'
       + '<div class="leader-main">'
@@ -6422,7 +6574,7 @@ var kiosk = (function() {
   // onShift: full roster array with { initials, name, role, status, note }
   //          used to build shift-status and mark off-shift employees
   // badges:  normalized badge array — used to show which trophies each emp holds
-  function renderStaffGrid(staff, storeName, onShift, badges) {
+  function renderStaffGrid(staff, storeName, onShift, badges, eomKey) {
     // Build shift status map: name (lower) → { status, note }
     var shiftMap = {};
     (onShift || []).forEach(function(p) {
@@ -6526,8 +6678,18 @@ var kiosk = (function() {
         : '<div class="emp-amt" style="color:var(--text-mute);font-size:13px;margin-top:12px">No sales yet</div>';
 
       var dispName = s.name;
-      return '<div class="emp-card' + (isLeading ? ' leading' : '') + (isOffShift ? ' off-shift' : '') + '">'
-        + '<span class="emp-rank">#' + e(s.rank) + '</span>'
+      var isEom     = !!(eomKey && s.nameKey && s.nameKey === eomKey);
+      var eomCorner = isEom
+        ? '<div class="eom-corner">'
+          + '<span class="eom-badge"><span class="eom-star">★</span> EoM</span>'
+          + '<span class="eom-rank">#' + e(s.rank) + ' today</span>'
+          + '</div>'
+        : '';
+      // When EoM, the in-flow rank is hidden via CSS (.emp-card.eom > .emp-rank { display:none })
+      // and re-rendered inside the corner stack above.
+      return '<div class="emp-card' + (isLeading ? ' leading' : '') + (isOffShift ? ' off-shift' : '') + (isEom ? ' eom' : '') + '">'
+        + (isEom ? '' : '<span class="emp-rank">#' + e(s.rank) + '</span>')
+        + eomCorner
         + '<div class="emp-head">'
         + GC.lbAvaPuck(s.nameKey, s.avatarConfig, s.initials, true)
         + '  <div>'
@@ -6568,7 +6730,12 @@ var kiosk = (function() {
           : '';
         var ghostDispName = p.name;
         var ghostNameKey  = p.nameKey || GC.nameToKey(p.name || '');
-        return '<div class="emp-card off-shift">'
+        var isGhostEom    = !!(eomKey && ghostNameKey && ghostNameKey === eomKey);
+        var ghostEomCorner = isGhostEom
+          ? '<div class="eom-corner"><span class="eom-badge"><span class="eom-star">★</span> EoM</span></div>'
+          : '';
+        return '<div class="emp-card off-shift' + (isGhostEom ? ' eom' : '') + '">'
+          + ghostEomCorner
           + '<div class="emp-head">'
           + GC.lbAvaPuck(ghostNameKey, p.avatarConfig || null, p.initials || '??', true)
           + '  <div>'
@@ -6576,7 +6743,7 @@ var kiosk = (function() {
           + '    <div class="emp-r">' + e(p.role || '') + '</div>'
           + '  </div>'
           + '</div>'
-          + badgesHtml
+          + (isGhostEom ? '' : badgesHtml)
           + '<div class="emp-status-pill ' + e(pillCls) + '">' + e(pillTxt) + '</div>'
           + '</div>';
       }).join('');
@@ -6842,6 +7009,7 @@ var kiosk = (function() {
     var badges       = data.badges.badges;
     var leader       = staff[0] || {};
     _leaderName = leader.name || '';
+    _eomKey     = data.eomKey || null;  // store for poll updates
 
     return [
       '<canvas id="kioskConfetti"></canvas>',
@@ -6849,12 +7017,12 @@ var kiosk = (function() {
       '<div class="kiosk-wrap">',
         renderHeader(store),
         '<div class="hero-grid">',
-          renderLeaderCard(leader, staff, onShift, badges, today),
+          renderLeaderCard(leader, staff, onShift, badges, today, _eomKey),
           renderGoalCard(today),
           renderPaceCard(today),
         '</div>',
         renderClosingBanner(),
-        renderStaffGrid(staff, store.name, onShift, badges),
+        renderStaffGrid(staff, store.name, onShift, badges, _eomKey),
         '<div class="lower-grid">',
           renderBadges(badges),
           renderHeatmap(hourly, peakHour, peakRevenue, _goal, _hourlyTargets),
@@ -7285,10 +7453,14 @@ var kiosk = (function() {
       };
     });
 
+    // eomKey: prefer leaderboard (fresher for recurring polls), fall back to today
+    var eomKey = lb.eomKey !== undefined ? lb.eomKey : (td.eomKey || null);
+
     return {
       today:       normalizedToday,
       leaderboard: { staff: normalizedStaff },
       badges:      { badges: normalizedBadges },
+      eomKey:      eomKey || null,
     };
   }
 
@@ -7474,9 +7646,12 @@ var kiosk = (function() {
           // Update on-shift roster so on/off-duty status stays current
           if (lb.onShift && lb.onShift.length) _onShift = lb.onShift;
 
+          // Pick up fresh eomKey if the lb response includes one
+          if (lb.eomKey !== undefined) _eomKey = lb.eomKey || null;
+
           var section = document.querySelector('.lb-section');
           if (section) {
-            section.outerHTML = renderStaffGrid(staff, _storeName, _onShift, _badges);
+            section.outerHTML = renderStaffGrid(staff, _storeName, _onShift, _badges, _eomKey);
             animateBars();
             // Animate employee amounts
             staff.forEach(function(s) {
@@ -7487,7 +7662,7 @@ var kiosk = (function() {
           // Re-render the leader card with fresh sales/margin/target data
           var leaderCard = document.querySelector('.leader-card');
           if (leaderCard && staff.length) {
-            leaderCard.outerHTML = renderLeaderCard(staff[0], staff, _onShift, _badges, null);
+            leaderCard.outerHTML = renderLeaderCard(staff[0], staff, _onShift, _badges, null, _eomKey);
             animateBars();
             var leaderEl = document.getElementById('kioskLeaderAmt');
             if (leaderEl) countUp(leaderEl, staff[0].sales || 0, 1000);
@@ -7649,7 +7824,7 @@ GC.views.renderLeaderboard = function(period) {
   GC.api.fetchDirectorAll(period)
     .then(function(data) {
       var lbData = lb.normalizeStaff(data.staff, data.avatarConfigs || {});
-      app.innerHTML = lb.render(data.summary, data.alerts, lbData, period);
+      app.innerHTML = lb.render(data.summary, data.alerts, lbData, period, data.eomKey || null);
       lb.init(period);
     })
     .catch(function(err) {
@@ -7664,6 +7839,7 @@ var lb = (function() {
   var _lbData   = null;
   var _summary  = null;
   var _alerts   = null;
+  var _eomKey   = null;
   var _storeFilter = 'all';
   var _tagFilter   = null;
   var _search      = '';
@@ -7785,7 +7961,7 @@ var lb = (function() {
   }
 
   // ── Render: Staff table ──────────────────────────────────
-  function renderTable(staffData) {
+  function renderTable(staffData, eomKey) {
     var staff   = applyFilters(staffData.staff || []);
     var total   = staffData.totalStaff || staff.length;
     var maxSales = staff.length > 0 ? staff[0].sales : 1;
@@ -7804,19 +7980,24 @@ var lb = (function() {
       var trendStroke = GC.trendStroke(trendCls);
       var trendLabel  = GC.trendLabel(s.trendPct);
       var pts       = GC.sparklinePoints(s.trend30d, 72, 20);
+      var isRowEom  = !!(eomKey && s.nameKey && s.nameKey === eomKey);
 
       var tagsHtml = (s.tags || []).map(function(t) {
         var labels = { top: 'TOP', rising: 'RISING', watch: 'WATCH', flag: 'FLAG', new: 'NEW' };
         return '<span class="tag ' + e(t) + '">' + e(labels[t] || t) + '</span>';
       }).join('');
+      var eomTagHtml = isRowEom
+        ? '<span class="eom-badge" style="margin-left:6px;vertical-align:middle"><span class="eom-star">★</span> EoM</span>'
+        : '';
 
-      return '<tr>'
+      return '<tr' + (isRowEom ? ' style="background:rgba(212,168,71,0.04)"' : '') + '>'
         + '<td><span class="rank-pill ' + e(rankCls) + '">#' + e(s.rank) + '</span></td>'
         + '<td>'
         + '  <div class="who">'
         + GC.lbAvaPuck(s.nameKey, s.avatarConfig, s.initials, true)
         + '    <div>'
         + '      <div class="who-name">' + e(s.name)
+        +          eomTagHtml
         +          (tagsHtml ? ' <span class="tags">' + tagsHtml + '</span>' : '')
         + '      </div>'
         + '      <div class="who-sub">' + e(s.role) + ' · ' + e(s.hours) + 'h MTD</div>'
@@ -7982,10 +8163,11 @@ var lb = (function() {
   }
 
   // ── Full render ──────────────────────────────────────────
-  function render(summary, alerts, lbData, period) {
+  function render(summary, alerts, lbData, period, eomKey) {
     _summary = summary;
     _alerts  = alerts;
     _lbData  = lbData;
+    _eomKey  = eomKey || null;
     _period  = period || 'mtd';
 
     var periodLabels = { today: 'Today', wtd: 'WTD', mtd: 'MTD', qtd: 'QTD', ytd: 'YTD' };
@@ -7995,7 +8177,7 @@ var lb = (function() {
       + renderNav()
       + renderKPIs(summary)
       + renderFilters(_period)
-      + '<div id="lbTableWrap">' + renderTable(lbData) + '</div>'
+      + '<div id="lbTableWrap">' + renderTable(lbData, _eomKey) + '</div>'
       + renderWatchPanel(alerts)
       + '<div class="lb-footer">Live data · All Stores · ' + e(periodLabel) + ' · '
       + '<span id="lbFooterRefresh">Last refresh ' + GC.fmtTime(new Date()) + '</span>'
@@ -8006,7 +8188,7 @@ var lb = (function() {
   // ── Re-render table only ─────────────────────────────────
   function refreshTable() {
     var wrap = document.getElementById('lbTableWrap');
-    if (wrap && _lbData) wrap.innerHTML = renderTable(_lbData);
+    if (wrap && _lbData) wrap.innerHTML = renderTable(_lbData, _eomKey);
   }
 
   var _roleFilter = '';
@@ -8025,6 +8207,7 @@ var lb = (function() {
           _lbData   = normalizeStaff(data.staff, data.avatarConfigs || {});
           _summary  = data.summary;
           _alerts   = data.alerts;
+          if (data.eomKey !== undefined) _eomKey = data.eomKey || null;
           refreshTable();
           refreshBtn.disabled = false;
           refreshBtn.textContent = '↻ Refresh';
@@ -8394,6 +8577,80 @@ var settings = (function() {
       + '</tr>';
   }
 
+  // ── Employee of the Month card ─────────────────────────────
+  function renderEomSection(data) {
+    var employees     = (data.employees || []).filter(function(emp) { return emp.section !== 'management'; });
+    var excluded      = data.excluded || [];
+    var excludedSet   = {};
+    excluded.forEach(function(k) { excludedSet[k] = true; });
+    var avatarConfigs = data.avatarConfigs || {};
+    var nicknames     = data.nicknames || {};
+    var currentEom    = data.eom || null;  // { employeeKey, since } | null
+
+    // Current featured callout
+    var currentHtml = '';
+    if (currentEom && currentEom.employeeKey) {
+      var curKey  = currentEom.employeeKey;
+      var curEmp  = null;
+      employees.forEach(function(emp) { if (emp.key === curKey) curEmp = emp; });
+      var curName = curEmp ? (nicknames[curEmp.key] || curEmp.name) : curKey;
+      var curCfg  = curEmp ? (avatarConfigs[curEmp.key] || null) : null;
+      var curInit = curEmp ? GC.nickInitials(curName, curKey, curEmp.initials || '??') : '??';
+      var curPuck = GC.lbAvaPuck(curKey, curCfg, curInit, true);
+      var sinceStr = '';
+      if (currentEom.since) {
+        try {
+          var d = new Date(currentEom.since);
+          sinceStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        } catch(_) {}
+      }
+      currentHtml = '<div class="eom-current" id="eomCurrent">'
+        + curPuck
+        + '<div class="eom-current-info">'
+        + '  <div class="eom-current-name">' + e(curName) + '</div>'
+        + (sinceStr ? '<div class="eom-current-since">Since ' + e(sinceStr) + '</div>' : '')
+        + '</div>'
+        + '<button class="eom-clear-btn" id="eomClearBtn">Clear</button>'
+        + '</div>';
+    } else {
+      currentHtml = '<div class="eom-current eom-none" id="eomCurrent">'
+        + '<span style="color:var(--text-mute)">No Employee of the Month set.</span>'
+        + '</div>';
+    }
+
+    // Radio list — staff only, non-excluded
+    var radioRows = employees
+      .filter(function(emp) { return !excludedSet[emp.key]; })
+      .map(function(emp) {
+        var displayName = nicknames[emp.key] || emp.name;
+        var cfg    = avatarConfigs[emp.key] || null;
+        var inits  = GC.nickInitials(displayName, emp.key, emp.initials || '??');
+        var puck   = GC.lbAvaPuck(emp.key, cfg, inits, true);
+        var chkd   = (currentEom && currentEom.employeeKey === emp.key) ? ' checked' : '';
+        return '<label class="eom-radio-row">'
+          + '<input type="radio" name="eomPick" value="' + e(emp.key) + '"' + chkd + '>'
+          + puck
+          + '<span class="eom-radio-name">' + e(displayName) + '</span>'
+          + '<span class="eom-radio-store">' + e(emp.store || '') + '</span>'
+          + '</label>';
+      }).join('');
+
+    return '<div class="settings-card" id="eomCard">'
+      + '<div class="settings-card-head">'
+      + '  <div>'
+      + '    <div class="settings-card-title">Employee of the Month</div>'
+      + '    <div class="settings-card-sub">Select one employee to feature with a gold ring on the kiosk.</div>'
+      + '  </div>'
+      + '</div>'
+      + currentHtml
+      + '<div class="eom-radio-list">' + radioRows + '</div>'
+      + '<div class="settings-card-foot">'
+      + '  <div class="settings-save-status" id="eomStatus"></div>'
+      + '  <button class="btn-primary" id="eomSaveBtn">Save</button>'
+      + '</div>'
+      + '</div>';
+  }
+
   // ── Management card ────────────────────────────────────────
   function renderManagement(employees, avatarConfigs) {
     var mgmt = (employees || []).filter(function(e) { return e.section === 'management'; });
@@ -8449,6 +8706,7 @@ var settings = (function() {
       + renderHeader()
       + '<div class="settings-body">'
       +   renderGoalsSection(data)
+      +   renderEomSection(data)
       +   renderManagement(data.employees, data.avatarConfigs)
       +   renderEmployees(data.employees, data.nicknames, data.avatarConfigs, data.excluded)
       + '</div>'
@@ -8767,6 +9025,66 @@ var settings = (function() {
             saveNicksBtn.textContent = 'Save';
             nickStatus.textContent = '✗ ' + err.message;
             nickStatus.className = 'settings-save-status err';
+          });
+      });
+    }
+
+    // EOM section — save + clear
+    var eomSaveBtn  = document.getElementById('eomSaveBtn');
+    var eomClearBtn = document.getElementById('eomClearBtn');
+    var eomStatus   = document.getElementById('eomStatus');
+
+    function setEomStatus(msg, cls) {
+      if (!eomStatus) return;
+      eomStatus.textContent = msg;
+      eomStatus.className   = 'settings-save-status' + (cls ? ' ' + cls : '');
+    }
+
+    if (eomSaveBtn) {
+      eomSaveBtn.addEventListener('click', function() {
+        var selected = document.querySelector('input[name="eomPick"]:checked');
+        if (!selected) { setEomStatus('Select an employee first.', 'err'); return; }
+        eomSaveBtn.disabled = true;
+        setEomStatus('Saving…', '');
+        GC.api.gasCall('saveeom', { key: selected.value })
+          .then(function(r) {
+            eomSaveBtn.disabled = false;
+            if (r.ok) {
+              setEomStatus('✓ Saved', 'ok');
+            } else {
+              setEomStatus('✗ ' + (r.error || 'Save failed'), 'err');
+            }
+          })
+          .catch(function(err) {
+            eomSaveBtn.disabled = false;
+            setEomStatus('✗ ' + err.message, 'err');
+          });
+      });
+    }
+
+    if (eomClearBtn) {
+      eomClearBtn.addEventListener('click', function() {
+        if (!confirm('Clear Employee of the Month?')) return;
+        eomClearBtn.disabled = true;
+        GC.api.gasCall('saveeom', {})
+          .then(function(r) {
+            eomClearBtn.disabled = false;
+            if (r.ok) {
+              // Uncheck all radios and update callout
+              document.querySelectorAll('input[name="eomPick"]').forEach(function(inp) { inp.checked = false; });
+              var cur = document.getElementById('eomCurrent');
+              if (cur) {
+                cur.innerHTML = '<span style="color:var(--text-mute)">No Employee of the Month set.</span>';
+                cur.classList.add('eom-none');
+              }
+              setEomStatus('Cleared.', 'ok');
+            } else {
+              setEomStatus('✗ ' + (r.error || 'Clear failed'), 'err');
+            }
+          })
+          .catch(function(err) {
+            eomClearBtn.disabled = false;
+            setEomStatus('✗ ' + err.message, 'err');
           });
       });
     }

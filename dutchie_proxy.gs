@@ -38,6 +38,7 @@ const GC_EXCLUDED_KEY       = 'GC_EXCLUDED_JSON';   // array of excluded employe
 const GC_MANUAL_PP_KEY      = 'GC_MANUAL_PP_GOALS_JSON'; // slug→final PP goal overrides
 const GC_AVATAR_CONFIGS_KEY  = 'GC_AVATAR_CONFIGS_JSON'; // { nameKey: { ...avatar_config } }
 const GC_HOURLY_DIST_KEY     = 'GC_HOURLY_DIST_JSON';   // per-store same-DOW hourly revenue weights, cached per day
+const GC_EOM_KEY             = 'gc_eom_current';         // { employeeKey, since } — Employee of the Month
 const PP_DAYS                = 14;   // pay-period length in days
 const TARGET_LOOKBACK_MONTHS = 6;    // rolling lookback for target calculation
 const DUTCHIE_BASE          = 'https://api.pos.dutchie.com';
@@ -209,7 +210,8 @@ function doGet(e) {
       const alerts  = getDirectorAlerts(         { byStore: byStoreMTD });
       const today   = getDirectorToday(byStoreToday);
       const avatarConfigs = getAvatarConfigs_();
-      return jsonOut({ summary, stores, staff, alerts, today, avatarConfigs }, params.callback);
+      const eomKey        = (getEomCurrent_() || {}).employeeKey || null;
+      return jsonOut({ summary, stores, staff, alerts, today, avatarConfigs, eomKey }, params.callback);
     }
     if (params.action === 'directorsummary') {
       requireRole_(auth, ['owner','director']);
@@ -234,12 +236,16 @@ function doGet(e) {
 
     // ── Store / Kiosk endpoints ────────────────────────────
     if (params.action === 'storetoday') {
-      const store = requireStore_(auth, params.store);
-      return jsonOut(getStoreToday(store, params), params.callback);
+      const store    = requireStore_(auth, params.store);
+      const todayRes = getStoreToday(store, params);
+      todayRes.eomKey = (getEomCurrent_() || {}).employeeKey || null;
+      return jsonOut(todayRes, params.callback);
     }
     if (params.action === 'storeleaderboard') {
-      const store = requireStore_(auth, params.store);
-      return jsonOut(getStoreLeaderboard(store, params), params.callback);
+      const store  = requireStore_(auth, params.store);
+      const lbRes  = getStoreLeaderboard(store, params);
+      lbRes.eomKey = (getEomCurrent_() || {}).employeeKey || null;
+      return jsonOut(lbRes, params.callback);
     }
     if (params.action === 'storebadges') {
       const store = requireStore_(auth, params.store);
@@ -395,6 +401,18 @@ function doGet(e) {
           lineItemSample: (diagTx.items || diagTx.lineItems || diagTx.lineitemList || []).slice(0,2),
         } : null
       }, params.callback);
+    }
+
+    if (params.action === 'saveeom') {
+      requireRole_(auth, ['owner','director']);
+      var eomKey = params.key || null;
+      if (eomKey) {
+        PropertiesService.getScriptProperties().setProperty(GC_EOM_KEY,
+          JSON.stringify({ employeeKey: eomKey, since: new Date().toISOString() }));
+      } else {
+        PropertiesService.getScriptProperties().deleteProperty(GC_EOM_KEY);
+      }
+      return jsonOut({ ok: true }, params.callback);
     }
 
     if (params.action === 'saveavatar') {
@@ -786,6 +804,16 @@ function getNicknames_() {
     });
     return out;
   } catch(e) { return {}; }
+}
+
+/** Returns the current Employee of the Month record { employeeKey, since }, or null if unset. */
+function getEomCurrent_() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(GC_EOM_KEY);
+    if (!raw) return null;
+    var p = JSON.parse(raw);
+    return (p && p.employeeKey) ? p : null;
+  } catch(e) { return null; }
 }
 
 /** Returns a Set of excluded employee nameKeys. */
@@ -3380,6 +3408,7 @@ function getSettings_(params) {
     excluded:         excluded,
     manualGoals:      getManualPPGoals_(),
     avatarConfigs:    resolveAvatarConfigs_(allEmployees, getAvatarConfigs_()),
+    eom:              getEomCurrent_(),  // { employeeKey, since } | null
   };
 }
 
