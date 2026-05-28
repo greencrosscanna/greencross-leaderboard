@@ -2898,6 +2898,15 @@ function getStoreToday(store, params) {
 }
 
 function getStoreLeaderboard(store, params) {
+  // Cache full responses for 55 seconds so morning warmup + repeated kiosk loads
+  // don't each pay the full Dutchie fetch cost.
+  const scriptCache = CacheService.getScriptCache();
+  const lbCacheKey  = 'storeLB:' + store.slug;
+  const lbHit       = scriptCache.get(lbCacheKey);
+  if (lbHit) {
+    try { return JSON.parse(lbHit); } catch(e) {}
+  }
+
   const { hour: nowHour } = ptHourNow_();
   const isPreOpen = nowHour < STORE_OPEN_HOUR;
 
@@ -3052,7 +3061,7 @@ function getStoreLeaderboard(store, params) {
     }));
   const onShift = onShiftActive.concat(onShiftRoster);
 
-  return {
+  const result = {
     storeSlug:    store.slug,
     storeName:    store.name,
     date:         today,
@@ -3061,6 +3070,11 @@ function getStoreLeaderboard(store, params) {
     lastUpdated:  new Date().toISOString(),
     avatarConfigs: getAvatarConfigs_(),
   };
+
+  // Store in GAS cache for 55 seconds (same window as storetoday)
+  try { scriptCache.put(lbCacheKey, JSON.stringify(result), 55); } catch(e) {}
+
+  return result;
 }
 
 function getStoreBadges(store, params) {
@@ -3596,14 +3610,21 @@ function saveSettings_(params) {
 // ── Morning cache warm-up ─────────────────────────────────
 // Runs via time-based trigger at 7:50am PT so the first kiosk
 // viewer at open doesn't pay the cold-start Dutchie fetch penalty.
+// Warms storetoday AND storeleaderboard so fetchKioskAll (which needs
+// both) renders the heatmap instantly on first page view.
 function warmAllKioskCaches_() {
   STORES.forEach(function(store) {
     try {
-      // Calling getStoreToday writes its result into CacheService
       getStoreToday(store, {});
-      Logger.log('[warmup] ' + store.slug + ' cached');
+      Logger.log('[warmup] storetoday ' + store.slug + ' cached');
     } catch(e) {
-      Logger.log('[warmup] ' + store.slug + ' failed: ' + e.message);
+      Logger.log('[warmup] storetoday ' + store.slug + ' failed: ' + e.message);
+    }
+    try {
+      getStoreLeaderboard(store, {});
+      Logger.log('[warmup] storeleaderboard ' + store.slug + ' cached');
+    } catch(e) {
+      Logger.log('[warmup] storeleaderboard ' + store.slug + ' failed: ' + e.message);
     }
   });
 }

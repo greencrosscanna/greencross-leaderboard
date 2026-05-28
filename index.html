@@ -2188,6 +2188,8 @@ body.kiosk-bg {
   border: 1px solid transparent;
   cursor: default;
   overflow: visible;
+  transition: height 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+              background 0.55s ease;
 }
 .hm-col:hover .hm-bar { filter: brightness(1.15); }
 .hm-bar.now {
@@ -4639,6 +4641,14 @@ GC.views.renderDirector = function() {
           console.warn('[director] pay-period staff fetch failed:', err);
           // MTD data already rendered — fail silently
         });
+
+      // Pre-warm all kiosk caches so navigating to any store view is instant.
+      // Fire after director renders so it doesn't compete with the director fetch.
+      setTimeout(function() {
+        GC.STORE_SLUGS.forEach(function(slug) {
+          GC.api.prefetchKiosk(slug);
+        });
+      }, 500);
     })
     .catch(function(err) {
       console.error('[director] fetch failed:', err);
@@ -6590,10 +6600,12 @@ var kiosk = (function() {
         ? '<span class="hm-tip-goal">goal $' + e(Math.round(targets[i]).toLocaleString('en-US')) + '</span>'
         : '';
 
+      // Bars start at height:0 and animate up via data-final + animateHeatmap().
       // Notch lives in .hm-col (chart-relative), bar + tooltip live in .hm-bar
       return '<div class="hm-col">'
         + notchHtml
-        + '<div class="hm-bar' + cls + '" style="height:' + scaledPct.toFixed(1) + '%;background:' + color + '">'
+        + '<div class="hm-bar' + cls + '" style="height:0%;background:' + color + '"'
+        + ' data-final="' + scaledPct.toFixed(1) + '%">'
         + '<div class="hm-tooltip"><span class="hm-tip-amt">$' + e(amt.toLocaleString()) + (h.projected ? ' est.' : '') + '</span>' + tipGoal + '</div>'
         + '<span class="hm-hour">' + e(h.hour) + '</span>'
         + '</div>'
@@ -6762,6 +6774,18 @@ var kiosk = (function() {
   }
 
   // ── init ──────────────────────────────────────────────
+  // Animate all .hm-bar elements from height:0 to their data-final target.
+  // CSS transition handles the ease; we just need to kick it off after paint.
+  function animateHeatmap() {
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        document.querySelectorAll('.hm-bar[data-final]').forEach(function(bar) {
+          bar.style.height = bar.getAttribute('data-final');
+        });
+      });
+    });
+  }
+
   function init(data, slug) {
     _slug      = slug;
     _storeName = (data.today.store && data.today.store.name) || slug || '';
@@ -6790,6 +6814,7 @@ var kiosk = (function() {
     animateGoalArc(data.today.today.pctToGoal);
     animatePaceNeedle(data.today.today.pace);
     animateBars();
+    animateHeatmap();
     updateClosingBanner(data.today.today);
     initConfetti();
     startPolling(slug);
@@ -7289,6 +7314,7 @@ var kiosk = (function() {
         var newPeakHour    = peak ? peak.hour    : null;
         var newPeakRevenue = peak ? peak.revenue : 0;
         heatCard.outerHTML = renderHeatmap(td.hourly, newPeakHour, newPeakRevenue, _goal, _hourlyTargets);
+        animateHeatmap();
       }
     }
 

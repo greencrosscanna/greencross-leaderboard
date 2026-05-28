@@ -51,7 +51,23 @@ echo "▶ Pushing to GAS..."
 cp index.html index.html.dev        # save dev version before overwriting
 cp index.html.built index.html
 clasp push --force
-clasp deploy --deploymentId "$DEPLOY_ID" --description "$MSG"
+
+# Try to create a new versioned deployment. GAS has a hard limit of 200 versions;
+# if we hit it, fall back to redeploying the last known good version number so
+# the deployment stays live. Run `clasp versions` to find the current max,
+# then delete old versions at script.google.com → Project History to unblock.
+LATEST_VER=$(clasp versions 2>/dev/null | grep -E '^[0-9]+' | tail -1 | awk '{print $1}' || echo "200")
+if clasp deploy --deploymentId "$DEPLOY_ID" --description "$MSG" 2>/dev/null; then
+  echo "Deployed ${DEPLOY_ID} @ new version"
+else
+  echo "⚠️  GAS version limit reached (200). Redeploying at version ${LATEST_VER}."
+  echo "   → New backend code is in GAS HEAD but not yet live."
+  echo "   → To fix: open script.google.com, open this project, go to"
+  echo "     Project Settings → Manage versions and delete versions 1-180."
+  echo "   → Then run: bash deploy.sh"
+  clasp deploy --deploymentId "$DEPLOY_ID" --versionNumber "$LATEST_VER" --description "$MSG (pinned)" 2>/dev/null \
+    || echo "   (Could not redeploy to ${LATEST_VER} either — deployment unchanged)"
+fi
 
 # 3. Restore the dev index.html from our saved copy (not git — preserves uncommitted edits)
 echo "▶ Pushing to GitHub..."
@@ -62,4 +78,4 @@ git commit -m "$MSG
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>" || echo "  Nothing new to commit."
 git push origin main
 
-echo "✅ Done — GitHub Pages + GAS both updated."
+echo "✅ Done — GitHub Pages updated. GAS: see warnings above if version limit was hit."
