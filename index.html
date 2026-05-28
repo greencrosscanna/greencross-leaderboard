@@ -3956,23 +3956,23 @@ GC.findAvatarCfg = function(configs, nameKey) {
 GC.lbAvaPuck = function(nameKey, avatarConfig, initials, clickable) {
   var esc      = GC.esc;
   var safeInit = esc(initials || '??');
-  // data-ava-nav drives CSS cursor + hover scale; onclick uses GC.navToAvatar
+  // data-ava-nav drives CSS cursor + hover scale.
+  // Navigation is handled by the global document click handler (in router init)
+  // which calls GC.navToAvatar(key) — encoding the current hash as &from= so
+  // the back button always returns to the referring page, not Settings.
   var navAttr = clickable ? ' data-ava-nav="' + esc(nameKey) + '"' : '';
-  var clickHandler = clickable
-    ? ' onclick="GC.navToAvatar(\'' + esc(nameKey) + '\')"'
-    : '';
 
   if (avatarConfig) {
     var url = GC.buildAvatarUrl(avatarConfig, nameKey);
     var hat = avatarConfig.top === '_gchat'
       ? '<div class="ava-hat-overlay">' + GC.GC_HAT_SVG + '</div>'
       : '';
-    return '<div class="lb-ava" data-initials="' + safeInit + '"' + navAttr + clickHandler + '>'
+    return '<div class="lb-ava" data-initials="' + safeInit + '"' + navAttr + '>'
       + '<img src="' + esc(url) + '" alt="" onerror="GC.avaFallback(this)">'
       + hat
       + '</div>';
   }
-  return '<div class="lb-ava initials" data-initials="' + safeInit + '"' + navAttr + clickHandler + '>'
+  return '<div class="lb-ava initials" data-initials="' + safeInit + '"' + navAttr + '>'
     + safeInit
     + '</div>';
 };
@@ -4589,7 +4589,7 @@ GC.router = (function() {
       var puck = e.target.closest('[data-ava-nav]');
       if (!puck) return;
       var key = puck.getAttribute('data-ava-nav');
-      if (key) navigate('#/avatar?employee=' + encodeURIComponent(key));
+      if (key) GC.navToAvatar(key); // encodes current hash as &from= so back button returns here
     });
 
     // Dispatch on initial load
@@ -8822,7 +8822,7 @@ var ava = (function() {
   function renderNotFound(nameKey) {
     return '<div class="app-page avatar-page">'
       + renderHeader('Not Found')
-      + '<div style="padding:40px 24px;color:var(--text-dim,#a8aba6)">Employee <strong>' + e(nameKey) + '</strong> not found. <button id="avatarBack" class="ava-back">← Back to Settings</button></div>'
+      + '<div style="padding:40px 24px;color:var(--text-dim,#a8aba6)">Employee <strong>' + e(nameKey) + '</strong> not found. <button id="avatarBack" class="ava-back">← Back</button></div>'
       + '</div>';
   }
 
