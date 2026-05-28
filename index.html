@@ -6481,11 +6481,9 @@ var kiosk = (function() {
       // e.g. "💰🔥 3 day streak" (AOV Avenger + Top Sales, 3-day run)
       // 🔥 is the Top Sales badge icon — never used as a generic streak fallback.
       var extraHtml = '';
-      if (s.streak > 0) {
-        var streakPrefix = badgeIconsStr;  // only show icons the employee actually earned
-        var streakCls    = s.streakType === 'fire' ? 'streak' : 'muted';
-        var streakLabel  = (streakPrefix ? streakPrefix + ' ' : '') + e(s.streak) + ' day streak';
-        extraHtml = '<div class="emp-extra ' + streakCls + '">' + streakLabel + '</div>';
+      if (s.streak > 0 && badgeIconsStr) {
+        var streakLabel = badgeIconsStr + ' ' + e(s.streak) + ' day streak';
+        extraHtml = '<div class="emp-extra streak">' + streakLabel + '</div>';
       } else if (s.personalBestPct !== null && s.personalBestPct >= 0.90) {
         extraHtml = '<div class="emp-extra pb">⚡ Personal best in sight</div>';
       }
