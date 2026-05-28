@@ -3907,6 +3907,174 @@ function backfillRecentDays_() {
 }
 
 /**
+ * Backfill real historical Dutchie data from fromDateStr through yesterday (or toDateStr).
+ * Uses fetchAllStoresTransactionsMulti_ to fire all requests in parallel per 30-day chunk
+ * so the whole year runs in ~2-3 minutes — well within GAS's 6-minute execution limit.
+ *
+ * Usage (run from GAS editor):
+ *   backfillYear2026()           → Jan 1, 2026 → yesterday
+ *   backfillDateRange('2026-01-01', '2026-03-31')  → custom range
+ *
+ * If you hit a timeout (rare) split it: run Jan–Jun first, then Jul–present.
+ */
+function backfillYear2026() { backfillDateRange_('2026-01-01'); }
+function backfillDateRange(fromDateStr, toDateStr) { backfillDateRange_(fromDateStr, toDateStr); }
+
+function backfillDateRange_(fromDateStr, toDateStr) {
+  var sheet = getSnapshotSheet_();
+
+  // Default toDateStr = yesterday (most recent complete day)
+  if (!toDateStr) {
+    var yd = new Date();
+    yd.setDate(yd.getDate() - 1);
+    toDateStr = Utilities.formatDate(yd, STORE_TZ, 'yyyy-MM-dd');
+  }
+
+  // Build the full list of dates to backfill
+  var dates  = [];
+  var curMs  = ptDateToUtcMs_(fromDateStr);
+  var endMs  = ptDateToUtcMs_(toDateStr);
+  while (curMs <= endMs) {
+    dates.push(Utilities.formatDate(new Date(curMs), STORE_TZ, 'yyyy-MM-dd'));
+    curMs += 24 * 60 * 60 * 1000;
+  }
+
+  Logger.log('[backfill] ' + fromDateStr + ' → ' + toDateStr
+    + ' = ' + dates.length + ' days × ' + STORES.length + ' stores = '
+    + (dates.length * STORES.length) + ' rows');
+
+  // Read all existing sheet rows once so we can detect duplicates cheaply
+  var allValues   = sheet.getDataRange().getValues();
+  var headers     = allValues[0];
+  var colIdx      = {};
+  headers.forEach(function(h, i) { colIdx[h] = i; });
+  var existingMap = {};   // 'YYYY-MM-DD:slug' → 1-based sheet row number
+  for (var r = 1; r < allValues.length; r++) {
+    var rd = normDateCell_(allValues[r][colIdx['date']]);
+    var rs = allValues[r][colIdx['store_slug']];
+    if (rd && rs) existingMap[rd + ':' + rs] = r + 1;
+  }
+
+  // Load lookup tables once — avoids a ScriptProperty read per iteration
+  var _excluded = getExcluded_();
+  var _nicks    = getNicknames_();
+
+  var CHUNK_DAYS = 30;   // 30 days × 6 stores = 180 parallel requests per fetchAll
+  var newRows = [];      // rows to append in one batch write
+  var updRows = [];      // { sheetRow, row } for rows that already exist
+
+  for (var ci = 0; ci < dates.length; ci += CHUNK_DAYS) {
+    var chunk = dates.slice(ci, ci + CHUNK_DAYS);
+
+    // Build UTC ranges for this chunk
+    var ranges = chunk.map(function(ds) {
+      var fromMs = ptDateToUtcMs_(ds);
+      return {
+        dateStr: ds,
+        fromUTC: new Date(fromMs).toISOString(),
+        toUTC:   new Date(fromMs + 24 * 60 * 60 * 1000 - 1).toISOString(),
+      };
+    });
+
+    Logger.log('[backfill] Chunk ' + chunk[0] + ' – ' + chunk[chunk.length - 1]
+      + ' (' + (chunk.length * STORES.length) + ' parallel requests)…');
+
+    // Fire all (chunk × stores) requests in a single parallel fetchAll
+    var fetchRanges = ranges.map(function(r) { return { fromUTC: r.fromUTC, toUTC: r.toUTC }; });
+    var fetched = fetchAllStoresTransactionsMulti_(fetchRanges);
+
+    ranges.forEach(function(range, ri) {
+      var byStore = fetched[ri];
+
+      // DOW is the same for all stores on a given date — compute once per date
+      var probe = new Date(Date.UTC(
+        Number(range.dateStr.slice(0, 4)),
+        Number(range.dateStr.slice(5, 7)) - 1,
+        Number(range.dateStr.slice(8, 10)), 12  // noon UTC → always correct PT date
+      ));
+      var dow = parseInt(Utilities.formatDate(probe, STORE_TZ, 'u'), 10) % 7; // Mon=1…Sun=0
+
+      STORES.forEach(function(store) {
+        var txns    = byStore[store.slug] || [];
+        var agg     = aggregateTransactions_(txns);
+        var hourMap = aggregateByHour_(txns);
+
+        var goal = getDailyGoalForDow_(store.slug, dow);
+
+        // Hourly bars — all bars are "final" (no current/projected for historical days)
+        var maxRev = 1;
+        Object.keys(hourMap).forEach(function(h) {
+          if (hourMap[h].revenue > maxRev) maxRev = hourMap[h].revenue;
+        });
+        var hourly = [];
+        for (var h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
+          var hd  = hourMap[h] || { revenue: 0, count: 0 };
+          var lbl = h === 12 ? '12p' : h < 12 ? h + 'a' : (h - 12) + 'p';
+          hourly.push({
+            hour: lbl, revenue: Math.round(hd.revenue),
+            pct: r1_(hd.revenue / maxRev * 100), current: false, projected: false,
+          });
+        }
+
+        // Employees who transacted on this date, sorted by sales
+        var onShift = Object.values(agg.byEmployee)
+          .filter(function(emp) { return !_excluded.has(nameToKey_(emp.name)); })
+          .sort(function(a, b) { return b.sales - a.sales; })
+          .map(function(emp) {
+            return {
+              initials:     emp.initials,
+              name:         applyNickname_(emp.name, _nicks),
+              status:       'on',
+              sales:        Math.round(emp.sales),
+              transactions: emp.transactions || 0,
+            };
+          });
+
+        var data = {
+          revenue:       Math.round(agg.sales),
+          goal:          goal,
+          pctToGoal:     goal > 0 ? r3_(agg.sales / goal) : 0,
+          transactions:  agg.transactions,
+          avgOrderValue: agg.avgOrderValue,
+          hourly:        hourly,
+          onShift:       onShift,
+        };
+
+        var row = buildSnapshotRow_(range.dateStr, store, data);
+        var key = range.dateStr + ':' + store.slug;
+
+        if (existingMap[key]) {
+          updRows.push({ sheetRow: existingMap[key], row: row });
+        } else {
+          newRows.push(row);
+          // Register in existingMap so a second chunk never re-adds the same row
+          existingMap[key] = -1; // sentinel — actual row number not needed after this
+        }
+      });
+
+      Logger.log('[backfill] ' + range.dateStr + ' ✓ (' + STORES.length + ' stores, chunk ' + (ri + 1) + '/' + chunk.length + ')');
+    });
+  }
+
+  // Batch-append all new rows in a single sheet operation (vastly faster than appendRow loop)
+  if (newRows.length > 0) {
+    var lastRow = sheet.getLastRow();
+    sheet.getRange(lastRow + 1, 1, newRows.length, SNAPSHOT_COLS.length).setValues(newRows);
+    Logger.log('[backfill] Appended ' + newRows.length + ' new rows');
+  }
+
+  // Update existing rows (can't batch non-contiguous ranges — write individually)
+  updRows.forEach(function(u) {
+    sheet.getRange(u.sheetRow, 1, 1, SNAPSHOT_COLS.length).setValues([u.row]);
+  });
+  if (updRows.length > 0) Logger.log('[backfill] Overwrote ' + updRows.length + ' existing rows');
+
+  Logger.log('[backfill] ✅ Complete — '
+    + dates.length + ' days × ' + STORES.length + ' stores = '
+    + (newRows.length + updRows.length) + ' total rows processed.');
+}
+
+/**
  * Run once from the GAS editor to register the nightly EOD snapshot trigger.
  * Fires daily at UTC 6:xx — that's 11pm PDT / 10pm PST, ~30–60 min after close.
  */
