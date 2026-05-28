@@ -2061,16 +2061,25 @@ function aggregateByDay_(txns) {
 
 /**
  * From a { date: revenue } map, compute:
- *   trend30d  — ordered array of daily revenue values (oldest → newest)
- *   trendPct  — (last-7d avg − prior-7d avg) / prior-7d avg, clamped to 3 decimals
+ *   trend30d  — ordered array of daily revenue values (oldest → newest), incl. today's partial data
+ *   trendPct  — (last-7 completed days − prior-7 completed days) / prior-7, clamped to 3 decimals
+ *
+ * Today is intentionally excluded from the trendPct calculation: including a partial
+ * intraday total drags the "last 7 days" average down and produces a misleadingly
+ * negative delta throughout the day. The sparkline still shows today so the shape
+ * of the current day is visible.
  */
 function trendFromByDay_(byDay) {
-  const days     = Object.keys(byDay).sort();
-  const trend30d = days.map(function(d) { return Math.round(byDay[d]); });
-  const n        = days.length;
+  const todayStr = ptNow_().dateStr;
+  const allDays  = Object.keys(byDay).sort();
+  const trend30d = allDays.map(function(d) { return Math.round(byDay[d]); });
+
+  // Use only completed days for the delta %
+  const fullDays = allDays.filter(function(d) { return d < todayStr; });
+  const n        = fullDays.length;
   if (n < 7) return { trend30d: trend30d, trendPct: 0 };
-  const last7    = days.slice(Math.max(0, n - 7)).reduce(function(s, d) { return s + byDay[d]; }, 0);
-  const prior    = days.slice(Math.max(0, n - 14), Math.max(0, n - 7));
+  const last7    = fullDays.slice(Math.max(0, n - 7)).reduce(function(s, d) { return s + byDay[d]; }, 0);
+  const prior    = fullDays.slice(Math.max(0, n - 14), Math.max(0, n - 7));
   if (prior.length === 0) return { trend30d: trend30d, trendPct: 0 };
   const prior7   = prior.reduce(function(s, d) { return s + byDay[d]; }, 0);
   const trendPct = prior7 > 0 ? r3_((last7 - prior7) / prior7) : 0;
