@@ -3802,6 +3802,9 @@ function getHistoricalDirector_(dateStr) {
  * Usage: select backfillRecentDays_ in the GAS editor and click Run.
  * Change NUM_DAYS at the top if you want more or fewer days.
  */
+// Public entry point so GAS editor can run it (functions ending in _ are private)
+function backfillRecentDays() { backfillRecentDays_(); }
+
 function backfillRecentDays_() {
   var NUM_DAYS = 5;  // ← adjust as needed
   var sheet = getSnapshotSheet_();
