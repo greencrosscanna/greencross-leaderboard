@@ -794,9 +794,9 @@ function getExcluded_() {
   try { return new Set(raw ? JSON.parse(raw) : []); } catch(e) { return new Set(); }
 }
 
-/** Normalise a Dutchie name into a lookup key (lowercase, no periods, spaces→underscore). */
+/** Normalise a Dutchie name into a lookup key (lowercase, no periods/quotes, spaces→underscore). */
 function nameToKey_(name) {
-  return (name || '').toLowerCase().replace(/\./g, '').replace(/\s+/g, '_').trim();
+  return (name || '').toLowerCase().replace(/["'`]/g, '').replace(/\./g, '').replace(/\s+/g, '_').trim();
 }
 
 /**
@@ -827,8 +827,8 @@ function applyNickname_(name, nicknames) {
     if (found) return nicknames[found];
   }
 
-  // 3. No nickname — return first name only (drops " C.", " W.", etc.)
-  return parts[0];
+  // 3. No nickname — return first name only, stripping any embedded quotes
+  return parts[0].replace(/["'`]/g, '');
 }
 
 /**
@@ -1885,6 +1885,7 @@ function txEmployee_(tx) {
 
 function initials_(name) {
   return (name || '')
+    .replace(/["'`()[\]{}<>]/g, '')  // strip quotes and brackets before splitting
     .split(' ')
     .filter(Boolean)
     .map(p => p[0].toUpperCase())
