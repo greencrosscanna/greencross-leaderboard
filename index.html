@@ -3939,6 +3939,32 @@ GC.navToAvatar = function(nameKey) {
   GC.router.navigate('#/avatar?employee=' + encodeURIComponent(nameKey) + '&from=' + encodeURIComponent(from));
 };
 
+/**
+ * Compute display initials for an avatar bubble.
+ * Rule: if a nickname is in effect (displayed name ≠ canonical nameKey),
+ * use first letter of the displayed name + first letter of the last nameKey
+ * segment (= last name). Otherwise return the GAS-supplied initials as-is.
+ *
+ * Examples:
+ *   "Bobby"  / "robert_johnson"   → "BJ"
+ *   "Zach R" / "zachary_robinson" → "ZR"
+ *   "Nate"   / "nathan_wilson"    → "NW"
+ *   "Maria"  / "maria_sunshine"   → "MS"  (same as full-name initials, which is fine)
+ *   "Chris"  / "chris_carney"     → "CC"  (no nickname — GAS initials returned)
+ */
+GC.nickInitials = function(name, nameKey, gasInitials) {
+  var displayKey = GC.nameToKey(name || '');
+  // No nickname in play — name matches the canonical key → use GAS value
+  if (!displayKey || displayKey === (nameKey || '')) return gasInitials || '??';
+
+  // Nickname detected: derive initials from displayed name + last-name segment
+  var first   = ((name || '').trim().replace(/["'`]/g, ''))[0] || '';
+  var keySegs = (nameKey || '').split('_').filter(Boolean);
+  var last    = keySegs.length > 1 ? (keySegs[keySegs.length - 1][0] || '') : '';
+  var result  = (first + last).toUpperCase();
+  return result || gasInitials || '??';
+};
+
 /** Segment-matching avatar config lookup (shared across all modules).
  *  Pass nameKey (canonical pre-nickname key, e.g. "zachary_robinson") and
  *  optionally altKey (display-name-derived key, e.g. "zach_r") to also search
@@ -4796,10 +4822,11 @@ var director = (function() {
       // nameKeyOverride = canonical pre-nickname key (e.g. "zachary_robinson")
       // name = post-nickname display name (e.g. "Zach R") — used as altKey so
       // configs saved under the old nickname format are also found.
-      var nameKey = nameKeyOverride || GC.nameToKey(name);
-      var altKey  = GC.nameToKey(name);  // nickname-derived fallback
-      var config  = findDirAvatarCfg_(nameKey, altKey);
-      return GC.lbAvaPuck(nameKey, config, initials, true);
+      var nameKey  = nameKeyOverride || GC.nameToKey(name);
+      var altKey   = GC.nameToKey(name);  // nickname-derived fallback
+      var config   = findDirAvatarCfg_(nameKey, altKey);
+      var dispInit = GC.nickInitials(name, nameKey, initials);
+      return GC.lbAvaPuck(nameKey, config, dispInit, true);
     }
     var cls = size === 'lg' ? 'avatar lg' : 'avatar';
     return '<div class="' + cls + '">' + e(initials) + '</div>';
@@ -7135,7 +7162,7 @@ var kiosk = (function() {
           // saved before the canonical-key fix under the nickname format.
           var altKey  = GC.nameToKey(p.name || '');
           return {
-            initials:     p.initials || '',
+            initials:     GC.nickInitials(p.name, nameKey, p.initials || ''),
             name:         p.name     || '',
             nameKey:      nameKey,
             avatarConfig: findAvatarCfg_(kioskAvatarConfigs, nameKey, altKey),
@@ -7179,7 +7206,7 @@ var kiosk = (function() {
       var altKey  = GC.nameToKey(s.name || ''); // nickname-derived fallback key
       return {
         rank:            s.rank           || 0,
-        initials:        s.initials       || '',
+        initials:        GC.nickInitials(s.name, nameKey, s.initials || ''),
         name:            s.name           || '',
         nameKey:         nameKey,
         avatarConfig:    findAvatarCfg_(kioskAvatarConfigs, nameKey, altKey),
@@ -7916,7 +7943,7 @@ var lb = (function() {
       var altKey  = GC.nameToKey(s.name || ''); // nickname-derived fallback
       return {
         rank:          s.rank          || 0,
-        initials:      s.initials      || '',
+        initials:      GC.nickInitials(s.name, nameKey, s.initials || ''),
         name:          s.name          || '',
         nameKey:       nameKey,
         avatarConfig:  GC.findAvatarCfg(avatarConfigs, nameKey, altKey),
