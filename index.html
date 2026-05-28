@@ -4741,12 +4741,24 @@ var director = (function() {
       + '</span>';
   }
 
+  // Segment-matching avatar lookup: tries exact nameKey, then each _ segment.
+  // Handles old first-name-only saves ("maria") and new canonical saves ("maria_sunshine").
+  function findDirAvatarCfg_(nameKey) {
+    if (!nameKey) return null;
+    if (_avatarConfigs[nameKey]) return _avatarConfigs[nameKey];
+    var segs = nameKey.split('_');
+    for (var _i = 0; _i < segs.length; _i++) {
+      if (_avatarConfigs[segs[_i]]) return _avatarConfigs[segs[_i]];
+    }
+    return null;
+  }
+
   function avatarHtml(initials, size, name, nameKeyOverride) {
     if (name) {
       // Use pre-supplied nameKey (pre-nickname canonical key) when available so avatar
       // lookup matches the key used by the settings page when saving the config.
       var nameKey = nameKeyOverride || GC.nameToKey(name);
-      var config  = _avatarConfigs[nameKey] || null;
+      var config  = findDirAvatarCfg_(nameKey);
       return GC.lbAvaPuck(nameKey, config, initials, true);
     }
     var cls = size === 'lg' ? 'avatar lg' : 'avatar';
@@ -4867,7 +4879,7 @@ var director = (function() {
       + (session
           ? (function() {
               var nameKey = GC.nameToKey(session.displayName || session.user || '');
-              var cfg     = data && data.avatarConfigs ? (data.avatarConfigs[nameKey] || null) : null;
+              var cfg     = data && data.avatarConfigs ? findDirAvatarCfg_(nameKey) : null;
               var avatarInner = GC.ucAvatarHtml(cfg, nameKey, session.initials || '??');
               return '<span class="user-chip" id="userChip">'
                 + avatarInner
@@ -5984,7 +5996,7 @@ var kiosk = (function() {
       + '</div>'
       + (function() {
           var nameKey = GC.nameToKey(sess.displayName || sess.user || '');
-          var cfg     = _avatarConfigs[nameKey] || null;
+          var cfg     = findAvatarCfg_(_avatarConfigs, nameKey);
           var avatarInner = GC.ucAvatarHtml(cfg, nameKey, sess.initials || '??');
           return '<span class="user-chip" id="kioskUserChip" title="Sign out">'
             + avatarInner
@@ -7031,6 +7043,19 @@ var kiosk = (function() {
   // Staff: GAS uses avgOrderValue/transactions/streakDays
   //        Fixture uses aov/txns/streak + streakType
   // Badges: GAS uses label/winner/detail; fixture uses title/holder/stat
+  // Look up an avatar config by nameKey, falling back to each name segment.
+  // Handles both old saves (first-name-only key "maria") and new saves
+  // (canonical full-name key "maria_sunshine") regardless of lookup key format.
+  function findAvatarCfg_(configs, nameKey) {
+    if (!configs || !nameKey) return null;
+    if (configs[nameKey]) return configs[nameKey];
+    var segs = nameKey.split('_');
+    for (var _i = 0; _i < segs.length; _i++) {
+      if (configs[segs[_i]]) return configs[segs[_i]];
+    }
+    return null;
+  }
+
   function normalizeKioskData_(rawData) {
     var td = rawData.today       || {};
     var lb = rawData.leaderboard || {};
@@ -7077,7 +7102,7 @@ var kiosk = (function() {
             initials:     p.initials || '',
             name:         p.name     || '',
             nameKey:      nameKey,
-            avatarConfig: kioskAvatarConfigs[nameKey] || null,
+            avatarConfig: findAvatarCfg_(kioskAvatarConfigs, nameKey),
             role:         p.role     || '',
             status:       p.status   || 'on',
             note:         p.note     || null,
