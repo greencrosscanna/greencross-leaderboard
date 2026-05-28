@@ -512,6 +512,30 @@ html, body {
   cursor: pointer;
 }
 .section-head .sh-link:hover { color: var(--text); }
+.staff-period-tabs {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 8px;
+}
+.staff-period-tab {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: transparent;
+  color: var(--text-mute);
+  cursor: pointer;
+  letter-spacing: 0.03em;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.staff-period-tab:hover { color: var(--text); border-color: rgba(255,255,255,0.25); }
+.staff-period-tab.active {
+  background: rgba(72,187,120,0.12);
+  border-color: var(--green);
+  color: var(--green);
+  cursor: default;
+}
 
 /* ── Card ────────────────────────────────────────────────── */
 .card {
@@ -4825,23 +4849,10 @@ GC.views.renderDirector = function() {
     if (window.location.hash !== '#/director') return;
     currentApp.innerHTML = director.render(freshData);
     director.init(freshData);
-    GC.api.fetchDirectorStaff('pp')
-      .then(function(ppData) { director.updateStaffTable(ppData.staff || []); })
-      .catch(function() {});
   })
     .then(function(data) {
       app.innerHTML = director.render(data);
       director.init(data);
-
-      // Second fetch: staff for current pay period (replaces MTD staff in table)
-      GC.api.fetchDirectorStaff('pp')
-        .then(function(ppData) {
-          director.updateStaffTable(ppData.staff || []);
-        })
-        .catch(function(err) {
-          console.warn('[director] pay-period staff fetch failed:', err);
-          // MTD data already rendered — fail silently
-        });
 
       // Pre-warm all kiosk caches so navigating to any store view is instant.
       // Fire after director renders so it doesn't compete with the director fetch.
@@ -4896,6 +4907,8 @@ var director = (function() {
   var _clockTimer    = null;
   var _staffSortKey  = 'sales';
   var _staffSortDir  = -1;  // -1 = desc, 1 = asc
+  var _staffPeriod   = 'mtd'; // 'mtd' | 'pp'
+  var _staffPpData   = null;  // lazy-loaded pay-period staff, cached after first fetch
 
   // ── Helpers ────────────────────────────────────────────
 
@@ -5242,6 +5255,16 @@ var director = (function() {
   }
 
   // ── Render: Cross-store Staff Table ───────────────────
+  function syncPeriodTabs() {
+    document.querySelectorAll('.staff-period-tab').forEach(function(btn) {
+      var isActive = btn.getAttribute('data-staff-period') === _staffPeriod;
+      btn.classList.toggle('active', isActive);
+      btn.disabled = false;
+      // Restore label if we clobbered it with "Loading…"
+      if (btn.getAttribute('data-staff-period') === 'mtd') btn.textContent = 'MTD';
+    });
+  }
+
   function stTh(label, key, style) {
     var isActive = _staffSortKey === key;
     var arrow    = isActive ? (_staffSortDir === -1 ? ' ▼' : ' ▲') : '';
@@ -5285,10 +5308,15 @@ var director = (function() {
         + '</tr>';
     }).join('');
 
+    var mtdActive = _staffPeriod === 'mtd';
     return '<div class="section-head">'
-      + '<h2>Top Performers · All Stores · Pay Period' + (range ? ' · ' + e(range) : '') + '</h2>'
+      + '<h2>Top Performers · All Stores</h2>'
       + '<span class="sh-sep">/</span>'
       + '<span class="sh-meta">Across ' + total + ' active staff</span>'
+      + '<span class="staff-period-tabs">'
+      +   '<button class="staff-period-tab' + (mtdActive  ? ' active' : '') + '" data-staff-period="mtd">MTD</button>'
+      +   '<button class="staff-period-tab' + (!mtdActive ? ' active' : '') + '" data-staff-period="pp">Pay Period' + (range ? ' · ' + e(range) : '') + '</button>'
+      + '</span>'
       + '<a class="sh-link" id="viewFullLeaderboard">View full leaderboard →</a>'
       + '</div>'
       + '<table class="gc-table" id="staffTable">'
@@ -5694,11 +5722,10 @@ var director = (function() {
           window.scrollTo(0, scrollY);
         }
         if (showToast) GC.toast('Dashboard refreshed', 'success');
-
-        // Overlay pay-period staff data
-        GC.api.fetchDirectorStaff('pp')
-          .then(function(ppData) { updateStaffTable(ppData.staff || []); })
-          .catch(function() {}); // fail silently — MTD data still visible
+        // Re-apply the active staff period after refresh
+        if (_staffPeriod === 'pp' && _staffPpData) {
+          updateStaffTable(_staffPpData);
+        }
       })
       .catch(function(err) {
         if (showToast) GC.toast('Refresh failed: ' + err.message, 'error');
@@ -5813,6 +5840,37 @@ var director = (function() {
         // View full leaderboard link
         if (ev.target.id === 'viewFullLeaderboard') {
           GC.router.navigate('#/leaderboard');
+        }
+
+        // Staff period tab toggle
+        var periodTab = ev.target.closest('.staff-period-tab[data-staff-period]');
+        if (periodTab && _data) {
+          var newPeriod = periodTab.getAttribute('data-staff-period');
+          if (newPeriod === _staffPeriod) return;
+          _staffPeriod = newPeriod;
+          syncPeriodTabs();
+          if (newPeriod === 'mtd') {
+            // Restore MTD — data already in _data; reset staff to original MTD set
+            if (_data.staff && _data.staff.staff) {
+              var tbody = document.getElementById('staffTableBody');
+              var thead = document.getElementById('staffTableHead');
+              if (tbody) refreshStaffTable();
+            }
+          } else {
+            // Switch to PP — fetch if not cached
+            periodTab.textContent = 'Loading…';
+            GC.api.fetchDirectorStaff('pp')
+              .then(function(ppData) {
+                _staffPpData = ppData.staff || [];
+                updateStaffTable(_staffPpData);
+                syncPeriodTabs(); // restore correct labels after updateStaffTable
+              })
+              .catch(function(err) {
+                _staffPeriod = 'mtd';
+                syncPeriodTabs();
+                console.warn('[director] PP staff fetch failed:', err);
+              });
+          }
         }
 
         // Staff table column-header sort
