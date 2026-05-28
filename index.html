@@ -1048,6 +1048,57 @@ html, body {
 #staffTable td:nth-child(2) { white-space: normal; }
 
 /* ── Lower Panel Grid (Alerts + Watch) ───────────────────── */
+/* ── EOM prompt banner ───────────────────────────────────── */
+.eom-prompt {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(90deg, rgba(250,204,21,0.07) 0%, rgba(250,204,21,0.03) 100%);
+  border: 1px solid rgba(250,204,21,0.35);
+  border-radius: 10px;
+  padding: 13px 16px;
+  margin-bottom: 16px;
+}
+.eom-prompt-icon { font-size: 22px; flex-shrink: 0; }
+.eom-prompt-body { flex: 1; min-width: 0; }
+.eom-prompt-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gold-3, #fde68a);
+  margin-bottom: 2px;
+}
+.eom-prompt-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.eom-prompt-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gold-3, #fde68a);
+  border: 1px solid rgba(250,204,21,0.4);
+  border-radius: 6px;
+  padding: 6px 14px;
+  background: rgba(250,204,21,0.07);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.eom-prompt-link:hover { background: rgba(250,204,21,0.14); }
+.eom-prompt-dismiss {
+  background: none;
+  border: none;
+  color: var(--text-mute);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.eom-prompt-dismiss:hover { color: var(--text-dim); }
+
 .director-lower {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
@@ -5610,6 +5661,52 @@ var director = (function() {
   }
 
   // ── Render: Full Director Page ─────────────────────────
+  // ── EOM prompt banner ────────────────────────────────────
+  var EOM_PROMPT_KEY_PREFIX = 'gc_eom_prompt_dismissed_';
+
+  function eomPromptDismissKey() {
+    var now  = new Date();
+    return EOM_PROMPT_KEY_PREFIX + now.getFullYear() + '-' + (now.getMonth() + 1);
+  }
+
+  function shouldShowEomPrompt() {
+    var now = new Date();
+    if (now.getDate() !== 1) return false;           // only on the 1st
+    try {
+      return !localStorage.getItem(eomPromptDismissKey());
+    } catch(e) { return true; }
+  }
+
+  function dismissEomPrompt() {
+    try { localStorage.setItem(eomPromptDismissKey(), '1'); } catch(e) {}
+    var el = document.getElementById('eomPrompt');
+    if (el) {
+      el.style.transition = 'opacity 0.25s ease, max-height 0.3s ease, margin 0.3s ease';
+      el.style.opacity    = '0';
+      el.style.maxHeight  = '0';
+      el.style.marginBottom = '0';
+      el.style.overflow   = 'hidden';
+      setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 320);
+    }
+  }
+
+  function renderEomPrompt() {
+    if (!shouldShowEomPrompt()) return '';
+    var now      = new Date();
+    var months   = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+    var monthName = months[now.getMonth()];
+    return '<div class="eom-prompt" id="eomPrompt">'
+      + '<div class="eom-prompt-icon">★</div>'
+      + '<div class="eom-prompt-body">'
+      + '  <div class="eom-prompt-title">Set Employee of the Month for ' + monthName + '</div>'
+      + '  <div class="eom-prompt-sub">It\'s the 1st — don\'t forget to recognise your top performer.</div>'
+      + '</div>'
+      + '<button class="eom-prompt-link" id="eomPromptGoBtn">Go to Settings →</button>'
+      + '<button class="eom-prompt-dismiss" id="eomPromptDismiss" title="Dismiss">✕</button>'
+      + '</div>';
+  }
+
   function render(data) {
     _data          = data;
     _avatarConfigs = data.avatarConfigs || {};
@@ -5624,6 +5721,7 @@ var director = (function() {
 
     return '<div class="app-page">'
       + renderHeader(data)
+      + renderEomPrompt()
       + renderStatusStrip(stores)
       + (today.goal
           ? '<div class="dir-today-row">'
@@ -5803,6 +5901,15 @@ var director = (function() {
 
     // History date picker
     wireHistoryControls();
+
+    // EOM prompt banner — "Go to Settings" + dismiss
+    var eomGoBtn = document.getElementById('eomPromptGoBtn');
+    if (eomGoBtn) eomGoBtn.addEventListener('click', function() {
+      dismissEomPrompt();
+      GC.router.navigate('#/settings');
+    });
+    var eomDismiss = document.getElementById('eomPromptDismiss');
+    if (eomDismiss) eomDismiss.addEventListener('click', dismissEomPrompt);
 
     // Settings gear
     var btnSettings = document.getElementById('btnSettings');
