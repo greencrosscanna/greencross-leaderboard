@@ -4894,6 +4894,8 @@ var director = (function() {
   var _storeFilter   = 'all';
   var _tagFilter     = null;
   var _clockTimer    = null;
+  var _staffSortKey  = 'sales';
+  var _staffSortDir  = -1;  // -1 = desc, 1 = asc
 
   // ── Helpers ────────────────────────────────────────────
 
@@ -5240,6 +5242,14 @@ var director = (function() {
   }
 
   // ── Render: Cross-store Staff Table ───────────────────
+  function stTh(label, key, style) {
+    var isActive = _staffSortKey === key;
+    var arrow    = isActive ? (_staffSortDir === -1 ? ' ▼' : ' ▲') : '';
+    var styleStr = style ? ' style="' + style + '"' : '';
+    return '<th class="lb-th-sort' + (isActive ? ' active' : '') + '" data-ststaff-sort="' + key + '"' + styleStr + '>'
+      + label + arrow + '</th>';
+  }
+
   function renderStaffTable(staff, range) {
     var filtered = applyStaffFilters(staff);
     var maxSales = filtered.length ? filtered[0].sales : 1;
@@ -5282,17 +5292,17 @@ var director = (function() {
       + '<a class="sh-link" id="viewFullLeaderboard">View full leaderboard →</a>'
       + '</div>'
       + '<table class="gc-table" id="staffTable">'
-      + '<thead><tr>'
-      + '<th style="width:60px">Rank</th>'
-      + '<th>Staff</th>'
-      + '<th>Store</th>'
-      + '<th>Role</th>'
-      + '<th>Sales</th>'
-      + '<th>Txns</th>'
-      + '<th>AOV</th>'
-      + '<th>UPT</th>'
-      + '<th>Discount</th>'
-      + '<th>Trend · 30d</th>'
+      + '<thead id="staffTableHead"><tr>'
+      + stTh('Rank',      'rank',         'width:60px')
+      + stTh('Staff',     'name')
+      + stTh('Store',     'storeName')
+      + stTh('Role',      'roleLabel')
+      + stTh('Sales',     'sales')
+      + stTh('Txns',      'transactions')
+      + stTh('AOV',       'avgOrderValue')
+      + stTh('UPT',       'avgUPT')
+      + stTh('Discount',  'discountRate')
+      + stTh('Trend · 30d', 'trendPct')
       + '</tr></thead>'
       + '<tbody id="staffTableBody">' + rows + '</tbody>'
       + '</table>';
@@ -5575,8 +5585,14 @@ var director = (function() {
       result = result.slice(0, 10);
     }
 
-    // Default sort: sales descending
-    result.sort(function(a, b) { return (b.sales || 0) - (a.sales || 0); });
+    result.sort(function(a, b) {
+      var av = a[_staffSortKey] != null ? a[_staffSortKey] : '';
+      var bv = b[_staffSortKey] != null ? b[_staffSortKey] : '';
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return _staffSortDir * String(av).localeCompare(String(bv));
+      }
+      return _staffSortDir * ((Number(av) || 0) - (Number(bv) || 0));
+    });
 
     return result;
   }
@@ -5797,6 +5813,35 @@ var director = (function() {
         // View full leaderboard link
         if (ev.target.id === 'viewFullLeaderboard') {
           GC.router.navigate('#/leaderboard');
+        }
+
+        // Staff table column-header sort
+        var sortTh = ev.target.closest('th[data-ststaff-sort]');
+        if (sortTh && _data) {
+          var key = sortTh.getAttribute('data-ststaff-sort');
+          if (_staffSortKey === key) {
+            _staffSortDir = _staffSortDir * -1;
+          } else {
+            _staffSortKey = key;
+            _staffSortDir = -1;
+          }
+          // Re-render thead arrows + resort tbody
+          var thead = document.getElementById('staffTableHead');
+          if (thead) {
+            thead.innerHTML = '<tr>'
+              + stTh('Rank',       'rank',         'width:60px')
+              + stTh('Staff',      'name')
+              + stTh('Store',      'storeName')
+              + stTh('Role',       'roleLabel')
+              + stTh('Sales',      'sales')
+              + stTh('Txns',       'transactions')
+              + stTh('AOV',        'avgOrderValue')
+              + stTh('UPT',        'avgUPT')
+              + stTh('Discount',   'discountRate')
+              + stTh('Trend · 30d','trendPct')
+              + '</tr>';
+          }
+          refreshStaffTable();
         }
       });
     }
