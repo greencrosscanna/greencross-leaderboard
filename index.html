@@ -3941,28 +3941,42 @@ GC.navToAvatar = function(nameKey) {
 
 /**
  * Compute display initials for an avatar bubble.
- * Rule: if a nickname is in effect (displayed name ≠ canonical nameKey),
- * use first letter of the displayed name + first letter of the last nameKey
- * segment (= last name). Otherwise return the GAS-supplied initials as-is.
+ *
+ * Multi-word displayed name (e.g. "Zach R", "Bobby J"):
+ *   → first letter of first word + first letter of last word
+ *   Works whether the name came from a configured nickname or Dutchie.
+ *   Does NOT require nameKey — avoids stale-cache failures.
+ *
+ * Single-word displayed name (e.g. "Nate", "Maria"):
+ *   → first letter of name + first letter of last segment of nameKey
+ *   Falls back to gasInitials (capped to 2 chars) if nameKey is missing/short.
  *
  * Examples:
- *   "Bobby"  / "robert_johnson"   → "BJ"
- *   "Zach R" / "zachary_robinson" → "ZR"
- *   "Nate"   / "nathan_wilson"    → "NW"
- *   "Maria"  / "maria_sunshine"   → "MS"  (same as full-name initials, which is fine)
- *   "Chris"  / "chris_carney"     → "CC"  (no nickname — GAS initials returned)
+ *   "Zach R" / "zachary_robinson" → "ZR"  (multi-word: Z+R from name words)
+ *   "Bobby"  / "robert_johnson"   → "BJ"  (single: B + J from nameKey last seg)
+ *   "Nate"   / "nathan_wilson"    → "NW"  (single: N + W from nameKey last seg)
+ *   "Maria"  / "maria_sunshine"   → "MS"  (single: M + S from nameKey last seg)
+ *   "Chris"  / "chris_carney"     → "CC"  (single: C + C from nameKey last seg)
  */
 GC.nickInitials = function(name, nameKey, gasInitials) {
-  var displayKey = GC.nameToKey(name || '');
-  // No nickname in play — name matches the canonical key → use GAS value
-  if (!displayKey || displayKey === (nameKey || '')) return gasInitials || '??';
+  var parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return gasInitials || '??';
 
-  // Nickname detected: derive initials from displayed name + last-name segment
-  var first   = ((name || '').trim().replace(/["'`]/g, ''))[0] || '';
+  // Multi-word display name: always derive from first + last word
+  if (parts.length > 1) {
+    var result = ((parts[0][0] || '') + (parts[parts.length - 1][0] || '')).toUpperCase();
+    return result || gasInitials || '??';
+  }
+
+  // Single-word: first letter of name + first letter of nameKey's last segment
+  var first   = (parts[0][0] || '').toUpperCase();
   var keySegs = (nameKey || '').split('_').filter(Boolean);
-  var last    = keySegs.length > 1 ? (keySegs[keySegs.length - 1][0] || '') : '';
-  var result  = (first + last).toUpperCase();
-  return result || gasInitials || '??';
+  var last    = keySegs.length > 1 ? (keySegs[keySegs.length - 1][0] || '').toUpperCase() : '';
+
+  if (first && last) return first + last;
+
+  // No last-name segment available — cap gasInitials to 2 chars and return
+  return (gasInitials || '').slice(0, 2) || first || '??';
 };
 
 /** Segment-matching avatar config lookup (shared across all modules).
@@ -8352,10 +8366,11 @@ var settings = (function() {
         if ((avatarConfigs || {})[_segs[_si]]) { config = (avatarConfigs || {})[_segs[_si]]; break; }
       }
     }
-    var nameParts = (emp.name || '').split(' ');
-    var initials  = (nameParts[0] || '').slice(0, 1)
-                  + (nameParts.length > 1 ? nameParts[nameParts.length - 1].slice(0, 1) : '');
-    var puck      = GC.lbAvaPuck(emp.key, config, emp.initials || initials || '??', true);
+    var nameParts   = (emp.name || '').split(' ');
+    var initials    = (nameParts[0] || '').slice(0, 1)
+                    + (nameParts.length > 1 ? nameParts[nameParts.length - 1].slice(0, 1) : '');
+    var displayName = nick || emp.name;
+    var puck        = GC.lbAvaPuck(emp.key, config, GC.nickInitials(displayName, emp.key, emp.initials || initials || '??'), true);
     var encKey    = e(emp.key);
     var isExcluded = excludedSet && excludedSet[emp.key];
     var rowCls    = isExcluded ? ' class="emp-row-excluded"' : '';
