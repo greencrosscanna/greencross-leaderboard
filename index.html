@@ -3939,6 +3939,20 @@ GC.navToAvatar = function(nameKey) {
   GC.router.navigate('#/avatar?employee=' + encodeURIComponent(nameKey) + '&from=' + encodeURIComponent(from));
 };
 
+/** Segment-matching avatar config lookup (shared across all modules).
+ *  Tries exact nameKey first, then each underscore-delimited segment.
+ *  Handles old kiosk-saved keys ("maria") vs canonical keys ("maria_sunshine").
+ */
+GC.findAvatarCfg = function(configs, nameKey) {
+  if (!configs || !nameKey) return null;
+  if (configs[nameKey]) return configs[nameKey];
+  var segs = nameKey.split('_');
+  for (var _i = 0; _i < segs.length; _i++) {
+    if (configs[segs[_i]]) return configs[segs[_i]];
+  }
+  return null;
+};
+
 GC.lbAvaPuck = function(nameKey, avatarConfig, initials, clickable) {
   var esc      = GC.esc;
   var safeInit = esc(initials || '??');
@@ -4743,15 +4757,8 @@ var director = (function() {
 
   // Segment-matching avatar lookup: tries exact nameKey, then each _ segment.
   // Handles old first-name-only saves ("maria") and new canonical saves ("maria_sunshine").
-  function findDirAvatarCfg_(nameKey) {
-    if (!nameKey) return null;
-    if (_avatarConfigs[nameKey]) return _avatarConfigs[nameKey];
-    var segs = nameKey.split('_');
-    for (var _i = 0; _i < segs.length; _i++) {
-      if (_avatarConfigs[segs[_i]]) return _avatarConfigs[segs[_i]];
-    }
-    return null;
-  }
+  // Delegate to the shared GC utility.
+  function findDirAvatarCfg_(nameKey) { return GC.findAvatarCfg(_avatarConfigs, nameKey); }
 
   function avatarHtml(initials, size, name, nameKeyOverride) {
     if (name) {
@@ -7046,15 +7053,8 @@ var kiosk = (function() {
   // Look up an avatar config by nameKey, falling back to each name segment.
   // Handles both old saves (first-name-only key "maria") and new saves
   // (canonical full-name key "maria_sunshine") regardless of lookup key format.
-  function findAvatarCfg_(configs, nameKey) {
-    if (!configs || !nameKey) return null;
-    if (configs[nameKey]) return configs[nameKey];
-    var segs = nameKey.split('_');
-    for (var _i = 0; _i < segs.length; _i++) {
-      if (configs[segs[_i]]) return configs[segs[_i]];
-    }
-    return null;
-  }
+  // Delegate to the shared GC utility so all modules use the same logic.
+  function findAvatarCfg_(configs, nameKey) { return GC.findAvatarCfg(configs, nameKey); }
 
   function normalizeKioskData_(rawData) {
     var td = rawData.today       || {};
@@ -7145,7 +7145,7 @@ var kiosk = (function() {
         initials:        s.initials       || '',
         name:            s.name           || '',
         nameKey:         nameKey,
-        avatarConfig:    kioskAvatarConfigs[nameKey] || null,
+        avatarConfig:    findAvatarCfg_(kioskAvatarConfigs, nameKey),
         role:            s.role           || s.roleLabel || '',
         sales:           s.sales          || 0,
         txns:            s.txns  != null  ? s.txns  : (s.transactions || 0),
@@ -7881,7 +7881,7 @@ var lb = (function() {
         initials:      s.initials      || '',
         name:          s.name          || '',
         nameKey:       nameKey,
-        avatarConfig:  avatarConfigs[nameKey] || null,
+        avatarConfig:  GC.findAvatarCfg(avatarConfigs, nameKey),
         role:          s.roleLabel     || s.role || '',
         hours:         s.hoursWorked   || s.hours || 0,
         storeSlug:     s.storeSlug     || '',
