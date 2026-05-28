@@ -3884,23 +3884,28 @@ GC.buildAvatarUrl = function(cfg, seed) {
 
   var noAccessories = cfg.accessories === '_none';
   var noFacialHair  = cfg.facialHair  === '_none';
-  // _gchat = custom overlay hat — tell DiceBear "no top" so hair doesn't poke through
-  var noHair        = cfg.top === '_none' || cfg.top === '_gchat';
+  var isGcHat       = cfg.top === '_gchat';
+  // _gchat uses shortFlat underneath — hair peeks out from under the hat
+  var noHair        = cfg.top === '_none';
 
   var keys = Object.keys(cfg);
   for (var i = 0; i < keys.length; i++) {
     var k = keys[i];
     var v = cfg[k];
-    if (v == null || v === '_none' || v === '_gchat') continue; // skip custom values
-    if (k === 'accessoriesColor' && noAccessories)    continue;
-    if (k === 'facialHairColor'  && noFacialHair)     continue;
-    if (k === 'hairColor'        && noHair)            continue;
+    if (v == null || v === '_none') continue;
+    if (k === 'top' && isGcHat) {
+      params.push('top=shortFlat');  // shortFlat renders under the hat overlay
+      continue;
+    }
+    if (k === 'accessoriesColor' && noAccessories) continue;
+    if (k === 'facialHairColor'  && noFacialHair)  continue;
+    if (k === 'hairColor'        && noHair)         continue;
     params.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
   }
 
   params.push('accessoriesProbability=' + (noAccessories ? '0' : '100'));
   params.push('facialHairProbability='  + (noFacialHair  ? '0' : '100'));
-  params.push('topProbability='         + (noHair        ? '0' : '100'));
+  params.push('topProbability='         + ((noHair && !isGcHat) ? '0' : '100'));
 
   return 'https://api.dicebear.com/9.x/avataaars/svg?' + params.join('&');
 };
