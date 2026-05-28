@@ -3683,6 +3683,16 @@ function buildSnapshotRow_(date, store, data) {
 }
 
 /**
+ * Normalise a date cell read from a Sheets getValues() call.
+ * Sheets auto-converts 'YYYY-MM-DD' strings to Date objects; this
+ * always returns a 'YYYY-MM-DD' string regardless of which form it was.
+ */
+function normDateCell_(cell) {
+  if (cell instanceof Date) return Utilities.formatDate(cell, STORE_TZ, 'yyyy-MM-dd');
+  return String(cell).trim();
+}
+
+/**
  * Write (or overwrite) one store's snapshot row for the given date.
  * Idempotent — if a row for date+slug already exists it is updated in place.
  */
@@ -3694,7 +3704,7 @@ function writeSnapshotRow_(sheet, date, store, data) {
   var row       = buildSnapshotRow_(date, store, data);
 
   for (var i = 1; i < allValues.length; i++) {
-    if (allValues[i][dateCol] === date && allValues[i][slugCol] === store.slug) {
+    if (normDateCell_(allValues[i][dateCol]) === date && allValues[i][slugCol] === store.slug) {
       sheet.getRange(i + 1, 1, 1, SNAPSHOT_COLS.length).setValues([row]);
       return;
     }
@@ -3764,7 +3774,7 @@ function getHistoricalDirector_(dateStr) {
   headers.forEach(function(h, i) { idx[h] = i; });
 
   var rows = allValues.slice(1).filter(function(row) {
-    return row[idx['date']] === dateStr;
+    return normDateCell_(row[idx['date']]) === dateStr;
   });
 
   if (rows.length === 0) {
