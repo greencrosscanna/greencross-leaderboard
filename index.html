@@ -3123,6 +3123,7 @@ body.kiosk-bg {
   overflow: hidden;
   background: radial-gradient(circle at 30% 25%, #7dd49a 0%, #3a8b5a 45%, #1a4d2f 100%);
   box-shadow: 0 0 32px rgba(102,197,133,0.18), inset 0 0 0 1px rgba(125,212,154,0.2);
+  position: relative;
 }
 
 .avatar-frame img {
@@ -3130,6 +3131,23 @@ body.kiosk-bg {
   height: 88%;
   display: block;
 }
+
+/* GC Hat overlay — sits on top of DiceBear avatar at same scale */
+.ava-hat-overlay {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ava-hat-overlay svg {
+  width: 88%; height: 88%;  /* matches .avatar-frame img sizing */
+  display: block;
+}
+/* In lb-ava (small circle puck), hat fills the whole circle */
+.lb-ava .ava-hat-overlay svg { width: 100%; height: 100%; }
 
 /* ── Action buttons ──────────────────────────────────────── */
 .avatar-actions {
@@ -3223,6 +3241,7 @@ body.kiosk-bg {
   justify-content: center;
   background: radial-gradient(circle at 30% 25%, #7dd49a 0%, #3a8b5a 45%, #1a4d2f 100%);
   transition: transform 100ms ease;
+  position: relative;
 }
 
 .lb-ava img {
@@ -3855,22 +3874,27 @@ GC.nameToKey = function(name) {
  *   - _none in top/facialHair/accessories → set *Probability=0, skip color param
  *   - Otherwise → *Probability=100 so feature is guaranteed
  */
+// ── GC branded hat SVG — overlaid on top of DiceBear avatar ──
+// viewBox matches Avataaars (280×280) so it scales perfectly.
+GC.GC_HAT_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 280.01"><g><g><path d="M86.239,62.287c48.508-3.223,59.204-3.223,107.712,0,2.156,9.668,18.16,23.768,9.425,19.336-13.835-7.019-113.784-7.302-125.645.412-6.37,4.143,6.352-10.08,8.507-19.748Z" fill="#2c302d" stroke="#000" stroke-linejoin="round" stroke-width="4"/><path d="M86.7,67.121c-6.468-46.192,32.82-57.199,53.6-57.199,23.549,0,59.586,11.007,53.119,57.199h-106.718Z" fill="#2c302d" stroke="#000" stroke-linejoin="round" stroke-width="4"/><path d="M140.3,4.3c2.679,0,4.851.598,4.851,3.268s-1.931,2.341-4.61,2.341-5.091.329-5.091-2.341,2.172-3.268,4.851-3.268Z"/></g><g><path d="M139.905,12.984l.241,2.376c-.149,3.26-.513-5.595-.62-2.376h.38Z" fill="none" opacity=".35" stroke="#000" stroke-linecap="round" stroke-width="2"/><path d="M140.238,60.417c.145,4.188-.213.992.001,5.265" fill="none" opacity=".35" stroke="#000" stroke-linecap="round" stroke-width="2"/></g><path d="M146.709,23.878l.003,4.438c0,1.872-1.514,3.387-3.387,3.387l-.003-6.751c0-.578-.468-1.074-1.074-1.074h-4.02c-.578,0-1.074.496-1.074,1.074l-.029,6.405c0,1.873-1.514,3.387-3.359,3.387h-6.334c-.578,0-1.074.496-1.074,1.074v4.02c0,.606.496,1.074,1.074,1.074h4.998c.579,0,1.074-.468,1.074-1.074v-.22c0-1.983,1.597-3.58,3.58-3.58v4.681c0,1.983-1.597,3.58-3.58,3.58h-7.146c-1.982,0-3.58-1.597-3.58-3.58v-5.755c0-1.982,1.597-3.607,3.58-3.607h7.418s0-.748,0-.748l-.008-6.731c0-1.982,1.625-3.58,3.607-3.58h5.755c1.983,0,3.58,1.597,3.58,3.58ZM133.769,51.891l-.003-4.438c0-1.872,1.514-3.387,3.387-3.387l.003,6.751c0,.578.468,1.074,1.074,1.074h4.02c.578,0,1.074-.496,1.074-1.074l-.008-6.751c1.873,0,3.387,1.515,3.387,3.387l.008,4.438c0,1.982-1.625,3.58-3.607,3.58h-5.755c-1.983,0-3.58-1.597-3.58-3.58ZM157.192,44.365h-10.415c-1.982,0-3.58-1.597-3.58-3.58v-5.755c0-1.982,1.597-3.607,3.58-3.607h10.446c0,1.873-1.515,3.387-3.387,3.387h-5.985c-.578,0-1.074.496-1.074,1.074v4.02c0,.606.496,1.074,1.074,1.074h5.954c1.872,0,3.387,1.515,3.387,3.387Z" fill="#93d500"/></g></svg>';
+
 GC.buildAvatarUrl = function(cfg, seed) {
   var params = [];
   params.push('seed=' + encodeURIComponent(seed || 'unknown'));
 
   var noAccessories = cfg.accessories === '_none';
   var noFacialHair  = cfg.facialHair  === '_none';
-  var noHair        = cfg.top         === '_none';
+  // _gchat = custom overlay hat — tell DiceBear "no top" so hair doesn't poke through
+  var noHair        = cfg.top === '_none' || cfg.top === '_gchat';
 
   var keys = Object.keys(cfg);
   for (var i = 0; i < keys.length; i++) {
     var k = keys[i];
     var v = cfg[k];
-    if (v == null || v === '_none')                 continue;
-    if (k === 'accessoriesColor' && noAccessories)  continue;
-    if (k === 'facialHairColor'  && noFacialHair)   continue;
-    if (k === 'hairColor'        && noHair)          continue;
+    if (v == null || v === '_none' || v === '_gchat') continue; // skip custom values
+    if (k === 'accessoriesColor' && noAccessories)    continue;
+    if (k === 'facialHairColor'  && noFacialHair)     continue;
+    if (k === 'hairColor'        && noHair)            continue;
     params.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
   }
 
@@ -3919,13 +3943,35 @@ GC.lbAvaPuck = function(nameKey, avatarConfig, initials, clickable) {
 
   if (avatarConfig) {
     var url = GC.buildAvatarUrl(avatarConfig, nameKey);
+    var hat = avatarConfig.top === '_gchat'
+      ? '<div class="ava-hat-overlay">' + GC.GC_HAT_SVG + '</div>'
+      : '';
     return '<div class="lb-ava" data-initials="' + safeInit + '"' + navAttr + clickHandler + '>'
       + '<img src="' + esc(url) + '" alt="" onerror="GC.avaFallback(this)">'
+      + hat
       + '</div>';
   }
   return '<div class="lb-ava initials" data-initials="' + safeInit + '"' + navAttr + clickHandler + '>'
     + safeInit
     + '</div>';
+};
+
+/**
+ * Inner HTML for a .uc-avatar <span> (user chip in director/kiosk headers).
+ * Handles the GC hat overlay the same way lbAvaPuck does.
+ */
+GC.ucAvatarHtml = function(cfg, nameKey, fallbackInitials) {
+  var esc = GC.esc;
+  var fi  = esc(fallbackInitials || '??');
+  if (!cfg) return '<span class="uc-avatar">' + fi + '</span>';
+  var url = GC.buildAvatarUrl(cfg, nameKey);
+  var hat = cfg.top === '_gchat'
+    ? '<div class="ava-hat-overlay">' + GC.GC_HAT_SVG + '</div>'
+    : '';
+  return '<span class="uc-avatar" style="overflow:hidden;padding:0;position:relative">'
+    + '<img src="' + esc(url) + '" style="width:100%;height:100%;object-fit:cover" onerror="this.parentNode.textContent=\'' + fi + '\'">'
+    + hat
+    + '</span>';
 };
 
 // ── Toast ─────────────────────────────────────────────────
@@ -4805,11 +4851,7 @@ var director = (function() {
           ? (function() {
               var nameKey = GC.nameToKey(session.displayName || session.user || '');
               var cfg     = data && data.avatarConfigs ? (data.avatarConfigs[nameKey] || null) : null;
-              var avatarInner = cfg
-                ? '<span class="uc-avatar" style="overflow:hidden;padding:0">'
-                  + '<img src="' + GC.esc(GC.buildAvatarUrl(cfg, nameKey)) + '" style="width:100%;height:100%;object-fit:cover" onerror="this.parentNode.textContent=\'' + e(session.initials || '??') + '\'">'
-                  + '</span>'
-                : '<span class="uc-avatar">' + e(session.initials || '??') + '</span>';
+              var avatarInner = GC.ucAvatarHtml(cfg, nameKey, session.initials || '??');
               return '<span class="user-chip" id="userChip">'
                 + avatarInner
                 + e(session.displayName || session.user || '') + '</span>';
@@ -5931,11 +5973,7 @@ var kiosk = (function() {
       + (function() {
           var nameKey = GC.nameToKey(sess.displayName || sess.user || '');
           var cfg     = _avatarConfigs[nameKey] || null;
-          var avatarInner = cfg
-            ? '<span class="uc-avatar" style="overflow:hidden;padding:0">'
-              + '<img src="' + GC.esc(GC.buildAvatarUrl(cfg, nameKey)) + '" style="width:100%;height:100%;object-fit:cover" onerror="this.parentNode.textContent=\'' + e(sess.initials || '??') + '\'">'
-              + '</span>'
-            : '<span class="uc-avatar">' + e(sess.initials || '??') + '</span>';
+          var avatarInner = GC.ucAvatarHtml(cfg, nameKey, sess.initials || '??');
           return '<span class="user-chip" id="kioskUserChip" title="Sign out">'
             + avatarInner
             + e(sess.displayName || sess.user || '')
@@ -8660,7 +8698,7 @@ var ava = (function() {
   var OPTIONS = {
     skinColor:    ['ffdbb4','f8d25c','fd9841','edb98a','d08b5b','ae5d29','614335'],
     top: [
-      '_none','hat','winterHat1',
+      '_none','_gchat','hat','winterHat1',
       'bigHair','bob','bun','curly','curvy','dreads','dreads01','dreads02','frida','frizzle','fro','froBand','longButNotTooLong','miaWallace','shaggy','shaggyMullet','shavedSides','shortCurly','shortFlat','shortRound','shortWaved','sides','straight01','straight02','straightAndStrand','theCaesar','theCaesarAndSidePart'
     ],
     hairColor:    ['2c1b18','4a312c','724133','a55728','b58143','c93305','d6b370','e8e1e1','ecdcbf','f59797'],
@@ -8684,7 +8722,8 @@ var ava = (function() {
   };
 
   function humanize(s) {
-    if (s === '_none') return 'None';
+    if (s === '_none')  return 'None';
+    if (s === '_gchat') return '🧢 GC Hat';
     return s.replace(/([A-Z])/g, ' $1').replace(/^./, function(c) { return c.toUpperCase(); }).replace(/(\d+)/, ' $1').trim();
   }
 
@@ -8833,13 +8872,36 @@ var ava = (function() {
     // Back button
     initBack(queryParams);
 
-    // Render both avatar images
+    // Render both avatar images (+ GC hat overlay when _gchat is selected)
     function renderImg() {
-      var url = GC.buildAvatarUrl ? GC.buildAvatarUrl(config, nameKey) : buildLocalUrl(config, nameKey);
+      var url    = GC.buildAvatarUrl ? GC.buildAvatarUrl(config, nameKey) : buildLocalUrl(config, nameKey);
+      var hatHtml = (config.top === '_gchat')
+        ? '<div class="ava-hat-overlay">' + GC.GC_HAT_SVG + '</div>'
+        : '';
+
+      // Large preview (inside .avatar-frame)
       var main = document.getElementById('avaImg');
-      var lb   = document.getElementById('avaImgLb');
-      if (main) main.src = url;
-      if (lb)   lb.src   = url;
+      if (main) {
+        main.src = url;
+        var frame = main.parentNode;
+        if (frame) {
+          var old = frame.querySelector('.ava-hat-overlay');
+          if (old) old.remove();
+          if (hatHtml) frame.insertAdjacentHTML('beforeend', hatHtml);
+        }
+      }
+
+      // Leaderboard row preview (inside .lb-ava)
+      var lb = document.getElementById('avaImgLb');
+      if (lb) {
+        lb.src = url;
+        var lbWrap = lb.parentNode;
+        if (lbWrap) {
+          var oldLb = lbWrap.querySelector('.ava-hat-overlay');
+          if (oldLb) oldLb.remove();
+          if (hatHtml) lbWrap.insertAdjacentHTML('beforeend', hatHtml);
+        }
+      }
     }
 
     // Build swatches dynamically
