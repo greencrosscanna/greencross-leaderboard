@@ -1997,17 +1997,15 @@ body.kiosk-bg {
    Tuning those by feel breaks the mask-composite border effect.
    ══════════════════════════════════════════════════════════════ */
 
-/* Animated angle for the conic-gradient ring.
-   @supports wrapper: older browsers / Smart TVs get a static
-   gold border instead of the spinning hot-spot — still legible. */
-@supports (background: conic-gradient(from 0deg, red, blue)) {
-  @property --angle {
-    syntax: '<angle>';
-    initial-value: 0deg;
-    inherits: false;
-  }
-  @keyframes border-spin { to { --angle: 360deg; } }
+/* @property and @keyframes must be top-level — cannot nest inside @supports.
+   Browsers that don't support @property ignore it gracefully; the fallback
+   static border (below) covers those cases. */
+@property --angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
 }
+@keyframes border-spin { to { --angle: 360deg; } }
 
 .emp-card.eom {
   border: 0;
