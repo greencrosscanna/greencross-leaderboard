@@ -2079,10 +2079,6 @@ body.kiosk-bg {
 .emp-card.off-shift.eom .lb-ava   { opacity: 0.85; }
 
 /* Respect reduced-motion: collapse animation to static border */
-@media (prefers-reduced-motion: reduce) {
-  .emp-card.eom::before { animation: none; }
-  .emp-card.eom { border: 1.5px solid var(--gold-line); }
-}
 
 /* ── Off-shift cards — visible enough to create competition ── */
 .emp-card.off-shift {
