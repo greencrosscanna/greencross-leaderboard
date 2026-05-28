@@ -3940,17 +3940,30 @@ GC.navToAvatar = function(nameKey) {
 };
 
 /** Segment-matching avatar config lookup (shared across all modules).
- *  Tries exact nameKey first, then each underscore-delimited segment.
- *  Handles old kiosk-saved keys ("maria") vs canonical keys ("maria_sunshine").
+ *  Pass nameKey (canonical pre-nickname key, e.g. "zachary_robinson") and
+ *  optionally altKey (display-name-derived key, e.g. "zach_r") to also search
+ *  configs that were saved under the nickname format before the canonical-key fix.
+ *
+ *  Search order:
+ *   1. configs[nameKey]          exact canonical match
+ *   2. configs[seg] for each seg in nameKey   single-word segment match
+ *      (handles old "maria" config found by "maria_sunshine" lookup)
+ *   3. configs[altKey]           exact alt match
+ *   4. configs[seg] for each seg in altKey    segments of alt key
+ *      (handles "zach_r" config found when canonical lookup is "zachary_robinson")
  */
-GC.findAvatarCfg = function(configs, nameKey) {
+GC.findAvatarCfg = function(configs, nameKey, altKey) {
   if (!configs || !nameKey) return null;
-  if (configs[nameKey]) return configs[nameKey];
-  var segs = nameKey.split('_');
-  for (var _i = 0; _i < segs.length; _i++) {
-    if (configs[segs[_i]]) return configs[segs[_i]];
-  }
-  return null;
+  var _tryKey = function(k) {
+    if (!k) return null;
+    if (configs[k]) return configs[k];
+    var segs = k.split('_');
+    for (var _i = 0; _i < segs.length; _i++) {
+      if (configs[segs[_i]]) return configs[segs[_i]];
+    }
+    return null;
+  };
+  return _tryKey(nameKey) || (altKey && altKey !== nameKey ? _tryKey(altKey) : null) || null;
 };
 
 GC.lbAvaPuck = function(nameKey, avatarConfig, initials, clickable) {
@@ -4773,17 +4786,19 @@ var director = (function() {
       + '</span>';
   }
 
-  // Segment-matching avatar lookup: tries exact nameKey, then each _ segment.
-  // Handles old first-name-only saves ("maria") and new canonical saves ("maria_sunshine").
+  // Segment-matching avatar lookup: tries exact nameKey, then each _ segment,
+  // then altKey and its segments (handles nickname-format saves like "zach_r").
   // Delegate to the shared GC utility.
-  function findDirAvatarCfg_(nameKey) { return GC.findAvatarCfg(_avatarConfigs, nameKey); }
+  function findDirAvatarCfg_(nameKey, altKey) { return GC.findAvatarCfg(_avatarConfigs, nameKey, altKey); }
 
   function avatarHtml(initials, size, name, nameKeyOverride) {
     if (name) {
-      // Use pre-supplied nameKey (pre-nickname canonical key) when available so avatar
-      // lookup matches the key used by the settings page when saving the config.
+      // nameKeyOverride = canonical pre-nickname key (e.g. "zachary_robinson")
+      // name = post-nickname display name (e.g. "Zach R") — used as altKey so
+      // configs saved under the old nickname format are also found.
       var nameKey = nameKeyOverride || GC.nameToKey(name);
-      var config  = findDirAvatarCfg_(nameKey);
+      var altKey  = GC.nameToKey(name);  // nickname-derived fallback
+      var config  = findDirAvatarCfg_(nameKey, altKey);
       return GC.lbAvaPuck(nameKey, config, initials, true);
     }
     var cls = size === 'lg' ? 'avatar lg' : 'avatar';
@@ -7072,7 +7087,7 @@ var kiosk = (function() {
   // Handles both old saves (first-name-only key "maria") and new saves
   // (canonical full-name key "maria_sunshine") regardless of lookup key format.
   // Delegate to the shared GC utility so all modules use the same logic.
-  function findAvatarCfg_(configs, nameKey) { return GC.findAvatarCfg(configs, nameKey); }
+  function findAvatarCfg_(configs, nameKey, altKey) { return GC.findAvatarCfg(configs, nameKey, altKey); }
 
   function normalizeKioskData_(rawData) {
     var td = rawData.today       || {};
@@ -7116,11 +7131,14 @@ var kiosk = (function() {
           // Prefer nameKey from GAS (pre-nickname, matches settings-page save key).
           // Fall back to computing from display name for fixture/legacy data.
           var nameKey = p.nameKey || GC.nameToKey(p.name || '');
+          // altKey: display-name-derived key (e.g. "zach_r") — catches configs
+          // saved before the canonical-key fix under the nickname format.
+          var altKey  = GC.nameToKey(p.name || '');
           return {
             initials:     p.initials || '',
             name:         p.name     || '',
             nameKey:      nameKey,
-            avatarConfig: findAvatarCfg_(kioskAvatarConfigs, nameKey),
+            avatarConfig: findAvatarCfg_(kioskAvatarConfigs, nameKey, altKey),
             role:         p.role     || '',
             status:       p.status   || 'on',
             note:         p.note     || null,
@@ -7158,12 +7176,13 @@ var kiosk = (function() {
       // Prefer nameKey from GAS (pre-nickname, matches settings-page save key).
       // Fall back to computing from display name for fixture/legacy data.
       var nameKey = s.nameKey || GC.nameToKey(s.name || '');
+      var altKey  = GC.nameToKey(s.name || ''); // nickname-derived fallback key
       return {
         rank:            s.rank           || 0,
         initials:        s.initials       || '',
         name:            s.name           || '',
         nameKey:         nameKey,
-        avatarConfig:    findAvatarCfg_(kioskAvatarConfigs, nameKey),
+        avatarConfig:    findAvatarCfg_(kioskAvatarConfigs, nameKey, altKey),
         role:            s.role           || s.roleLabel || '',
         sales:           s.sales          || 0,
         txns:            s.txns  != null  ? s.txns  : (s.transactions || 0),
@@ -7893,13 +7912,14 @@ var lb = (function() {
     if (!staffData) return { totalStaff: 0, showing: 0, staff: [] };
     avatarConfigs = avatarConfigs || {};
     var staff = (staffData.staff || []).map(function(s) {
-      var nameKey = GC.nameToKey(s.name || '');
+      var nameKey = s.nameKey || GC.nameToKey(s.name || '');
+      var altKey  = GC.nameToKey(s.name || ''); // nickname-derived fallback
       return {
         rank:          s.rank          || 0,
         initials:      s.initials      || '',
         name:          s.name          || '',
         nameKey:       nameKey,
-        avatarConfig:  GC.findAvatarCfg(avatarConfigs, nameKey),
+        avatarConfig:  GC.findAvatarCfg(avatarConfigs, nameKey, altKey),
         role:          s.roleLabel     || s.role || '',
         hours:         s.hoursWorked   || s.hours || 0,
         storeSlug:     s.storeSlug     || '',
