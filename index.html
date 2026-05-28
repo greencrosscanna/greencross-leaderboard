@@ -2940,48 +2940,8 @@ body.kiosk-bg {
 .settings-save-status.ok  { color: var(--green); }
 .settings-save-status.err { color: var(--red); }
 
-/* ── Employee of the Month settings ──────────────────────── */
-.eom-current {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 20px;
-  background: rgba(212,168,71,0.07);
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-}
-.eom-current.eom-none {
-  background: transparent;
-  padding: 12px 20px;
-  font-size: 13px;
-}
-.eom-current-info { flex: 1; }
-.eom-current-name { font-size: 14px; font-weight: 600; color: var(--gold-3); }
-.eom-current-since { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
-.eom-clear-btn {
-  font-size: 12px; padding: 5px 12px;
-  border: 1px solid rgba(255,255,255,0.15); border-radius: 6px;
-  color: var(--text-mute); background: transparent; cursor: pointer;
-}
-.eom-clear-btn:hover { color: var(--red); border-color: var(--red); }
-.eom-radio-list {
-  max-height: 320px;
-  overflow-y: auto;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-}
-.eom-radio-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 20px;
-  cursor: pointer;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
-  transition: background 0.15s;
-}
-.eom-radio-row:last-child { border-bottom: 0; }
-.eom-radio-row:hover { background: rgba(255,255,255,0.04); }
-.eom-radio-row input[type="radio"] { accent-color: var(--gold); flex-shrink: 0; }
-.eom-radio-name { font-size: 13px; flex: 1; }
-.eom-radio-store { flex-shrink: 0; }
+/* ── Employee of the Month — table column ─────────────────── */
+.settings-emp-eom-col input[type="radio"] { accent-color: var(--gold); cursor: pointer; }
 
 /* ── Loading / error states ───────────────────────────────── */
 .settings-loading,
@@ -8539,7 +8499,7 @@ var settings = (function() {
   }
 
   // ── Shared: build a table row for one employee ────────────
-  function empRow(emp, nicknames, avatarConfigs, showNick, excludedSet) {
+  function empRow(emp, nicknames, avatarConfigs, showNick, excludedSet, currentEomKey) {
     var nick   = (nicknames || {})[emp.key] || '';
     var config = (avatarConfigs || {})[emp.key] || null;
     if (!config) {
@@ -8555,6 +8515,7 @@ var settings = (function() {
     var puck        = GC.lbAvaPuck(emp.key, config, GC.nickInitials(displayName, emp.key, emp.initials || initials || '??'), true);
     var encKey    = e(emp.key);
     var isExcluded = excludedSet && excludedSet[emp.key];
+    var isEom      = currentEomKey && emp.key === currentEomKey;
     var rowCls    = isExcluded ? ' class="emp-row-excluded"' : '';
     return '<tr' + rowCls + '>'
       + '<td class="settings-emp-ava" title="Click to edit avatar">' + puck + '</td>'
@@ -8564,6 +8525,10 @@ var settings = (function() {
             +   ' type="text" data-key="' + encKey + '"'
             +   ' value="' + e(nick) + '" placeholder="Nickname"></td>'
             + '<td class="settings-emp-store">' + e(emp.store || '') + '</td>'
+            + '<td class="settings-emp-eom-col" style="text-align:center">'
+            +   '<input type="radio" name="eomPick" value="' + encKey + '"'
+            +     (isEom ? ' checked' : '') + ' title="Set as Employee of the Month">'
+            + '</td>'
             + '<td class="settings-emp-excl">'
             +   '<button class="excl-toggle' + (isExcluded ? ' excluded' : '') + '"'
             +           ' data-key="' + encKey + '"'
@@ -8575,80 +8540,6 @@ var settings = (function() {
             + '<td class="settings-emp-store" style="font-size:12px">' + e(emp.jobTitle || '') + '</td>'
         )
       + '</tr>';
-  }
-
-  // ── Employee of the Month card ─────────────────────────────
-  function renderEomSection(data) {
-    var employees     = (data.employees || []).filter(function(emp) { return emp.section !== 'management'; });
-    var excluded      = data.excluded || [];
-    var excludedSet   = {};
-    excluded.forEach(function(k) { excludedSet[k] = true; });
-    var avatarConfigs = data.avatarConfigs || {};
-    var nicknames     = data.nicknames || {};
-    var currentEom    = data.eom || null;  // { employeeKey, since } | null
-
-    // Current featured callout
-    var currentHtml = '';
-    if (currentEom && currentEom.employeeKey) {
-      var curKey  = currentEom.employeeKey;
-      var curEmp  = null;
-      employees.forEach(function(emp) { if (emp.key === curKey) curEmp = emp; });
-      var curName = curEmp ? (nicknames[curEmp.key] || curEmp.name) : curKey;
-      var curCfg  = curEmp ? (avatarConfigs[curEmp.key] || null) : null;
-      var curInit = curEmp ? GC.nickInitials(curName, curKey, curEmp.initials || '??') : '??';
-      var curPuck = GC.lbAvaPuck(curKey, curCfg, curInit, true);
-      var sinceStr = '';
-      if (currentEom.since) {
-        try {
-          var d = new Date(currentEom.since);
-          sinceStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        } catch(_) {}
-      }
-      currentHtml = '<div class="eom-current" id="eomCurrent">'
-        + curPuck
-        + '<div class="eom-current-info">'
-        + '  <div class="eom-current-name">' + e(curName) + '</div>'
-        + (sinceStr ? '<div class="eom-current-since">Since ' + e(sinceStr) + '</div>' : '')
-        + '</div>'
-        + '<button class="eom-clear-btn" id="eomClearBtn">Clear</button>'
-        + '</div>';
-    } else {
-      currentHtml = '<div class="eom-current eom-none" id="eomCurrent">'
-        + '<span style="color:var(--text-mute)">No Employee of the Month set.</span>'
-        + '</div>';
-    }
-
-    // Radio list — staff only, non-excluded
-    var radioRows = employees
-      .filter(function(emp) { return !excludedSet[emp.key]; })
-      .map(function(emp) {
-        var displayName = nicknames[emp.key] || emp.name;
-        var cfg    = avatarConfigs[emp.key] || null;
-        var inits  = GC.nickInitials(displayName, emp.key, emp.initials || '??');
-        var puck   = GC.lbAvaPuck(emp.key, cfg, inits, true);
-        var chkd   = (currentEom && currentEom.employeeKey === emp.key) ? ' checked' : '';
-        return '<label class="eom-radio-row">'
-          + '<input type="radio" name="eomPick" value="' + e(emp.key) + '"' + chkd + '>'
-          + puck
-          + '<span class="eom-radio-name">' + e(displayName) + '</span>'
-          + '<span class="eom-radio-store">' + e(emp.store || '') + '</span>'
-          + '</label>';
-      }).join('');
-
-    return '<div class="settings-card" id="eomCard">'
-      + '<div class="settings-card-head">'
-      + '  <div>'
-      + '    <div class="settings-card-title">Employee of the Month</div>'
-      + '    <div class="settings-card-sub">Select one employee to feature with a gold ring on the kiosk.</div>'
-      + '  </div>'
-      + '</div>'
-      + currentHtml
-      + '<div class="eom-radio-list">' + radioRows + '</div>'
-      + '<div class="settings-card-foot">'
-      + '  <div class="settings-save-status" id="eomStatus"></div>'
-      + '  <button class="btn-primary" id="eomSaveBtn">Save</button>'
-      + '</div>'
-      + '</div>';
   }
 
   // ── Management card ────────────────────────────────────────
@@ -8671,30 +8562,32 @@ var settings = (function() {
   }
 
   // ── Employees card (nicknames + avatars combined) ─────────
-  function renderEmployees(employees, nicknames, avatarConfigs, excluded) {
+  function renderEmployees(employees, nicknames, avatarConfigs, excluded, eom) {
     nicknames     = nicknames     || {};
     avatarConfigs = avatarConfigs || {};
     // excluded is an array of keys from GAS — convert to a set-like object for fast lookup
     var excludedSet = {};
     (excluded || []).forEach(function(k) { excludedSet[k] = true; });
+    var currentEomKey = (eom && eom.employeeKey) ? eom.employeeKey : null;
     var staff = (employees || []).filter(function(emp) { return emp.section !== 'management'; });
-    var rows  = staff.map(function(emp) { return empRow(emp, nicknames, avatarConfigs, true, excludedSet); }).join('');
+    var rows  = staff.map(function(emp) { return empRow(emp, nicknames, avatarConfigs, true, excludedSet, currentEomKey); }).join('');
 
     return '<div class="settings-card" id="nickCard">'
       + '<div class="settings-card-head">'
       +   '<div>'
       +     '<div class="settings-card-title">Employees</div>'
-      +     '<div class="settings-card-sub">Set a nickname and build an avatar. Toggle <strong>Active/Excluded</strong> to show or hide an employee on the dashboard.</div>'
+      +     '<div class="settings-card-sub">Set a nickname and build an avatar. ★ = Employee of the Month. Toggle <strong>Active/Excluded</strong> to show or hide on the dashboard.</div>'
       +   '</div>'
       + '</div>'
       + '<table class="settings-table settings-emp-table" id="nickTable">'
       + '<thead><tr>'
-      +   '<th></th><th>Dutchie Name</th><th>Nickname</th><th>Store</th><th>Status</th>'
+      +   '<th></th><th>Dutchie Name</th><th>Nickname</th><th>Store</th><th title="Employee of the Month">★ EoM</th><th>Status</th>'
       + '</tr></thead>'
       + '<tbody>' + rows + '</tbody>'
       + '</table>'
       + '<div class="settings-card-foot">'
       +   '<div class="settings-save-status" id="nickStatus"></div>'
+      +   '<button class="btn-ghost" id="clearEomBtn" style="font-size:12px;padding:6px 12px">Clear EoM</button>'
       +   '<button class="btn-primary" id="saveNicksBtn">Save</button>'
       + '</div>'
       + '</div>';
@@ -8706,9 +8599,8 @@ var settings = (function() {
       + renderHeader()
       + '<div class="settings-body">'
       +   renderGoalsSection(data)
-      +   renderEomSection(data)
       +   renderManagement(data.employees, data.avatarConfigs)
-      +   renderEmployees(data.employees, data.nicknames, data.avatarConfigs, data.excluded)
+      +   renderEmployees(data.employees, data.nicknames, data.avatarConfigs, data.excluded, data.eom)
       + '</div>'
       + '</div>';
   }
@@ -9029,62 +8921,47 @@ var settings = (function() {
       });
     }
 
-    // EOM section — save + clear
-    var eomSaveBtn  = document.getElementById('eomSaveBtn');
-    var eomClearBtn = document.getElementById('eomClearBtn');
-    var eomStatus   = document.getElementById('eomStatus');
-
-    function setEomStatus(msg, cls) {
-      if (!eomStatus) return;
-      eomStatus.textContent = msg;
-      eomStatus.className   = 'settings-save-status' + (cls ? ' ' + cls : '');
-    }
-
-    if (eomSaveBtn) {
-      eomSaveBtn.addEventListener('click', function() {
-        var selected = document.querySelector('input[name="eomPick"]:checked');
-        if (!selected) { setEomStatus('Select an employee first.', 'err'); return; }
-        eomSaveBtn.disabled = true;
-        setEomStatus('Saving…', '');
-        GC.api.gasCall('saveeom', { key: selected.value })
+    // EoM radio — auto-save on selection change
+    if (nickTable) {
+      nickTable.addEventListener('change', function(evt) {
+        var radio = evt.target;
+        if (radio.type !== 'radio' || radio.name !== 'eomPick') return;
+        nickStatus.textContent = 'Saving EoM…';
+        nickStatus.className   = 'settings-save-status';
+        GC.api.gasCall('saveeom', { key: radio.value })
           .then(function(r) {
-            eomSaveBtn.disabled = false;
-            if (r.ok) {
-              setEomStatus('✓ Saved', 'ok');
-            } else {
-              setEomStatus('✗ ' + (r.error || 'Save failed'), 'err');
-            }
+            nickStatus.textContent = r.ok ? '✓ EoM saved' : '✗ ' + (r.error || 'Save failed');
+            nickStatus.className   = 'settings-save-status ' + (r.ok ? 'ok' : 'err');
           })
           .catch(function(err) {
-            eomSaveBtn.disabled = false;
-            setEomStatus('✗ ' + err.message, 'err');
+            nickStatus.textContent = '✗ ' + err.message;
+            nickStatus.className   = 'settings-save-status err';
           });
       });
     }
 
-    if (eomClearBtn) {
-      eomClearBtn.addEventListener('click', function() {
+    // Clear EoM button
+    var clearEomBtn = document.getElementById('clearEomBtn');
+    if (clearEomBtn) {
+      clearEomBtn.addEventListener('click', function() {
         if (!confirm('Clear Employee of the Month?')) return;
-        eomClearBtn.disabled = true;
+        clearEomBtn.disabled = true;
         GC.api.gasCall('saveeom', {})
           .then(function(r) {
-            eomClearBtn.disabled = false;
+            clearEomBtn.disabled = false;
             if (r.ok) {
-              // Uncheck all radios and update callout
               document.querySelectorAll('input[name="eomPick"]').forEach(function(inp) { inp.checked = false; });
-              var cur = document.getElementById('eomCurrent');
-              if (cur) {
-                cur.innerHTML = '<span style="color:var(--text-mute)">No Employee of the Month set.</span>';
-                cur.classList.add('eom-none');
-              }
-              setEomStatus('Cleared.', 'ok');
+              nickStatus.textContent = '✓ EoM cleared';
+              nickStatus.className   = 'settings-save-status ok';
             } else {
-              setEomStatus('✗ ' + (r.error || 'Clear failed'), 'err');
+              nickStatus.textContent = '✗ ' + (r.error || 'Clear failed');
+              nickStatus.className   = 'settings-save-status err';
             }
           })
           .catch(function(err) {
-            eomClearBtn.disabled = false;
-            setEomStatus('✗ ' + err.message, 'err');
+            clearEomBtn.disabled = false;
+            nickStatus.textContent = '✗ ' + err.message;
+            nickStatus.className   = 'settings-save-status err';
           });
       });
     }
