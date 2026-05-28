@@ -2648,6 +2648,17 @@ function computeEmpTargets_(storeSlug, dailyGoal) {
 // ============================================================
 
 function getStoreToday(store, params) {
+  // Cache full responses for 55 seconds (skip when sinceTs polling — those need live data)
+  const isSincePoll = params && params.sinceTs;
+  if (!isSincePoll) {
+    const scriptCache = CacheService.getScriptCache();
+    const cacheKey    = 'storeToday:' + store.slug;
+    const hit         = scriptCache.get(cacheKey);
+    if (hit) {
+      try { return JSON.parse(hit); } catch(e) {}
+    }
+  }
+
   const { hour: nowHour, minute: nowMinute } = ptHourNow_();
 
   // Pre-open: before 8 am show previous day's final stats so openers can
@@ -2841,7 +2852,7 @@ function getStoreToday(store, params) {
     .slice(0, 10);
   const ticker = recentTxns.map(makeTicker_);
 
-  return {
+  const result = {
     storeSlug:          store.slug,
     storeName:          store.name,
     goal:               dailyGoal,
@@ -2861,6 +2872,16 @@ function getStoreToday(store, params) {
     latestTxnTs:        latestTxnTs,
     lastUpdated:        new Date().toISOString(),
   };
+
+  // Store in GAS cache for 55 seconds (full loads only — sinceTs polls bypass this)
+  if (!isSincePoll) {
+    try {
+      const scriptCache = CacheService.getScriptCache();
+      scriptCache.put('storeToday:' + store.slug, JSON.stringify(result), 55);
+    } catch(e) {}
+  }
+
+  return result;
 }
 
 function getStoreLeaderboard(store, params) {
@@ -3555,3 +3576,36 @@ function saveSettings_(params) {
   return { ok: true };
 }
 
+
+// ── Morning cache warm-up ─────────────────────────────────
+// Runs via time-based trigger at 7:50am PT so the first kiosk
+// viewer at open doesn't pay the cold-start Dutchie fetch penalty.
+function warmAllKioskCaches_() {
+  STORES.forEach(function(store) {
+    try {
+      // Calling getStoreToday writes its result into CacheService
+      getStoreToday(store, {});
+      Logger.log('[warmup] ' + store.slug + ' cached');
+    } catch(e) {
+      Logger.log('[warmup] ' + store.slug + ' failed: ' + e.message);
+    }
+  });
+}
+
+// Run once from the GAS editor to install the daily 7:50am PT trigger.
+// PT = UTC-8 (PST) / UTC-7 (PDT); trigger at UTC hour 15 covers both.
+function installWarmupTrigger() {
+  // Remove any existing warmup triggers
+  ScriptApp.getProjectTriggers()
+    .filter(function(t) { return t.getHandlerFunction() === 'warmAllKioskCaches_'; })
+    .forEach(function(t) { ScriptApp.deleteTrigger(t); });
+
+  // Install daily trigger at 14:00–15:00 UTC (7–8am PT covers PST+PDT)
+  ScriptApp.newTrigger('warmAllKioskCaches_')
+    .timeBased()
+    .atHour(15)
+    .everyDays(1)
+    .create();
+
+  Logger.log('[warmup] Trigger installed — fires daily at UTC 15:xx (~7:50am PT)');
+}

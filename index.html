@@ -3440,6 +3440,12 @@ GC.slideshow = (function() {
 
     _resetProgress();
     _setupAutoHide(bar);
+
+    // Prefetch next store ~1s after bar renders so data is cache-warm before the switch
+    var nextSlug = _slugs[(_idx + 1) % _slugs.length];
+    setTimeout(function() {
+      if (_active) GC.api.prefetchKiosk(nextSlug);
+    }, 1000);
   }
 
   function _resetProgress() {
@@ -4222,6 +4228,13 @@ GC.api = (function() {
     fetchStoreLeaderboard:fetchStoreLeaderboard,
     fetchStoreBadges:     fetchStoreBadges,
     fetchKioskAll:        fetchKioskAll,
+    hasKioskCache: function(slug) {
+      return !!_getCached('kiosk_' + slug, 3 * 60 * 1000);
+    },
+    prefetchKiosk: function(slug) {
+      // Fire-and-forget: warms memory cache so next renderKiosk is instant
+      fetchKioskAll(slug).catch(function() {});
+    },
     fetchLeaderboardStaff: fetchLeaderboardStaff,
     fetchSettings:    fetchSettings,
     fetchAvatarData:  fetchAvatarData,
@@ -5474,7 +5487,10 @@ GC.views.renderKiosk = function(slug) {
   var app = document.getElementById('app');
   if (!app) return;
 
-  app.innerHTML = kiosk.renderLoading(slug);
+  // Only show loading shell if cache is cold — skip the flash when data is preloaded
+  if (!GC.api.hasKioskCache(slug)) {
+    app.innerHTML = kiosk.renderLoading(slug);
+  }
 
   GC.api.fetchKioskAll(slug, function(freshRaw) {
     // Background refresh landed — re-render quietly if still on this kiosk
