@@ -7969,7 +7969,7 @@ var lb = (function() {
         +          eomTagHtml
         +          (tagsHtml ? ' <span class="tags">' + tagsHtml + '</span>' : '')
         + '      </div>'
-        + '      <div class="who-sub">' + e(s.role) + ' · ' + e(s.hours) + 'h MTD</div>'
+        + '      <div class="who-sub">' + (s.role ? e(s.role) + ' · ' : '') + e(s.hours) + 'h MTD</div>'
         + '    </div>'
         + '  </div>'
         + '</td>'
@@ -8956,6 +8956,7 @@ var settings = (function() {
             saveNicksBtn.disabled = false;
             saveNicksBtn.textContent = 'Save';
             if (res.ok) {
+              GC.api.clearAvatarCaches(); // bust director cache so roles/nicknames show immediately
               nickStatus.textContent = '✓ Saved';
               nickStatus.className = 'settings-save-status ok';
             } else {
