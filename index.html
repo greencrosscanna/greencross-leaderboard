@@ -5879,15 +5879,10 @@ GC.views.renderKiosk = function(slug) {
     app.innerHTML = kiosk.renderLoading(slug);
   }
 
-  GC.api.fetchKioskAll(slug, function(freshRaw) {
-    // Background refresh landed — re-render quietly if still on this kiosk
-    var currentApp = document.getElementById('app');
-    if (!currentApp) return;
-    if (window.location.hash !== '#/store/' + slug) return;
-    var freshData = kiosk.normalize(freshRaw);
-    currentApp.innerHTML = kiosk.render(freshData, slug);
-    kiosk.init(freshData, slug);
-  })
+  // No onFresh callback — the 30-second sinceTs poll already updates numbers/hourly
+  // in-place without a full re-render. Passing onFresh caused animations to fire twice
+  // (once from cache, once when the background network request landed 2-5s later).
+  GC.api.fetchKioskAll(slug)
     .then(function(rawData) {
       var data = kiosk.normalize(rawData);
       app.innerHTML = kiosk.render(data, slug);
