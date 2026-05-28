@@ -4404,6 +4404,24 @@ GC.api = (function() {
       // Fire-and-forget: warms memory cache so next renderKiosk is instant
       fetchKioskAll(slug).catch(function() {});
     },
+    // Clear all kiosk + director caches (called after avatar save so stale
+    // avatarConfigs don't linger in localStorage across page loads).
+    clearAvatarCaches: function() {
+      // Bust in-memory cache
+      Object.keys(_mem).forEach(function(k) {
+        if (k.indexOf('kiosk_') === 0 || k.indexOf('director_') === 0) {
+          delete _mem[k];
+        }
+      });
+      // Bust localStorage cache
+      try {
+        Object.keys(localStorage).forEach(function(k) {
+          if (k.indexOf('gc_cache_kiosk_') === 0 || k.indexOf('gc_cache_director_') === 0) {
+            localStorage.removeItem(k);
+          }
+        });
+      } catch(e) {}
+    },
     fetchLeaderboardStaff: fetchLeaderboardStaff,
     fetchSettings:    fetchSettings,
     fetchAvatarData:  fetchAvatarData,
@@ -9066,6 +9084,9 @@ var ava = (function() {
             saveBtn.textContent = 'Save';
             if (statusEl) {
               if (res && res.ok) {
+                // Bust kiosk + director caches so the saved avatar is visible
+                // immediately on next page load (not stuck behind 3-min stale cache).
+                GC.api.clearAvatarCaches();
                 statusEl.textContent = '✓ Saved';
                 statusEl.className = 'ava-save-status ok';
                 setTimeout(function() {
