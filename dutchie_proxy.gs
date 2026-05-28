@@ -2783,13 +2783,15 @@ function getStoreToday(store, params) {
 
   // Build shift strip: active employees (have transactions today) + known
   // roster employees who haven't transacted yet (shown as off-shift).
-  const _excluded = getExcluded_();
+  const _excluded   = getExcluded_();
+  const _shiftNicks = getNicknames_();
   const activeEmps = Object.values(agg.byEmployee)
     .filter(emp => !_excluded.has(nameToKey_(emp.name)))
     .sort((a, b) => b.sales - a.sales)
     .map(emp => ({
       initials: emp.initials,
-      name:     emp.name,
+      name:     applyNickname_(emp.name, _shiftNicks),  // apply nickname for consistent display
+      nameKey:  nameToKey_(emp.name),  // pre-nickname canonical key — frontend uses this for initials + avatar lookup
       status:   'on',
       sales:    emp.sales,
       note:     null,
@@ -2803,12 +2805,12 @@ function getStoreToday(store, params) {
   );
 
   // Pull in roster employees not yet seen today (apply nicknames so display is consistent)
-  const _rosterNicks = getNicknames_();
   const rosterEmps = (getEmployeeRoster_()[store.slug] || [])
     .filter(e => !activeIds.has(String(e.id)) && !activeNames.has(e.name.toLowerCase()) && !_excluded.has(nameToKey_(e.name)))
     .map(e => ({
       initials: e.initials,
-      name:     applyNickname_(e.name, _rosterNicks),
+      name:     applyNickname_(e.name, _shiftNicks),
+      nameKey:  nameToKey_(e.name),  // pre-nickname canonical key
       status:   'off',
       sales:    0,
       note:     null,
@@ -3882,6 +3884,7 @@ function getStoreForDate_(store, dateStr) {
       return {
         initials:     emp.initials,
         name:         applyNickname_(emp.name, _nicks),
+        nameKey:      nameToKey_(emp.name),  // pre-nickname canonical key — frontend uses this for initials + avatar lookup
         status:       'on',
         sales:        Math.round(emp.sales),
         transactions: emp.transactions || 0,
