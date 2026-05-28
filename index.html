@@ -3110,6 +3110,20 @@ body.kiosk-bg {
 }
 .settings-emp-ava .lb-ava img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
+.settings-role-select {
+  font-size: 12px;
+  padding: 3px 6px;
+  background: var(--surface-2, var(--surface));
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  max-width: 120px;
+}
+.lb-th-sort { white-space: nowrap; }
+.lb-th-sort:hover { color: var(--green); }
+.lb-th-sort.active { color: var(--green); }
+
 /* ── Status (exclude) toggle ─────────────────────────────── */
 .settings-emp-excl { width: 88px; text-align: center; }
 
@@ -4458,11 +4472,12 @@ GC.api = (function() {
     return gasCall('getavatardata', {});
   }
 
-  function saveSettings(plans, nicknames, excluded) {
+  function saveSettings(plans, nicknames, excluded, roles) {
     var params = {};
-    if (plans)              params.plans     = JSON.stringify(plans);
-    if (nicknames)          params.nicknames = JSON.stringify(nicknames);
+    if (plans)                  params.plans     = JSON.stringify(plans);
+    if (nicknames)              params.nicknames = JSON.stringify(nicknames);
     if (excluded !== undefined) params.excluded  = JSON.stringify(excluded);
+    if (roles)                  params.roles     = JSON.stringify(roles);
     return gasCall('savesettings', params);
   }
 
@@ -7991,17 +8006,24 @@ var lb = (function() {
         + '</tr>';
     }).join('');
 
+    function thSort(label, key) {
+      var isActive = _sortKey === key;
+      var arrow = isActive ? (_sortDir === -1 ? ' ▼' : ' ▲') : '';
+      return '<th class="lb-th-sort' + (isActive ? ' active' : '') + '" data-sort="' + key + '" style="cursor:pointer;user-select:none">'
+        + label + arrow + '</th>';
+    }
+
     var tableHtml = '<table class="gc-table lb-table">'
       + '<thead><tr>'
-      + '  <th style="width:60px">RANK</th>'
-      + '  <th>STAFF</th>'
-      + '  <th class="store-col">STORE</th>'
-      + '  <th>SALES</th>'
-      + '  <th>TXNS</th>'
-      + '  <th>AOV</th>'
-      + '  <th>UPT</th>'
-      + '  <th>DISCOUNT</th>'
-      + '  <th>TREND · 30D</th>'
+      + '  <th class="lb-th-sort' + (_sortKey === 'rank' ? ' active' : '') + '" data-sort="rank" style="width:60px;cursor:pointer;user-select:none">RANK' + (_sortKey === 'rank' ? (_sortDir === -1 ? ' ▼' : ' ▲') : '') + '</th>'
+      + thSort('STAFF', 'name')
+      + thSort('STORE', 'storeName')
+      + thSort('SALES', 'sales')
+      + thSort('TXNS', 'transactions')
+      + thSort('AOV', 'avgOrderValue')
+      + thSort('UPT', 'avgUPT')
+      + thSort('DISCOUNT', 'discountRate')
+      + thSort('TREND · 30D', 'trendPct')
       + '  <th class="actions-col"></th>'
       + '</tr></thead>'
       + '<tbody>' + rows + '</tbody>'
@@ -8069,9 +8091,12 @@ var lb = (function() {
     }
 
     result.sort(function(a, b) {
-      var av = a[_sortKey] != null ? a[_sortKey] : 0;
-      var bv = b[_sortKey] != null ? b[_sortKey] : 0;
-      return _sortDir * (av - bv);
+      var av = a[_sortKey] != null ? a[_sortKey] : '';
+      var bv = b[_sortKey] != null ? b[_sortKey] : '';
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return _sortDir * String(av).localeCompare(String(bv));
+      }
+      return _sortDir * ((Number(av) || 0) - (Number(bv) || 0));
     });
 
     // Re-rank after filter
@@ -8235,6 +8260,23 @@ var lb = (function() {
         var parts = sortEl.value.split(',');
         _sortKey = parts[0];
         _sortDir = parseInt(parts[1], 10);
+        refreshTable();
+      });
+    }
+
+    // Column-header sort — event delegation on the table wrap
+    var lbTableWrap = document.getElementById('lbTableWrap');
+    if (lbTableWrap) {
+      lbTableWrap.addEventListener('click', function(evt) {
+        var th = evt.target.closest('th[data-sort]');
+        if (!th) return;
+        var key = th.dataset.sort;
+        if (_sortKey === key) {
+          _sortDir = _sortDir * -1;  // toggle direction
+        } else {
+          _sortKey = key;
+          _sortDir = -1;  // default desc
+        }
         refreshTable();
       });
     }
@@ -8493,7 +8535,8 @@ var settings = (function() {
   }
 
   // ── Shared: build a table row for one employee ────────────
-  function empRow(emp, nicknames, avatarConfigs, showNick, excludedSet, currentEomKey) {
+  function empRow(emp, nicknames, avatarConfigs, showNick, excludedSet, currentEomKey, roles) {
+    var empRole = (roles || {})[emp.key] || '';
     var nick   = (nicknames || {})[emp.key] || '';
     var config = (avatarConfigs || {})[emp.key] || null;
     if (!config) {
@@ -8522,6 +8565,14 @@ var settings = (function() {
             + '<td class="settings-emp-eom-col" style="text-align:center">'
             +   '<input type="radio" name="eomPick" value="' + encKey + '"'
             +     (isEom ? ' checked' : '') + ' title="Set as Employee of the Month">'
+            + '</td>'
+            + '<td>'
+            +   '<select class="settings-input settings-role-select" data-key="' + encKey + '">'
+            +     '<option value="">—</option>'
+            +     '<option value="budtender"' + (empRole === 'budtender' ? ' selected' : '') + '>Budtender</option>'
+            +     '<option value="asst_manager"' + (empRole === 'asst_manager' ? ' selected' : '') + '>Asst. Manager</option>'
+            +     '<option value="store_manager"' + (empRole === 'store_manager' ? ' selected' : '') + '>Store Manager</option>'
+            +   '</select>'
             + '</td>'
             + '<td class="settings-emp-excl">'
             +   '<button class="excl-toggle' + (isExcluded ? ' excluded' : '') + '"'
@@ -8556,15 +8607,16 @@ var settings = (function() {
   }
 
   // ── Employees card (nicknames + avatars combined) ─────────
-  function renderEmployees(employees, nicknames, avatarConfigs, excluded, eom) {
+  function renderEmployees(employees, nicknames, avatarConfigs, excluded, eom, roles) {
     nicknames     = nicknames     || {};
     avatarConfigs = avatarConfigs || {};
+    roles         = roles         || {};
     // excluded is an array of keys from GAS — convert to a set-like object for fast lookup
     var excludedSet = {};
     (excluded || []).forEach(function(k) { excludedSet[k] = true; });
     var currentEomKey = (eom && eom.employeeKey) ? eom.employeeKey : null;
     var staff = (employees || []).filter(function(emp) { return emp.section !== 'management'; });
-    var rows  = staff.map(function(emp) { return empRow(emp, nicknames, avatarConfigs, true, excludedSet, currentEomKey); }).join('');
+    var rows  = staff.map(function(emp) { return empRow(emp, nicknames, avatarConfigs, true, excludedSet, currentEomKey, roles); }).join('');
 
     return '<div class="settings-card" id="nickCard">'
       + '<div class="settings-card-head">'
@@ -8575,7 +8627,7 @@ var settings = (function() {
       + '</div>'
       + '<table class="settings-table settings-emp-table" id="nickTable">'
       + '<thead><tr>'
-      +   '<th></th><th>Dutchie Name</th><th>Nickname</th><th>Store</th><th title="Employee of the Month">★ EoM</th><th>Status</th>'
+      +   '<th></th><th>Dutchie Name</th><th>Nickname</th><th>Store</th><th title="Employee of the Month">★ EoM</th><th>Role</th><th>Status</th>'
       + '</tr></thead>'
       + '<tbody>' + rows + '</tbody>'
       + '</table>'
@@ -8594,7 +8646,7 @@ var settings = (function() {
       + '<div class="settings-body">'
       +   renderGoalsSection(data)
       +   renderManagement(data.employees, data.avatarConfigs)
-      +   renderEmployees(data.employees, data.nicknames, data.avatarConfigs, data.excluded, data.eom)
+      +   renderEmployees(data.employees, data.nicknames, data.avatarConfigs, data.excluded, data.eom, data.roles)
       + '</div>'
       + '</div>';
   }
@@ -8889,12 +8941,17 @@ var settings = (function() {
           excluded.push(btn.dataset.key);
         });
 
+        var roles = {};
+        document.querySelectorAll('#nickTable select.settings-role-select').forEach(function(sel) {
+          if (sel.value) roles[sel.dataset.key] = sel.value;
+        });
+
         saveNicksBtn.disabled = true;
         saveNicksBtn.textContent = 'Saving…';
         nickStatus.textContent = '';
         nickStatus.className = 'settings-save-status';
 
-        GC.api.saveSettings(null, nicknames, excluded)
+        GC.api.saveSettings(null, nicknames, excluded, roles)
           .then(function(res) {
             saveNicksBtn.disabled = false;
             saveNicksBtn.textContent = 'Save';

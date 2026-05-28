@@ -35,6 +35,8 @@ const GC_YOY_GOALS_KEY      = 'GC_YOY_GOALS_JSON';
 const GC_YOY1_CACHE_KEY     = 'GC_YOY1_CACHE_JSON'; // permanent cache for 1-year-ago data (busts each PP)
 const GC_YOY2_CACHE_KEY     = 'GC_YOY2_CACHE_JSON'; // permanent cache for 2-year-ago data (busts each PP)
 const GC_EXCLUDED_KEY       = 'GC_EXCLUDED_JSON';   // array of excluded employee nameKeys
+const GC_ROLES_KEY           = 'GC_ROLES_JSON';          // { nameKey: 'budtender'|'asst_manager'|'store_manager' }
+const ROLE_LABELS = { budtender: 'Budtender', asst_manager: 'Asst. Manager', store_manager: 'Store Manager' };
 const GC_MANUAL_PP_KEY      = 'GC_MANUAL_PP_GOALS_JSON'; // slug→final PP goal overrides
 const GC_AVATAR_CONFIGS_KEY  = 'GC_AVATAR_CONFIGS_JSON'; // { nameKey: { ...avatar_config } }
 const GC_HOURLY_DIST_KEY     = 'GC_HOURLY_DIST_JSON';   // per-store same-DOW hourly revenue weights, cached per day
@@ -820,6 +822,12 @@ function getEomCurrent_() {
 function getExcluded_() {
   const raw = PropertiesService.getScriptProperties().getProperty(GC_EXCLUDED_KEY);
   try { return new Set(raw ? JSON.parse(raw) : []); } catch(e) { return new Set(); }
+}
+
+function getRoles_() {
+  var raw = PropertiesService.getScriptProperties().getProperty(GC_ROLES_KEY);
+  if (!raw) return {};
+  try { return JSON.parse(raw); } catch(e) { return {}; }
 }
 
 /** Normalise a Dutchie name into a lookup key (lowercase, no periods/quotes, spaces→underscore). */
@@ -2415,6 +2423,7 @@ function getDirectorStaff(params, pre) {
   });
 
   // Re-derive metrics and apply tags
+  const _roles = getRoles_();
   const staffList = Object.values(globalEmps).map(function(emp) {
     const aov    = emp.transactions > 0 ? r2_(emp.sales / emp.transactions) : 0;
     const upt    = emp.transactions > 0 ? r1_(emp.items / emp.transactions)  : 0;
@@ -2433,7 +2442,7 @@ function getDirectorStaff(params, pre) {
       name:          emp.name,
       nameKey:       nameToKey_(emp.name),  // canonical key before nickname — matches settings page
       role:          emp.role || '',
-      roleLabel:     emp.roleLabel || '',
+      roleLabel:     _roles[nameToKey_(emp.name)] ? ROLE_LABELS[_roles[nameToKey_(emp.name)]] : (emp.roleLabel || ''),
       storeSlug:     emp.storeSlug,
       storeName:     emp.storeName,
       hoursWorked:   0,   // Dutchie doesn't expose schedule hours; integrate separately
@@ -3409,6 +3418,7 @@ function getSettings_(params) {
     manualGoals:      getManualPPGoals_(),
     avatarConfigs:    resolveAvatarConfigs_(allEmployees, getAvatarConfigs_()),
     eom:              getEomCurrent_(),  // { employeeKey, since } | null
+    roles:            getRoles_(),
   };
 }
 
@@ -3588,6 +3598,16 @@ function saveSettings_(params) {
       props.setProperty(GC_EXCLUDED_KEY, JSON.stringify(ex));
     } catch(e) {
       return { ok: false, error: 'Invalid excluded JSON: ' + e.message };
+    }
+  }
+
+  // Save employee roles
+  if (params.roles !== undefined) {
+    try {
+      var ro = JSON.parse(params.roles);
+      props.setProperty(GC_ROLES_KEY, JSON.stringify(ro));
+    } catch(e) {
+      return { ok: false, error: 'Invalid roles JSON: ' + e.message };
     }
   }
 
