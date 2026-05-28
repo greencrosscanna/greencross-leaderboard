@@ -3794,6 +3794,39 @@ function getHistoricalDirector_(dateStr) {
 }
 
 /**
+ * Backfill today's live data as a placeholder for each of the last N days.
+ * Useful for testing the historical UI before real nightly snapshots accumulate.
+ * The revenue/transactions numbers will reflect the current live state — not actual
+ * EOD numbers for those dates — but the UI will work correctly end-to-end.
+ *
+ * Usage: select backfillRecentDays_ in the GAS editor and click Run.
+ * Change NUM_DAYS at the top if you want more or fewer days.
+ */
+function backfillRecentDays_() {
+  var NUM_DAYS = 5;  // ← adjust as needed
+  var sheet = getSnapshotSheet_();
+
+  for (var d = 1; d <= NUM_DAYS; d++) {
+    var pastDate = new Date();
+    pastDate.setDate(pastDate.getDate() - d);
+    var dateStr = Utilities.formatDate(pastDate, STORE_TZ, 'yyyy-MM-dd');
+    Logger.log('[backfill] Snapshotting as ' + dateStr + ' …');
+
+    STORES.forEach(function(store) {
+      try {
+        var data = getStoreToday(store, {});
+        writeSnapshotRow_(sheet, dateStr, store, data);
+        Logger.log('[backfill]   ' + store.slug + ' → ' + dateStr + ' $' + data.revenue);
+      } catch(e) {
+        Logger.log('[backfill]   ' + store.slug + ' FAILED: ' + e.message);
+      }
+    });
+  }
+
+  Logger.log('[backfill] Done — ' + NUM_DAYS + ' days written to sheet.');
+}
+
+/**
  * Run once from the GAS editor to register the nightly EOD snapshot trigger.
  * Fires daily at UTC 6:xx — that's 11pm PDT / 10pm PST, ~30–60 min after close.
  */
