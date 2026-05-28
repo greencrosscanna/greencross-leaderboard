@@ -6465,14 +6465,29 @@ var kiosk = (function() {
       var shift      = shiftMap[nameKey] || { status: 'on', note: null };
       var isOffShift = shift.status !== 'on';
 
-      // Streak / personal best / note row
+      // Trophies this employee currently holds — computed first so icons can appear in streak line.
+      // Try full-name key first (fixture holders = "Dean Deloof").
+      // Fall back to first-name key (GAS holders = "Zachary") ONLY when that
+      // first name is unique in the roster — avoids giving one Zachary's trophies
+      // to a different Zachary at rank #4.
+      var firstKey        = (s.name || '').split(' ')[0].toLowerCase();
+      var firstNameUnique = firstNameCount[firstKey] === 1;
+      var myBadges        = badgeMap[nameKey] || (firstNameUnique ? badgeMap[firstKey] : null) || [];
+      // Badge icons are shown inline with the streak count — no separate chips row needed.
+      var badgeIconsStr   = myBadges.map(function(b) { return b.icon; }).join('');
+      var badgesHtml      = '';  // icons now live in the streak line below
+
+      // Streak / personal best row — trophy icons prefixed before the day count.
+      // e.g. "💰🔥 3 day streak" (AOV Avenger + Top Sales, 3-day run)
+      // If no badges but streakType is fire, fall back to the 🔥 fire indicator.
       var extraHtml = '';
-      if (s.streakType === 'fire' && s.streak > 0) {
-        extraHtml = '<div class="emp-extra streak">🔥 ' + e(s.streak) + '-day streak</div>';
+      if (s.streak > 0) {
+        var streakPrefix = badgeIconsStr || (s.streakType === 'fire' ? '🔥' : '');
+        var streakCls    = s.streakType === 'fire' ? 'streak' : 'muted';
+        var streakLabel  = (streakPrefix ? streakPrefix + ' ' : '') + e(s.streak) + ' day streak';
+        extraHtml = '<div class="emp-extra ' + streakCls + '">' + streakLabel + '</div>';
       } else if (s.personalBestPct !== null && s.personalBestPct >= 0.90) {
         extraHtml = '<div class="emp-extra pb">⚡ Personal best in sight</div>';
-      } else if (s.streak > 0) {
-        extraHtml = '<div class="emp-extra muted">' + e(s.streak) + '-day streak</div>';
       }
 
       // Off-shift status pill — shows note ("Back at 8p") or generic label
@@ -6482,22 +6497,6 @@ var kiosk = (function() {
         var pillTxt = shift.note || (shift.status === 'later' ? 'Later today' : 'Off shift');
         statusHtml = '<div class="emp-status-pill ' + e(pillCls) + '">' + e(pillTxt) + '</div>';
       }
-
-      // Trophies this employee currently holds (mini chips)
-      // Try full-name key first (fixture holders = "Dean Deloof").
-      // Fall back to first-name key (GAS holders = "Zachary") ONLY when that
-      // first name is unique in the roster — avoids giving one Zachary's trophies
-      // to a different Zachary at rank #4.
-      var firstKey        = (s.name || '').split(' ')[0].toLowerCase();
-      var firstNameUnique = firstNameCount[firstKey] === 1;
-      var myBadges        = badgeMap[nameKey] || (firstNameUnique ? badgeMap[firstKey] : null) || [];
-      var badgesHtml = myBadges.length > 0
-        ? '<div class="emp-badges">'
-            + myBadges.map(function(b) {
-                return '<span class="emp-badge-chip" title="' + e(b.title) + '">' + b.icon + '</span>';
-              }).join('')
-          + '</div>'
-        : '';
 
       var amtId = 'kioskEmpAmt' + s.rank;
 
