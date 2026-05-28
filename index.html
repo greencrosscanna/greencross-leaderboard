@@ -5014,6 +5014,7 @@ var director = (function() {
   var _staffSortDir  = -1;  // -1 = desc, 1 = asc
   var _staffPeriod   = 'mtd'; // 'mtd' | 'pp'
   var _staffPpData   = null;  // lazy-loaded pay-period staff, cached after first fetch
+  var _staffPpRange  = null;  // human-readable PP date range, set when PP data first arrives
 
   // ── Helpers ────────────────────────────────────────────
 
@@ -5362,11 +5363,16 @@ var director = (function() {
   // ── Render: Cross-store Staff Table ───────────────────
   function syncPeriodTabs() {
     document.querySelectorAll('.staff-period-tab').forEach(function(btn) {
-      var isActive = btn.getAttribute('data-staff-period') === _staffPeriod;
+      var period   = btn.getAttribute('data-staff-period');
+      var isActive = period === _staffPeriod;
       btn.classList.toggle('active', isActive);
       btn.disabled = false;
-      // Restore label if we clobbered it with "Loading…"
-      if (btn.getAttribute('data-staff-period') === 'mtd') btn.textContent = 'MTD';
+      // Restore labels (may have been clobbered with "Loading…")
+      if (period === 'mtd') {
+        btn.textContent = 'MTD';
+      } else if (period === 'pp') {
+        btn.textContent = _staffPpRange ? 'Pay Period · ' + _staffPpRange : 'Pay Period';
+      }
     });
   }
 
@@ -5420,7 +5426,7 @@ var director = (function() {
       + '<span class="sh-meta">Across ' + total + ' active staff</span>'
       + '<span class="staff-period-tabs">'
       +   '<button class="staff-period-tab' + (mtdActive  ? ' active' : '') + '" data-staff-period="mtd">MTD</button>'
-      +   '<button class="staff-period-tab' + (!mtdActive ? ' active' : '') + '" data-staff-period="pp">Pay Period' + (range ? ' · ' + e(range) : '') + '</button>'
+      +   '<button class="staff-period-tab' + (!mtdActive ? ' active' : '') + '" data-staff-period="pp">' + (_staffPpRange ? 'Pay Period · ' + e(_staffPpRange) : 'Pay Period') + '</button>'
       + '</span>'
       + '<a class="sh-link" id="viewFullLeaderboard">View full leaderboard →</a>'
       + '</div>'
@@ -6023,6 +6029,9 @@ var director = (function() {
             GC.api.fetchDirectorStaff('pp')
               .then(function(ppData) {
                 _staffPpData = ppData.staff || [];
+                if (ppData.dateRange) {
+                  _staffPpRange = GC.fmtDateRange(ppData.dateRange.from, ppData.dateRange.to);
+                }
                 updateStaffTable(_staffPpData);
                 syncPeriodTabs(); // restore correct labels after updateStaffTable
               })
