@@ -5418,6 +5418,16 @@ var director = (function() {
         btn.textContent = _storePpRange ? 'Pay Period · ' + _storePpRange : 'Pay Period';
       }
     });
+    syncStoreHeading();
+  }
+
+  function syncStoreHeading() {
+    var h2 = document.getElementById('storeLeaderboardH2');
+    if (!h2) return;
+    var label = _storePeriod === 'pp'
+      ? ('Pay Period' + (_storePpRange ? ' · ' + _storePpRange : ''))
+      : 'MTD';
+    h2.textContent = 'Store Leaderboard · ' + label;
   }
 
   function refreshStoreTable() {
@@ -5463,7 +5473,7 @@ var director = (function() {
     var mtdActive = _storePeriod === 'mtd';
 
     return '<div class="section-head">'
-      + '<h2>Store Leaderboard · ' + periodLabel + '</h2>'
+      + '<h2 id="storeLeaderboardH2">Store Leaderboard · ' + periodLabel + '</h2>'
       + '<span class="sh-sep">/</span>'
       + '<span class="sh-meta">Click any store to drill down</span>'
       + '<span class="staff-period-tabs">'
@@ -6218,9 +6228,7 @@ var director = (function() {
           var newStorePeriod = storePeriodTab.getAttribute('data-store-period');
           if (newStorePeriod === _storePeriod) return;
           _storePeriod = newStorePeriod;
-          syncStorePeriodTabs();
-          // Update heading text immediately
-          var storeHeading = document.querySelector('#storeTable')?.previousElementSibling?.querySelector('h2');
+          syncStorePeriodTabs(); // updates tabs + h2 immediately
           if (newStorePeriod === 'mtd') {
             // Restore cached MTD data
             if (_storeMtdData && _data.stores) {
@@ -6248,7 +6256,7 @@ var director = (function() {
                 _storePpStores = ppStores; // cache for re-apply after background refresh
                 if (_data.stores) _data.stores.stores = ppStores;
                 refreshStoreTable();
-                syncStorePeriodTabs();
+                syncStorePeriodTabs(); // updates h2 with date range once loaded
               })
               .catch(function(err) {
                 _storePeriod = 'mtd';
