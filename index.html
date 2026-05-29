@@ -5431,7 +5431,7 @@ var director = (function() {
   }
 
   function refreshStoreTable() {
-    if (!_data) return;
+    if (!_data || !_data.stores) return;
     var stores = _data.stores.stores;
     var tbody = document.getElementById('storeTableBody');
     var thead = document.getElementById('storeTableHead');
@@ -5858,7 +5858,7 @@ var director = (function() {
     _avatarConfigs = data.avatarConfigs || {};
     _storeMtdData  = (data.stores && data.stores.stores) || [];
 
-    var stores = data.stores.stores;
+    var stores = (data.stores && data.stores.stores) || [];
     var staff  = data.staff.staff;
     var sum    = data.summary;
     var alerts = data.alerts;
