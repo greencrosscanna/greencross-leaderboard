@@ -414,14 +414,16 @@ html, body {
 .sparkline-cell .spark-delta.up   { color: var(--green); }
 .sparkline-cell .spark-delta.down { color: var(--red); }
 
-/* ── Store sparkline staggered draw-in ───────────────────── */
-#storeTableBody .sparkline-cell polyline {
+/* ── Sparkline staggered draw-in (store + staff + leaderboard) ── */
+#storeTableBody .sparkline-cell polyline,
+#staffTableBody .sparkline-cell polyline,
+#lbTableWrap    .sparkline-cell polyline {
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation: store-spark-draw 0.5s ease-out forwards;
+  animation: spark-draw 0.5s ease-out forwards;
   animation-play-state: paused;
 }
-@keyframes store-spark-draw {
+@keyframes spark-draw {
   to { stroke-dashoffset: 0; }
 }
 
@@ -5426,6 +5428,17 @@ var director = (function() {
     });
   }
 
+  function animateStaffSparklines() {
+    document.querySelectorAll('#staffTableBody tr').forEach(function(row, i) {
+      var poly = row.querySelector('.sparkline-cell polyline');
+      if (!poly) return;
+      poly.style.animationPlayState = 'paused';
+      setTimeout(function() {
+        if (poly.isConnected) poly.style.animationPlayState = 'running';
+      }, i * 500);
+    });
+  }
+
   function renderStoreTable(stores, range) {
     // Preserve MTD data for tab switching
     if (_storePeriod === 'mtd') _storeMtdData = stores;
@@ -6008,6 +6021,7 @@ var director = (function() {
     scheduleRefresh();
     animateBars();
     animateStoreSparklines();
+    animateStaffSparklines();
 
     // Update last-refreshed label
     var lr = document.getElementById('lastRefreshed');
@@ -6308,6 +6322,8 @@ var director = (function() {
         if (m) m.textContent = 'Across ' + total + ' active staff';
       }
     });
+
+    animateStaffSparklines();
   }
 
   // ── Historical: store card grid ────────────────────────────
@@ -8520,7 +8536,7 @@ var lb = (function() {
         + '<td>'
         + '  <div class="sparkline-cell">'
         + '    <svg width="72" height="20" viewBox="0 0 72 20" style="overflow:visible">'
-        + '      <polyline fill="none" stroke="' + e(trendStroke) + '" stroke-width="1.5" points="' + e(pts) + '"/>'
+        + '      <polyline pathLength="1" fill="none" stroke="' + e(trendStroke) + '" stroke-width="1.5" points="' + e(pts) + '"/>'
         + '    </svg>'
         + '    <span class="spark-delta ' + e(trendCls) + '">' + e(trendLabel) + '</span>'
         + '  </div>'
@@ -8693,6 +8709,18 @@ var lb = (function() {
   function refreshTable() {
     var wrap = document.getElementById('lbTableWrap');
     if (wrap && _lbData) wrap.innerHTML = renderTable(_lbData, _eomKey);
+    animateLbSparklines();
+  }
+
+  function animateLbSparklines() {
+    document.querySelectorAll('#lbTableWrap tbody tr').forEach(function(row, i) {
+      var poly = row.querySelector('.sparkline-cell polyline');
+      if (!poly) return;
+      poly.style.animationPlayState = 'paused';
+      setTimeout(function() {
+        if (poly.isConnected) poly.style.animationPlayState = 'running';
+      }, i * 500);
+    });
   }
 
   var _roleFilter = '';
@@ -8805,6 +8833,8 @@ var lb = (function() {
         refreshTable();
       });
     }
+
+    animateLbSparklines();
   }
 
   return { render: render, init: init, normalizeStaff: normalizeStaff };
