@@ -360,7 +360,10 @@ html, body {
   gap: 4px;
   min-width: 120px;
 }
+.sales-cell .sales-row { display: flex; align-items: baseline; gap: 6px; }
 .sales-cell .sales-amt { font-weight: 700; font-variant-numeric: tabular-nums; }
+.sales-cell .sales-pct { font-size: 10px; font-weight: 700; color: var(--text-mute); }
+.sales-cell .sales-pct.over { color: var(--green); }
 
 .bar-track {
   height: 4px;
@@ -5120,16 +5123,15 @@ var director = (function() {
       ? 'width:0%;--mark-pct:' + markPct + '%'
       : 'width:0%';
     return '<div class="sales-cell">'
-      + '<span class="sales-amt num">' + e(GC.fmtCurrency(sales)) + '</span>'
+      + '<div class="sales-row">'
+      +   '<span class="sales-amt num">' + e(GC.fmtCurrency(sales)) + '</span>'
+      +   (hasPlan ? '<span class="sales-pct' + (barOver ? ' over' : '') + '">' + pctLbl + '</span>' : '')
+      + '</div>'
       + '<div class="emp-bar-wrap dir-bar' + (barOver ? ' bar-over' : '') + '">'
       +   '<div class="emp-bar">'
       +     '<span style="' + fillStyle + '" data-final="' + fillPct + '%"></span>'
       +   '</div>'
       +   (markPct !== null ? '<div class="emp-bar-mark" style="left:' + markPct + '%"></div>' : '')
-      +   '<div class="emp-bar-tick" style="left:0%" data-final="' + fillPct + '%">'
-      +     '<span class="emp-bar-pct">' + pctLbl + '</span>'
-      +     '<span class="emp-bar-chevron">▲</span>'
-      +   '</div>'
       + '</div>'
       + '</div>';
   }
