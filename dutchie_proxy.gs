@@ -2294,7 +2294,8 @@ function getDirectorSummary(params, pre) {
   const curr = aggregateTransactions_(allCurr);
   const prev = aggregateTransactions_(allPrev);
 
-  const allEmps       = Object.values(curr.byEmployee);
+  const _excluded     = getExcluded_();
+  const allEmps       = Object.values(curr.byEmployee).filter(e => !_excluded.has(nameToKey_(e.name)));
   const flaggedEmps   = allEmps.filter(e => e.discountRate > DISCOUNT_FLAG_THRESHOLD);
 
   // Sales per hour: total sales ÷ (elapsed days × store open hours)
