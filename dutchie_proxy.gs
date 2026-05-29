@@ -759,7 +759,7 @@ function getDateRange_(period) {
     fromUTC:     fromUTC.toISOString(),
     toUTC:       toUTC.toISOString(),
     fromLocal:   fmtDate(fromMs),
-    toLocal:     fmtDate(todayStartMs),
+    toLocal:     fmtDate(toMs),
     daysElapsed: daysElapsed,
     totalDays:   totalDays,
     period:      (period || 'mtd').toLowerCase(),

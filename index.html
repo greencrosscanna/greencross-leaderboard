@@ -5169,7 +5169,7 @@ var director = (function() {
       bar.style.width = '0%'; // reset in case of re-sort
       setTimeout(function() {
         if (bar.isConnected) bar.style.width = bar.getAttribute('data-final');
-      }, i * 500);
+      }, i * 400);
     });
   }
 
@@ -5438,7 +5438,7 @@ var director = (function() {
       poly.style.animationPlayState = 'paused';
       setTimeout(function() {
         if (poly.isConnected) poly.style.animationPlayState = 'running';
-      }, i * 500);
+      }, i * 400);
     });
   }
 
@@ -5449,7 +5449,7 @@ var director = (function() {
       poly.style.animationPlayState = 'paused';
       setTimeout(function() {
         if (poly.isConnected) poly.style.animationPlayState = 'running';
-      }, i * 500);
+      }, i * 400);
     });
   }
 
@@ -8734,7 +8734,7 @@ var lb = (function() {
       poly.style.animationPlayState = 'paused';
       setTimeout(function() {
         if (poly.isConnected) poly.style.animationPlayState = 'running';
-      }, i * 500);
+      }, i * 400);
     });
   }
 
