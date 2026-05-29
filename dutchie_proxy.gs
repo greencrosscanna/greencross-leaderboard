@@ -603,12 +603,12 @@ function bootstrapAllUsers() {
   setUserPassword_('mike',   'Q6564J', 'director',      null,         'Mike Kettler',  'MK');
   setUserPassword_('shawn',  'XY1112', 'director',      null,         'Shawn Todd',    'ST');
   setUserPassword_('tawny',  '13C19U', 'director',      null,         'Tawny Vierra',  'TV');
-  setUserPassword_('dean',    'gc123',   'store_manager', 'baseline',   'Dean Deloof',   'DD');
-  setUserPassword_('tj',      'gc123',   'store_manager', 'river',      'TJ Peterson',   'TP');
-  setUserPassword_('scott',   'gc123',   'store_manager', 'portland',   'Scott Penner',  'SP');
-  setUserPassword_('tyson',   'gc123',   'store_manager', 'center',     'Tyson Farris',  'TF');
-  setUserPassword_('mariana', 'gc123',   'store_manager', 'commercial', 'Mariana Moxie', 'MM');
-  setUserPassword_('chris',   'gc123',   'store_manager', 'century',    'Chris Carney',  'CC');
+  setUserPassword_('dean',    '01Z4WF',  'store_manager', 'baseline',   'Dean Deloof',   'DD');
+  setUserPassword_('tj',      '4397PE',  'store_manager', 'river',      'TJ Peterson',   'TP');
+  setUserPassword_('scott',   '1028823', 'store_manager', 'portland',   'Scott Penner',  'SP');
+  setUserPassword_('tyson',   '72K6D1',  'store_manager', 'center',     'Tyson Farris',  'TF');
+  setUserPassword_('mariana', '3E0C85',  'store_manager', 'commercial', 'Mariana Moxie', 'MM');
+  setUserPassword_('chris',   '980AU7',  'store_manager', 'century',    'Chris Carney',  'CC');
   Logger.log('All users bootstrapped.');
 }
 
