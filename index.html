@@ -4942,6 +4942,9 @@ GC.views.renderDirector = function() {
   var app = document.getElementById('app');
   if (!app) return;
 
+  // Reset period tabs to MTD on each fresh navigation
+  director.resetPeriods();
+
   // Show loading shell while data fetches
   app.innerHTML = director.renderLoading();
 
@@ -5023,6 +5026,7 @@ var director = (function() {
   var _storeSortDir  = -1;    // -1 = desc, 1 = asc
   var _storePpRange  = null;  // human-readable PP date range for stores
   var _storeMtdData  = null;  // preserved MTD store array for tab switching back
+  var _storePpStores = null;  // cached PP store array for re-apply after refresh
 
   // ── Helpers ────────────────────────────────────────────
 
@@ -5790,7 +5794,6 @@ var director = (function() {
   function render(data) {
     _data          = data;
     _avatarConfigs = data.avatarConfigs || {};
-    _storePeriod   = 'mtd';  // reset to MTD on full re-render
     _storeMtdData  = (data.stores && data.stores.stores) || [];
 
     var stores = data.stores.stores;
@@ -5944,6 +5947,8 @@ var director = (function() {
           return;
         }
         _data = data;
+        // Capture active periods before render() resets state
+        var prevStorePeriod = _storePeriod;
         // Re-render dynamic sections only (avoid full page flash)
         var app = document.getElementById('app');
         if (app) {
@@ -5956,6 +5961,13 @@ var director = (function() {
         // Re-apply the active staff period after refresh
         if (_staffPeriod === 'pp' && _staffPpData) {
           updateStaffTable(_staffPpData);
+        }
+        // Re-apply the active store period after refresh
+        if (prevStorePeriod === 'pp' && _storePpStores) {
+          _storePeriod = 'pp';
+          if (_data.stores) _data.stores.stores = _storePpStores;
+          refreshStoreTable();
+          syncStorePeriodTabs();
         }
       })
       .catch(function(err) {
@@ -6178,6 +6190,7 @@ var director = (function() {
                   var t = trendMap[s.slug];
                   return t ? Object.assign({}, s, t) : s;
                 });
+                _storePpStores = ppStores; // cache for re-apply after background refresh
                 if (_data.stores) _data.stores.stores = ppStores;
                 refreshStoreTable();
                 syncStorePeriodTabs();
@@ -6476,6 +6489,11 @@ var director = (function() {
     startClock:          startClock,
     updateStaffTable:    updateStaffTable,
     wireHistoryControls: wireHistoryControls,
+    resetPeriods: function() {
+      _storePeriod   = 'mtd';
+      _storePpStores = null;
+      _storePpRange  = null;
+    },
   };
 })();
 
