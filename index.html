@@ -414,6 +414,17 @@ html, body {
 .sparkline-cell .spark-delta.up   { color: var(--green); }
 .sparkline-cell .spark-delta.down { color: var(--red); }
 
+/* ── Store sparkline staggered draw-in ───────────────────── */
+#storeTableBody .sparkline-cell polyline {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: store-spark-draw 0.5s ease-out forwards;
+  animation-play-state: paused;
+}
+@keyframes store-spark-draw {
+  to { stroke-dashoffset: 0; }
+}
+
 /* ── vs-Plan chip ────────────────────────────────────────── */
 .vs-plan {
   display: inline-flex;
@@ -5042,7 +5053,7 @@ var director = (function() {
     var label  = GC.trendLabel(trendPct);
     return '<div class="sparkline-cell">'
       + '<svg width="80" height="22" viewBox="0 0 80 22" style="overflow:visible">'
-      + '<polyline fill="none" stroke="' + stroke + '" stroke-width="1.5" points="' + pts + '"/>'
+      + '<polyline pathLength="1" fill="none" stroke="' + stroke + '" stroke-width="1.5" points="' + pts + '"/>'
       + '</svg>'
       + '<span class="spark-delta ' + cls + '">' + e(label) + '</span>'
       + '</div>';
@@ -5401,6 +5412,18 @@ var director = (function() {
     var thead = document.getElementById('storeTableHead');
     if (tbody) tbody.innerHTML = storeTableRows(stores);
     if (thead) thead.innerHTML = storeTableHead();
+    animateStoreSparklines();
+  }
+
+  function animateStoreSparklines() {
+    document.querySelectorAll('#storeTableBody tr').forEach(function(row, i) {
+      var poly = row.querySelector('.sparkline-cell polyline');
+      if (!poly) return;
+      poly.style.animationPlayState = 'paused';
+      setTimeout(function() {
+        if (poly.isConnected) poly.style.animationPlayState = 'running';
+      }, i * 200);
+    });
   }
 
   function renderStoreTable(stores, range) {
@@ -5984,6 +6007,7 @@ var director = (function() {
     startClock();
     scheduleRefresh();
     animateBars();
+    animateStoreSparklines();
 
     // Update last-refreshed label
     var lr = document.getElementById('lastRefreshed');
