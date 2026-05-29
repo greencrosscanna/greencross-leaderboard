@@ -5791,7 +5791,7 @@ var director = (function() {
     _data          = data;
     _avatarConfigs = data.avatarConfigs || {};
     _storePeriod   = 'mtd';  // reset to MTD on full re-render
-    _storeMtdData  = data.stores.stores;
+    _storeMtdData  = (data.stores && data.stores.stores) || [];
 
     var stores = data.stores.stores;
     var staff  = data.staff.staff;
