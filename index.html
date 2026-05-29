@@ -5150,14 +5150,27 @@ var director = (function() {
   }
 
   function animateBars() {
+    // Animate all bars EXCEPT those in #storeTableBody (those get staggered separately)
     setTimeout(function() {
       document.querySelectorAll('.emp-bar span[data-final]').forEach(function(s) {
+        if (s.closest('#storeTableBody')) return;
         s.style.width = s.getAttribute('data-final');
       });
       document.querySelectorAll('.emp-bar-tick[data-final]').forEach(function(t) {
         t.style.left = t.getAttribute('data-final');
       });
     }, 400);
+  }
+
+  function animateStoreBars() {
+    document.querySelectorAll('#storeTableBody tr').forEach(function(row, i) {
+      var bar = row.querySelector('.emp-bar span[data-final]');
+      if (!bar) return;
+      bar.style.width = '0%'; // reset in case of re-sort
+      setTimeout(function() {
+        if (bar.isConnected) bar.style.width = bar.getAttribute('data-final');
+      }, i * 500);
+    });
   }
 
   // ── AOV zone: ±5% vs. group average ─────────────────────
@@ -5414,6 +5427,7 @@ var director = (function() {
     var thead = document.getElementById('storeTableHead');
     if (tbody) tbody.innerHTML = storeTableRows(stores);
     if (thead) thead.innerHTML = storeTableHead();
+    animateStoreBars();
     animateStoreSparklines();
   }
 
@@ -6020,6 +6034,7 @@ var director = (function() {
     startClock();
     scheduleRefresh();
     animateBars();
+    animateStoreBars();
     animateStoreSparklines();
     animateStaffSparklines();
 
