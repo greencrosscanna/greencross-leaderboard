@@ -427,6 +427,57 @@ html, body {
   to { stroke-dashoffset: 0; }
 }
 
+/* ── Bug report button + modal ───────────────────────────── */
+.bug-btn {
+  position:fixed; bottom:20px; right:20px; z-index:200;
+  width:44px; height:44px; border-radius:50%;
+  background:var(--card-bg,#141a17); border:1px solid var(--border);
+  color:var(--text-mute); font-size:18px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 2px 8px rgba(0,0,0,.4); transition:border-color .15s,color .15s;
+}
+.bug-btn:hover { border-color:var(--amber); color:var(--amber); }
+.bug-overlay {
+  display:none; position:fixed; inset:0;
+  background:rgba(0,0,0,.6); z-index:300;
+  align-items:center; justify-content:center; padding:16px;
+}
+.bug-overlay.open { display:flex; }
+.bug-modal {
+  background:var(--card-bg,#141a17); border:1px solid var(--border); border-radius:12px;
+  width:100%; max-width:420px; padding:20px;
+  display:flex; flex-direction:column; gap:14px;
+}
+.bug-modal-hdr {
+  display:flex; justify-content:space-between; align-items:center;
+  font-size:14px; font-weight:600;
+}
+.bug-modal-close { background:none; border:none; color:var(--text-mute); cursor:pointer; font-size:18px; line-height:1; }
+.bug-modal-close:hover { color:var(--text); }
+.bug-label { font-size:11px; color:var(--text-mute); text-transform:uppercase; letter-spacing:.5px; margin-bottom:5px; }
+.bug-input, .bug-textarea {
+  width:100%; background:var(--bg); border:1px solid var(--border); border-radius:7px;
+  color:var(--text); padding:8px 10px; font-size:13px; box-sizing:border-box; font-family:inherit;
+}
+.bug-input:focus, .bug-textarea:focus { outline:none; border-color:var(--amber); }
+.bug-textarea { resize:vertical; min-height:80px; }
+.bug-priority { display:flex; gap:8px; }
+.bug-pri-btn {
+  flex:1; padding:9px 0; border-radius:8px; border:1px solid var(--border);
+  background:none; color:var(--text-mute); font-size:12px; font-weight:600; cursor:pointer;
+  transition:all .15s;
+}
+.bug-pri-btn.sel-low    { border-color:#1D9E75; color:#1D9E75; background:rgba(29,158,117,.12); }
+.bug-pri-btn.sel-medium { border-color:var(--amber); color:var(--amber); background:rgba(234,179,8,.12); }
+.bug-pri-btn.sel-high   { border-color:var(--red); color:var(--red); background:rgba(240,100,100,.12); }
+.bug-submit {
+  padding:10px; border-radius:8px; border:none;
+  background:var(--amber); color:#111; font-size:13px; font-weight:700; cursor:pointer;
+}
+.bug-submit:hover { opacity:.9; }
+.bug-submit:disabled { opacity:.4; cursor:default; }
+.bug-success { text-align:center; padding:10px 0; font-size:13px; color:var(--green); }
+
 /* ── vs-Plan chip ────────────────────────────────────────── */
 .vs-plan {
   display: inline-flex;
@@ -10199,6 +10250,108 @@ GC.views.renderLogin = function() {
 document.addEventListener('DOMContentLoaded', function() {
   GC.router.init();
 });
+</script>
+
+<!-- ── Bug report button + modal ───────────────────────── -->
+<button class="bug-btn" id="bugBtn" onclick="GC.bug.open()" title="Report a bug">🐞</button>
+<div class="bug-overlay" id="bugOverlay" onclick="if(event.target===this)GC.bug.close()">
+  <div class="bug-modal">
+    <div class="bug-modal-hdr">
+      <span>🐛 Report a Bug</span>
+      <button class="bug-modal-close" onclick="GC.bug.close()">✕</button>
+    </div>
+    <div id="bugFormBody">
+      <div>
+        <div class="bug-label">Title <span style="color:var(--red)">*</span></div>
+        <input class="bug-input" id="bugTitle" type="text" placeholder="Short description of what went wrong" maxlength="120">
+      </div>
+      <div>
+        <div class="bug-label">Details (optional)</div>
+        <textarea class="bug-textarea" id="bugDesc" placeholder="Steps to reproduce, what you expected vs. what happened…"></textarea>
+      </div>
+      <div>
+        <div class="bug-label">Priority</div>
+        <div class="bug-priority">
+          <button class="bug-pri-btn" id="bpLow"    onclick="GC.bug.selectPri('low')">Low</button>
+          <button class="bug-pri-btn sel-medium" id="bpMedium" onclick="GC.bug.selectPri('medium')">Medium</button>
+          <button class="bug-pri-btn" id="bpHigh"   onclick="GC.bug.selectPri('high')">High</button>
+        </div>
+      </div>
+      <button class="bug-submit" id="bugSubmitBtn" onclick="GC.bug.submit()">Submit</button>
+    </div>
+    <div class="bug-success" id="bugSuccess" style="display:none">✓ Bug reported — thanks!</div>
+  </div>
+</div>
+
+<script>
+// ── Bug reporter ─────────────────────────────────────────
+GC.bug = (function() {
+  var _pri = 'medium';
+
+  function _user() {
+    try { return (GC.auth.load() || {}).username || 'unknown'; } catch(e) { return 'unknown'; }
+  }
+
+  function selectPri(p) {
+    _pri = p;
+    ['low','medium','high'].forEach(function(v) {
+      var btn = document.getElementById('bp' + v.charAt(0).toUpperCase() + v.slice(1));
+      if (btn) btn.className = 'bug-pri-btn' + (v === p ? ' sel-' + v : '');
+    });
+  }
+
+  function open() {
+    document.getElementById('bugTitle').value  = '';
+    document.getElementById('bugDesc').value   = '';
+    document.getElementById('bugSuccess').style.display  = 'none';
+    document.getElementById('bugFormBody').style.display = '';
+    document.getElementById('bugSubmitBtn').disabled     = false;
+    document.getElementById('bugSubmitBtn').textContent  = 'Submit';
+    selectPri('medium');
+    document.getElementById('bugOverlay').classList.add('open');
+    setTimeout(function() { document.getElementById('bugTitle').focus(); }, 50);
+  }
+
+  function close() {
+    document.getElementById('bugOverlay').classList.remove('open');
+  }
+
+  function submit() {
+    var title = document.getElementById('bugTitle').value.trim();
+    if (!title) { document.getElementById('bugTitle').focus(); return; }
+
+    var btn = document.getElementById('bugSubmitBtn');
+    btn.disabled    = true;
+    btn.textContent = 'Sending…';
+
+    var sess    = GC.auth.load() || {};
+    var payload = {
+      action:    'bugreport',
+      title:     title,
+      desc:      document.getElementById('bugDesc').value.trim(),
+      priority:  _pri,
+      reporter:  _user(),
+      appStore:  sess.storeSlug || '',
+      appRole:   sess.role      || '',
+      appVer:    (window.GC && GC.VERSION) ? GC.VERSION : '',
+      appRoute:  window.location.hash || '',
+    };
+
+    GC.api.gasCall('bugreport', payload)
+      .then(function() {
+        document.getElementById('bugFormBody').style.display = 'none';
+        document.getElementById('bugSuccess').style.display  = '';
+        setTimeout(close, 2200);
+      })
+      .catch(function() {
+        btn.disabled    = false;
+        btn.textContent = 'Submit';
+        alert('Could not send — check your connection and try again.');
+      });
+  }
+
+  return { open: open, close: close, selectPri: selectPri, submit: submit };
+})();
 </script>
 
 </body>

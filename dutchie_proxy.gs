@@ -474,6 +474,10 @@ function doGet(e) {
       return jsonOut(getHistoricalDirector_(dateStr), params.callback);
     }
 
+    if (params.action === 'bugreport') {
+      return jsonOut(handleBugReport_(params), params.callback);
+    }
+
     return jsonOut({ ok: false, error: 'Unknown action: ' + params.action }, params.callback);
 
   } catch(err) {
@@ -3345,6 +3349,65 @@ function adminSetStoreKeys(params) {
 // ============================================================
 // JSONP WRAPPER
 // ============================================================
+
+// ── Bug reporter ─────────────────────────────────────────────
+function handleBugReport_(b) {
+  const props   = PropertiesService.getScriptProperties();
+  let   bugSsId = props.getProperty('GC_LEADERBOARD_BUG_SS_ID');
+  let   bugSs;
+
+  if (!bugSsId) {
+    bugSs   = SpreadsheetApp.create('GC Leaderboard — Bug Reports');
+    bugSsId = bugSs.getId();
+    props.setProperty('GC_LEADERBOARD_BUG_SS_ID', bugSsId);
+  } else {
+    bugSs = SpreadsheetApp.openById(bugSsId);
+  }
+
+  let sheet = bugSs.getSheetByName('Bugs');
+  if (!sheet) {
+    sheet = bugSs.getSheets()[0];
+    sheet.setName('Bugs');
+    sheet.getRange(1, 1, 1, 8).setValues([[
+      'Timestamp', 'Reporter', 'Priority', 'Title', 'Description', 'Store', 'Role', 'Version / Route'
+    ]]);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, 8).setFontWeight('bold');
+  }
+
+  const ts = new Date();
+  sheet.appendRow([
+    ts,
+    b.reporter  || '',
+    b.priority  || 'medium',
+    b.title     || '',
+    b.desc      || '',
+    b.appStore  || '',
+    b.appRole   || '',
+    ((b.appVer || '') + ' ' + (b.appRoute || '')).trim(),
+  ]);
+
+  try {
+    const emoji = { low: '🟢', medium: '🟡', high: '🔴' }[b.priority] || '🟡';
+    MailApp.sendEmail({
+      to:      'sky@greencrosscanna.com',
+      subject: emoji + ' Leaderboard Bug [' + (b.priority || 'medium') + ']: ' + b.title,
+      body: [
+        'Reporter : ' + (b.reporter || ''),
+        'Priority : ' + (b.priority || 'medium'),
+        'Store    : ' + (b.appStore || ''),
+        'Role     : ' + (b.appRole  || ''),
+        'Version  : ' + (b.appVer   || ''),
+        'Route    : ' + (b.appRoute || ''),
+        'Time     : ' + Utilities.formatDate(ts, STORE_TZ, 'M/d/yy h:mm a'),
+        '',
+        b.desc || '(no details provided)',
+      ].join('\n'),
+    });
+  } catch(mailErr) { /* non-fatal */ }
+
+  return { ok: true };
+}
 
 function jsonOut(data, callback) {
   const json = JSON.stringify(data);
