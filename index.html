@@ -6046,7 +6046,7 @@ var director = (function() {
     if (_refreshTimer) clearInterval(_refreshTimer);
     _refreshTimer = setInterval(function() {
       doRefresh(false);
-    }, 30000); // every 30s — matches kiosk polling interval
+    }, 120000); // every 2 min — GAS caches directorall for 120s to protect UrlFetch quota
   }
 
   function doRefresh(showToast) {

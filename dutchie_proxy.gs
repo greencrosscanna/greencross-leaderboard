@@ -185,6 +185,19 @@ function doGet(e) {
     if (params.action === 'directorall') {
       requireRole_(auth, ['owner','director']);
       const period = params.period || 'mtd';
+
+      // ── GAS-side 2-minute cache to protect Dutchie UrlFetch quota ──────────
+      // Each directorall makes 18–24 Dutchie API calls. With 30s frontend polling
+      // × multiple users this exhausts the daily premium UrlFetch quota fast.
+      // Cache the full response for 2 min; only the first caller in each window
+      // pays the Dutchie cost.
+      const dirCacheKey = 'gc_dirall_' + period;
+      const dirCache    = CacheService.getScriptCache();
+      try {
+        const cached = dirCache.get(dirCacheKey);
+        if (cached) return jsonOut(JSON.parse(cached), params.callback);
+      } catch(e) { /* cache miss or parse error — proceed to fetch */ }
+
       const range  = getDateRange_(period);
       const prior  = getPriorRange_(range);
       const todayR = getDateRange_('today');
@@ -192,7 +205,6 @@ function doGet(e) {
       const mtdR   = period === 'mtd' ? null : getDateRange_('mtd');
 
       // ONE mega-batch: 4 (or 5) ranges × 6 stores = 24–30 parallel HTTP requests.
-      // This replaces 6 sequential fetchAll calls and cuts execution time ~3–6×.
       // Ranges: [0] current period, [1] prior period, [2] today, [3?] mtd, [last?] 30-day window
       //
       // 30-day trend data is cached in GAS CacheService (4-hour TTL) because it's the
@@ -204,11 +216,10 @@ function doGet(e) {
       if (!storeTrendCache) rangeList.push(getDateRange_('30d')); // skip if cached
 
       const fetched      = fetchAllStoresTransactionsMulti_(rangeList);
-      const byStore      = fetched[0];  // current period
-      const prevByStore  = fetched[1];  // prior period (for summary deltas)
-      const byStoreToday = fetched[2];  // today (for store pace)
-      const byStoreMTD   = mtdR ? fetched[3] : byStore; // mtd (for alerts)
-      // If no cache, byStore30d is the last fetched range; compute and save trends.
+      const byStore      = fetched[0];
+      const prevByStore  = fetched[1];
+      const byStoreToday = fetched[2];
+      const byStoreMTD   = mtdR ? fetched[3] : byStore;
       const byStore30d   = storeTrendCache ? null : fetched[rangeList.length - 1];
       const storeTrends  = storeTrendCache || saveStoreTrendCache_(byStore30d) || {};
 
@@ -219,7 +230,15 @@ function doGet(e) {
       const today   = getDirectorToday(byStoreToday);
       const avatarConfigs = getAvatarConfigs_();
       const eomKey        = (getEomCurrent_() || {}).employeeKey || null;
-      return jsonOut({ summary, stores, staff, alerts, today, avatarConfigs, eomKey }, params.callback);
+      const result  = { summary, stores, staff, alerts, today, avatarConfigs, eomKey };
+
+      // Cache for 2 minutes (120s). Silently skip if payload > 100KB.
+      try {
+        const json = JSON.stringify(result);
+        if (json.length < 95000) dirCache.put(dirCacheKey, json, 120);
+      } catch(e) { /* non-fatal */ }
+
+      return jsonOut(result, params.callback);
     }
     if (params.action === 'directorsummary') {
       requireRole_(auth, ['owner','director']);
