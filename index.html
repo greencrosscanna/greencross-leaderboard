@@ -5910,7 +5910,7 @@ var director = (function() {
     _storeMtdData  = (data.stores && data.stores.stores) || [];
 
     var stores = (data.stores && data.stores.stores) || [];
-    var staff  = data.staff.staff;
+    var staff  = (data.staff && data.staff.staff) || [];
     var sum    = data.summary;
     var alerts = data.alerts;
     var today  = data.today || {};
@@ -5978,7 +5978,7 @@ var director = (function() {
     var tbody = document.getElementById('staffTableBody');
     if (!tbody) return;
 
-    var staff    = _data.staff.staff;
+    var staff    = (_data.staff && _data.staff.staff) || [];
     var filtered = applyStaffFilters(staff);
 
     filtered.forEach(function(s, i) {
