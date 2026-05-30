@@ -457,6 +457,12 @@ function doGet(e) {
       return jsonOut(handleBugReport_(params), params.callback);
     }
 
+    if (params.action === 'setuptrigger') {
+      requireRole_(auth, ['owner','director']);
+      setupDirectorTrigger();
+      return jsonOut({ ok: true, message: 'Trigger installed and cache warmed.' }, params.callback);
+    }
+
     return jsonOut({ ok: false, error: 'Unknown action: ' + params.action }, params.callback);
 
   } catch(err) {
