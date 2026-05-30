@@ -4520,6 +4520,7 @@ GC.api = (function() {
   function _withCache(key, ttlMs, fetcher, onFresh) {
     var cached = _getCached(key, ttlMs);
     var networkPromise = fetcher().then(function(data) {
+      if (!data || data.ok === false) return data; // don't cache errors
       _setCache(key, data);
       return data;
     });
@@ -5029,6 +5030,10 @@ GC.views.renderDirector = function() {
     director.init(freshData);
   })
     .then(function(data) {
+      if (data && data.ok === false) {
+        app.innerHTML = director.renderError(data.error || 'Server returned an error');
+        return;
+      }
       app.innerHTML = director.render(data);
       director.init(data);
 
@@ -5337,7 +5342,8 @@ var director = (function() {
 
   // ── Render: KPI rows ───────────────────────────────────
   function renderKPIs(summary) {
-    var d = summary.deltas;
+    if (!summary) return '';
+    var d = summary.deltas || {};
 
     function bigKpi(label, value, deltaHtml, colorClass) {
       return '<div class="kpi">'
@@ -5393,7 +5399,7 @@ var director = (function() {
       + '<button class="pill" data-tag="top10">Top 10</button>'
       + '<button class="pill" data-tag="rising">Rising</button>'
       + '<button class="pill" data-tag="watch">Watch</button>'
-      + '<button class="pill' + (_tagFilter === 'flag' ? ' active-red' : '') + '" data-tag="flag" id="flagPill">Flagged · ' + (_data ? _data.alerts.discountWatch.length : 0) + '</button>'
+      + '<button class="pill' + (_tagFilter === 'flag' ? ' active-red' : '') + '" data-tag="flag" id="flagPill">Flagged · ' + (_data && _data.alerts && _data.alerts.discountWatch ? _data.alerts.discountWatch.length : 0) + '</button>'
       + '</div>'
       + '</div>';
   }
@@ -5637,6 +5643,7 @@ var director = (function() {
 
   // ── Render: Alerts Panel ──────────────────────────────
   function renderAlerts(alertsData) {
+    if (!alertsData || !alertsData.alerts) return '';
     var items = alertsData.alerts.map(function(a) {
       return '<div class="alert-item sev-' + e(a.severity) + '" data-alert="' + e(a.id) + '">'
         + '<div class="alert-icon">' + a.icon + '</div>'
@@ -5658,6 +5665,7 @@ var director = (function() {
 
   // ── Render: Discount Watch ─────────────────────────────
   function renderDiscountWatch(alertsData) {
+    if (!alertsData || !alertsData.discountWatch) return '';
     // Sort worst (highest discount rate) to top
     var sorted = alertsData.discountWatch.slice().sort(function(a, b) {
       return b.discountRate - a.discountRate;
