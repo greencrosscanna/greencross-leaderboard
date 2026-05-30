@@ -186,58 +186,18 @@ function doGet(e) {
       requireRole_(auth, ['owner','director']);
       const period = params.period || 'mtd';
 
-      // ── GAS-side 2-minute cache to protect Dutchie UrlFetch quota ──────────
-      // Each directorall makes 18–24 Dutchie API calls. With 30s frontend polling
-      // × multiple users this exhausts the daily premium UrlFetch quota fast.
-      // Cache the full response for 2 min; only the first caller in each window
-      // pays the Dutchie cost.
-      const dirCacheKey = 'gc_dirall_' + period;
+      // Serve from proactive cache — set by the 2-minute time trigger.
+      // Browser requests make zero Dutchie UrlFetch calls when cache is warm.
+      const dirCacheKey = 'gc_dirall_v2_' + period;
       const dirCache    = CacheService.getScriptCache();
       try {
-        const cached = dirCache.get(dirCacheKey);
-        if (cached) return jsonOut(JSON.parse(cached), params.callback);
-      } catch(e) { /* cache miss or parse error — proceed to fetch */ }
+        const chunks = getChunkedCache_(dirCache, dirCacheKey);
+        if (chunks) return jsonOut(JSON.parse(chunks), params.callback);
+      } catch(e) { /* cache miss or parse error — fall through to fetch */ }
 
-      const range  = getDateRange_(period);
-      const prior  = getPriorRange_(range);
-      const todayR = getDateRange_('today');
-      // For mtd (default), byStore also serves as byStoreMTD — no 4th fetch needed.
-      const mtdR   = period === 'mtd' ? null : getDateRange_('mtd');
-
-      // ONE mega-batch: 4 (or 5) ranges × 6 stores = 24–30 parallel HTTP requests.
-      // Ranges: [0] current period, [1] prior period, [2] today, [3?] mtd, [last?] 30-day window
-      //
-      // 30-day trend data is cached in GAS CacheService (4-hour TTL) because it's the
-      // most expensive fetch (6 stores × 30 days of Dutchie transactions). On cache hits
-      // the 30d range is skipped entirely, cutting response time by ~40%.
-      const storeTrendCache = getStoreTrendCache_();
-      const rangeList = [range, prior, todayR];
-      if (mtdR) rangeList.push(mtdR);
-      if (!storeTrendCache) rangeList.push(getDateRange_('30d')); // skip if cached
-
-      const fetched      = fetchAllStoresTransactionsMulti_(rangeList);
-      const byStore      = fetched[0];
-      const prevByStore  = fetched[1];
-      const byStoreToday = fetched[2];
-      const byStoreMTD   = mtdR ? fetched[3] : byStore;
-      const byStore30d   = storeTrendCache ? null : fetched[rangeList.length - 1];
-      const storeTrends  = storeTrendCache || saveStoreTrendCache_(byStore30d) || {};
-
-      const summary = getDirectorSummary(params, { byStore, prevByStore });
-      const stores  = getDirectorStores(params,  { byStore, byStoreToday, byStore30d, storeTrends });
-      const staff   = getDirectorStaff(params,   { byStore, byStore30d });
-      const alerts  = getDirectorAlerts(         { byStore: byStoreMTD });
-      const today   = getDirectorToday(byStoreToday);
-      const avatarConfigs = getAvatarConfigs_();
-      const eomKey        = (getEomCurrent_() || {}).employeeKey || null;
-      const result  = { summary, stores, staff, alerts, today, avatarConfigs, eomKey };
-
-      // Cache for 2 minutes (120s). Silently skip if payload > 100KB.
-      try {
-        const json = JSON.stringify(result);
-        if (json.length < 95000) dirCache.put(dirCacheKey, json, 120);
-      } catch(e) { /* non-fatal */ }
-
+      // Cache cold (first load or after GAS restart) — fetch now and warm it.
+      const result = buildDirectorAll_(period);
+      saveChunkedCache_(dirCache, dirCacheKey, JSON.stringify(result), 240);
       return jsonOut(result, params.callback);
     }
     if (params.action === 'directorsummary') {
@@ -3426,6 +3386,141 @@ function handleBugReport_(b) {
   } catch(mailErr) { /* non-fatal */ }
 
   return { ok: true };
+}
+
+// ============================================================
+//  PROACTIVE DIRECTOR CACHE
+//
+//  Architecture:
+//    • A time-based GAS trigger calls refreshDirectorCache()
+//      every 2 minutes on Google's servers.
+//    • It builds the full directorall dataset and writes it
+//      to CacheService in 90KB chunks (GAS 100KB limit).
+//    • doGet('directorall') reads from the chunk cache first;
+//      if warm it returns immediately with zero Dutchie calls.
+//    • On a cold cache (first load / GAS restart) it falls
+//      through to buildDirectorAll_() and warms the cache.
+//
+//  Setup (one-time):
+//    Open this script in script.google.com → Run → setupDirectorTrigger
+//    You'll see "Trigger created" in the Execution Log.
+//    Verify in Triggers (clock icon) that the 2-min trigger exists.
+// ============================================================
+
+/**
+ * Core build function used by both doGet and the proactive trigger.
+ * Fetches all Dutchie data for the given period and returns the
+ * full directorall payload object.
+ */
+function buildDirectorAll_(period) {
+  period = period || 'mtd';
+  const params = { period: period };
+  const range  = getDateRange_(period);
+  const prior  = getPriorRange_(range);
+  const todayR = getDateRange_('today');
+  const mtdR   = period === 'mtd' ? null : getDateRange_('mtd');
+
+  const storeTrendCache = getStoreTrendCache_();
+  const rangeList = [range, prior, todayR];
+  if (mtdR) rangeList.push(mtdR);
+  if (!storeTrendCache) rangeList.push(getDateRange_('30d'));
+
+  const fetched      = fetchAllStoresTransactionsMulti_(rangeList);
+  const byStore      = fetched[0];
+  const prevByStore  = fetched[1];
+  const byStoreToday = fetched[2];
+  const byStoreMTD   = mtdR ? fetched[3] : byStore;
+  const byStore30d   = storeTrendCache ? null : fetched[rangeList.length - 1];
+  const storeTrends  = storeTrendCache || saveStoreTrendCache_(byStore30d) || {};
+
+  const summary       = getDirectorSummary(params, { byStore, prevByStore });
+  const stores        = getDirectorStores(params,  { byStore, byStoreToday, byStore30d, storeTrends });
+  const staff         = getDirectorStaff(params,   { byStore, byStore30d });
+  const alerts        = getDirectorAlerts(         { byStore: byStoreMTD });
+  const today         = getDirectorToday(byStoreToday);
+  const avatarConfigs = getAvatarConfigs_();
+  const eomKey        = (getEomCurrent_() || {}).employeeKey || null;
+
+  return { summary, stores, staff, alerts, today, avatarConfigs, eomKey };
+}
+
+/**
+ * Called by the time-based trigger every 2 minutes.
+ * Builds and caches directorall for 'mtd' (and 'pp' if needed).
+ * Runs on Google's servers — no browser involved.
+ */
+function refreshDirectorCache() {
+  const cache = CacheService.getScriptCache();
+  const periods = ['mtd'];
+  // Uncomment to also pre-warm the PP cache:
+  // periods.push('pp');
+  periods.forEach(function(period) {
+    try {
+      const result = buildDirectorAll_(period);
+      const json   = JSON.stringify(result);
+      saveChunkedCache_(cache, 'gc_dirall_v2_' + period, json, 240); // 4-min TTL
+      Logger.log('refreshDirectorCache: cached ' + period + ' (' + json.length + ' bytes)');
+    } catch(e) {
+      Logger.log('refreshDirectorCache error [' + period + ']: ' + e.message);
+    }
+  });
+}
+
+/**
+ * Run once from the GAS editor (Run → setupDirectorTrigger) to install
+ * the 2-minute proactive cache trigger.
+ */
+function setupDirectorTrigger() {
+  // Remove any existing triggers for this function to avoid duplicates
+  ScriptApp.getProjectTriggers()
+    .filter(function(t) { return t.getHandlerFunction() === 'refreshDirectorCache'; })
+    .forEach(function(t) { ScriptApp.deleteTrigger(t); });
+
+  ScriptApp.newTrigger('refreshDirectorCache')
+    .timeBased()
+    .everyMinutes(2)
+    .create();
+
+  Logger.log('✅ Trigger created: refreshDirectorCache every 2 minutes.');
+  Logger.log('   Verify in Triggers panel (clock icon in GAS editor).');
+  // Run once immediately to warm the cache right away
+  refreshDirectorCache();
+  Logger.log('✅ Cache warmed.');
+}
+
+// ── Chunked CacheService helpers ─────────────────────────────
+// GAS CacheService max value size = 100KB. For large payloads
+// we split into 90KB chunks and store them as key_0, key_1, …
+// plus a key_meta entry with the chunk count.
+
+const CHUNK_SIZE = 90000; // bytes per chunk (leave headroom below 100KB)
+
+function saveChunkedCache_(cache, key, json, ttlSeconds) {
+  const chunks = [];
+  for (let i = 0; i < json.length; i += CHUNK_SIZE) {
+    chunks.push(json.slice(i, i + CHUNK_SIZE));
+  }
+  const entries = {};
+  chunks.forEach(function(chunk, i) { entries[key + '_' + i] = chunk; });
+  entries[key + '_meta'] = String(chunks.length);
+  cache.putAll(entries, ttlSeconds);
+}
+
+function getChunkedCache_(cache, key) {
+  const metaRaw = cache.get(key + '_meta');
+  if (!metaRaw) return null;
+  const count = parseInt(metaRaw, 10);
+  if (!count || count < 1) return null;
+  const keys = [];
+  for (let i = 0; i < count; i++) keys.push(key + '_' + i);
+  const vals = cache.getAll(keys);
+  const parts = [];
+  for (let i = 0; i < count; i++) {
+    const v = vals[key + '_' + i];
+    if (!v) return null; // a chunk expired — treat as miss
+    parts.push(v);
+  }
+  return parts.join('');
 }
 
 function jsonOut(data, callback) {
