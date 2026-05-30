@@ -3484,10 +3484,10 @@ function setupDirectorTrigger() {
 
   ScriptApp.newTrigger('refreshDirectorCache')
     .timeBased()
-    .everyMinutes(2)
+    .everyMinutes(5)
     .create();
 
-  Logger.log('✅ Trigger created: refreshDirectorCache every 2 minutes.');
+  Logger.log('✅ Trigger created: refreshDirectorCache every 5 minutes.');
   Logger.log('   Verify in Triggers panel (clock icon in GAS editor).');
   // Run once immediately to warm the cache right away
   refreshDirectorCache();
