@@ -197,7 +197,7 @@ function doGet(e) {
 
       // Cache cold (first load or after GAS restart) — fetch now and warm it.
       const result = buildDirectorAll_(period);
-      saveChunkedCache_(dirCache, dirCacheKey, JSON.stringify(result), 240);
+      saveChunkedCache_(dirCache, dirCacheKey, JSON.stringify(result), 360);
       return jsonOut(result, params.callback);
     }
     if (params.action === 'directorsummary') {
@@ -1631,7 +1631,7 @@ function refreshTargetsAll() {
   const report = {};
   STORES.forEach(s => {
     const ppTarget = Math.round(netBySlug[s.slug] / lookbackDays * PP_DAYS);
-    cache[s.slug]  = { ppTarget, computedAt: now.toISOString() };
+    cache[s.slug]  = { ppTarget, computedAt: new Date().toISOString() };
     report[s.slug] = ppTarget;
     Logger.log('[targets] ' + s.slug + ': net=' + Math.round(netBySlug[s.slug])
       + ' / ' + lookbackDays + 'd × 14 → pp=$' + ppTarget);
@@ -3457,14 +3457,14 @@ function buildDirectorAll_(period) {
  */
 function refreshDirectorCache() {
   const cache = CacheService.getScriptCache();
-  const periods = ['mtd'];
+  const periods = ['mtd', 'pp'];
   // Uncomment to also pre-warm the PP cache:
   // periods.push('pp');
   periods.forEach(function(period) {
     try {
       const result = buildDirectorAll_(period);
       const json   = JSON.stringify(result);
-      saveChunkedCache_(cache, 'gc_dirall_v2_' + period, json, 240); // 4-min TTL
+      saveChunkedCache_(cache, 'gc_dirall_v2_' + period, json, 360); // 6-min TTL — outlasts 5-min trigger
       Logger.log('refreshDirectorCache: cached ' + period + ' (' + json.length + ' bytes)');
     } catch(e) {
       Logger.log('refreshDirectorCache error [' + period + ']: ' + e.message);

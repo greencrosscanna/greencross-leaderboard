@@ -6046,7 +6046,7 @@ var director = (function() {
     if (_refreshTimer) clearInterval(_refreshTimer);
     _refreshTimer = setInterval(function() {
       doRefresh(false);
-    }, 120000); // every 2 min — GAS caches directorall for 120s to protect UrlFetch quota
+    }, 300000); // every 5 min — matches GAS proactive cache trigger interval
   }
 
   function doRefresh(showToast) {
