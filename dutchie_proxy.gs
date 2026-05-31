@@ -457,6 +457,14 @@ function doGet(e) {
       return jsonOut(handleBugReport_(params), params.callback);
     }
 
+    if (params.action === 'renew') {
+      // Silently re-issue a fresh session token (used by the client heartbeat).
+      if (!auth.ok) return jsonOut({ ok: false, error: auth.error || 'Auth required' }, params.callback);
+      const newToken = issueSessionToken_(auth.user);
+      const newExp   = new Date(Date.now() + GC_SESSION_TTL_MS).toISOString();
+      return jsonOut({ ok: true, token: newToken, expiresAt: newExp }, params.callback);
+    }
+
     if (params.action === 'setuptrigger') {
       requireRole_(auth, ['owner','director']);
       setupDirectorTrigger();

@@ -427,6 +427,9 @@ html, body {
   to { stroke-dashoffset: 0; }
 }
 
+.stale-banner { position:fixed; top:0; left:0; right:0; z-index:500; background:rgba(220,150,0,0.92); color:#000; font-size:11px; font-weight:700; text-align:center; padding:4px 12px; letter-spacing:0.05em; backdrop-filter:blur(4px); }
+.ver-badge { font-size:10px; color:var(--text-mute); opacity:0.55; padding:1px 5px; background:transparent; border:1px solid var(--border); border-radius:3px; font-family:monospace; letter-spacing:0.03em; margin-left:4px; vertical-align:middle; }
+
 /* ── Bug report button + modal ───────────────────────────── */
 .bug-btn {
   position:fixed; bottom:20px; right:20px; z-index:200;
@@ -4453,7 +4456,33 @@ GC.auth = (function() {
     }
   }
 
-  return { save: save, load: load, clear: clear, isAuthenticated: isAuthenticated, homeRoute: homeRoute };
+  var _heartbeatTimer = null;
+
+  // Called once after login or page load (if already authenticated).
+  // Renews the session token every 6 hours when within 48 h of expiry,
+  // keeping kiosk displays alive indefinitely.
+  function startHeartbeat() {
+    if (_heartbeatTimer) return; // already running
+    _heartbeatTimer = setInterval(function() {
+      var sess = load();
+      if (!sess || !sess.token) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; return; }
+      var expiresMs = new Date(sess.expiresAt).getTime();
+      if (expiresMs - Date.now() < 48 * 60 * 60 * 1000) {
+        GC.api.gasCall('renew', { token: sess.token }).then(function(result) {
+          if (result && result.ok && result.token) {
+            sess.token    = result.token;
+            sess.expiresAt = result.expiresAt;
+            save(sess);
+            console.log('[GC.auth] Session renewed, expires:', result.expiresAt);
+          }
+        }).catch(function(e) {
+          console.warn('[GC.auth] Heartbeat renewal failed:', e);
+        });
+      }
+    }, 6 * 60 * 60 * 1000); // every 6 hours
+  }
+
+  return { save: save, load: load, clear: clear, isAuthenticated: isAuthenticated, homeRoute: homeRoute, startHeartbeat: startHeartbeat };
 })();
 
 </script>
@@ -4511,6 +4540,17 @@ GC.api = (function() {
     var entry = { data: data, ts: Date.now() };
     _mem[key] = entry;
     try { localStorage.setItem('gc_cache_' + key, JSON.stringify(entry)); } catch(e) {}
+  }
+
+  // Read any cached entry from localStorage regardless of TTL.
+  // Returns { data, ts } or null. Used for stale-data fallback on network failure.
+  function _getStaleCache(key) {
+    try {
+      var raw = localStorage.getItem('gc_cache_' + key);
+      if (!raw) return null;
+      var entry = JSON.parse(raw);
+      return (entry && entry.data) ? entry : null;
+    } catch(e) { return null; }
   }
 
   // Stale-while-revalidate wrapper.
@@ -4796,6 +4836,7 @@ GC.api = (function() {
     fetchAvatarData:  fetchAvatarData,
     saveSettings:     saveSettings,
     gasCall:          gasCall,
+    getStaleCache:    _getStaleCache,
     // Historical snapshots — no caching (data is static once snapshotted)
     fetchHistoricalDirector: function(dateStr) {
       return gasCall('historicaldir', { date: dateStr });
@@ -4922,6 +4963,7 @@ GC.router = (function() {
     } else {
       // Public route: if already authenticated, redirect home
       if (GC.auth.isAuthenticated()) {
+        GC.auth.startHeartbeat();
         navigate(GC.auth.homeRoute());
         return;
       }
@@ -5031,7 +5073,15 @@ GC.views.renderDirector = function() {
   })
     .then(function(data) {
       if (data && data.ok === false) {
-        app.innerHTML = director.renderError(data.error || 'Server returned an error');
+        var stale2 = GC.api.getStaleCache('director_mtd');
+        if (stale2) {
+          var ageMin2 = Math.max(1, Math.round((Date.now() - stale2.ts) / 60000));
+          app.innerHTML = director.render(stale2.data);
+          director.init(stale2.data);
+          director._showStaleBanner('Offline — showing data from ' + ageMin2 + ' min ago');
+        } else {
+          app.innerHTML = director.renderError(data.error || 'Server returned an error');
+        }
         return;
       }
       app.innerHTML = director.render(data);
@@ -5047,7 +5097,15 @@ GC.views.renderDirector = function() {
     })
     .catch(function(err) {
       console.error('[director] fetch failed:', err);
-      app.innerHTML = director.renderError(err.message);
+      var stale = GC.api.getStaleCache('director_mtd');
+      if (stale) {
+        var ageMin = Math.max(1, Math.round((Date.now() - stale.ts) / 60000));
+        app.innerHTML = director.render(stale.data);
+        director.init(stale.data);
+        director._showStaleBanner('Offline — showing data from ' + ageMin + ' min ago');
+      } else {
+        app.innerHTML = director.renderError(err.message);
+      }
     });
 };
 
@@ -5256,6 +5314,17 @@ var director = (function() {
       + '</div>';
   }
 
+  // ── Stale-data banner ──────────────────────────────────
+  function _showStaleBanner(msg) {
+    var existing = document.getElementById('staleBanner');
+    if (existing) existing.remove();
+    var banner = document.createElement('div');
+    banner.id = 'staleBanner';
+    banner.className = 'stale-banner';
+    banner.textContent = '⚠ ' + msg;
+    document.body.insertBefore(banner, document.body.firstChild);
+  }
+
   // ── Render: Error ──────────────────────────────────────
   function renderError(msg) {
     return '<div class="app-page"><div class="empty-state" style="padding:80px 20px">'
@@ -5290,6 +5359,7 @@ var director = (function() {
       +     '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'
       +   '</svg>'
       + '</button>'
+      + '<span class="ver-badge">' + (window.GC && GC.VERSION ? GC.VERSION : '') + '</span>'
       + (session
           ? (function() {
               var nameKey = GC.nameToKey(session.displayName || session.user || '');
@@ -6613,6 +6683,7 @@ var director = (function() {
     startClock:          startClock,
     updateStaffTable:    updateStaffTable,
     wireHistoryControls: wireHistoryControls,
+    _showStaleBanner:    _showStaleBanner,
     resetPeriods: function() {
       _storePeriod   = 'mtd';
       _storePpStores = null;
@@ -6646,7 +6717,7 @@ GC.views.renderKiosk = function(slug) {
     app.innerHTML = kiosk.renderLoading(slug);
   }
 
-  // No onFresh callback — the 30-second sinceTs poll already updates numbers/hourly
+  // No onFresh callback — the 60-second sinceTs poll already updates numbers/hourly
   // in-place without a full re-render. Passing onFresh caused animations to fire twice
   // (once from cache, once when the background network request landed 2-5s later).
   GC.api.fetchKioskAll(slug)
@@ -6734,6 +6805,7 @@ var kiosk = (function() {
       + backBtn
       + '<img class="gc-logo-img" src="' + GC.LOGO_PNG + '" alt="Green Cross" height="28">'
       + '<span class="store-live-badge">' + e(store.name) + '</span>'
+      + '<span class="ver-badge">' + (window.GC && GC.VERSION ? GC.VERSION : '') + '</span>'
       + '<div class="kiosk-clock">'
       + '  <div class="kc-time num" id="kioskTime">—</div>'
       + '  <div class="kc-date" id="kioskDate">—</div>'
@@ -8201,7 +8273,7 @@ var kiosk = (function() {
     clearInterval(_pollTimer);
     clearInterval(_lbTimer);
 
-    // ── 30-second ticker poll ────────────────────────────
+    // ── 60-second ticker poll ────────────────────────────
     // Sends sinceTs cursor → GAS returns only NEW transactions + updated totals.
     // On first poll (or fixture mode) falls back to full response handling.
     _pollTimer = setInterval(function() {
@@ -8228,7 +8300,7 @@ var kiosk = (function() {
         .catch(function(err) {
           console.warn('[kiosk] ticker poll failed:', err);
         });
-    }, 30000);
+    }, 60000);
 
     // ── 5-minute leaderboard refresh ────────────────────
     _lbTimer = setInterval(function() {
@@ -10225,6 +10297,7 @@ GC.views.renderLogin = function() {
         }
         // Save session and route home
         GC.auth.save(result);
+        GC.auth.startHeartbeat();
         GC.router.navigate(GC.auth.homeRoute());
       })
       .catch(function(err) {
