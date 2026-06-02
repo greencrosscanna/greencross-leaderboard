@@ -8,5 +8,6 @@
 !endpoints.gs
 !cache.gs
 !snapshot.gs
+!tests.gs
 !index.html
 !appsscript.json

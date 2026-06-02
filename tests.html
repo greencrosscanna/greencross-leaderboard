@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Green Cross — Frontend Unit Tests</title>
+<style>
+  body { font: 14px/1.5 -apple-system, system-ui, sans-serif; background:#0d1311; color:#e6efe9; margin:0; padding:24px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:#7c8a82; font-size:12px; margin-bottom:16px; }
+  #summary { font-size:16px; font-weight:700; padding:10px 14px; border-radius:6px; display:inline-block; margin-bottom:16px; }
+  #summary.pass { background:rgba(74,222,128,.15); color:#4ade80; }
+  #summary.fail { background:rgba(239,68,68,.15);  color:#f87171; }
+  #summary.wait { background:#1a221e; color:#7c8a82; }
+  pre { background:#11181500; color:#f87171; white-space:pre-wrap; font-size:12.5px; margin:0; }
+</style>
+</head>
+<body>
+  <h1>Green Cross — Frontend Unit Tests</h1>
+  <div class="sub">
+    Loads <code>index.html</code> in a hidden sandbox and asserts against the real
+    <code>GC.*</code> utilities (no duplication, no build step).
+    Open this page from the deployed Pages URL or via <code>python3 serve.py</code> —
+    not <code>file://</code> (cross-frame access needs a real origin).
+  </div>
+  <div id="summary" class="wait">Loading app in sandbox…</div>
+  <pre id="results"></pre>
+  <iframe id="app" src="index.html" style="display:none" title="app sandbox"></iframe>
+
+<script>
+(function () {
+  var P = 0, F = 0, LOG = [];
+
+  function eq(name, actual, expected) {
+    var a = JSON.stringify(actual), e = JSON.stringify(expected);
+    if (a === e) { P++; }
+    else { F++; LOG.push('✗ ' + name + '\n    expected: ' + e + '\n    actual:   ' + a); }
+  }
+  function ok(name, cond) {
+    if (cond) { P++; } else { F++; LOG.push('✗ ' + name + ' (expected truthy)'); }
+  }
+  function approx(name, actual, expected, eps) {
+    if (Math.abs(actual - expected) <= (eps || 1e-9)) { P++; }
+    else { F++; LOG.push('✗ ' + name + '  expected≈' + expected + ' actual ' + actual); }
+  }
+
+  function runTests(GC) {
+    // ── fmtCurrency ──
+    eq('fmtCurrency 0',        GC.fmtCurrency(0), '$0.00');
+    eq('fmtCurrency 78.34',    GC.fmtCurrency(78.34), '$78.34');
+    eq('fmtCurrency 999',      GC.fmtCurrency(999), '$999.00');
+    eq('fmtCurrency 1234',     GC.fmtCurrency(1234), '$1,234');
+    eq('fmtCurrency 78340',    GC.fmtCurrency(78340), '$78.3k');
+    eq('fmtCurrency 1.5M',     GC.fmtCurrency(1500000), '$1.5M');
+    eq('fmtCurrency negative', GC.fmtCurrency(-50), '-$50.00');
+    eq('fmtCurrency null',     GC.fmtCurrency(null), '—');
+    eq('fmtCurrency NaN',      GC.fmtCurrency(NaN), '—');
+
+    // ── fmtPct / fmtNum / fmtDecimal ──
+    eq('fmtPct 0.061',     GC.fmtPct(0.061), '6.1%');
+    eq('fmtPct 0 decimals', GC.fmtPct(0.061, 0), '6%');
+    eq('fmtPct null',      GC.fmtPct(null), '—');
+    eq('fmtNum 8247',      GC.fmtNum(8247), '8,247');
+    eq('fmtNum rounds',    GC.fmtNum(8246.6), '8,247');
+    eq('fmtNum null',      GC.fmtNum(null), '—');
+    eq('fmtDecimal 2.64',  GC.fmtDecimal(2.64), '2.6');
+    eq('fmtDecimal 0dp',   GC.fmtDecimal(2, 0), '2');
+
+    // ── delta formatters ──
+    eq('fmtDeltaPct up',   GC.fmtDeltaPct(0.042), '▲ +4.2%');
+    eq('fmtDeltaPct down', GC.fmtDeltaPct(-0.053), '▼ −5.3%');
+    eq('fmtDeltaPct flat', GC.fmtDeltaPct(0), '—');
+    eq('fmtDeltaPct null', GC.fmtDeltaPct(null), '');
+
+    // ── discountSeverity (thresholds 0.05 mid, 0.065 hi) ──
+    eq('disc 0.04 lo',   GC.discountSeverity(0.04), 'lo');
+    eq('disc 0.05 mid',  GC.discountSeverity(0.05), 'mid');
+    eq('disc 0.06 mid',  GC.discountSeverity(0.06), 'mid');
+    eq('disc 0.065 hi',  GC.discountSeverity(0.065), 'hi');
+    eq('disc 0.10 hi',   GC.discountSeverity(0.10), 'hi');
+    eq('disc null lo',   GC.discountSeverity(null), 'lo');
+
+    // ── paceDotClass (green ≥0.01, red ≤−0.05) ──
+    eq('pace +5% green', GC.paceDotClass(0.05), 'green');
+    eq('pace 0 amber',   GC.paceDotClass(0), 'amber');
+    eq('pace -3% amber', GC.paceDotClass(-0.03), 'amber');
+    eq('pace -10% red',  GC.paceDotClass(-0.10), 'red');
+
+    // ── rankPillClass (≤2 '', ≥total-1 'bad', else 'mid') ──
+    eq('rank 1/6 top',    GC.rankPillClass(1, 6), '');
+    eq('rank 2/6 top',    GC.rankPillClass(2, 6), '');
+    eq('rank 3/6 mid',    GC.rankPillClass(3, 6), 'mid');
+    eq('rank 5/6 bad',    GC.rankPillClass(5, 6), 'bad');
+    eq('rank 6/6 bad',    GC.rankPillClass(6, 6), 'bad');
+
+    // ── trendClass / trendLabel ──
+    eq('trendClass up',    GC.trendClass(0.18), 'up');
+    eq('trendClass down',  GC.trendClass(-0.11), 'down');
+    eq('trendClass flat',  GC.trendClass(0.001), '');
+    eq('trendLabel +18%',  GC.trendLabel(0.18), '+18%');
+    eq('trendLabel -11%',  GC.trendLabel(-0.11), '−11%');
+    eq('trendLabel 0%',    GC.trendLabel(0), '0%');
+    eq('trendLabel null',  GC.trendLabel(null), '');
+
+    // ── sparklinePoints ──
+    eq('spark <2 pts empty', GC.sparklinePoints([5]), '');
+    eq('spark 2 pts exact',  GC.sparklinePoints([0, 10], 80, 22), '0,22 80,4');
+    ok('spark 5 pts → 5 pairs', GC.sparklinePoints([1,2,3,4,5]).split(' ').length === 5);
+
+    // ── esc ──
+    eq('esc tags+amp+quote', GC.esc('<a href="x">&'), '&lt;a href=&quot;x&quot;&gt;&amp;');
+    eq('esc null',           GC.esc(null), '');
+
+    // ── nameToKey (frontend: strips dots + spaces, NOT quotes) ──
+    eq('nameToKey basic', GC.nameToKey('Jon Juslen'), 'jon_juslen');
+    eq('nameToKey dots',  GC.nameToKey('St. James'), 'st_james');
+    eq('nameToKey empty', GC.nameToKey(''), '');
+
+    // ── dayFrac (time-dependent: assert the 0..1 invariant) ──
+    var df = GC.dayFrac();
+    ok('dayFrac within [0,1]', typeof df === 'number' && df >= 0 && df <= 1);
+
+    render();
+  }
+
+  function render() {
+    var total = P + F, sEl = document.getElementById('summary');
+    sEl.textContent = (F === 0 ? '✅ ALL PASS' : '❌ ' + F + ' FAILED') + '  (' + P + '/' + total + ')';
+    sEl.className = F === 0 ? 'pass' : 'fail';
+    document.getElementById('results').textContent = LOG.join('\n');
+  }
+
+  var iframe = document.getElementById('app');
+  iframe.addEventListener('load', function () {
+    try {
+      var GC = iframe.contentWindow && iframe.contentWindow.GC;
+      if (!GC) {
+        var s = document.getElementById('summary');
+        s.textContent = '❌ Could not reach GC in the app frame (origin restriction?). Serve via http, not file://.';
+        s.className = 'fail';
+        return;
+      }
+      runTests(GC);
+    } catch (e) {
+      var s2 = document.getElementById('summary');
+      s2.textContent = '❌ ' + (e && e.message || e);
+      s2.className = 'fail';
+    }
+  });
+})();
+</script>
+</body>
+</html>
