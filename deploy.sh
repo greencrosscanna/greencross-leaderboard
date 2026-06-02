@@ -79,3 +79,8 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>" || echo "  Nothing ne
 git push origin main
 
 echo "✅ Done — GitHub Pages updated. GAS: see warnings above if version limit was hit."
+
+# Launch background watcher — notifies (desktop + Claude) when Pages is actually live.
+PUSHED_SHA=$(git rev-parse HEAD)
+bash "$(dirname "$0")/watch_deploy.sh" "$PUSHED_SHA" "v1.${BUILD}" &
+echo "👀 Watching Pages build for ${PUSHED_SHA:0:8} in background (PID $!)"
