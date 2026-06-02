@@ -57,8 +57,6 @@ const SLUG_TO_NAME = {
   'river':      'River',
 };
 
-const DUTCHIE_BASE = 'https://api.pos.dutchie.com';
-
 // ── Sheet tab names ────────────────────────────────────────────
 const USERS_SHEET  = 'Users';
 const KEYS_SHEET   = 'Store Keys';
