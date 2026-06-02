@@ -415,9 +415,7 @@ html, body {
 .sparkline-cell .spark-delta.down { color: var(--red); }
 
 /* ── Sparkline staggered draw-in (store + staff + leaderboard) ── */
-#storeTableBody .sparkline-cell polyline,
-#staffTableBody .sparkline-cell polyline,
-#lbTableWrap    .sparkline-cell polyline {
+.sparkline-cell polyline {
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
   animation: spark-draw 0.5s ease-out forwards;
@@ -4025,6 +4023,101 @@ GC.discountSeverity = function(rate) {
   return 'lo';
 };
 
+/**
+ * Renders a discount-rate table cell with colour-coded severity bar.
+ * Used in store leaderboard, staff table, and the lb module.
+ * @param {number} rate  Discount rate as a decimal (e.g. 0.054 = 5.4%)
+ * @return {string} HTML string
+ */
+GC.discountCell = function(rate) {
+  var cls = GC.discountSeverity(rate);
+  var w   = Math.min(Math.round((rate / 0.12) * 100), 100);
+  return '<span class="disc ' + cls + '">'
+    + GC.fmtPct(rate)
+    + '<span class="disc-bar"><span style="width:' + w + '%"></span></span>'
+    + '</span>';
+};
+
+/**
+ * Renders a sparkline SVG cell with a trend-delta badge.
+ * @param {number[]} trend30d  Array of 30 daily revenue values
+ * @param {number}   trendPct  Trend percentage as decimal (e.g. 0.07 = +7%)
+ * @return {string} HTML string
+ */
+GC.sparklineCell = function(trend30d, trendPct) {
+  var data = Array.isArray(trend30d) ? trend30d : [];
+  if (!data.length) return '<span class="sparkline-cell">—</span>';
+  var max = Math.max.apply(null, data);
+  if (max <= 0) return '<span class="sparkline-cell">—</span>';
+  var w = 60, h = 22;
+  var pts = data.map(function(v, i) {
+    var x = Math.round((i / (data.length - 1)) * w);
+    var y = Math.round(h - (v / max) * h);
+    return x + ',' + y;
+  }).join(' ');
+  var stroke = (trendPct == null || trendPct >= 0) ? 'var(--green)' : 'var(--red)';
+  var sign   = (trendPct > 0) ? '+' : '';
+  var pctStr = (trendPct != null) ? (sign + Math.round(trendPct * 100) + '%') : '';
+  var cls    = (trendPct == null || trendPct >= 0) ? 'up' : 'down';
+  return '<span class="sparkline-cell">'
+    + '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">'
+    + '<polyline pathLength="1" fill="none" stroke="' + stroke + '" stroke-width="1.5" points="' + pts + '"/>'
+    + '</svg>'
+    + (pctStr ? '<span class="spark-delta ' + cls + '">' + pctStr + '</span>' : '')
+    + '</span>';
+};
+
+/**
+ * Renders the MTD KPI summary block (3 big KPIs + 6 small KPIs).
+ * Shared between the director and staff-leaderboard views.
+ * @param {Object} summary  Summary object from GAS (same shape in both views)
+ * @return {string} HTML string
+ */
+GC.renderKpiBlock = function(summary) {
+  if (!summary) return '';
+  var d = summary.deltas || {};
+
+  function bigKpi(label, value, deltaHtml, colorClass) {
+    return '<div class="kpi">'
+      + '<div class="kpi-label">' + GC.esc(label) + '</div>'
+      + '<div class="kpi-value' + (colorClass ? ' ' + colorClass : '') + '">' + value + '</div>'
+      + (deltaHtml ? '<div class="kpi-delta ' + (deltaHtml.startsWith('▲') ? 'up' : deltaHtml.startsWith('▼') ? 'down' : '') + '">' + deltaHtml + '</div>' : '')
+      + '</div>';
+  }
+
+  function smallKpi(label, value, deltaHtml, colorClass) {
+    return '<div class="kpi small">'
+      + '<div class="kpi-label">' + GC.esc(label) + '</div>'
+      + '<div class="kpi-value' + (colorClass ? ' ' + colorClass : '') + '">' + value + '</div>'
+      + (deltaHtml ? '<div class="kpi-delta">' + deltaHtml + '</div>' : '')
+      + '</div>';
+  }
+
+  var bigRow = '<div class="kpi-row large">'
+    + bigKpi('Total Sales · MTD',    GC.fmtCurrency(summary.totalSales),   GC.fmtDeltaPct(d.totalSalesPct))
+    + bigKpi('Transactions',         GC.fmtNum(summary.transactions),       GC.fmtDeltaNum(d.transactions, '') + ' vs. last month')
+    + bigKpi('Avg Order Value',      GC.fmtCurrency(summary.avgOrderValue), GC.fmtDeltaCurrency(d.avgOrderValue), 'v-green')
+    + '</div>';
+
+  var discDelta = d.discountRatePts
+    ? '▲ +' + (d.discountRatePts * 100).toFixed(1) + ' pts'
+    : '';
+  var flagSub  = summary.flaggedStaffBreakdown
+    ? summary.flaggedStaffBreakdown.repeat + ' repeat · ' + summary.flaggedStaffBreakdown.new + ' new'
+    : '';
+
+  var smallRow = '<div class="kpi-row small">'
+    + smallKpi('Avg UPT',         GC.fmtDecimal(summary.avgUPT),         '▲ +' + GC.fmtDecimal(d.avgUPT))
+    + smallKpi('Total Discounts', GC.fmtCurrency(summary.totalDiscounts), '▲ +' + GC.fmtCurrency(d.totalDiscounts), 'v-amber')
+    + smallKpi('Discount Rate',   GC.fmtPct(summary.discountRate),        discDelta, 'v-amber')
+    + smallKpi('Flagged Staff',   String(summary.flaggedStaff),            flagSub, 'v-red')
+    + smallKpi('Active Staff',    String(summary.activeStaff),             'across ' + summary.storeCount + ' stores')
+    + smallKpi('Sales / Hour',    '$' + GC.fmtNum(summary.salesPerHour),  GC.fmtDeltaNum(d.salesPerHour, '$'))
+    + '</div>';
+
+  return bigRow + smallRow;
+};
+
 /** pace number → 'green' | 'amber' | 'red' */
 GC.paceDotClass = function(pace) {
   const t = GC.THRESHOLDS;
@@ -5173,30 +5266,11 @@ var director = (function() {
 
   // ── Helpers ────────────────────────────────────────────
 
-  function e(s) { return GC.esc(s); }
+  function e(s) { return GC.esc(String(s == null ? '' : s)); } // local alias for GC.esc
 
-  function sparklineSvg(data, trendPct) {
-    var cls    = GC.trendClass(trendPct);
-    var stroke = GC.trendStroke(cls);
-    var pts    = GC.sparklinePoints(data, 80, 22);
-    var label  = GC.trendLabel(trendPct);
-    return '<div class="sparkline-cell">'
-      + '<svg width="80" height="22" viewBox="0 0 80 22" style="overflow:visible">'
-      + '<polyline pathLength="1" fill="none" stroke="' + stroke + '" stroke-width="1.5" points="' + pts + '"/>'
-      + '</svg>'
-      + '<span class="spark-delta ' + cls + '">' + e(label) + '</span>'
-      + '</div>';
-  }
+  var sparklineSvg = GC.sparklineCell; // shared helper
 
-  function discountCell(rate) {
-    var cls = GC.discountSeverity(rate);
-    var pct = GC.fmtPct(rate);
-    var w   = Math.min(Math.round((rate / 0.12) * 100), 100);
-    return '<span class="disc ' + cls + '">'
-      + '<span class="disc-bar"><span style="width:' + w + '%"></span></span>'
-      + pct
-      + '</span>';
-  }
+  var discountCell = GC.discountCell; // shared helper
 
   function rankPillHtml(rank, total) {
     var cls = GC.rankPillClass(rank, total);
@@ -5424,50 +5498,7 @@ var director = (function() {
   }
 
   // ── Render: KPI rows ───────────────────────────────────
-  function renderKPIs(summary) {
-    if (!summary) return '';
-    var d = summary.deltas || {};
-
-    function bigKpi(label, value, deltaHtml, colorClass) {
-      return '<div class="kpi">'
-        + '<div class="kpi-label">' + e(label) + '</div>'
-        + '<div class="kpi-value' + (colorClass ? ' ' + colorClass : '') + '">' + value + '</div>'
-        + (deltaHtml ? '<div class="kpi-delta ' + (deltaHtml.startsWith('▲') ? 'up' : deltaHtml.startsWith('▼') ? 'down' : '') + '">' + deltaHtml + '</div>' : '')
-        + '</div>';
-    }
-
-    function smallKpi(label, value, deltaHtml, colorClass) {
-      return '<div class="kpi small">'
-        + '<div class="kpi-label">' + e(label) + '</div>'
-        + '<div class="kpi-value' + (colorClass ? ' ' + colorClass : '') + '">' + value + '</div>'
-        + (deltaHtml ? '<div class="kpi-delta">' + deltaHtml + '</div>' : '')
-        + '</div>';
-    }
-
-    var bigRow = '<div class="kpi-row large">'
-      + bigKpi('Total Sales · MTD',    GC.fmtCurrency(summary.totalSales),   GC.fmtDeltaPct(d.totalSalesPct))
-      + bigKpi('Transactions',         GC.fmtNum(summary.transactions),       GC.fmtDeltaNum(d.transactions, '') + ' vs. last month')
-      + bigKpi('Avg Order Value',      GC.fmtCurrency(summary.avgOrderValue), GC.fmtDeltaCurrency(d.avgOrderValue), 'v-green')
-      + '</div>';
-
-    var discDelta = d.discountRatePts
-      ? '▲ +' + (d.discountRatePts * 100).toFixed(1) + ' pts'
-      : '';
-    var flagSub  = summary.flaggedStaffBreakdown
-      ? summary.flaggedStaffBreakdown.repeat + ' repeat · ' + summary.flaggedStaffBreakdown.new + ' new'
-      : '';
-
-    var smallRow = '<div class="kpi-row small">'
-      + smallKpi('Avg UPT',         GC.fmtDecimal(summary.avgUPT),         '▲ +' + GC.fmtDecimal(d.avgUPT))
-      + smallKpi('Total Discounts', GC.fmtCurrency(summary.totalDiscounts), '▲ +' + GC.fmtCurrency(d.totalDiscounts), 'v-amber')
-      + smallKpi('Discount Rate',   GC.fmtPct(summary.discountRate),        discDelta, 'v-amber')
-      + smallKpi('Flagged Staff',   String(summary.flaggedStaff),            flagSub, 'v-red')
-      + smallKpi('Active Staff',    String(summary.activeStaff),             'across ' + summary.storeCount + ' stores')
-      + smallKpi('Sales / Hour',    '$' + GC.fmtNum(summary.salesPerHour),  GC.fmtDeltaNum(d.salesPerHour, '$'))
-      + '</div>';
-
-    return bigRow + smallRow;
-  }
+  function renderKPIs(summary) { return GC.renderKpiBlock(summary); }
 
   // ── Render: Store filter pills (above staff table) ────
   function renderFilterPills() {
@@ -6781,7 +6812,7 @@ var kiosk = (function() {
   var _bigTxnLastFired  = 0;      // timestamp of last big-txn mini-celebration (throttle)
 
   // ── Helpers ────────────────────────────────────────────
-  function e(s) { return GC.esc(String(s)); }
+  function e(s) { return GC.esc(String(s == null ? '' : s)); } // local alias for GC.esc
 
   /**
    * Always returns exactly 2 uppercase chars.
@@ -8543,7 +8574,7 @@ var lb = (function() {
   var _sortDir     = -1;
   var _period      = 'mtd';
 
-  function e(s) { return GC.esc(String(s)); }
+  function e(s) { return GC.esc(String(s == null ? '' : s)); } // local alias for GC.esc
 
   // ── Render: Nav ──────────────────────────────────────────
   function renderNav() {
@@ -8568,46 +8599,7 @@ var lb = (function() {
   }
 
   // ── Render: KPI rows (reuse summary data) ────────────────
-  function renderKPIs(summary) {
-    var d = summary.deltas || {};
-
-    function bigKpi(label, value, delta, cls) {
-      return '<div class="kpi' + (cls ? ' ' + cls : '') + '">'
-        + '<div class="kpi-label">' + e(label) + '</div>'
-        + '<div class="kpi-value">' + e(value) + '</div>'
-        + (delta ? '<div class="kpi-delta">' + e(delta) + '</div>' : '')
-        + '</div>';
-    }
-    function smallKpi(label, value, delta, cls) {
-      return '<div class="kpi small' + (cls ? ' ' + cls : '') + '">'
-        + '<div class="kpi-label">' + e(label) + '</div>'
-        + '<div class="kpi-value">' + e(value) + '</div>'
-        + (delta ? '<div class="kpi-delta">' + e(delta) + '</div>' : '')
-        + '</div>';
-    }
-
-    var bigRow = '<div class="kpi-row large">'
-      + bigKpi('Total Sales · MTD',  GC.fmtCurrency(summary.totalSales),    '▲ +' + GC.fmtPct(d.totalSalesPct), 'v-green')
-      + bigKpi('Transactions',       GC.fmtNum(summary.transactions),        '▲ +' + GC.fmtNum(d.transactions) + ' vs. last month')
-      + bigKpi('Avg Order Value',    GC.fmtCurrency(summary.avgOrderValue),  GC.fmtDeltaCurrency(d.avgOrderValue), 'v-green')
-      + '</div>';
-
-    var discDelta = d.discountRatePts
-      ? '▲ +' + (d.discountRatePts * 100).toFixed(1) + ' pts' : '';
-    var flagSub = summary.flaggedStaffBreakdown
-      ? summary.flaggedStaffBreakdown.repeat + ' repeat · ' + summary.flaggedStaffBreakdown.new + ' new' : '';
-
-    var smallRow = '<div class="kpi-row small">'
-      + smallKpi('Avg UPT',         GC.fmtDecimal(summary.avgUPT),         '▲ +' + GC.fmtDecimal(d.avgUPT))
-      + smallKpi('Total Discounts', GC.fmtCurrency(summary.totalDiscounts), '▲ +' + GC.fmtCurrency(d.totalDiscounts), 'v-amber')
-      + smallKpi('Discount Rate',   GC.fmtPct(summary.discountRate),        discDelta, 'v-amber')
-      + smallKpi('Flagged Staff',   String(summary.flaggedStaff),            flagSub, 'v-red')
-      + smallKpi('Active Staff',    String(summary.activeStaff),             'across ' + summary.storeCount + ' stores')
-      + smallKpi('Sales / Hour',    '$' + GC.fmtNum(summary.salesPerHour),  GC.fmtDeltaNum(d.salesPerHour, '$'))
-      + '</div>';
-
-    return bigRow + smallRow;
-  }
+  function renderKPIs(summary) { return GC.renderKpiBlock(summary); }
 
   // ── Render: Filters + controls ───────────────────────────
   function renderFilters(period) {
@@ -8670,12 +8662,6 @@ var lb = (function() {
     var rows = staff.map(function(s) {
       var rankCls   = GC.rankPillClass(s.rank, total);
       var barPct    = maxSales > 0 ? Math.round((s.sales / maxSales) * 100) : 0;
-      var discCls   = GC.discountSeverity(s.discountRate);
-      var discW     = Math.min(Math.round((s.discountRate / 0.12) * 100), 100);
-      var trendCls  = GC.trendClass(s.trendPct);
-      var trendStroke = GC.trendStroke(trendCls);
-      var trendLabel  = GC.trendLabel(s.trendPct);
-      var pts       = GC.sparklinePoints(s.trend30d, 72, 20);
       var isRowEom  = !!(eomKey && s.nameKey && s.nameKey === eomKey);
 
       var tagsHtml = (s.tags || []).map(function(t) {
@@ -8713,19 +8699,9 @@ var lb = (function() {
         + '<td class="num">' + e(s.transactions) + '</td>'
         + '<td class="num">' + e('$' + s.avgOrderValue.toFixed(2)) + '</td>'
         + '<td class="num">' + e(s.avgUPT.toFixed(1)) + '</td>'
+        + '<td>' + GC.discountCell(s.discountRate) + '</td>'
         + '<td>'
-        + '  <span class="disc ' + e(discCls) + '">'
-        + '    <span class="disc-bar"><span style="width:' + discW + '%"></span></span>'
-        + e(GC.fmtPct(s.discountRate))
-        + '  </span>'
-        + '</td>'
-        + '<td>'
-        + '  <div class="sparkline-cell">'
-        + '    <svg width="72" height="20" viewBox="0 0 72 20" style="overflow:visible">'
-        + '      <polyline pathLength="1" fill="none" stroke="' + e(trendStroke) + '" stroke-width="1.5" points="' + e(pts) + '"/>'
-        + '    </svg>'
-        + '    <span class="spark-delta ' + e(trendCls) + '">' + e(trendLabel) + '</span>'
-        + '  </div>'
+        + GC.sparklineCell(s.trend30d, s.trendPct)
         + '</td>'
         + '<td class="actions-col">'
         + '  <button class="row-action-btn" title="More">⋯</button>'
@@ -9058,7 +9034,7 @@ GC.views.renderSettings = function() {
 
 var settings = (function() {
 
-  function e(s) { return GC.esc(String(s || '')); }
+  function e(s) { return GC.esc(String(s == null ? '' : s)); } // local alias for GC.esc
 
   function fmt(n) {
     return '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
@@ -9854,7 +9830,7 @@ var ava = (function() {
     return s.replace(/([A-Z])/g, ' $1').replace(/^./, function(c) { return c.toUpperCase(); }).replace(/(\d+)/, ' $1').trim();
   }
 
-  function e(s) { return GC.esc ? GC.esc(String(s || '')) : String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function e(s) { return GC.esc(String(s == null ? '' : s)); } // local alias for GC.esc
 
   // ── Loading / Error / Not Found ────────────────────────────
   function renderLoading(nameKey) {
