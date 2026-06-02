@@ -77,7 +77,9 @@ function getDateRange_(period) {
 
   const DAY_MS      = 24 * 60 * 60 * 1000;
   const daysElapsed = Math.max(1, Math.round((todayStartMs - fromMs) / DAY_MS) + 1);
-  const totalDays   = Math.max(1, Math.round((toMs - fromMs) / DAY_MS) + 1);
+  // toMs is end-of-last-day, so (toMs - fromMs) already spans the whole range;
+  // round() alone gives the inclusive day count (no +1, which would over-count).
+  const totalDays   = Math.max(1, Math.round((toMs - fromMs) / DAY_MS));
 
   return {
     fromUTC:     fromUTC.toISOString(),
@@ -587,10 +589,11 @@ function getDirectorAlerts(pre) {
 
   STORES.forEach(function(store) {
     const agg          = aggregateTransactions_(byStore[store.slug] || []);
-    const monthlyGoal  = getMonthlyGoal_(store.slug);
-    const proratedGoal = monthlyGoal > 0
-      ? monthlyGoal * (range.daysElapsed / (range.totalDays || 30))
-      : 0;
+    // DOW-weighted expected revenue for the completed days of the month. (The old
+    // formula divided by days-elapsed instead of days-in-month, so every store was
+    // always flagged ~−60-95% behind. This compares MTD sales against the realistic
+    // to-date bar.)
+    const proratedGoal = getProratedMonthGoalToDate_(store.slug);
 
     // Store behind plan?
     if (proratedGoal > 0) {

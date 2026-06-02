@@ -543,6 +543,59 @@ function computeAccurateMonthly_(dowAvg, year, month) {
 }
 
 /**
+ * Count day-of-week occurrences from the 1st of the month through `throughDay`
+ * (inclusive, clamped to the month length). Mirror of monthDowCounts_ but bounded
+ * to the elapsed portion of the month. Returns { 0:Sun … 6:Sat }.
+ */
+function dowCountsThroughDay_(year, month, throughDay) {
+  var counts = { 0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0 };
+  var daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  var last = Math.min(throughDay, daysInMonth);
+  for (var d = 1; d <= last; d++) {
+    var dt  = new Date(Date.UTC(year, month, d, 12));   // noon UTC → correct PT date
+    var dow = parseInt(Utilities.formatDate(dt, STORE_TZ, 'u'), 10) % 7;
+    counts[dow]++;
+  }
+  return counts;
+}
+
+/**
+ * DOW-weighted expected revenue for the COMPLETED days of the current month
+ * (the 1st through yesterday), including the active stretch multiplier. This is
+ * the "where MTD sales should be by now" bar for the behind-plan alert.
+ *
+ * Completed days only (excludes today) so an in-progress day never makes a store
+ * look spuriously behind mid-shift. On the 1st there are no completed days → 0,
+ * so no store can be flagged behind plan on day 1.
+ *
+ * Falls back to flat linear proration (completed days / days-in-month) when a
+ * store has no day-of-week profile yet.
+ *
+ * @return {number} expected MTD revenue to date, or 0 if it can't be computed.
+ */
+function getProratedMonthGoalToDate_(slug) {
+  var pt          = ptNow_();
+  var completed   = pt.day - 1;                 // days fully elapsed this month
+  if (completed <= 0) return 0;                 // day 1 → nothing completed yet
+
+  var res = resolveGoal_(slug);
+  var g   = res.g;
+
+  if (g && g.dowAvg) {
+    var counts = dowCountsThroughDay_(pt.year, pt.month, completed);
+    var total  = 0;
+    for (var d = 0; d <= 6; d++) total += (g.dowAvg[d] || 0) * (counts[d] || 0);
+    return Math.round(total * (1 + (res.stretch || 0)));
+  }
+
+  // Fallback: flat linear when no DOW shape exists.
+  var monthly = getMonthlyGoal_(slug);
+  if (monthly <= 0) return 0;
+  var daysInMonth = new Date(Date.UTC(pt.year, pt.month + 1, 0)).getUTCDate();
+  return Math.round(monthly * (completed / daysInMonth));
+}
+
+/**
  * Resolve the effective goal set for a store:
  *   1. Manual PP override → scales computed DOW ratios to match the override
  *   2. Otherwise → max(rolling, yoy) + stretch

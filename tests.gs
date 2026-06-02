@@ -51,6 +51,7 @@ function runAllTests() {
   test_trendFromByDay_();
   test_getDateRange_();
   test_currentPPStart_();
+  test_dowCountsThroughDay_();
 
   var total = _T_PASS + _T_FAIL;
   var header = (_T_FAIL === 0 ? '✅ ALL PASS' : '❌ ' + _T_FAIL + ' FAILED')
@@ -188,11 +189,7 @@ function test_getDateRange_() {
   _approx_('pp UTC span = 14 days', spanMs, 14 * 24 * 60 * 60 * 1000 - 1, 2);
   _ok_('pp from <= to',     pp.fromLocal <= pp.toLocal);
   _eq_('pp period label',   pp.period, 'pp');
-  // KNOWN OFF-BY-ONE (pinned, not yet fixed): totalDays adds +1 even though toMs is
-  // end-of-day, so a 14-day period reports 15. Feeds MTD alert proration at
-  // endpoints.gs ~592 — fixing it shifts "behind plan" thresholds, so it's a
-  // product decision, deliberately left unchanged by the refactor pass.
-  _eq_('pp totalDays (off-by-one, pinned)', pp.totalDays, 15);
+  _eq_('pp totalDays = 14', pp.totalDays, 14);   // off-by-one fixed (was 15)
 
   var today = getDateRange_('today');
   _eq_('today from === to', today.fromLocal, today.toLocal);
@@ -213,4 +210,18 @@ function test_currentPPStart_() {
   var todayMs = ptDateToUtcMs_(ptNow_().dateStr);
   var offset  = todayMs - pp.ppStartMs;
   _ok_('today within current PP', offset >= 0 && offset < pp.PP_MS);
+}
+
+// ── dowCountsThroughDay_ (DOW counting for alert proration) ──
+function test_dowCountsThroughDay_() {
+  function sum(o) { var t = 0; for (var d = 0; d <= 6; d++) t += o[d]; return t; }
+  // June 2026 has 30 days.
+  _eq_('counts to day 10 sum to 10', sum(dowCountsThroughDay_(2026, 5, 10)), 10);
+  _eq_('counts to day 30 sum to 30', sum(dowCountsThroughDay_(2026, 5, 30)), 30);
+  _eq_('clamps past month end',      sum(dowCountsThroughDay_(2026, 5, 100)), 30);
+  // Feb 2026 (non-leap) has 28 days.
+  _eq_('clamps Feb to 28',           sum(dowCountsThroughDay_(2026, 1, 40)), 28);
+  // Each bucket non-negative and ≤ 5 (no DOW occurs >5× in a ≤10-day window).
+  var c = dowCountsThroughDay_(2026, 5, 10);
+  _ok_('buckets sane', [0,1,2,3,4,5,6].every(function(d){ return c[d] >= 0 && c[d] <= 5; }));
 }
