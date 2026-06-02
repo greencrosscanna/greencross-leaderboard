@@ -3741,7 +3741,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.322';
+window.GC = window.GC || {}; GC.VERSION = 'v1.323';
 
 </script>
 
@@ -5013,6 +5013,20 @@ GC.router = (function() {
 
   var _currentRoute = null;
   var _app = null;
+  var _leaveHandlers = [];  // one-shot cleanups run when navigating away from the current view
+
+  // Register a teardown callback for the active view (clears timers, removes
+  // window/document listeners). Runs exactly once on the next dispatch, then
+  // is discarded. Each view's init() re-registers its own on render.
+  function onLeave(fn) { if (typeof fn === 'function') _leaveHandlers.push(fn); }
+
+  function _runLeaveHandlers() {
+    var handlers = _leaveHandlers;
+    _leaveHandlers = [];
+    handlers.forEach(function(fn) {
+      try { fn(); } catch (e) { console.warn('[GC.router] leave handler error:', e); }
+    });
+  }
 
   // ── Route definitions ──────────────────────────────────
   // Each entry: { pattern: RegExp, roles: string[]|null, render: fn(params) }
@@ -5058,6 +5072,11 @@ GC.router = (function() {
 
   // ── Dispatch ───────────────────────────────────────────
   function dispatch(hash) {
+    // Tear down the outgoing view (timers, window/document listeners) before
+    // rendering the next one. Prevents kiosk poll timers from running forever
+    // after navigating away, and avoids duplicate clock/refresh intervals.
+    _runLeaveHandlers();
+
     // Normalise: strip leading #, ensure leading /
     var raw = (hash || '').replace(/^#/, '') || '/login';
     if (raw === '' || raw === '/') raw = '/login';
@@ -5156,6 +5175,7 @@ GC.router = (function() {
   return {
     init: init,
     navigate: navigate,
+    onLeave: onLeave,
     currentRoute: function() { return _currentRoute; },
   };
 })();
@@ -6271,6 +6291,13 @@ var director = (function() {
     animateStoreSparklines();
     animateStaffSparklines();
 
+    // Teardown on navigation away — stop the clock + the 5-min auto-refresh so
+    // they don't keep firing (or stack a second interval) after leaving director.
+    GC.router.onLeave(function() {
+      if (_clockTimer)   { clearInterval(_clockTimer);   _clockTimer = null; }
+      if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
+    });
+
     // Update last-refreshed label
     var lr = document.getElementById('lastRefreshed');
     if (lr) lr.textContent = 'Last refresh ' + GC.fmtTime(new Date());
@@ -6856,6 +6883,7 @@ var kiosk = (function() {
   var _seenTxnKeys  = {};    // dedup set: "ts|who|price" → true, prevents re-injection on repeat polls
   var _confettiParticles  = [];
   var _confettiRunning    = false;
+  var _confettiResize     = null;  // window resize listener ref, removed on teardown
   var _avatarConfigs      = {};   // set in normalize(), used in renderHeader
   var _goalCelebrated    = false;  // true once confetti has fired for today's goal
   var _bigTxnLastFired  = 0;      // timestamp of last big-txn mini-celebration (throttle)
@@ -7842,6 +7870,18 @@ var kiosk = (function() {
     initConfetti();
     startPolling(slug);
 
+    // Teardown on navigation away — stop all kiosk timers, the confetti loop,
+    // its resize listener, and the kiosk background class. Prevents poll timers
+    // from running forever (and hitting Dutchie) after leaving the store view.
+    GC.router.onLeave(function() {
+      clearInterval(_pollTimer);  _pollTimer  = null;
+      clearInterval(_lbTimer);    _lbTimer    = null;
+      clearInterval(_clockTimer); _clockTimer = null;
+      _confettiRunning = false;
+      if (_confettiResize) { window.removeEventListener('resize', _confettiResize); _confettiResize = null; }
+      document.body.classList.remove('kiosk-bg');
+    });
+
     // User chip → sign out
     var kioskChip = document.getElementById('kioskUserChip');
     if (kioskChip) kioskChip.addEventListener('click', function() {
@@ -8510,6 +8550,9 @@ var kiosk = (function() {
     var cv = document.getElementById('kioskConfetti');
     if (!cv) return;
     function resize() { cv.width = window.innerWidth; cv.height = window.innerHeight; }
+    // Remove any prior listener before adding (avoids stacking across re-inits)
+    if (_confettiResize) window.removeEventListener('resize', _confettiResize);
+    _confettiResize = resize;
     window.addEventListener('resize', resize);
     resize();
     if (!_confettiRunning) {
