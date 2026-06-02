@@ -2268,6 +2268,7 @@ function getDirectorToday(byStoreToday) {
     pace:               pace,
     paceGap:            paceGap,
     toGo:               toGo,
+    dayFrac:            r3_(dayFrac),
     projectedRevenue:   projectedRevenue,
     timeRemainingLabel: timeRemainingLabel,
     hourly:             hourly,
@@ -2404,7 +2405,7 @@ function getDirectorStores(params, pre) {
            : trendFromByDay_(byStore30d ? aggregateByDay_(byStore30d[store.slug] || []) : {})),
       tags:          tags,
       tagTooltips:   tagTooltips,
-      today:         { revenue: aggToday.sales, goal: dailyGoal, pace: todayPace, pctToGoal: dailyGoal > 0 ? r3_(aggToday.sales / dailyGoal) : 0, projected: projectedRevenue, projectedPace: projectedPace },
+      today:         { revenue: aggToday.sales, goal: dailyGoal, pace: todayPace, pctToGoal: dailyGoal > 0 ? r3_(aggToday.sales / dailyGoal) : 0, projected: projectedRevenue, projectedPace: projectedPace, dayFrac: r3_(dayFrac) },
       flagCount:     flaggedEmps.length,
     };
   });
@@ -2967,6 +2968,7 @@ function getStoreToday(store, params) {
     toGo:               Math.max(0, dailyGoal - agg.sales),
     timeRemainingLabel: timeRemainingLabel,
     isPreOpen:          isPreOpen,
+    dayFrac:            r3_(dayFrac),
     transactions:       agg.transactions,
     avgOrderValue:      agg.avgOrderValue,
     avgUPT:             agg.avgUPT,

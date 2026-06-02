@@ -5792,10 +5792,11 @@ var director = (function() {
   var DIR_PACE_RANGE = 80;
 
   function renderDirGoalCard(today) {
-    var pct     = today.pctToGoal || 0;
-    var pctDisp = Math.round(pct * 100) + '%';
-    var capped  = Math.min(pct, 1);
-    var offset  = Math.round(DIR_ARC_LEN * (1 - capped));
+    var pct        = today.pctToGoal || 0;
+    var pctDisp    = Math.round(pct * 100) + '%';
+    var capped     = Math.min(pct, 1);
+    var offset     = Math.round(DIR_ARC_LEN * (1 - capped));
+    var paceOffset = Math.round(DIR_ARC_LEN * (1 - Math.min(today.dayFrac || 0, 1)));
     var closed  = today.timeRemainingLabel === 'Closed';
 
     var soldStr = GC.fmtCurrency(today.revenue || 0);
@@ -5829,6 +5830,9 @@ var director = (function() {
       + '<div class="dir-gauge-wrap">'
       +   '<svg width="200" height="108" viewBox="0 0 240 130" style="overflow:visible">'
       +     '<path d="M 22 122 A 98 98 0 0 1 218 122" stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="butt"/>'
+      +     '<path d="M 22 122 A 98 98 0 0 1 218 122" stroke="rgb(38,89,57)" stroke-width="14" fill="none"'
+      +       ' stroke-linecap="butt" stroke-dasharray="308" stroke-dashoffset="' + paceOffset + '"'
+      +       ' style="transition:stroke-dashoffset 1.4s cubic-bezier(.2,.7,.3,1)"/>'
       +     '<path d="M 22 122 A 98 98 0 0 1 218 122" stroke="#4ade80" stroke-width="14" fill="none"'
       +       ' stroke-linecap="round" stroke-dasharray="308" stroke-dashoffset="' + offset + '"'
       +       ' style="transition:stroke-dashoffset 1.4s cubic-bezier(.2,.7,.3,1)"/>'
@@ -7033,13 +7037,14 @@ var kiosk = (function() {
 
   // ── Render: Goal arc card ──────────────────────────────
   function renderGoalCard(today) {
-    var pct      = today.pctToGoal || 0;
-    var pctDisp  = Math.round(pct * 100) + '%';
-    var closed   = today.timeRemainingLabel === 'Closed';
-    var preOpen  = today.isPreOpen || today.timeRemainingLabel === 'Pre-open';
-    var isFinal  = closed || preOpen;
+    var pct        = today.pctToGoal || 0;
+    var pctDisp    = Math.round(pct * 100) + '%';
+    var closed     = today.timeRemainingLabel === 'Closed';
+    var preOpen    = today.isPreOpen || today.timeRemainingLabel === 'Pre-open';
+    var isFinal    = closed || preOpen;
     // Arc for "M 22 122 A 98 98 0 0 1 218 122" ≈ π × 98 = 308
-    var ARC_LEN  = 308;
+    var ARC_LEN    = 308;
+    var paceOffset = Math.round(ARC_LEN * (1 - Math.min(today.dayFrac || 0, 1)));
 
     // Card label: "Yesterday's Results" pre-open, "Daily Goal · $X" otherwise
     var cardLabel = preOpen
@@ -7073,6 +7078,12 @@ var kiosk = (function() {
       + '  <svg width="240" height="130" viewBox="0 0 240 130">'
       + '    <path d="M 22 122 A 98 98 0 0 1 218 122"'
       + '          stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="butt"/>'
+      + '    <path id="kioskPaceArc"'
+      + '          d="M 22 122 A 98 98 0 0 1 218 122"'
+      + '          stroke="rgb(38,89,57)" stroke-width="14" fill="none" stroke-linecap="butt"'
+      + '          stroke-dasharray="' + ARC_LEN + '"'
+      + '          stroke-dashoffset="' + paceOffset + '"'
+      + '          style="transition: stroke-dashoffset 1.6s cubic-bezier(.2,.7,.3,1)"/>'
       + '    <path id="kioskGoalArc"'
       + '          d="M 22 122 A 98 98 0 0 1 218 122"'
       + '          stroke="#4ade80" stroke-width="14" fill="none" stroke-linecap="round"'
