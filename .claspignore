@@ -1,5 +1,12 @@
-# Ignore everything except the GAS backend files
+# Ignore everything except the GAS backend files.
+# user_admin.gs is a separate Sheets-bound project — excluded intentionally.
 **
 !dutchie_proxy.gs
+!auth.gs
+!dutchie_fetch.gs
+!goals.gs
+!endpoints.gs
+!cache.gs
+!snapshot.gs
 !index.html
 !appsscript.json
