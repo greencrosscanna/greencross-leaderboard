@@ -61,32 +61,54 @@ with open(f'{base}/index.html.built', 'w') as f:
 print(f"  Built {html.count(chr(10))} lines → index.html.built")
 PYEOF
 
-# 2. Push GAS backend (dutchie_proxy.gs + index.html.built as index.html)
+# 2. Push GAS backend. The web app also serves index.html (doGet with no action),
+#    so GAS needs index.html = the built output during push. We swap it in, then
+#    ALWAYS restore the dev version via an EXIT trap — even if clasp fails or the
+#    script is interrupted (Ctrl-C) — so the working tree can never be left holding
+#    the built file in place of the source.
 echo "▶ Pushing to GAS..."
-cp index.html index.html.dev        # save dev version before overwriting
-cp index.html.built index.html
+cp index.html index.html.dev        # canonical source (this is what gets committed)
+
+# Bulletproof restore: fires on ANY exit path (success, set -e error, signal).
+restore_index() { [ -f index.html.dev ] && cp index.html.dev index.html; }
+trap restore_index EXIT INT TERM
+
+cp index.html.built index.html      # swap built output in for the clasp push
 clasp push --force
 
-# Try to create a new versioned deployment. GAS has a hard limit of 200 versions;
-# if we hit it, fall back to redeploying the last known good version number so
-# the deployment stays live. Run `clasp versions` to find the current max,
-# then delete old versions at script.google.com → Project History to unblock.
+# Proactive version-limit warning. GAS retains at most 200 versions; prune old
+# ones before hitting it. (Count of retained versions, not the max version number.)
+VER_COUNT=$(clasp versions 2>/dev/null | grep -cE '^[0-9]+' || echo 0)
+if [ "$VER_COUNT" -ge 180 ]; then
+  echo "⚠️  GAS versions: ${VER_COUNT}/200 — prune soon at script.google.com →"
+  echo "    Project Settings → Manage versions (delete the oldest) to avoid deploy failures."
+fi
+
 LATEST_VER=$(clasp versions 2>/dev/null | grep -E '^[0-9]+' | tail -1 | awk '{print $1}' || echo "200")
 if clasp deploy --deploymentId "$DEPLOY_ID" --description "$MSG" 2>/dev/null; then
   echo "Deployed ${DEPLOY_ID} @ new version"
 else
-  echo "⚠️  GAS version limit reached (200). Redeploying at version ${LATEST_VER}."
-  echo "   → New backend code is in GAS HEAD but not yet live."
-  echo "   → To fix: open script.google.com, open this project, go to"
-  echo "     Project Settings → Manage versions and delete versions 1-180."
-  echo "   → Then run: bash deploy.sh"
+  echo "⚠️  Could not create a new GAS version (likely the 200-version limit)."
+  echo "   → New backend code is in GAS HEAD but not yet live at the web-app URL."
+  echo "   → Fix: script.google.com → Project Settings → Manage versions → delete oldest,"
+  echo "     then re-run: bash deploy.sh"
   clasp deploy --deploymentId "$DEPLOY_ID" --versionNumber "$LATEST_VER" --description "$MSG (pinned)" 2>/dev/null \
     || echo "   (Could not redeploy to ${LATEST_VER} either — deployment unchanged)"
 fi
 
-# 3. Restore the dev index.html from our saved copy (not git — preserves uncommitted edits)
+# 3. Restore dev index.html, then disarm the trap (restoration confirmed done).
 echo "▶ Pushing to GitHub..."
-cp index.html.dev index.html        # restore the dev version
+restore_index
+trap - EXIT INT TERM
+
+# Safety guard: never commit a corrupted/empty index.html. The version marker is
+# present in every valid source file; its absence means the restore failed.
+if ! grep -q "GC.VERSION = 'v1\." index.html; then
+  echo "❌ index.html is missing its version marker — restore failed."
+  echo "   Aborting commit to protect the source. Recover with: git checkout index.html"
+  exit 1
+fi
+
 git add -u                          # stage all modified tracked files
 git commit -m "$MSG
 
