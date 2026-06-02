@@ -3946,6 +3946,19 @@ GC.THRESHOLDS = {
 // ── Formatters ────────────────────────────────────────────
 
 /** $646,100 → "$646.1k" · $78,340 → "$78.3k" · $78.34 → "$78.34" */
+// Fraction of the store day elapsed (8 am–10 pm PT) using the browser clock.
+// Used as a live fallback when dayFrac isn't yet in the GAS payload (cold cache).
+GC.dayFrac = function() {
+  try {
+    var ptStr = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles', hour: 'numeric', minute: 'numeric', hour12: false
+    }).format(new Date());
+    var parts = ptStr.split(':');
+    var h = parseInt(parts[0], 10), m = parseInt(parts[1], 10);
+    return Math.max(0, Math.min(h + m / 60 - 8, 14)) / 14;
+  } catch(e) { return 0; }
+};
+
 GC.fmtCurrency = function(n) {
   if (n == null || isNaN(n)) return '—';
   const abs = Math.abs(n);
@@ -5789,6 +5802,7 @@ var director = (function() {
   // SVG math identical to kiosk so the visuals are recognisable cross-view.
 
   var DIR_ARC_LEN = 308; // π × 98 ≈ 308  (same arc as kiosk)
+
   var DIR_PACE_RANGE = 80;
 
   function renderDirGoalCard(today) {
@@ -5796,7 +5810,7 @@ var director = (function() {
     var pctDisp    = Math.round(pct * 100) + '%';
     var capped     = Math.min(pct, 1);
     var offset     = Math.round(DIR_ARC_LEN * (1 - capped));
-    var paceOffset = Math.round(DIR_ARC_LEN * (1 - Math.min(today.dayFrac || 0, 1)));
+    var paceOffset = Math.round(DIR_ARC_LEN * (1 - Math.min(today.dayFrac || GC.dayFrac(), 1)));
     var closed  = today.timeRemainingLabel === 'Closed';
 
     var soldStr = GC.fmtCurrency(today.revenue || 0);
