@@ -3946,6 +3946,46 @@ GC.THRESHOLDS = {
 /** $646,100 → "$646.1k" · $78,340 → "$78.3k" · $78.34 → "$78.34" */
 // Fraction of the store day elapsed (8 am–10 pm PT) using the browser clock.
 // Used as a live fallback when dayFrac isn't yet in the GAS payload (cold cache).
+// ── Navigation state ─────────────────────────────────────────────────────────
+// Persists sort/filter/period selections across navigation within the same
+// browser session (sessionStorage — cleared when the browser tab closes).
+// Data payloads are intentionally excluded; they are always reloaded fresh.
+GC.state = (function() {
+  var KEY = 'gc_nav_state';
+  var _s  = null;
+
+  function _load() {
+    if (_s) return _s;
+    try {
+      var raw = sessionStorage.getItem(KEY);
+      _s = raw ? JSON.parse(raw) : {};
+    } catch(e) { _s = {}; }
+    return _s;
+  }
+
+  function _save() {
+    try { sessionStorage.setItem(KEY, JSON.stringify(_s)); } catch(e) {}
+  }
+
+  return {
+    /** Read a persisted value, returning `def` if not set. */
+    get: function(key, def) {
+      var v = _load()[key];
+      return v !== undefined ? v : def;
+    },
+    /** Write a value and immediately persist it. */
+    set: function(key, value) {
+      _load()[key] = value;
+      _save();
+    },
+    /** Clear all persisted navigation state (called on logout). */
+    reset: function() {
+      _s = {};
+      try { sessionStorage.removeItem(KEY); } catch(e) {}
+    }
+  };
+})();
+
 GC.dayFrac = function() {
   try {
     var ptStr = new Intl.DateTimeFormat('en-US', {
@@ -5158,9 +5198,6 @@ GC.views.renderDirector = function() {
   var app = document.getElementById('app');
   if (!app) return;
 
-  // Reset period tabs to MTD on each fresh navigation
-  director.resetPeriods();
-
   // Show loading shell while data fetches
   app.innerHTML = director.renderLoading();
 
@@ -5247,22 +5284,23 @@ GC.views.renderDirectorHistorical = function(dateStr) {
 var director = (function() {
 
   // ── State ──────────────────────────────────────────────
-  var _data          = null;
+  // ── Module state — UI preferences read from GC.state, data always null on init ──
+  var _data          = null;   // never persisted — always reloaded fresh
   var _avatarConfigs = {};
-  var _storeFilter   = 'all';
+  var _storeFilter   = GC.state.get('dir.storeFilter',  'all');
   var _tagFilter     = null;
   var _clockTimer    = null;
-  var _staffSortKey  = 'sales';
-  var _staffSortDir  = -1;  // -1 = desc, 1 = asc
-  var _staffPeriod   = 'mtd'; // 'mtd' | 'pp'
-  var _staffPpData   = null;  // lazy-loaded pay-period staff, cached after first fetch
-  var _staffPpRange  = null;  // human-readable PP date range, set when PP data first arrives
-  var _storePeriod   = 'mtd'; // 'mtd' | 'pp'
-  var _storeSortKey  = 'vsplan';
-  var _storeSortDir  = -1;    // -1 = desc, 1 = asc
-  var _storePpRange  = null;  // human-readable PP date range for stores
-  var _storeMtdData  = null;  // preserved MTD store array for tab switching back
-  var _storePpStores = null;  // cached PP store array for re-apply after refresh
+  var _staffSortKey  = GC.state.get('dir.staffSortKey',  'sales');
+  var _staffSortDir  = GC.state.get('dir.staffSortDir',  -1);
+  var _staffPeriod   = GC.state.get('dir.staffPeriod',   'mtd');
+  var _staffPpData   = null;   // lazy-loaded, never persisted
+  var _staffPpRange  = null;   // derived from data, never persisted
+  var _storePeriod   = GC.state.get('dir.storePeriod',   'mtd');
+  var _storeSortKey  = GC.state.get('dir.storeSortKey',  'vsplan');
+  var _storeSortDir  = GC.state.get('dir.storeSortDir',  -1);
+  var _storePpRange  = null;   // derived from data, never persisted
+  var _storeMtdData  = null;   // data cache for tab switching, never persisted
+  var _storePpStores = null;   // data cache for tab switching, never persisted
 
   // ── Helpers ────────────────────────────────────────────
 
@@ -6266,6 +6304,7 @@ var director = (function() {
     if (chip) chip.addEventListener('click', function() {
       if (confirm('Sign out?')) {
         GC.auth.clear();
+        GC.state.reset();
         GC.router.navigate('#/login');
       }
     });
@@ -6279,6 +6318,7 @@ var director = (function() {
 
         if (pill) {
           _storeFilter = pill.dataset.store;
+          GC.state.set('dir.storeFilter', _storeFilter);
           filterRow.querySelectorAll('.pill[data-store]').forEach(function(p) {
             p.classList.toggle('active', p.dataset.store === _storeFilter);
           });
@@ -6350,6 +6390,7 @@ var director = (function() {
           var newPeriod = periodTab.getAttribute('data-staff-period');
           if (newPeriod === _staffPeriod) return;
           _staffPeriod = newPeriod;
+          GC.state.set('dir.staffPeriod', _staffPeriod);
           syncPeriodTabs();
           if (newPeriod === 'mtd') {
             // Restore MTD — data already in _data; reset staff to original MTD set
@@ -6372,6 +6413,7 @@ var director = (function() {
               })
               .catch(function(err) {
                 _staffPeriod = 'mtd';
+                GC.state.set('dir.staffPeriod', 'mtd');
                 syncPeriodTabs();
                 console.warn('[director] PP staff fetch failed:', err);
               });
@@ -6388,6 +6430,8 @@ var director = (function() {
             _staffSortKey = key;
             _staffSortDir = -1;
           }
+          GC.state.set('dir.staffSortKey', _staffSortKey);
+          GC.state.set('dir.staffSortDir', _staffSortDir);
           // Re-render thead arrows + resort tbody
           var thead = document.getElementById('staffTableHead');
           if (thead) {
@@ -6413,6 +6457,7 @@ var director = (function() {
           var newStorePeriod = storePeriodTab.getAttribute('data-store-period');
           if (newStorePeriod === _storePeriod) return;
           _storePeriod = newStorePeriod;
+          GC.state.set('dir.storePeriod', _storePeriod);
           syncStorePeriodTabs(); // updates tabs + h2 immediately
           if (newStorePeriod === 'mtd') {
             // Restore cached MTD data
@@ -6445,6 +6490,7 @@ var director = (function() {
               })
               .catch(function(err) {
                 _storePeriod = 'mtd';
+                GC.state.set('dir.storePeriod', 'mtd');
                 syncStorePeriodTabs();
                 console.warn('[director] PP stores fetch failed:', err);
               });
@@ -6461,6 +6507,8 @@ var director = (function() {
             _storeSortKey = key;
             _storeSortDir = -1;
           }
+          GC.state.set('dir.storeSortKey', _storeSortKey);
+          GC.state.set('dir.storeSortDir', _storeSortDir);
           refreshStoreTable();
         }
       });
@@ -6744,6 +6792,7 @@ var director = (function() {
       _storePeriod   = 'mtd';
       _storePpStores = null;
       _storePpRange  = null;
+      GC.state.set('dir.storePeriod', 'mtd');
     },
   };
 })();
@@ -7798,6 +7847,7 @@ var kiosk = (function() {
     if (kioskChip) kioskChip.addEventListener('click', function() {
       if (confirm('Sign out?')) {
         GC.auth.clear();
+        GC.state.reset();
         GC.router.navigate('#/login');
       }
     });
@@ -8544,7 +8594,9 @@ window.GC = window.GC || {};
 GC.views.renderLeaderboard = function(period) {
   var app = document.getElementById('app');
   if (!app) return;
-  period = period || 'mtd';
+  // Fall back to the persisted period (not a hard 'mtd') so the selection
+  // survives navigation, matching the director view's behaviour.
+  period = period || GC.state.get('lb.period', 'mtd');
   app.innerHTML = '<div style="padding:60px;text-align:center;color:var(--text-dim)">Loading leaderboard…</div>';
 
   // Single round-trip reusing the directorall mega-batch
@@ -8563,16 +8615,16 @@ GC.views.renderLeaderboard = function(period) {
 // ── Private module ──────────────────────────────────────────
 var lb = (function() {
 
-  var _lbData   = null;
+  var _lbData      = null;   // never persisted — always reloaded fresh
   var _summary  = null;
   var _alerts   = null;
   var _eomKey   = null;
-  var _storeFilter = 'all';
+  var _storeFilter = GC.state.get('lb.storeFilter', 'all');
   var _tagFilter   = null;
   var _search      = '';
-  var _sortKey     = 'sales';
-  var _sortDir     = -1;
-  var _period      = 'mtd';
+  var _sortKey     = GC.state.get('lb.sortKey',     'sales');
+  var _sortDir     = GC.state.get('lb.sortDir',     -1);
+  var _period      = GC.state.get('lb.period',      'mtd');
 
   function e(s) { return GC.esc(String(s == null ? '' : s)); } // local alias for GC.esc
 
@@ -8890,6 +8942,7 @@ var lb = (function() {
   // ── init ─────────────────────────────────────────────────
   function init(period) {
     _period = period || 'mtd';
+    GC.state.set('lb.period', _period);
 
     // Refresh button — full reload via directorall
     var refreshBtn = document.getElementById('lbRefreshBtn');
@@ -8939,6 +8992,7 @@ var lb = (function() {
         });
         btn.classList.add('active');
         _storeFilter = btn.getAttribute('data-slug');
+        GC.state.set('lb.storeFilter', _storeFilter);
         refreshTable();
       });
     });
@@ -8975,6 +9029,8 @@ var lb = (function() {
         var parts = sortEl.value.split(',');
         _sortKey = parts[0];
         _sortDir = parseInt(parts[1], 10);
+        GC.state.set('lb.sortKey', _sortKey);
+        GC.state.set('lb.sortDir', _sortDir);
         refreshTable();
       });
     }
@@ -8992,6 +9048,8 @@ var lb = (function() {
           _sortKey = key;
           _sortDir = -1;  // default desc
         }
+        GC.state.set('lb.sortKey', _sortKey);
+        GC.state.set('lb.sortDir', _sortDir);
         refreshTable();
       });
     }
