@@ -8,9 +8,24 @@ MSG="${1:-deploy}"
 
 cd "$(dirname "$0")"
 
-# 0. Generate version.js from git commit count (auto-increments every deploy)
+# 0. Stamp version (git commit count) directly into index.html so the value is
+#    baked into the committed source — identical on GitHub Pages and GAS.
+#    (A standalone src/version.js was never loaded by index.html, so the badge
+#    was frozen at its hardcoded fallback. We now rewrite that line in place.)
 BUILD=$(git rev-list --count HEAD)
-echo "window.GC = window.GC || {}; GC.VERSION = 'v1.${BUILD}';" > src/version.js
+python3 - "$BUILD" << 'PYEOF'
+import re, sys, os
+base = os.path.dirname(os.path.abspath(__file__))
+ver  = 'v1.' + sys.argv[1]
+path = os.path.join(base, 'index.html')
+with open(path) as f: html = f.read()
+new = re.sub(
+    r"(window\.GC = window\.GC \|\| \{\}; GC\.VERSION = ')v1\.\d+(';)",
+    lambda m: m.group(1) + ver + m.group(2),
+    html, count=1)
+with open(path, 'w') as f: f.write(new)
+print('  Stamped ' + ver + ' into index.html')
+PYEOF
 echo "▶ Version: v1.${BUILD}"
 
 # 1. Inline all src/ CSS + JS into index.html.built (what GAS serves)
