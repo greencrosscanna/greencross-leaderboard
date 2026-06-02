@@ -7058,7 +7058,7 @@ var kiosk = (function() {
     var isFinal    = closed || preOpen;
     // Arc for "M 22 122 A 98 98 0 0 1 218 122" ≈ π × 98 = 308
     var ARC_LEN    = 308;
-    var paceOffset = Math.round(ARC_LEN * (1 - Math.min(today.dayFrac || 0, 1)));
+    var paceOffset = Math.round(ARC_LEN * (1 - Math.min(today.dayFrac || GC.dayFrac(), 1)));
 
     // Card label: "Yesterday's Results" pre-open, "Daily Goal · $X" otherwise
     var cardLabel = preOpen
@@ -7094,7 +7094,7 @@ var kiosk = (function() {
       + '          stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="butt"/>'
       + '    <path id="kioskPaceArc"'
       + '          d="M 22 122 A 98 98 0 0 1 218 122"'
-      + '          stroke="rgb(38,89,57)" stroke-width="14" fill="none" stroke-linecap="butt"'
+      + '          stroke="rgb(38,89,57)" stroke-width="14" fill="none" stroke-linecap="round"'
       + '          stroke-dasharray="' + ARC_LEN + '"'
       + '          stroke-dashoffset="' + paceOffset + '"'
       + '          style="transition: stroke-dashoffset 1.6s cubic-bezier(.2,.7,.3,1)"/>'
