@@ -9,9 +9,9 @@
 //  Phase 2 (current):  real Dutchie API data endpoints wired
 //
 //  Setup checklist (run from Script Editor, not HTTP):
-//    1. setUserPassword_('sky', 'gcadmin', 'director', null, 'Sky Pinnick', 'SP')
-//    2. setUserPassword_('sofia', 'gc123', 'store_manager', 'baseline', 'Sofia Alvarez', 'SA')
-//       ... repeat for each store manager
+//    1. setUserPassword_('username', '<password>', 'director', null, 'Display Name', 'IN')
+//    2. setUserPassword_('username', '<password>', 'store_manager', 'slug', 'Display Name', 'IN')
+//       ... repeat for each user — do NOT commit passwords to source
 //    3. setStorePlans_({ baseline: { monthly: 255000, daily: 8500 }, ... })
 //    4. Store Dutchie keys: Script Properties → DUTCHIE_STORE_KEYS_JSON
 //       {"Baseline":"key...","Center":"key...","Century":"key...","Commercial":"key...","Portland Rd":"key...","River Rd":"key..."}
@@ -595,34 +595,27 @@ function installRosterTrigger() {
 }
 
 function bootstrapAllUsers() {
-  // Remove stale placeholder usernames from earlier development
-  const props = PropertiesService.getScriptProperties();
-  const users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}');
-  ['sofia','maya','devon','priya','marcus','tyler'].forEach(k => delete users[k]);
-  props.setProperty(GC_USERS_KEY, JSON.stringify(users));
+  // ⚠️  Credentials have been removed from source control.
+  // Users are already live in ScriptProperties (GC_STORE_USERS_KEY).
+  //
+  // To add or update a single user, call setUserPassword_() directly from the
+  // Script Editor with the desired credentials — do NOT commit passwords to source.
+  //
+  // To remove stale placeholder accounts from an earlier dev build, uncomment:
+  // const props = PropertiesService.getScriptProperties();
+  // const users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}');
+  // ['sofia','maya','devon','priya','marcus','tyler'].forEach(k => delete users[k]);
+  // props.setProperty(GC_USERS_KEY, JSON.stringify(users));
 
-  // Set real users
-  setUserPassword_('sky',    '0762ZW', 'director',      null,         'Sky Pinnick',   'SP');
-  setUserPassword_('mike',   'Q6564J', 'director',      null,         'Mike Kettler',  'MK');
-  setUserPassword_('shawn',  'XY1112', 'director',      null,         'Shawn Todd',    'ST');
-  setUserPassword_('tawny',  '13C19U', 'director',      null,         'Tawny Vierra',  'TV');
-  setUserPassword_('dean',    '01Z4WF',  'store_manager', 'baseline',   'Dean Deloof',   'DD');
-  setUserPassword_('tj',      '4397PE',  'store_manager', 'river',      'TJ Peterson',   'TP');
-  setUserPassword_('scott',   '1028823', 'store_manager', 'portland',   'Scott Penner',  'SP');
-  setUserPassword_('tyson',   '72K6D1',  'store_manager', 'center',     'Tyson Farris',  'TF');
-  setUserPassword_('mariana', '3E0C85',  'store_manager', 'commercial', 'Mariana Moxie', 'MM');
-  setUserPassword_('chris',   '980AU7',  'store_manager', 'century',    'Chris Carney',  'CC');
-  Logger.log('All users bootstrapped.');
+  Logger.log('bootstrapAllUsers: credentials are managed in ScriptProperties — nothing to do here.');
 }
 
 // ── Run once from Script Editor to add/update director accounts ──
 // Safe to re-run — only updates the listed users, leaves others intact.
 function bootstrapDirectors() {
-  setUserPassword_('sky',   '0762ZW', 'director', null, 'Sky Pinnick',  'SP');
-  setUserPassword_('mike',  'Q6564J', 'director', null, 'Mike Kettler', 'MK');
-  setUserPassword_('shawn', 'XY1112', 'director', null, 'Shawn Todd',   'ST');
-  setUserPassword_('tawny', '13C19U', 'director', null, 'Tawny Vierra', 'TV');
-  Logger.log('Directors bootstrapped.');
+  // ⚠️  Credentials removed from source — see bootstrapAllUsers() comment above.
+  // Use setUserPassword_() from the Script Editor to update individual accounts.
+  Logger.log('bootstrapDirectors: credentials are managed in ScriptProperties — nothing to do here.');
 }
 
 function bootstrapStorePlans() {
@@ -638,19 +631,15 @@ function bootstrapStorePlans() {
 }
 
 function bootstrapStoreKeys() {
-  adminSetStoreKeys({ keys: JSON.stringify({
-    'Hillsboro':   '77e157f3fcdf43d9864daf0420df8c97',
-    'Center':      '6a7e9c3187a6471d8a0a2d05cfa92023',
-    'Commercial':  'd97da3cef3f74dd087cee7d4239a851d',
-    'Bend':        'a2de33457b8f4d35972d3c47832207eb',
-    'Portland Rd': '5671f32c2c2a4756811e9513945815f4',
-    'River':       '5212417431014845a6db39bcb4ccef6b',
-  })});
-  Logger.log('Store keys saved.');
+  // ⚠️  API keys removed from source — keys are stored in ScriptProperties
+  // under DUTCHIE_STORE_KEYS_JSON.  To update a key use the setstorekeys
+  // HTTP action (director/owner role required) or set the property directly
+  // in the GAS Script Editor → Project Settings → Script Properties.
+  Logger.log('bootstrapStoreKeys: keys are managed in ScriptProperties — nothing to do here.');
 }
 
 // ── Setup: run once from the Script Editor ────────────────────
-// Example: setUserPassword_('sky', 'gcadmin', 'director', null, 'Sky Pinnick', 'SP')
+// Example: setUserPassword_('username', '<password>', 'director', null, 'Display Name', 'IN')
 function setUserPassword_(username, password, role, storeSlug, displayName, initials) {
   if (!username || !password || !role) throw new Error('username, password, and role are required');
   const props = PropertiesService.getScriptProperties();
