@@ -3741,7 +3741,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.324';
+window.GC = window.GC || {}; GC.VERSION = 'v1.325';
 
 </script>
 
@@ -10428,9 +10428,8 @@ GC.views.renderLogin = function() {
   setTimeout(function() { userInput.focus(); }, 50);
 };
 
-// renderKiosk is registered by src/kiosk/kiosk.js (loaded above)
-
-// renderLeaderboard is registered by src/leaderboard/leaderboard.js (loaded above)
+// renderKiosk and renderLeaderboard are defined inline in the kiosk and
+// leaderboard <script> blocks above (this file is a self-contained monolith).
 </script>
 
 <!-- ── Boot ────────────────────────────────────────────────── -->

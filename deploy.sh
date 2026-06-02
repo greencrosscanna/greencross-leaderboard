@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
-# deploy.sh — build, push GAS backend, commit & push frontend to GitHub Pages
+# deploy.sh — stamp version, push to GAS, commit & push to GitHub Pages.
 # Usage: ./deploy.sh "optional commit message"
+#
+# index.html is a self-contained monolith (all CSS/JS inline). GAS serves it
+# verbatim via doGet → createHtmlOutputFromFile('index'); GitHub Pages serves the
+# same file. There is NO build step — clasp pushes index.html directly, so there
+# is no dev/built swap and nothing that can corrupt the working tree on failure.
+# (src/fixtures/*.json remain for USE_FIXTURES demo mode; the old src/*.js|css
+#  module files were stale duplicates of the inline code and have been removed.)
 set -e
 
 DEPLOY_ID="AKfycbxXqtL-rKjuzFQkyADWnHGEoM2ZSYp9g4t1J6vhyDTgHcfkEuQocYrN9DXV7_84Masuqg"
@@ -10,8 +17,6 @@ cd "$(dirname "$0")"
 
 # 0. Stamp version (git commit count) directly into index.html so the value is
 #    baked into the committed source — identical on GitHub Pages and GAS.
-#    (A standalone src/version.js was never loaded by index.html, so the badge
-#    was frozen at its hardcoded fallback. We now rewrite that line in place.)
 BUILD=$(git rev-list --count HEAD)
 python3 - "$BUILD" << 'PYEOF'
 import re, sys, os
@@ -28,52 +33,8 @@ print('  Stamped ' + ver + ' into index.html')
 PYEOF
 echo "▶ Version: v1.${BUILD}"
 
-# 1. Inline all src/ CSS + JS into index.html.built (what GAS serves)
-echo "▶ Building index.html.built..."
-python3 - << 'PYEOF'
-import re, os
-base = os.path.dirname(os.path.abspath(__file__))
-
-with open(f'{base}/index.html', 'r') as f:
-    html = f.read()
-
-def inline_css(m):
-    href = re.search(r'href="([^"?]+)', m.group(0))
-    if not href: return m.group(0)
-    path = os.path.join(base, href.group(1))
-    if not os.path.exists(path): return m.group(0)
-    with open(path, 'r') as f: css = f.read()
-    return f'<style>\n{css}\n</style>'
-
-def inline_js(m):
-    src = re.search(r'src="([^"?]+)', m.group(0))
-    if not src: return m.group(0)
-    path = os.path.join(base, src.group(1))
-    if not os.path.exists(path): return m.group(0)
-    with open(path, 'r') as f: js = f.read()
-    return f'<script>\n{js}\n</script>'
-
-html = re.sub(r'<link rel="stylesheet"[^>]+>', inline_css, html)
-html = re.sub(r'<script src="[^"]+"></script>', inline_js, html)
-
-with open(f'{base}/index.html.built', 'w') as f:
-    f.write(html)
-print(f"  Built {html.count(chr(10))} lines → index.html.built")
-PYEOF
-
-# 2. Push GAS backend. The web app also serves index.html (doGet with no action),
-#    so GAS needs index.html = the built output during push. We swap it in, then
-#    ALWAYS restore the dev version via an EXIT trap — even if clasp fails or the
-#    script is interrupted (Ctrl-C) — so the working tree can never be left holding
-#    the built file in place of the source.
+# 1. Push to GAS. .claspignore selects index.html + the *.gs backend files.
 echo "▶ Pushing to GAS..."
-cp index.html index.html.dev        # canonical source (this is what gets committed)
-
-# Bulletproof restore: fires on ANY exit path (success, set -e error, signal).
-restore_index() { [ -f index.html.dev ] && cp index.html.dev index.html; }
-trap restore_index EXIT INT TERM
-
-cp index.html.built index.html      # swap built output in for the clasp push
 clasp push --force
 
 # Proactive version-limit warning. GAS retains at most 200 versions; prune old
@@ -96,16 +57,13 @@ else
     || echo "   (Could not redeploy to ${LATEST_VER} either — deployment unchanged)"
 fi
 
-# 3. Restore dev index.html, then disarm the trap (restoration confirmed done).
+# 2. Commit & push to GitHub Pages.
 echo "▶ Pushing to GitHub..."
-restore_index
-trap - EXIT INT TERM
-
 # Safety guard: never commit a corrupted/empty index.html. The version marker is
-# present in every valid source file; its absence means the restore failed.
+# present in every valid source file; its absence means something clobbered it.
 if ! grep -q "GC.VERSION = 'v1\." index.html; then
-  echo "❌ index.html is missing its version marker — restore failed."
-  echo "   Aborting commit to protect the source. Recover with: git checkout index.html"
+  echo "❌ index.html is missing its version marker — aborting commit to protect the source."
+  echo "   Recover with: git checkout index.html"
   exit 1
 fi
 
