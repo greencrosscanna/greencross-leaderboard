@@ -41,9 +41,11 @@ const GC_MANUAL_PP_KEY      = 'GC_MANUAL_PP_GOALS_JSON'; // slug→final PP goal
 const GC_AVATAR_CONFIGS_KEY  = 'GC_AVATAR_CONFIGS_JSON'; // { nameKey: { ...avatar_config } }
 const GC_HOURLY_DIST_KEY     = 'GC_HOURLY_DIST_JSON';   // per-store same-DOW hourly revenue weights, cached per day
 const GC_EOM_KEY             = 'gc_eom_current';         // { employeeKey, since } — Employee of the Month
-const PP_DAYS                = 14;   // pay-period length in days
-const TARGET_LOOKBACK_MONTHS = 6;    // rolling lookback for target calculation
-const DUTCHIE_BASE          = 'https://api.pos.dutchie.com';
+const PP_DAYS                = 14;     // pay-period length in days
+const TARGET_LOOKBACK_MONTHS = 6;      // rolling lookback for target calculation
+const DUTCHIE_TAKE           = 5000;   // max transactions per Dutchie API page (no pagination yet)
+const STORE_TODAY_TTL_S      = 55;     // GAS CacheService TTL for storeToday / storeLB responses
+const DUTCHIE_BASE           = 'https://api.pos.dutchie.com';
 
 // IANA timezone — handles PDT/PST DST transitions automatically.
 const STORE_TZ = 'America/Los_Angeles';
@@ -56,6 +58,41 @@ const STORE_HOURS      = STORE_CLOSE_HOUR - STORE_OPEN_HOUR; // 14
 // Request-scoped memoization — reset to null at start of each GAS execution.
 var _goalsCache_    = null;
 var _yoyGoalsCache_ = null;
+var _ppStartCache_  = null;   // currentPPStart_() result for this execution
+var _propsCache_    = null;   // getProps_() — ScriptProperties singleton per execution
+
+// ── Pay-period helpers ───────────────────────────────────────────────────────
+
+/**
+ * Returns the ScriptProperties object, reading it only once per GAS execution.
+ * Use this instead of PropertiesService.getScriptProperties() in hot paths.
+ */
+function getProps_() {
+  if (!_propsCache_) _propsCache_ = PropertiesService.getScriptProperties();
+  return _propsCache_;
+}
+
+/**
+ * Returns the UTC-ms start of the CURRENT pay period, plus PP_MS (the period length).
+ * Reads the anchor once per GAS execution and caches the result in _ppStartCache_.
+ *
+ * @param  {GoogleAppsScript.Properties.Properties=} props  Optional pre-fetched ScriptProperties.
+ * @return {{ ppStartMs: number, PP_MS: number }}
+ */
+function currentPPStart_(props) {
+  if (_ppStartCache_) return _ppStartCache_;
+  var p         = props || getProps_();
+  var anchorStr = p.getProperty(GC_PAY_PERIOD_ANCHOR) || '2026-05-11';
+  var anchorMs  = ptDateToUtcMs_(anchorStr);
+  var PP_MS     = PP_DAYS * 24 * 60 * 60 * 1000;
+  var todayMs   = ptDateToUtcMs_(ptNow_().dateStr);
+  var daysSince = Math.round((todayMs - anchorMs) / (24 * 60 * 60 * 1000));
+  var ppOffset  = daysSince >= 0
+    ? Math.floor(daysSince / PP_DAYS)
+    : Math.ceil(daysSince / PP_DAYS) - 1;
+  _ppStartCache_ = { ppStartMs: anchorMs + ppOffset * PP_MS, PP_MS: PP_MS };
+  return _ppStartCache_;
+}
 
 // ── PT timezone helpers ──────────────────────────────────────────────────────
 
@@ -704,15 +741,10 @@ function getDateRange_(period) {
       break;
     }
     case 'pp': {
-      // Bi-weekly pay period. Anchor date stored in ScriptProperties as "YYYY-MM-DD".
-      // Default: 2026-05-11 (the pay period start confirmed in the incentive sheet).
-      const anchorStr    = PropertiesService.getScriptProperties().getProperty(GC_PAY_PERIOD_ANCHOR) || '2026-05-11';
-      const anchorMs     = ptDateToUtcMs_(anchorStr);
-      const PP_MS        = 14 * 24 * 60 * 60 * 1000;
-      const daysSince    = (todayStartMs - anchorMs) / (24 * 60 * 60 * 1000);
-      const periodsBack  = daysSince >= 0 ? Math.floor(daysSince / 14) : Math.ceil(daysSince / 14) - 1;
-      fromMs = anchorMs + periodsBack * PP_MS;
-      toMs   = fromMs + PP_MS - 1;
+      // Bi-weekly pay period — anchor and offset via shared helper.
+      const { ppStartMs, PP_MS } = currentPPStart_();
+      fromMs = ppStartMs;
+      toMs   = ppStartMs + PP_MS - 1;
       break;
     }
     case '30d': {
@@ -781,13 +813,13 @@ function fmtDate_(ms) {
  *   { "baseline": { "monthly": 255000, "daily": 8500 }, ... }
  */
 function getStorePlans_() {
-  const raw = PropertiesService.getScriptProperties().getProperty(GC_STORE_PLANS_KEY);
+  const raw = getProps_().getProperty(GC_STORE_PLANS_KEY);
   return JSON.parse(raw || '{}');
 }
 
 /** Returns the nickname map { nameKey: displayName }, with keys normalised (no periods). */
 function getNicknames_() {
-  const raw = PropertiesService.getScriptProperties().getProperty(GC_NICKNAMES_KEY);
+  const raw = getProps_().getProperty(GC_NICKNAMES_KEY);
   try {
     const stored = raw ? JSON.parse(raw) : {};
     // Normalise stored keys: strip periods so "zachary_b." and "zachary_b" both work
@@ -803,7 +835,7 @@ function getNicknames_() {
 /** Returns the current Employee of the Month record { employeeKey, since }, or null if unset. */
 function getEomCurrent_() {
   try {
-    var raw = PropertiesService.getScriptProperties().getProperty(GC_EOM_KEY);
+    var raw = getProps_().getProperty(GC_EOM_KEY);
     if (!raw) return null;
     var p = JSON.parse(raw);
     return (p && p.employeeKey) ? p : null;
@@ -836,12 +868,12 @@ function saveStoreTrendCache_(byStore30d) {
 
 /** Returns a Set of excluded employee nameKeys. */
 function getExcluded_() {
-  const raw = PropertiesService.getScriptProperties().getProperty(GC_EXCLUDED_KEY);
+  const raw = getProps_().getProperty(GC_EXCLUDED_KEY);
   try { return new Set(raw ? JSON.parse(raw) : []); } catch(e) { return new Set(); }
 }
 
 function getRoles_() {
-  var raw = PropertiesService.getScriptProperties().getProperty(GC_ROLES_KEY);
+  var raw = getProps_().getProperty(GC_ROLES_KEY);
   if (!raw) return {};
   try { return JSON.parse(raw); } catch(e) { return {}; }
 }
@@ -902,7 +934,7 @@ function activeGoalSource_(gr, gy) {
  * Stretch is NOT applied on top — the stored value IS the goal.
  */
 function getManualPPGoals_() {
-  var raw = PropertiesService.getScriptProperties().getProperty(GC_MANUAL_PP_KEY);
+  var raw = getProps_().getProperty(GC_MANUAL_PP_KEY);
   if (!raw) return {};
   try { return JSON.parse(raw); } catch(e) { return {}; }
 }
@@ -927,16 +959,10 @@ function getOrComputeGoals_(forceRecompute) {
   // Request-scope memo
   if (!forceRecompute && _goalsCache_) return _goalsCache_;
 
-  const props = PropertiesService.getScriptProperties();
+  const props = getProps_();
 
   // Determine current PP start
-  const anchorStr    = props.getProperty(GC_PAY_PERIOD_ANCHOR) || '2026-05-11';
-  const anchorMs     = ptDateToUtcMs_(anchorStr);
-  const PP_MS        = PP_DAYS * 24 * 60 * 60 * 1000;
-  const todayStartMs = ptDateToUtcMs_(ptNow_().dateStr);
-  const daysSince    = Math.round((todayStartMs - anchorMs) / (24 * 60 * 60 * 1000));
-  const ppOffset     = daysSince >= 0 ? Math.floor(daysSince / PP_DAYS) : Math.ceil(daysSince / PP_DAYS) - 1;
-  const ppStartMs    = anchorMs + ppOffset * PP_MS;
+  const { ppStartMs, PP_MS } = currentPPStart_(props);
   const ppStartStr   = Utilities.formatDate(new Date(ppStartMs), STORE_TZ, 'yyyy-MM-dd');
   const ppEndStr     = Utilities.formatDate(new Date(ppStartMs + PP_MS - 1), STORE_TZ, 'yyyy-MM-dd');
 
@@ -1067,14 +1093,8 @@ function recalculateGoals_() {
 function getOrComputeYoYGoals_(forceRecompute) {
   if (!forceRecompute && _yoyGoalsCache_) return _yoyGoalsCache_;
 
-  var props      = PropertiesService.getScriptProperties();
-  var anchorStr  = props.getProperty(GC_PAY_PERIOD_ANCHOR) || '2026-05-11';
-  var anchorMs   = ptDateToUtcMs_(anchorStr);
-  var PP_MS      = PP_DAYS * 24 * 60 * 60 * 1000;
-  var todayMs    = ptDateToUtcMs_(ptNow_().dateStr);
-  var daysSince  = Math.round((todayMs - anchorMs) / (24 * 60 * 60 * 1000));
-  var ppOffset   = daysSince >= 0 ? Math.floor(daysSince / PP_DAYS) : Math.ceil(daysSince / PP_DAYS) - 1;
-  var ppStartMs  = anchorMs + ppOffset * PP_MS;
+  var props = getProps_();
+  var { ppStartMs, PP_MS } = currentPPStart_(props);
   var ppStartStr = Utilities.formatDate(new Date(ppStartMs), STORE_TZ, 'yyyy-MM-dd');
 
   // Check cache
@@ -1130,9 +1150,10 @@ function getOrComputeYoYGoals_(forceRecompute) {
     STORES.forEach(function(store) {
       var ppTotals = [];
       fetchedY2.forEach(function(byStore) {
-        var txns  = byStore[store.slug] || [];
-        var ppSum = 0;
-        Object.keys(aggregateByDay_(txns)).forEach(function(day) { ppSum += aggregateByDay_(txns)[day]; });
+        var txns   = byStore[store.slug] || [];
+        var byDay  = aggregateByDay_(txns);
+        var ppSum  = 0;
+        Object.keys(byDay).forEach(function(day) { ppSum += byDay[day]; });
         ppTotals.push(ppSum);
       });
       ppTotalsY2ByStore[store.slug] = ppTotals.length > 0
@@ -1271,14 +1292,8 @@ function recalculateYoYGoals_() {
 /** Prefetch + cache Y1 data only (36 requests). Called from frontend before recalculate. */
 function prefetchYoY1_() {
   try {
-    var props     = PropertiesService.getScriptProperties();
-    var anchorStr = props.getProperty(GC_PAY_PERIOD_ANCHOR) || '2026-05-11';
-    var anchorMs  = ptDateToUtcMs_(anchorStr);
-    var PP_MS     = PP_DAYS * 24 * 60 * 60 * 1000;
-    var todayMs   = ptDateToUtcMs_(ptNow_().dateStr);
-    var daysSince = Math.round((todayMs - anchorMs) / (24 * 60 * 60 * 1000));
-    var ppOffset  = daysSince >= 0 ? Math.floor(daysSince / PP_DAYS) : Math.ceil(daysSince / PP_DAYS) - 1;
-    var ppStartMs = anchorMs + ppOffset * PP_MS;
+    var props     = getProps_();
+    var { ppStartMs, PP_MS } = currentPPStart_(props);
     var YEAR_MS   = 364 * 24 * 60 * 60 * 1000;
     var yoyBaseMs = ppStartMs - YEAR_MS;
 
@@ -1330,14 +1345,8 @@ function prefetchYoY1_() {
 /** Prefetch + cache Y2 data only (36 requests). Called from frontend before recalculate. */
 function prefetchYoY2_() {
   try {
-    var props     = PropertiesService.getScriptProperties();
-    var anchorStr = props.getProperty(GC_PAY_PERIOD_ANCHOR) || '2026-05-11';
-    var anchorMs  = ptDateToUtcMs_(anchorStr);
-    var PP_MS     = PP_DAYS * 24 * 60 * 60 * 1000;
-    var todayMs   = ptDateToUtcMs_(ptNow_().dateStr);
-    var daysSince = Math.round((todayMs - anchorMs) / (24 * 60 * 60 * 1000));
-    var ppOffset  = daysSince >= 0 ? Math.floor(daysSince / PP_DAYS) : Math.ceil(daysSince / PP_DAYS) - 1;
-    var ppStartMs = anchorMs + ppOffset * PP_MS;
+    var props     = getProps_();
+    var { ppStartMs, PP_MS } = currentPPStart_(props);
     var YEAR_MS    = 364 * 24 * 60 * 60 * 1000;
     var yoyBaseMs  = ppStartMs - YEAR_MS;
     var yoy2BaseMs = ppStartMs - 2 * YEAR_MS; // 2 years ago, same season as Y1
@@ -1354,9 +1363,10 @@ function prefetchYoY2_() {
     STORES.forEach(function(store) {
       var ppTotals = [];
       fetched.forEach(function(byStore) {
-        var txns = byStore[store.slug] || [];
+        var txns  = byStore[store.slug] || [];
+        var byDay = aggregateByDay_(txns);
         var ppSum = 0;
-        Object.keys(aggregateByDay_(txns)).forEach(function(day) { ppSum += aggregateByDay_(txns)[day]; });
+        Object.keys(byDay).forEach(function(day) { ppSum += byDay[day]; });
         ppTotals.push(ppSum);
       });
       ppTotalsY2ByStore[store.slug] = ppTotals.length > 0 ? ppTotals.reduce(function(a,b){return a+b;},0)/ppTotals.length : 0;
@@ -1375,7 +1385,7 @@ function prefetchYoY2_() {
  * Clamped to [0, 0.05]. Defaults to 0 if not set.
  */
 function getStretchMultiplier_() {
-  var raw = PropertiesService.getScriptProperties().getProperty(GC_STRETCH_KEY);
+  var raw = getProps_().getProperty(GC_STRETCH_KEY);
   var val = parseFloat(raw || '0');
   return isNaN(val) ? 0 : Math.max(0, Math.min(0.05, val));
 }
@@ -1714,7 +1724,7 @@ function fetchStoreTransactions_(storeSlug, fromUTC, toUTC) {
     ToDateUTC:     toUTC,
     IncludeDetail: 'true',
     Skip:          0,
-    Take:          5000,
+    Take:          DUTCHIE_TAKE,
   });
   const txns = Array.isArray(data) ? data : (data.transactions || data.data || []);
   return txns
@@ -1755,7 +1765,7 @@ function getHourlyDist_(store) {
     const toMs   = fromMs + MS_DAY - 1;
     const qs = 'FromDateUTC=' + encodeURIComponent(new Date(fromMs).toISOString())
       + '&ToDateUTC=' + encodeURIComponent(new Date(toMs).toISOString())
-      + '&IncludeDetail=true&Skip=0&Take=5000';
+      + '&IncludeDetail=true&Skip=0&Take=' + DUTCHIE_TAKE;
     requests.push({
       url: DUTCHIE_BASE + '/reporting/transactions?' + qs,
       muteHttpExceptions: true,
@@ -1821,7 +1831,7 @@ function fetchAllStoresTransactions_(range) {
       'ToDateUTC='     + encodeURIComponent(range.toUTC),
       'IncludeDetail=true',
       'Skip=0',
-      'Take=5000',
+      'Take=' + DUTCHIE_TAKE,
     ].join('&');
     return {
       url: DUTCHIE_BASE + '/reporting/transactions?' + qs,
@@ -1875,7 +1885,7 @@ function fetchAllStoresTransactionsMulti_(ranges) {
         'ToDateUTC='     + encodeURIComponent(range.toUTC),
         'IncludeDetail=true',
         'Skip=0',
-        'Take=5000',
+        'Take=' + DUTCHIE_TAKE,
       ].join('&');
       allRequests.push({
         url: DUTCHIE_BASE + '/reporting/transactions?' + qs,
@@ -2975,7 +2985,7 @@ function getStoreToday(store, params) {
   if (!isSincePoll) {
     try {
       const scriptCache = CacheService.getScriptCache();
-      scriptCache.put('storeToday:' + store.slug, JSON.stringify(result), 55);
+      scriptCache.put('storeToday:' + store.slug, JSON.stringify(result), STORE_TODAY_TTL_S);
     } catch(e) {}
   }
 
@@ -3157,7 +3167,7 @@ function getStoreLeaderboard(store, params) {
   };
 
   // Store in GAS cache for 55 seconds (same window as storetoday)
-  try { scriptCache.put(lbCacheKey, JSON.stringify(result), 55); } catch(e) {}
+  try { scriptCache.put(lbCacheKey, JSON.stringify(result), STORE_TODAY_TTL_S); } catch(e) {}
 
   return result;
 }
@@ -3555,7 +3565,7 @@ function getSettings_(params) {
   var yoyComputedAt     = null;
   var yoyFrom = null, yoyTo = null;
   var reportFrom = null, reportTo = null;
-  var props = PropertiesService.getScriptProperties();
+  var props = getProps_();
   try {
     rollingGoals = getOrComputeGoals_();
     var rMeta = {};
