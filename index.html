@@ -5799,9 +5799,16 @@ var director = (function() {
     var closed  = today.timeRemainingLabel === 'Closed';
 
     var soldStr = GC.fmtCurrency(today.revenue || 0);
-    var toGoStr = GC.fmtCurrency(today.toGo   || 0);
     var goalStr = GC.fmtCurrency(today.goal   || 0);
     var remStr  = today.timeRemainingLabel || '—';
+
+    // When over goal show "+$N.NN Over Goal" in green; otherwise show remaining shortfall.
+    var overGoal   = (today.goal > 0 && today.revenue > today.goal)
+                     ? (today.revenue - today.goal) : 0;
+    var toGoHtml   = overGoal > 0
+      ? '<div class="kstat-v num" style="color:var(--green)">+' + GC.fmtCurrency(overGoal) + '</div>'
+      : '<div class="kstat-v num">' + GC.fmtCurrency(today.toGo || 0) + '</div>';
+    var toGoLabel  = overGoal > 0 ? 'Over Goal' : 'To Go';
 
     // Time remaining label with zone colour
     var remMins = (function() {
@@ -5831,7 +5838,7 @@ var director = (function() {
       + '</div>'
       + '<div class="kcard-stats">'
       +   '<div class="kstat"><div class="kstat-v num">' + e(soldStr) + '</div><div class="kstat-l">Sold</div></div>'
-      +   '<div class="kstat"><div class="kstat-v num">' + e(toGoStr) + '</div><div class="kstat-l">To go</div></div>'
+      +   '<div class="kstat">' + toGoHtml + '<div class="kstat-l">' + toGoLabel + '</div></div>'
       +   '<div class="kstat"><div class="kstat-v num">' + e(goalStr) + '</div><div class="kstat-l">Goal</div></div>'
       + '</div>'
       + '</div>';
