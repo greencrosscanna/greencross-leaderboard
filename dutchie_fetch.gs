@@ -34,27 +34,95 @@ function dutchieFetch_(storeKey, path, queryParams) {
 }
 
 /**
- * Fetch transactions for a single store; returns only Retail transactions.
- * Fetches up to 5 000 records per call. For periods with more than ~3 000
- * transactions per store, add a pagination loop here.
+ * Paginated parallel transaction fetch — the shared engine behind all three
+ * public fetch functions. Handles Dutchie's 5 000-record page cap so periods
+ * with more transactions than that are no longer silently truncated.
+ *
+ * Strategy: fire every request's first page in one parallel fetchAll(). Any
+ * response whose RAW page is full (=== DUTCHIE_TAKE) might have more, so its
+ * next page is queued and the still-incomplete requests are fetched in the next
+ * parallel round. Most ranges finish in one round (no overflow); only busy
+ * store-ranges pay for extra rounds. Bounded by DUTCHIE_MAX_PAGES.
+ *
+ * @param {Array} reqs  [{ key, storeKey, fromUTC, toUTC }] — key identifies the
+ *                      caller's bucket (e.g. slug, or "rangeIdx:slug").
+ * @return {Object} { key: rawTxns[] } — UNFILTERED, UNSORTED raw transactions.
+ *                  Callers apply the Retail filter (and any sort) themselves.
  */
-function fetchStoreTransactions_(storeSlug, fromUTC, toUTC) {
-  const storeKey = getDutchieStoreKey_(storeSlug);
-  const data = dutchieFetch_(storeKey, '/reporting/transactions', {
-    FromDateUTC:   fromUTC,
-    ToDateUTC:     toUTC,
-    IncludeDetail: 'true',
-    Skip:          0,
-    Take:          DUTCHIE_TAKE,
-  });
-  const txns = Array.isArray(data) ? data : (data.transactions || data.data || []);
-  return txns
-    .filter(tx => tx.transactionType === 'Retail')
-    .sort((a, b) => {
+function fetchTxnPagesByKey_(reqs) {
+  const byKey = {};
+  reqs.forEach(function(r) { byKey[r.key] = []; });
+
+  let pending = reqs.map(function(r) { return { r: r, skip: 0 }; });
+  let round = 0;
+
+  while (pending.length && round < DUTCHIE_MAX_PAGES) {
+    round++;
+    const httpReqs = pending.map(function(p) {
+      const qs = [
+        'FromDateUTC=' + encodeURIComponent(p.r.fromUTC),
+        'ToDateUTC='   + encodeURIComponent(p.r.toUTC),
+        'IncludeDetail=true',
+        'Skip=' + p.skip,
+        'Take=' + DUTCHIE_TAKE,
+      ].join('&');
+      return {
+        url: DUTCHIE_BASE + '/reporting/transactions?' + qs,
+        headers: {
+          Authorization: 'Basic ' + Utilities.base64Encode(p.r.storeKey + ':'),
+          Accept: 'application/json',
+        },
+        muteHttpExceptions: true,
+      };
+    });
+
+    const responses = UrlFetchApp.fetchAll(httpReqs);
+    const next = [];
+    responses.forEach(function(resp, i) {
+      const p = pending[i];
+      if (resp.getResponseCode() !== 200) {
+        Logger.log('Dutchie ' + resp.getResponseCode() + ' for ' + p.r.key + ' (skip ' + p.skip + ')');
+        return; // keep whatever pages we already have for this key
+      }
+      let data;
+      try { data = JSON.parse(resp.getContentText()); }
+      catch(e) { Logger.log('Parse error for ' + p.r.key + ': ' + e.message); return; }
+      const page = Array.isArray(data) ? data : (data.transactions || data.data || []);
+      byKey[p.r.key] = byKey[p.r.key].concat(page);
+      // A full raw page means there may be more — queue the next page.
+      if (page.length >= DUTCHIE_TAKE) next.push({ r: p.r, skip: p.skip + DUTCHIE_TAKE });
+    });
+    pending = next;
+  }
+
+  if (pending.length) {
+    Logger.log('⚠️ fetchTxnPagesByKey_: hit DUTCHIE_MAX_PAGES (' + DUTCHIE_MAX_PAGES +
+      ') — data may be truncated for: ' + pending.map(function(p){ return p.r.key; }).join(', '));
+  }
+  return byKey;
+}
+
+/** Retail-only filter + chronological sort applied to a raw transaction array. */
+function filterRetailSorted_(rawTxns) {
+  return (rawTxns || [])
+    .filter(function(tx) { return tx.transactionType === 'Retail'; })
+    .sort(function(a, b) {
       const ta = a.transactionDateLocalTime || a.transactionDate || '';
       const tb = b.transactionDateLocalTime || b.transactionDate || '';
       return ta < tb ? -1 : ta > tb ? 1 : 0;
     });
+}
+
+/**
+ * Fetch transactions for a single store; returns only Retail transactions,
+ * chronologically sorted. Paginates past the 5 000-record cap.
+ */
+function fetchStoreTransactions_(storeSlug, fromUTC, toUTC) {
+  const storeKey = getDutchieStoreKey_(storeSlug);
+  const byKey = fetchTxnPagesByKey_([
+    { key: storeSlug, storeKey: storeKey, fromUTC: fromUTC, toUTC: toUTC }
+  ]);
+  return filterRetailSorted_(byKey[storeSlug]);
 }
 
 /**
@@ -145,45 +213,22 @@ function getHourlyDist_(store) {
  * Returns an object keyed by storeSlug: { baseline: [...], center: [...], ... }
  */
 function fetchAllStoresTransactions_(range) {
-  const requests = STORES.map(function(store) {
-    const storeKey = getDutchieStoreKey_(store.slug);
-    const qs = [
-      'FromDateUTC='   + encodeURIComponent(range.fromUTC),
-      'ToDateUTC='     + encodeURIComponent(range.toUTC),
-      'IncludeDetail=true',
-      'Skip=0',
-      'Take=' + DUTCHIE_TAKE,
-    ].join('&');
+  const reqs = STORES.map(function(store) {
     return {
-      url: DUTCHIE_BASE + '/reporting/transactions?' + qs,
-      headers: {
-        Authorization: 'Basic ' + Utilities.base64Encode(storeKey + ':'),
-        Accept: 'application/json',
-      },
-      muteHttpExceptions: true,
+      key:      store.slug,
+      storeKey: getDutchieStoreKey_(store.slug),
+      fromUTC:  range.fromUTC,
+      toUTC:    range.toUTC,
     };
   });
+  const byKey = fetchTxnPagesByKey_(reqs);
 
-  const responses = UrlFetchApp.fetchAll(requests);
   const result = {};
-
-  STORES.forEach(function(store, i) {
-    try {
-      const resp = responses[i];
-      if (resp.getResponseCode() !== 200) {
-        Logger.log('Dutchie ' + resp.getResponseCode() + ' for ' + store.slug);
-        result[store.slug] = [];
-        return;
-      }
-      const data = JSON.parse(resp.getContentText());
-      const txns = Array.isArray(data) ? data : (data.transactions || data.data || []);
-      result[store.slug] = txns.filter(tx => tx.transactionType === 'Retail');
-    } catch(e) {
-      Logger.log('Parse error for ' + store.slug + ': ' + e.message);
-      result[store.slug] = [];
-    }
+  STORES.forEach(function(store) {
+    result[store.slug] = (byKey[store.slug] || []).filter(function(tx) {
+      return tx.transactionType === 'Retail';
+    });
   });
-
   return result;
 }
 
@@ -196,49 +241,29 @@ function fetchAllStoresTransactions_(range) {
  */
 function fetchAllStoresTransactionsMulti_(ranges) {
   const nStores = STORES.length;
-  const allRequests = [];
+  const reqs = [];
 
-  ranges.forEach(function(range) {
+  ranges.forEach(function(range, ri) {
     STORES.forEach(function(store) {
-      const storeKey = getDutchieStoreKey_(store.slug);
-      const qs = [
-        'FromDateUTC='   + encodeURIComponent(range.fromUTC),
-        'ToDateUTC='     + encodeURIComponent(range.toUTC),
-        'IncludeDetail=true',
-        'Skip=0',
-        'Take=' + DUTCHIE_TAKE,
-      ].join('&');
-      allRequests.push({
-        url: DUTCHIE_BASE + '/reporting/transactions?' + qs,
-        headers: {
-          Authorization: 'Basic ' + Utilities.base64Encode(storeKey + ':'),
-          Accept: 'application/json',
-        },
-        muteHttpExceptions: true,
+      reqs.push({
+        key:      ri + ':' + store.slug,   // composite key → range index + store
+        storeKey: getDutchieStoreKey_(store.slug),
+        fromUTC:  range.fromUTC,
+        toUTC:    range.toUTC,
       });
     });
   });
 
-  Logger.log('fetchAllStoresTransactionsMulti_: firing ' + allRequests.length + ' requests (' + ranges.length + ' ranges × ' + nStores + ' stores)');
-  const responses = UrlFetchApp.fetchAll(allRequests);
+  Logger.log('fetchAllStoresTransactionsMulti_: ' + reqs.length + ' first-page requests (' +
+    ranges.length + ' ranges × ' + nStores + ' stores); overflow pages fetched as needed');
+  const byKey = fetchTxnPagesByKey_(reqs);
 
   return ranges.map(function(range, ri) {
     const result = {};
-    STORES.forEach(function(store, si) {
-      const resp = responses[ri * nStores + si];
-      try {
-        if (resp.getResponseCode() !== 200) {
-          Logger.log('Dutchie ' + resp.getResponseCode() + ' for ' + store.slug + ' range[' + ri + ']');
-          result[store.slug] = [];
-          return;
-        }
-        const data = JSON.parse(resp.getContentText());
-        const txns = Array.isArray(data) ? data : (data.transactions || data.data || []);
-        result[store.slug] = txns.filter(tx => tx.transactionType === 'Retail');
-      } catch(e) {
-        Logger.log('Parse error for ' + store.slug + ' range[' + ri + ']: ' + e.message);
-        result[store.slug] = [];
-      }
+    STORES.forEach(function(store) {
+      result[store.slug] = (byKey[ri + ':' + store.slug] || []).filter(function(tx) {
+        return tx.transactionType === 'Retail';
+      });
     });
     return result;
   });
