@@ -44,19 +44,20 @@ function diagAlertProration() {
   return lines;
 }
 
-// ── Manual diagnostic: prove pagination engages past the 5k cap ──────────────
-// Fetches the 30-day range (where busy stores exceed one page) and logs the
-// retail transaction count per store. Any count > DUTCHIE_TAKE proves the old
-// single-page cap would have silently truncated that store's data.
+// ── Manual diagnostic: per-store 30-day retail counts ────────────────────────
+// Sanity-checks the single-fetch behavior. Counts well above DUTCHIE_TAKE prove
+// Dutchie returns the full result set in one call (no hard cap). A count of
+// EXACTLY DUTCHIE_TAKE would indicate a real cap that needs date-window splitting.
 function diagPagination() {
   var r       = getDateRange_('30d');
   var byStore  = fetchAllStoresTransactions_(r);
   var lines    = ['30-day fetch ' + r.fromLocal + ' → ' + r.toLocal +
-                  '  (old single-page cap = ' + DUTCHIE_TAKE + ')'];
+                  '  (Take=' + DUTCHIE_TAKE + ')'];
   STORES.forEach(function(store) {
     var n = (byStore[store.slug] || []).length;
     lines.push(store.name + ': ' + n + ' retail txns' +
-      (n > DUTCHIE_TAKE ? '  ← would have been TRUNCATED before (pagination working)' : ''));
+      (n === DUTCHIE_TAKE ? '  ⚠ exactly at cap — possible truncation' :
+       n > DUTCHIE_TAKE   ? '  ✓ full set returned in one call (no cap)' : ''));
   });
   Logger.log(lines.join('\n'));
   return lines;

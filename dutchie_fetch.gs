@@ -34,15 +34,17 @@ function dutchieFetch_(storeKey, path, queryParams) {
 }
 
 /**
- * Paginated parallel transaction fetch — the shared engine behind all three
- * public fetch functions. Handles Dutchie's 5 000-record page cap so periods
- * with more transactions than that are no longer silently truncated.
+ * Parallel transaction fetch — the shared engine behind all three public fetch
+ * functions. Fires every request in one UrlFetchApp.fetchAll() and returns the
+ * raw transactions per key.
  *
- * Strategy: fire every request's first page in one parallel fetchAll(). Any
- * response whose RAW page is full (=== DUTCHIE_TAKE) might have more, so its
- * next page is queued and the still-incomplete requests are fetched in the next
- * parallel round. Most ranges finish in one round (no overflow); only busy
- * store-ranges pay for extra rounds. Bounded by DUTCHIE_MAX_PAGES.
+ * NOTE ON PAGINATION: Dutchie's /reporting/transactions returns the full result
+ * set for a date range in a single response — it does NOT honor Skip as a clean
+ * offset (verified live: a Skip/Take loop re-fetched the same rows, inflating a
+ * ~6,100-txn store to 61,000). So we fetch once per range. As a safety net, if a
+ * response comes back at exactly DUTCHIE_TAKE rows we log a truncation warning —
+ * that's the signal that Dutchie has started enforcing a hard cap and the range
+ * needs to be split into smaller date windows.
  *
  * @param {Array} reqs  [{ key, storeKey, fromUTC, toUTC }] — key identifies the
  *                      caller's bucket (e.g. slug, or "rangeIdx:slug").
@@ -50,55 +52,43 @@ function dutchieFetch_(storeKey, path, queryParams) {
  *                  Callers apply the Retail filter (and any sort) themselves.
  */
 function fetchTxnPagesByKey_(reqs) {
+  const httpReqs = reqs.map(function(r) {
+    const qs = [
+      'FromDateUTC=' + encodeURIComponent(r.fromUTC),
+      'ToDateUTC='   + encodeURIComponent(r.toUTC),
+      'IncludeDetail=true',
+      'Skip=0',
+      'Take=' + DUTCHIE_TAKE,
+    ].join('&');
+    return {
+      url: DUTCHIE_BASE + '/reporting/transactions?' + qs,
+      headers: {
+        Authorization: 'Basic ' + Utilities.base64Encode(r.storeKey + ':'),
+        Accept: 'application/json',
+      },
+      muteHttpExceptions: true,
+    };
+  });
+
+  const responses = UrlFetchApp.fetchAll(httpReqs);
   const byKey = {};
-  reqs.forEach(function(r) { byKey[r.key] = []; });
-
-  let pending = reqs.map(function(r) { return { r: r, skip: 0 }; });
-  let round = 0;
-
-  while (pending.length && round < DUTCHIE_MAX_PAGES) {
-    round++;
-    const httpReqs = pending.map(function(p) {
-      const qs = [
-        'FromDateUTC=' + encodeURIComponent(p.r.fromUTC),
-        'ToDateUTC='   + encodeURIComponent(p.r.toUTC),
-        'IncludeDetail=true',
-        'Skip=' + p.skip,
-        'Take=' + DUTCHIE_TAKE,
-      ].join('&');
-      return {
-        url: DUTCHIE_BASE + '/reporting/transactions?' + qs,
-        headers: {
-          Authorization: 'Basic ' + Utilities.base64Encode(p.r.storeKey + ':'),
-          Accept: 'application/json',
-        },
-        muteHttpExceptions: true,
-      };
-    });
-
-    const responses = UrlFetchApp.fetchAll(httpReqs);
-    const next = [];
-    responses.forEach(function(resp, i) {
-      const p = pending[i];
-      if (resp.getResponseCode() !== 200) {
-        Logger.log('Dutchie ' + resp.getResponseCode() + ' for ' + p.r.key + ' (skip ' + p.skip + ')');
-        return; // keep whatever pages we already have for this key
-      }
-      let data;
-      try { data = JSON.parse(resp.getContentText()); }
-      catch(e) { Logger.log('Parse error for ' + p.r.key + ': ' + e.message); return; }
-      const page = Array.isArray(data) ? data : (data.transactions || data.data || []);
-      byKey[p.r.key] = byKey[p.r.key].concat(page);
-      // A full raw page means there may be more — queue the next page.
-      if (page.length >= DUTCHIE_TAKE) next.push({ r: p.r, skip: p.skip + DUTCHIE_TAKE });
-    });
-    pending = next;
-  }
-
-  if (pending.length) {
-    Logger.log('⚠️ fetchTxnPagesByKey_: hit DUTCHIE_MAX_PAGES (' + DUTCHIE_MAX_PAGES +
-      ') — data may be truncated for: ' + pending.map(function(p){ return p.r.key; }).join(', '));
-  }
+  reqs.forEach(function(r, i) {
+    byKey[r.key] = [];
+    const resp = responses[i];
+    if (resp.getResponseCode() !== 200) {
+      Logger.log('Dutchie ' + resp.getResponseCode() + ' for ' + r.key);
+      return;
+    }
+    let data;
+    try { data = JSON.parse(resp.getContentText()); }
+    catch(e) { Logger.log('Parse error for ' + r.key + ': ' + e.message); return; }
+    const page = Array.isArray(data) ? data : (data.transactions || data.data || []);
+    byKey[r.key] = page;
+    if (page.length === DUTCHIE_TAKE) {
+      Logger.log('⚠️ ' + r.key + ' returned exactly ' + DUTCHIE_TAKE + ' rows — Dutchie may be ' +
+        'enforcing a hard cap; split this date range into smaller windows.');
+    }
+  });
   return byKey;
 }
 

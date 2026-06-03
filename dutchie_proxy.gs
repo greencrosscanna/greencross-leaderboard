@@ -44,8 +44,7 @@ const GC_HOURLY_DIST_KEY     = 'GC_HOURLY_DIST_JSON';   // per-store same-DOW ho
 const GC_EOM_KEY             = 'gc_eom_current';         // { employeeKey, since } — Employee of the Month
 const PP_DAYS                = 14;     // pay-period length in days
 const TARGET_LOOKBACK_MONTHS = 6;      // rolling lookback for target calculation
-const DUTCHIE_TAKE           = 5000;   // max transactions per Dutchie API page
-const DUTCHIE_MAX_PAGES      = 10;     // pagination safety cap (10 × 5000 = 50k txns/store-range)
+const DUTCHIE_TAKE           = 5000;   // Take param sent to Dutchie; also the truncation-warning threshold
 const STORE_TODAY_TTL_S      = 55;     // GAS CacheService TTL for storeToday / storeLB responses
 const DUTCHIE_BASE           = 'https://api.pos.dutchie.com';
 
