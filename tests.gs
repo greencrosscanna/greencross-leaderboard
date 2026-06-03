@@ -15,6 +15,35 @@
 //  the project is harmless and makes the suite runnable in place.
 // ============================================================
 
+// ── Manual diagnostic (hits the Dutchie API — run from the editor) ───────────
+// Prints, per store: actual MTD sales vs the new DOW-weighted "expected by now"
+// bar, the resulting vs-plan %, and whether the behind-plan alert would fire.
+// Use this to sanity-check the alert proration against live numbers.
+function diagAlertProration() {
+  var range   = getDateRange_('mtd');
+  var byStore  = fetchAllStoresTransactions_(range);
+  var pt       = ptNow_();
+  var dim      = new Date(Date.UTC(pt.year, pt.month + 1, 0)).getUTCDate();
+  var lines    = ['MTD ' + pt.dateStr + ' — ' + (pt.day - 1) +
+                  ' completed day(s) of ' + dim + ' in month  (today excluded from "expected")'];
+  STORES.forEach(function(store) {
+    var agg      = aggregateTransactions_(byStore[store.slug] || []);
+    var expected = getProratedMonthGoalToDate_(store.slug);
+    var monthly  = getMonthlyGoal_(store.slug);
+    var vsplan   = expected > 0 ? Math.round((agg.sales - expected) / expected * 100) : null;
+    lines.push(
+      store.name +
+      ': actual $' + Math.round(agg.sales) +
+      '  |  expected $' + expected +
+      '  |  vs plan ' + (vsplan === null ? 'n/a' : (vsplan > 0 ? '+' : '') + vsplan + '%') +
+      (vsplan !== null && vsplan < -5 ? '  ⚠ FLAG' : '  ✓ ok') +
+      '  |  full-month goal $' + monthly
+    );
+  });
+  Logger.log(lines.join('\n'));
+  return lines;
+}
+
 // ── Tiny assertion harness ───────────────────────────────────
 var _T_PASS = 0, _T_FAIL = 0, _T_LOG = [];
 
