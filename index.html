@@ -3741,7 +3741,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.336';
+window.GC = window.GC || {}; GC.VERSION = 'v1.337';
 
 </script>
 
@@ -6851,12 +6851,14 @@ var director = (function() {
 .sky-clock .t { font-size: 3vmin; font-weight: 700; font-variant-numeric: tabular-nums; }
 .sky-clock .r { font-size: 1.5vmin; color: var(--text-mute, #7c8a82); }
 
-/* — full-width aggregate bar — */
+/* — full-width aggregate bar (KPIs + long progress bar) — */
 .sky-aggbar {
-  flex: 0 0 auto; display: flex; align-items: center; gap: 2.4vmin;
+  flex: 0 0 auto; display: flex; flex-direction: column; gap: 1.3vmin;
   background: var(--card-bg, #141a17); border: 1px solid var(--border, #232a27);
   border-radius: 14px; padding: 1.4vmin 2.6vmin;
 }
+.sky-aggbar-top { display: flex; align-items: center; gap: 2.4vmin; }
+.sky-bar.lg { height: 1.8vmin; margin-top: 0; }
 .sky-aggbar .agg-pct { display: flex; flex-direction: column; align-items: flex-start; line-height: 1; padding-right: 2.4vmin; border-right: 1px solid var(--border, #232a27); }
 .sky-aggbar .agg-pct .pct { font-size: 5vmin; font-weight: 800; }
 .sky-aggbar .agg-pct .sub { font-size: 1.35vmin; color: var(--text-mute, #7c8a82); text-transform: uppercase; letter-spacing: .08em; margin-top: .3vmin; }
@@ -6897,13 +6899,18 @@ var director = (function() {
 .sky-ticker-live { width: 1vmin; height: 1vmin; border-radius: 50%; background: var(--green, #4ade80); animation: skyPulse 1.6s ease-in-out infinite; }
 @keyframes skyPulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
 .sky-ticker-track { flex: 1 1 auto; overflow: hidden; height: 100%; }
-.sky-ticker-run { display: inline-flex; align-items: center; height: 100%; white-space: nowrap; will-change: transform; }
-.sky-tick-item { display: inline-flex; align-items: center; gap: .9vmin; padding: 0 2.4vmin; font-size: 2vmin; border-right: 1px solid var(--border, #232a27); }
+/* Static row, newest-first (left). New sales drip in via .new pop animation;
+   old ones are pushed right and clipped — no continuous scroll. */
+.sky-ticker-run { display: flex; align-items: center; height: 100%; white-space: nowrap; }
+.sky-tick-item { display: inline-flex; align-items: center; gap: .9vmin; padding: 0 2.4vmin; font-size: 2vmin; border-right: 1px solid var(--border, #232a27); flex: 0 0 auto; }
 .sky-tick-item .amt { font-weight: 800; font-variant-numeric: tabular-nums; }
 .sky-tick-item .who { color: var(--text-dim, #94a39b); }
 .sky-tick-item .meta { color: var(--text-mute, #7c8a82); font-size: 1.6vmin; }
 .sky-tick-dot { width: 1.1vmin; height: 1.1vmin; border-radius: 50%; flex: 0 0 auto; }
-@keyframes skyMarquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.sky-tick-item.new { animation: skyPopIn .5s cubic-bezier(.2,.8,.3,1.15) both; }
+.sky-tick-item.new .amt { animation: skyAmtFlash 1.2s ease-out; }
+@keyframes skyPopIn { 0% { opacity: 0; transform: translateX(-1.6vmin) scale(.9); } 60% { opacity: 1; } 100% { opacity: 1; transform: none; } }
+@keyframes skyAmtFlash { 0% { color: var(--green, #4ade80); text-shadow: 0 0 1vmin var(--green, #4ade80); } 100% { color: inherit; text-shadow: none; } }
 </style>
 
 <script>
@@ -6914,9 +6921,12 @@ var director = (function() {
 //  bar · 3×2 condensed store cards (pace-hash + over-goal-glow bars)
 //  · live sales ticker. Owner/director only.
 //
-//  Two refresh loops on a 60 s cadence:
-//   • directorall (server-cached) → aggregate bar + cards
-//   • all-store storetoday tickers → merged scrolling sales feed
+//  • directorall (server-cached) → goal/projected/MTD, per-store cards,
+//    aggregate pace + day-fraction hash (refreshed every 30 s).
+//  • per-store storetoday sinceTs polls every 30 s → NEW sales since the
+//    last cursor, dripped into a non-scrolling feed one at a time over the
+//    window, with the aggregate "Sold today" + progress bar climbing as
+//    each sale lands — so the wall feels live.
 // ============================================================
 window.GC = window.GC || {};
 
@@ -6928,10 +6938,15 @@ GC.views.renderSky = function() {
 };
 
 var sky = (function() {
-  var _wallTimer = null, _tickTimer = null, _clock = null;
+  var POLL_MS = 30000, DRIP_MIN = 700, DRIP_MAX = 9000, MAX_DOM = 14;
+
+  var _wallTimer = null, _tickTimer = null, _clock = null, _dripTimer = null;
+  var _cursors = {};       // slug → last seen txn timestamp (sinceTs cursor)
+  var _queue   = [];       // pending NEW sales waiting to drip in (chronological)
+  var _liveSold = null;    // aggregate sold today; climbs as sales drip in
+  var _goal = 0, _projected = 0, _pace = 0, _dayFrac = 0;
 
   function e(s) { return GC.esc(String(s == null ? '' : s)); }
-  function pctStr(p) { return Math.round((p || 0) * 100) + '%'; }
   function paceLabel(p) { return (p > 0 ? '+' : '') + Math.round((p || 0) * 100) + '%'; }
   function paceCls(p) { return p > 0.01 ? 'up' : p < -0.01 ? 'down' : 'flat'; }
   function barColor(p) {
@@ -6958,16 +6973,43 @@ var sky = (function() {
       + '</div>';
   }
 
-  // ── Aggregate bar ──
-  function aggHtml(today, summary) {
-    return '<div class="agg-pct"><span class="pct">' + pctStr(today.pctToGoal) + '</span><span class="sub">All stores &middot; to daily goal</span></div>'
-      + '<div class="sky-aggstats">'
-      +   stat('Sold today', fullCur(today.revenue))
-      +   stat('Daily goal', fullCur(today.goal))
-      +   stat('Projected',  fullCur(today.projectedRevenue))
-      +   stat('Pace',       '<span class="sky-pace ' + paceCls(today.pace || 0) + '">' + paceLabel(today.pace || 0) + '</span>')
-      +   stat('MTD',        fullCur(summary.totalSales))
+  // ── Aggregate bar: KPI row + one long progress bar (live values fill in) ──
+  function aggHtml(summary) {
+    var col  = barColor(_pace);
+    var mark = Math.min(Math.round(_dayFrac * 100), 100);
+    return '<div class="sky-aggbar-top">'
+      +   '<div class="agg-pct"><span class="pct" id="skyAggPct">—</span><span class="sub">All stores &middot; to daily goal</span></div>'
+      +   '<div class="sky-aggstats">'
+      +     '<div class="st"><span class="lbl">Sold today</span><span class="val" id="skySoldVal">—</span></div>'
+      +     stat('Daily goal', fullCur(_goal))
+      +     stat('Projected',  fullCur(_projected))
+      +     stat('Pace',       '<span class="sky-pace ' + paceCls(_pace) + '">' + paceLabel(_pace) + '</span>')
+      +     stat('MTD',        fullCur(summary.totalSales))
+      +   '</div>'
+      + '</div>'
+      + '<div class="sky-bar lg" id="skyAggBar">'
+      +   '<span id="skyAggFill" style="width:0%;background:' + col + '"></span>'
+      +   (mark > 0 && mark < 100 ? '<span class="sky-bar-mark" style="left:' + mark + '%"></span>' : '')
       + '</div>';
+  }
+
+  // Live aggregate sold + % + bar fill — recomputed as sales drip in.
+  function renderAggLive() {
+    if (_liveSold == null) return;
+    var pct = _goal > 0 ? _liveSold / _goal : 0;
+    var sv = document.getElementById('skySoldVal'); if (sv) sv.textContent = fullCur(_liveSold);
+    var pe = document.getElementById('skyAggPct');  if (pe) pe.textContent = Math.round(pct * 100) + '%';
+    var fl = document.getElementById('skyAggFill');  if (fl) fl.style.width = Math.min(pct * 100, 100) + '%';
+    var bw = document.getElementById('skyAggBar');   if (bw) bw.classList.toggle('over', pct >= 1);
+  }
+
+  // _liveSold = authoritative total minus the value still queued (not yet shown),
+  // so each drip climbs it toward the true total without double-counting.
+  function reconcileSold(authoritative) {
+    var q = 0;
+    for (var i = 0; i < _queue.length; i++) q += (_queue[i].price || 0);
+    _liveSold = Math.max(0, authoritative - q);
+    renderAggLive();
   }
 
   // ── Store card (condensed) ──
@@ -6986,7 +7028,7 @@ var sky = (function() {
       + '</div>'
       + '<div class="sky-sold">' + fullCur(t.revenue) + '</div>'
       + '<div class="sky-card-foot">'
-      +   '<div class="sky-goal">of ' + fullCur(t.goal) + ' &middot; ' + pctStr(pct) + '</div>'
+      +   '<div class="sky-goal">of ' + fullCur(t.goal) + ' &middot; ' + Math.round(pct * 100) + '%</div>'
       +   '<div class="sky-bar' + (over ? ' over' : '') + '">'
       +     '<span style="width:' + w + '%;background:' + col + '"></span>'
       +     (mark > 0 && mark < 100 ? '<span class="sky-bar-mark" style="left:' + mark + '%"></span>' : '')
@@ -6995,15 +7037,13 @@ var sky = (function() {
       + '</div>';
   }
 
-  // ── Ticker item ──
-  function tickItem(it) {
+  // ── Ticker item inner HTML ──
+  function tickInner(it) {
     var qty = it.qty ? it.qty + (it.qty > 1 ? ' items' : ' item') : '';
-    return '<span class="sky-tick-item">'
-      + '<span class="sky-tick-dot" style="background:var(--store-' + e(it.slug) + ', var(--green))"></span>'
+    return '<span class="sky-tick-dot" style="background:var(--store-' + e(it.slug) + ', var(--green))"></span>'
       + '<span class="amt">' + fullCur(it.price) + '</span>'
       + '<span class="who">' + e(it.who) + '</span>'
-      + (qty ? '<span class="meta">' + qty + '</span>' : '')
-      + '</span>';
+      + (qty ? '<span class="meta">' + qty + '</span>' : '');
   }
 
   function startClock() {
@@ -7013,63 +7053,113 @@ var sky = (function() {
     _clock = setInterval(tick, 1000);
   }
 
-  // Update aggregate bar + cards from the cached directorall payload.
+  // directorall → goal/projected/MTD, per-store cards, aggregate pace + hash.
   function paintWall() {
     GC.api.fetchDirectorAll('mtd').then(function(data) {
       if (window.location.hash !== '#/sky' || !data || data.ok === false) return;
       var today   = data.today || {};
       var summary = data.summary || {};
       var stores  = (data.stores && data.stores.stores) || [];
+      _goal      = today.goal || 0;
+      _projected = today.projectedRevenue || 0;
+      _pace      = today.pace || 0;
+      _dayFrac   = today.dayFrac != null ? today.dayFrac : GC.dayFrac();
+      if (_liveSold == null) _liveSold = today.revenue || 0;   // initial baseline; store polls refine it
       var agg  = document.getElementById('skyAgg');
       var grid = document.getElementById('skyGrid');
       var rem  = document.getElementById('skyRem');
-      if (agg)  agg.innerHTML  = aggHtml(today, summary);
+      if (agg)  agg.innerHTML  = aggHtml(summary);
       if (grid) grid.innerHTML = stores.map(storeCard).join('');
-      if (rem) {
-        var r = today.timeRemainingLabel || '';
-        rem.textContent = (r && r !== 'Closed') ? r + ' left' : r;
-      }
+      if (rem) { var r = today.timeRemainingLabel || ''; rem.textContent = (r && r !== 'Closed') ? r + ' left' : r; }
+      renderAggLive();
     }).catch(function(err) { console.warn('[sky] wall fetch failed:', err); });
   }
 
-  // Merge the recent-sales ticker across all stores into the bottom marquee.
-  function paintTicker() {
+  // Drip one queued sale into the feed; reschedule to spread the queue over ~POLL_MS.
+  function scheduleDrip() {
+    clearTimeout(_dripTimer); _dripTimer = null;
+    if (!_queue.length) return;
+    var delay = Math.min(DRIP_MAX, Math.max(DRIP_MIN, POLL_MS / _queue.length));
+    _dripTimer = setTimeout(function() {
+      if (window.location.hash !== '#/sky') { _dripTimer = null; return; }
+      var it = _queue.shift();
+      if (it) {
+        _liveSold = (_liveSold || 0) + (it.price || 0);
+        renderAggLive();
+        prependTick(it);
+      }
+      scheduleDrip();
+    }, delay);
+  }
+  function ensureDrip() { if (!_dripTimer) scheduleDrip(); }
+
+  function prependTick(it) {
+    var run = document.getElementById('skyTickerRun');
+    if (!run) return;
+    var first = run.firstChild;
+    if (first && first.className && first.className.indexOf('sky-tick-empty') !== -1) run.innerHTML = '';
+    var el = document.createElement('span');
+    el.className = 'sky-tick-item new';
+    el.innerHTML = tickInner(it);
+    run.insertBefore(el, run.firstChild);
+    while (run.children.length > MAX_DOM) run.removeChild(run.lastChild);
+    setTimeout(function() { el.classList.remove('new'); }, 1300);
+  }
+
+  // Initial fill: show the most recent sales statically + set the per-store cursors.
+  function seedTicker() {
     var slugs = GC.STORE_SLUGS || [];
     Promise.all(slugs.map(function(slug) {
-      return GC.api.fetchStoreToday(slug)
-        .then(function(r) { return ((r && r.ticker) || []).map(function(t) { t.slug = slug; return t; }); })
-        .catch(function() { return []; });
-    })).then(function(lists) {
+      return GC.api.fetchStoreToday(slug).then(function(r) {
+        if (r && r.latestTxnTs) _cursors[slug] = r.latestTxnTs;
+        return { rev: (r && r.revenue) || 0, items: ((r && r.ticker) || []).map(function(t) { t.slug = slug; return t; }) };
+      }).catch(function() { return { rev: 0, items: [] }; });
+    })).then(function(res) {
       if (window.location.hash !== '#/sky') return;
+      var auth = 0, all = [];
+      res.forEach(function(r) { auth += r.rev; all = all.concat(r.items); });
+      reconcileSold(auth);                                   // queue empty → _liveSold = true total
+      all.sort(function(a, b) { return (a.ts < b.ts) ? 1 : (a.ts > b.ts) ? -1 : 0; });  // newest first
       var run = document.getElementById('skyTickerRun');
       if (!run) return;
-      var all = [].concat.apply([], lists)
-        .sort(function(a, b) { return (a.ts < b.ts) ? 1 : (a.ts > b.ts) ? -1 : 0; })  // newest first
-        .slice(0, 24);
-      if (!all.length) {
-        run.style.animation = 'none';
-        run.innerHTML = '<span class="sky-tick-item"><span class="who">Awaiting sales…</span></span>';
-        return;
-      }
-      var html = all.map(tickItem).join('');
-      run.innerHTML = html + html;                          // duplicate for seamless loop
-      var dur = Math.max(28, all.length * 3);               // ~3 s per item
-      run.style.animation = 'skyMarquee ' + dur + 's linear infinite';
+      run.innerHTML = all.length
+        ? all.slice(0, MAX_DOM).map(function(it) { return '<span class="sky-tick-item">' + tickInner(it) + '</span>'; }).join('')
+        : '<span class="sky-tick-item sky-tick-empty"><span class="who">Awaiting sales…</span></span>';
+    });
+  }
+
+  // Poll each store for NEW sales since its cursor; queue them for dripping.
+  function pollNew() {
+    var slugs = GC.STORE_SLUGS || [];
+    Promise.all(slugs.map(function(slug) {
+      return GC.api.fetchStoreToday(slug, { sinceTs: _cursors[slug] || '' }).then(function(r) {
+        if (r && r.latestTxnTs) _cursors[slug] = r.latestTxnTs;
+        var nt = (r && r.newTicker) || [];
+        return { rev: (r && r.revenue) || 0, items: nt.map(function(t) { t.slug = slug; return t; }) };
+      }).catch(function() { return { rev: 0, items: [] }; });
+    })).then(function(res) {
+      if (window.location.hash !== '#/sky') return;
+      var auth = 0, fresh = [];
+      res.forEach(function(r) { auth += r.rev; fresh = fresh.concat(r.items); });
+      fresh.sort(function(a, b) { return (a.ts < b.ts) ? -1 : (a.ts > b.ts) ? 1 : 0; });  // chronological for drip
+      _queue = _queue.concat(fresh);
+      reconcileSold(auth);
+      ensureDrip();
     });
   }
 
   function start() {
+    _cursors = {}; _queue = []; _liveSold = null; _dripTimer = null;
     startClock();
-    paintWall();   paintTicker();
-    clearInterval(_wallTimer); _wallTimer = setInterval(paintWall, 60000);
-    clearInterval(_tickTimer); _tickTimer = setInterval(paintTicker, 60000);
-    // Hide the floating bug-report button — this is a passive wall display.
+    paintWall();
+    seedTicker();
+    clearInterval(_wallTimer); _wallTimer = setInterval(paintWall, POLL_MS);
+    clearInterval(_tickTimer); _tickTimer = setInterval(pollNew, POLL_MS);
     var bug = document.getElementById('bugBtn');
     if (bug) bug.style.display = 'none';
     GC.router.onLeave(function() {
-      clearInterval(_wallTimer); _wallTimer = null;
-      clearInterval(_tickTimer); _tickTimer = null;
-      clearInterval(_clock);     _clock = null;
+      clearInterval(_wallTimer); clearInterval(_tickTimer); clearInterval(_clock); clearTimeout(_dripTimer);
+      _wallTimer = _tickTimer = _clock = _dripTimer = null;
       var b = document.getElementById('bugBtn');
       if (b) b.style.display = '';
     });
