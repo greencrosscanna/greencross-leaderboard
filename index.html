@@ -3741,7 +3741,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.335';
+window.GC = window.GC || {}; GC.VERSION = 'v1.336';
 
 </script>
 
@@ -6869,9 +6869,10 @@ var director = (function() {
 .sky-grid { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); gap: 1.1vmin; }
 .sky-card {
   background: var(--card-bg, #141a17); border: 1px solid var(--border, #232a27);
-  border-radius: 14px; padding: 1.6vmin 2vmin;
-  display: flex; flex-direction: column; justify-content: center; gap: .9vmin; min-height: 0;
+  border-radius: 14px; padding: 2vmin;
+  display: flex; flex-direction: column; justify-content: space-between; min-height: 0;
 }
+.sky-card-foot { display: flex; flex-direction: column; gap: .4vmin; }
 .sky-card-hd { display: flex; align-items: center; justify-content: space-between; }
 .sky-card-name { display: flex; align-items: center; gap: 1vmin; font-size: 2vmin; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .sky-dot { width: 1.4vmin; height: 1.4vmin; border-radius: 50%; flex: 0 0 auto; }
@@ -6984,10 +6985,12 @@ var sky = (function() {
       +   '<span class="sky-pace ' + paceCls(t.pace || 0) + '">' + paceLabel(t.pace || 0) + '</span>'
       + '</div>'
       + '<div class="sky-sold">' + fullCur(t.revenue) + '</div>'
-      + '<div class="sky-goal">of ' + fullCur(t.goal) + '</div>'
-      + '<div class="sky-bar' + (over ? ' over' : '') + '">'
-      +   '<span style="width:' + w + '%;background:' + col + '"></span>'
-      +   (mark > 0 && mark < 100 ? '<span class="sky-bar-mark" style="left:' + mark + '%"></span>' : '')
+      + '<div class="sky-card-foot">'
+      +   '<div class="sky-goal">of ' + fullCur(t.goal) + ' &middot; ' + pctStr(pct) + '</div>'
+      +   '<div class="sky-bar' + (over ? ' over' : '') + '">'
+      +     '<span style="width:' + w + '%;background:' + col + '"></span>'
+      +     (mark > 0 && mark < 100 ? '<span class="sky-bar-mark" style="left:' + mark + '%"></span>' : '')
+      +   '</div>'
       + '</div>'
       + '</div>';
   }
