@@ -3741,7 +3741,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.337';
+window.GC = window.GC || {}; GC.VERSION = 'v1.338';
 
 </script>
 
@@ -4904,6 +4904,12 @@ GC.api = (function() {
     return gasCall('storeleaderboard', { store: storeSlug });
   }
 
+  // Aggregate live-sales feed — one server-side, ~25 s-cached call shared by all
+  // Sky-wall viewers (replaces per-client polling of all 6 stores).
+  function fetchAggTicker() {
+    return gasCall('aggticker', {});
+  }
+
   function fetchStoreBadges(storeSlug, period) {
     period = period || 'week';
     if (USE_FIXTURES) return fetchFixture('store-badges-' + storeSlug);
@@ -4950,6 +4956,7 @@ GC.api = (function() {
     fetchDirectorAll:     fetchDirectorAll,
     fetchStoreToday:      fetchStoreToday,
     fetchStoreLeaderboard:fetchStoreLeaderboard,
+    fetchAggTicker:       fetchAggTicker,
     fetchStoreBadges:     fetchStoreBadges,
     fetchKioskAll:        fetchKioskAll,
     hasKioskCache: function(slug) {
@@ -6941,7 +6948,7 @@ var sky = (function() {
   var POLL_MS = 30000, DRIP_MIN = 700, DRIP_MAX = 9000, MAX_DOM = 14;
 
   var _wallTimer = null, _tickTimer = null, _clock = null, _dripTimer = null;
-  var _cursors = {};       // slug → last seen txn timestamp (sinceTs cursor)
+  var _cursor  = '';       // last seen txn timestamp across the merged feed
   var _queue   = [];       // pending NEW sales waiting to drip in (chronological)
   var _liveSold = null;    // aggregate sold today; climbs as sales drip in
   var _goal = 0, _projected = 0, _pace = 0, _dayFrac = 0;
@@ -7106,50 +7113,36 @@ var sky = (function() {
     setTimeout(function() { el.classList.remove('new'); }, 1300);
   }
 
-  // Initial fill: show the most recent sales statically + set the per-store cursors.
+  // Initial fill: one shared server call → show recent sales statically + set the cursor.
   function seedTicker() {
-    var slugs = GC.STORE_SLUGS || [];
-    Promise.all(slugs.map(function(slug) {
-      return GC.api.fetchStoreToday(slug).then(function(r) {
-        if (r && r.latestTxnTs) _cursors[slug] = r.latestTxnTs;
-        return { rev: (r && r.revenue) || 0, items: ((r && r.ticker) || []).map(function(t) { t.slug = slug; return t; }) };
-      }).catch(function() { return { rev: 0, items: [] }; });
-    })).then(function(res) {
-      if (window.location.hash !== '#/sky') return;
-      var auth = 0, all = [];
-      res.forEach(function(r) { auth += r.rev; all = all.concat(r.items); });
-      reconcileSold(auth);                                   // queue empty → _liveSold = true total
-      all.sort(function(a, b) { return (a.ts < b.ts) ? 1 : (a.ts > b.ts) ? -1 : 0; });  // newest first
+    GC.api.fetchAggTicker().then(function(r) {
+      if (window.location.hash !== '#/sky' || !r || r.ok === false) return;
+      _cursor = r.latestTs || '';
+      reconcileSold(r.sold || 0);                            // queue empty → _liveSold = true total
+      var all = (r.ticker || []);                            // already newest-first from server
       var run = document.getElementById('skyTickerRun');
       if (!run) return;
       run.innerHTML = all.length
         ? all.slice(0, MAX_DOM).map(function(it) { return '<span class="sky-tick-item">' + tickInner(it) + '</span>'; }).join('')
         : '<span class="sky-tick-item sky-tick-empty"><span class="who">Awaiting sales…</span></span>';
-    });
+    }).catch(function(err) { console.warn('[sky] seed ticker failed:', err); });
   }
 
-  // Poll each store for NEW sales since its cursor; queue them for dripping.
+  // Poll the shared feed; queue sales newer than our cursor for dripping.
   function pollNew() {
-    var slugs = GC.STORE_SLUGS || [];
-    Promise.all(slugs.map(function(slug) {
-      return GC.api.fetchStoreToday(slug, { sinceTs: _cursors[slug] || '' }).then(function(r) {
-        if (r && r.latestTxnTs) _cursors[slug] = r.latestTxnTs;
-        var nt = (r && r.newTicker) || [];
-        return { rev: (r && r.revenue) || 0, items: nt.map(function(t) { t.slug = slug; return t; }) };
-      }).catch(function() { return { rev: 0, items: [] }; });
-    })).then(function(res) {
-      if (window.location.hash !== '#/sky') return;
-      var auth = 0, fresh = [];
-      res.forEach(function(r) { auth += r.rev; fresh = fresh.concat(r.items); });
+    GC.api.fetchAggTicker().then(function(r) {
+      if (window.location.hash !== '#/sky' || !r || r.ok === false) return;
+      var fresh = (r.ticker || []).filter(function(it) { return it.ts > _cursor; });
       fresh.sort(function(a, b) { return (a.ts < b.ts) ? -1 : (a.ts > b.ts) ? 1 : 0; });  // chronological for drip
+      if (r.latestTs && r.latestTs > _cursor) _cursor = r.latestTs;
       _queue = _queue.concat(fresh);
-      reconcileSold(auth);
+      reconcileSold(r.sold || 0);
       ensureDrip();
-    });
+    }).catch(function(err) { console.warn('[sky] ticker poll failed:', err); });
   }
 
   function start() {
-    _cursors = {}; _queue = []; _liveSold = null; _dripTimer = null;
+    _cursor = ''; _queue = []; _liveSold = null; _dripTimer = null;
     startClock();
     paintWall();
     seedTicker();

@@ -147,6 +147,50 @@ function getRoles_() {
   try { return JSON.parse(raw); } catch(e) { return {}; }
 }
 
+/**
+ * Aggregate live-sales feed for the Sky wall — merges recent transactions
+ * across all stores in ONE server-side fetch and caches it ~25 s, so every
+ * viewer shares a single Dutchie hit instead of each client polling 6 stores.
+ * @return {Object} { ok, sold, ticker:[{slug,who,qty,price,ts}], latestTs }
+ */
+function getAggTicker_() {
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get('gc_aggticker_v1');
+  if (hit) { try { return JSON.parse(hit); } catch(e) {} }
+
+  var range    = getDateRange_('today');
+  var byStore  = fetchAllStoresTransactions_(range);
+  var excluded = getExcluded_();
+  var nicks    = getNicknames_();
+  var sold = 0, items = [];
+
+  STORES.forEach(function(store) {
+    var txns = byStore[store.slug] || [];
+    txns.forEach(function(tx) { sold += txNet_(tx); });
+    // Newest ~12 sales per store for the feed (skip excluded employees).
+    var recent = txns.filter(function(tx) {
+      return !excluded.has(nameToKey_(txEmployee_(tx).name));
+    }).slice(-12);
+    recent.forEach(function(tx) {
+      var emp = txEmployee_(tx);
+      items.push({
+        slug:  store.slug,
+        who:   applyNickname_(emp.name, nicks),
+        qty:   txItems_(tx),
+        price: txTotal_(tx),
+        ts:    tx.transactionDateLocalTime || tx.transactionDate || '',
+      });
+    });
+  });
+
+  items.sort(function(a, b) { return (a.ts < b.ts) ? 1 : (a.ts > b.ts) ? -1 : 0; }); // newest first
+  items = items.slice(0, 40);
+
+  var out = { ok: true, sold: r2_(sold), ticker: items, latestTs: items.length ? items[0].ts : '' };
+  try { cache.put('gc_aggticker_v1', JSON.stringify(out), 25); } catch(e) {}
+  return out;
+}
+
 /** Returns the current Employee of the Month record { employeeKey, since }, or null if unset. */
 function getEomCurrent_() {
   try {

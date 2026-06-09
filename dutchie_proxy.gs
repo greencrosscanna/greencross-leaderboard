@@ -262,6 +262,11 @@ function doGet(e) {
       return jsonOut(getLeaderboardStaff(params), params.callback);
     }
 
+    if (params.action === 'aggticker') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(getAggTicker_(), params.callback);
+    }
+
     // ── Store / Kiosk endpoints ────────────────────────────
     if (params.action === 'storetoday') {
       const store    = requireStore_(auth, params.store);
