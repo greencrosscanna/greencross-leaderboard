@@ -3741,7 +3741,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.334';
+window.GC = window.GC || {}; GC.VERSION = 'v1.335';
 
 </script>
 
@@ -6840,71 +6840,94 @@ var director = (function() {
   background: var(--bg, #0d1311);
   color: var(--text, #e6efe9);
   display: flex; flex-direction: column;
-  padding: 1.6vmin; gap: 1.4vmin;
-  overflow: hidden;
-  box-sizing: border-box;
+  padding: 1.4vmin; gap: 1.1vmin;
+  overflow: hidden; box-sizing: border-box;
 }
-.sky-top {
-  flex: 0 0 auto;
-  display: flex; align-items: center; justify-content: space-between; gap: 2vmin;
-  background: var(--card-bg, #141a17); border: 1px solid var(--border, #232a27);
-  border-radius: 14px; padding: 1.4vmin 2.2vmin;
-}
-.sky-logo { height: 3.4vmin; width: auto; flex: 0 0 auto; }
-.sky-agg { display: flex; align-items: center; gap: 2.6vmin; flex: 1 1 auto; justify-content: center; }
-.sky-agg-pct { display: flex; flex-direction: column; align-items: center; line-height: 1; }
-.sky-agg-pct .pct { font-size: 5.2vmin; font-weight: 800; }
-.sky-agg-pct .sub { font-size: 1.5vmin; color: var(--text-mute, #7c8a82); text-transform: uppercase; letter-spacing: .08em; margin-top: .4vmin; }
-.sky-agg-stats { display: flex; gap: 2.6vmin; }
-.sky-stat { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.1; }
-.sky-stat .lbl { font-size: 1.4vmin; color: var(--text-mute, #7c8a82); text-transform: uppercase; letter-spacing: .07em; }
-.sky-stat .val { font-size: 2.8vmin; font-weight: 700; }
-.sky-clock { text-align: right; flex: 0 0 auto; line-height: 1.1; }
+
+/* — logo bar (logo + clock only) — */
+.sky-logobar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0 1vmin; }
+.sky-logo { height: 3.2vmin; width: auto; }
+.sky-clock { text-align: right; line-height: 1.05; }
 .sky-clock .t { font-size: 3vmin; font-weight: 700; font-variant-numeric: tabular-nums; }
 .sky-clock .r { font-size: 1.5vmin; color: var(--text-mute, #7c8a82); }
-.sky-grid {
-  flex: 1 1 auto; min-height: 0;
-  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr);
-  gap: 1.4vmin;
+
+/* — full-width aggregate bar — */
+.sky-aggbar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 2.4vmin;
+  background: var(--card-bg, #141a17); border: 1px solid var(--border, #232a27);
+  border-radius: 14px; padding: 1.4vmin 2.6vmin;
 }
+.sky-aggbar .agg-pct { display: flex; flex-direction: column; align-items: flex-start; line-height: 1; padding-right: 2.4vmin; border-right: 1px solid var(--border, #232a27); }
+.sky-aggbar .agg-pct .pct { font-size: 5vmin; font-weight: 800; }
+.sky-aggbar .agg-pct .sub { font-size: 1.35vmin; color: var(--text-mute, #7c8a82); text-transform: uppercase; letter-spacing: .08em; margin-top: .3vmin; }
+.sky-aggstats { display: flex; flex: 1 1 auto; justify-content: space-around; }
+.sky-aggstats .st { display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+.sky-aggstats .st .lbl { font-size: 1.35vmin; color: var(--text-mute, #7c8a82); text-transform: uppercase; letter-spacing: .07em; }
+.sky-aggstats .st .val { font-size: 3vmin; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: .3vmin; }
+
+/* — condensed store cards — */
+.sky-grid { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); gap: 1.1vmin; }
 .sky-card {
   background: var(--card-bg, #141a17); border: 1px solid var(--border, #232a27);
-  border-radius: 14px; padding: 1.8vmin 2.2vmin;
-  display: flex; flex-direction: column; justify-content: space-between; min-height: 0;
+  border-radius: 14px; padding: 1.6vmin 2vmin;
+  display: flex; flex-direction: column; justify-content: center; gap: .9vmin; min-height: 0;
 }
-.sky-card-hd { display: flex; align-items: center; gap: 1.2vmin; font-size: 2.1vmin; font-weight: 700; color: var(--text, #e6efe9); text-transform: uppercase; letter-spacing: .04em; }
-.sky-dot { width: 1.5vmin; height: 1.5vmin; border-radius: 50%; flex: 0 0 auto; }
-.sky-sold { font-size: 6vmin; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
-.sky-goal { font-size: 1.9vmin; color: var(--text-dim, #94a39b); margin-top: .4vmin; }
-.sky-bar { height: 1.4vmin; background: #232a27; border-radius: 99px; overflow: hidden; margin: .4vmin 0; }
-.sky-bar > span { display: block; height: 100%; border-radius: 99px; transition: width .8s cubic-bezier(.2,.7,.3,1); }
-.sky-foot { display: flex; align-items: baseline; justify-content: space-between; font-size: 1.9vmin; }
-.sky-pace { font-weight: 700; }
+.sky-card-hd { display: flex; align-items: center; justify-content: space-between; }
+.sky-card-name { display: flex; align-items: center; gap: 1vmin; font-size: 2vmin; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.sky-dot { width: 1.4vmin; height: 1.4vmin; border-radius: 50%; flex: 0 0 auto; }
+.sky-pace { font-size: 1.9vmin; font-weight: 700; }
 .sky-pace.up { color: var(--green, #4ade80); }
 .sky-pace.down { color: var(--red, #ef4444); }
 .sky-pace.flat { color: var(--amber, #eab308); }
-.sky-proj { color: var(--text-mute, #7c8a82); }
+.sky-sold { font-size: 5.2vmin; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.sky-goal { font-size: 1.7vmin; color: var(--text-dim, #94a39b); }
+
+/* progress bar — dashboard treatment: pace hash mark + over-goal glow (pace colors kept) */
+.sky-bar { position: relative; height: 1.2vmin; background: #232a27; border-radius: 99px; margin-top: .5vmin; }
+.sky-bar > span { display: block; height: 100%; border-radius: 99px; transition: width .8s cubic-bezier(.2,.7,.3,1); }
+.sky-bar-mark { position: absolute; top: -.5vmin; bottom: -.5vmin; width: .3vmin; background: var(--text-mute, #7c8a82); opacity: .55; border-radius: 1px; pointer-events: none; transition: left .8s cubic-bezier(.2,.7,.3,1); }
+.sky-bar.over > span { box-shadow: 0 0 .8vmin var(--green, #4ade80), 0 0 1.6vmin #86efac; animation: skyGlow 2s ease-in-out infinite; }
+.sky-bar.over .sky-bar-mark { background: var(--green, #4ade80); opacity: .85; box-shadow: 0 0 .5vmin #86efac; }
+@keyframes skyGlow { 0%,100% { box-shadow: 0 0 .6vmin var(--green,#4ade80), 0 0 1.2vmin #86efac; } 50% { box-shadow: 0 0 1vmin var(--green,#4ade80), 0 0 2vmin #86efac; } }
+
+/* — live sales ticker (bottom) — */
+.sky-ticker { flex: 0 0 auto; height: 6.4vmin; display: flex; align-items: center; background: var(--card-bg, #141a17); border: 1px solid var(--border, #232a27); border-radius: 14px; overflow: hidden; }
+.sky-ticker-label { flex: 0 0 auto; height: 100%; display: flex; align-items: center; gap: .9vmin; padding: 0 2vmin; font-size: 1.4vmin; color: var(--text-mute, #7c8a82); text-transform: uppercase; letter-spacing: .1em; border-right: 1px solid var(--border, #232a27); }
+.sky-ticker-live { width: 1vmin; height: 1vmin; border-radius: 50%; background: var(--green, #4ade80); animation: skyPulse 1.6s ease-in-out infinite; }
+@keyframes skyPulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+.sky-ticker-track { flex: 1 1 auto; overflow: hidden; height: 100%; }
+.sky-ticker-run { display: inline-flex; align-items: center; height: 100%; white-space: nowrap; will-change: transform; }
+.sky-tick-item { display: inline-flex; align-items: center; gap: .9vmin; padding: 0 2.4vmin; font-size: 2vmin; border-right: 1px solid var(--border, #232a27); }
+.sky-tick-item .amt { font-weight: 800; font-variant-numeric: tabular-nums; }
+.sky-tick-item .who { color: var(--text-dim, #94a39b); }
+.sky-tick-item .meta { color: var(--text-mute, #7c8a82); font-size: 1.6vmin; }
+.sky-tick-dot { width: 1.1vmin; height: 1.1vmin; border-radius: 50%; flex: 0 0 auto; }
+@keyframes skyMarquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 </style>
 
 <script>
 // ============================================================
 //  Green Cross — Sky Wall (#/sky)
 //  Single-screen, no-scroll all-stores overview sized for iPad
-//  landscape. Today-focused: per-store sold/goal/%/pace/projected
-//  plus the aggregate, auto-refreshed every 60 s from the cached
-//  directorall payload. Owner/director only.
+//  landscape. Layout (top→bottom): logo bar · full-width aggregate
+//  bar · 3×2 condensed store cards (pace-hash + over-goal-glow bars)
+//  · live sales ticker. Owner/director only.
+//
+//  Two refresh loops on a 60 s cadence:
+//   • directorall (server-cached) → aggregate bar + cards
+//   • all-store storetoday tickers → merged scrolling sales feed
 // ============================================================
 window.GC = window.GC || {};
 
 GC.views.renderSky = function() {
   var app = document.getElementById('app');
   if (!app) return;
-  app.innerHTML = sky.renderLoading();
+  app.innerHTML = sky.shell();
   sky.start();
 };
 
 var sky = (function() {
-  var _timer = null, _clock = null;
+  var _wallTimer = null, _tickTimer = null, _clock = null;
 
   function e(s) { return GC.esc(String(s == null ? '' : s)); }
   function pctStr(p) { return Math.round((p || 0) * 100) + '%'; }
@@ -6914,50 +6937,70 @@ var sky = (function() {
     var c = GC.paceDotClass(p || 0);
     return c === 'green' ? 'var(--green)' : c === 'red' ? 'var(--red)' : 'var(--amber)';
   }
-  function stat(lbl, val) {
-    return '<div class="sky-stat"><span class="lbl">' + e(lbl) + '</span><span class="val">' + val + '</span></div>';
-  }
+  // Full, un-abbreviated currency for the wall (e.g. $20,710 not $20.7k).
+  function fullCur(n) { return '$' + Math.round(n || 0).toLocaleString('en-US'); }
+  function stat(lbl, val) { return '<div class="st"><span class="lbl">' + e(lbl) + '</span><span class="val">' + val + '</span></div>'; }
 
-  function storeCard(s) {
-    var t   = s.today || {};
-    var pct = t.pctToGoal || 0;
-    var w   = Math.min(Math.round(pct * 100), 100);
-    return '<div class="sky-card">'
-      + '<div class="sky-card-hd"><span class="sky-dot" style="background:var(--store-' + e(s.slug) + ', var(--green))"></span>' + e(s.name) + '</div>'
-      + '<div><div class="sky-sold">' + GC.fmtCurrency(t.revenue || 0) + '</div>'
-      +   '<div class="sky-goal">of ' + GC.fmtCurrency(t.goal || 0) + ' &middot; ' + pctStr(pct) + ' to goal</div></div>'
-      + '<div class="sky-bar"><span style="width:' + w + '%;background:' + barColor(t.pace) + '"></span></div>'
-      + '<div class="sky-foot">'
-      +   '<span class="sky-pace ' + paceCls(t.pace || 0) + '">' + paceLabel(t.pace || 0) + ' pace</span>'
-      +   '<span class="sky-proj">proj ' + GC.fmtCurrency(t.projected || 0) + '</span>'
+  // ── Static shell (built once; inner regions updated in place) ──
+  function shell() {
+    return '<div class="sky-wrap">'
+      + '<div class="sky-logobar">'
+      +   '<img class="sky-logo" src="' + GC.LOGO_PNG + '" alt="Green Cross">'
+      +   '<div class="sky-clock"><div class="t" id="skyTime">—</div><div class="r" id="skyRem"></div></div>'
+      + '</div>'
+      + '<div class="sky-aggbar" id="skyAgg"></div>'
+      + '<div class="sky-grid" id="skyGrid"></div>'
+      + '<div class="sky-ticker">'
+      +   '<div class="sky-ticker-label"><span class="sky-ticker-live"></span>Live sales</div>'
+      +   '<div class="sky-ticker-track"><div class="sky-ticker-run" id="skyTickerRun"></div></div>'
       + '</div>'
       + '</div>';
   }
 
-  function render(data) {
-    var today   = data.today || {};
-    var summary = data.summary || {};
-    var stores  = (data.stores && data.stores.stores) || [];
-    var rem     = today.timeRemainingLabel || '';
-    var remLine = rem && rem !== 'Closed' ? rem + ' left' : (rem || '');
-
-    return '<div class="sky-wrap">'
-      + '<header class="sky-top">'
-      +   '<img class="sky-logo" src="' + GC.LOGO_PNG + '" alt="Green Cross">'
-      +   '<div class="sky-agg">'
-      +     '<div class="sky-agg-pct"><span class="pct">' + pctStr(today.pctToGoal) + '</span><span class="sub">All stores &middot; to daily goal</span></div>'
-      +     '<div class="sky-agg-stats">'
-      +       stat('Sold today',  GC.fmtCurrency(today.revenue || 0))
-      +       stat('Daily goal',  GC.fmtCurrency(today.goal || 0))
-      +       stat('Projected',   GC.fmtCurrency(today.projectedRevenue || 0))
-      +       stat('Pace',        '<span class="sky-pace ' + paceCls(today.pace || 0) + '">' + paceLabel(today.pace || 0) + '</span>')
-      +       stat('MTD',         GC.fmtCurrency(summary.totalSales || 0))
-      +     '</div>'
-      +   '</div>'
-      +   '<div class="sky-clock"><div class="t" id="skyTime">—</div><div class="r">' + e(remLine) + '</div></div>'
-      + '</header>'
-      + '<div class="sky-grid">' + stores.map(storeCard).join('') + '</div>'
+  // ── Aggregate bar ──
+  function aggHtml(today, summary) {
+    return '<div class="agg-pct"><span class="pct">' + pctStr(today.pctToGoal) + '</span><span class="sub">All stores &middot; to daily goal</span></div>'
+      + '<div class="sky-aggstats">'
+      +   stat('Sold today', fullCur(today.revenue))
+      +   stat('Daily goal', fullCur(today.goal))
+      +   stat('Projected',  fullCur(today.projectedRevenue))
+      +   stat('Pace',       '<span class="sky-pace ' + paceCls(today.pace || 0) + '">' + paceLabel(today.pace || 0) + '</span>')
+      +   stat('MTD',        fullCur(summary.totalSales))
       + '</div>';
+  }
+
+  // ── Store card (condensed) ──
+  function storeCard(s) {
+    var t    = s.today || {};
+    var pct  = t.pctToGoal || 0;
+    var w    = Math.min(Math.round(pct * 100), 100);
+    var df   = (t.dayFrac != null ? t.dayFrac : 0);
+    var mark = Math.min(Math.round(df * 100), 100);
+    var col  = barColor(t.pace);
+    var over = pct >= 1;
+    return '<div class="sky-card">'
+      + '<div class="sky-card-hd">'
+      +   '<span class="sky-card-name"><span class="sky-dot" style="background:var(--store-' + e(s.slug) + ', var(--green))"></span>' + e(s.name) + '</span>'
+      +   '<span class="sky-pace ' + paceCls(t.pace || 0) + '">' + paceLabel(t.pace || 0) + '</span>'
+      + '</div>'
+      + '<div class="sky-sold">' + fullCur(t.revenue) + '</div>'
+      + '<div class="sky-goal">of ' + fullCur(t.goal) + '</div>'
+      + '<div class="sky-bar' + (over ? ' over' : '') + '">'
+      +   '<span style="width:' + w + '%;background:' + col + '"></span>'
+      +   (mark > 0 && mark < 100 ? '<span class="sky-bar-mark" style="left:' + mark + '%"></span>' : '')
+      + '</div>'
+      + '</div>';
+  }
+
+  // ── Ticker item ──
+  function tickItem(it) {
+    var qty = it.qty ? it.qty + (it.qty > 1 ? ' items' : ' item') : '';
+    return '<span class="sky-tick-item">'
+      + '<span class="sky-tick-dot" style="background:var(--store-' + e(it.slug) + ', var(--green))"></span>'
+      + '<span class="amt">' + fullCur(it.price) + '</span>'
+      + '<span class="who">' + e(it.who) + '</span>'
+      + (qty ? '<span class="meta">' + qty + '</span>' : '')
+      + '</span>';
   }
 
   function startClock() {
@@ -6967,38 +7010,69 @@ var sky = (function() {
     _clock = setInterval(tick, 1000);
   }
 
-  function fetchAndRender() {
+  // Update aggregate bar + cards from the cached directorall payload.
+  function paintWall() {
     GC.api.fetchDirectorAll('mtd').then(function(data) {
-      if (window.location.hash !== '#/sky') return;          // navigated away mid-fetch
-      if (!data || data.ok === false) return;                // keep last good screen on error
-      var app = document.getElementById('app');
-      if (!app) return;
-      app.innerHTML = render(data);
-    }).catch(function(err) { console.warn('[sky] fetch failed:', err); });
+      if (window.location.hash !== '#/sky' || !data || data.ok === false) return;
+      var today   = data.today || {};
+      var summary = data.summary || {};
+      var stores  = (data.stores && data.stores.stores) || [];
+      var agg  = document.getElementById('skyAgg');
+      var grid = document.getElementById('skyGrid');
+      var rem  = document.getElementById('skyRem');
+      if (agg)  agg.innerHTML  = aggHtml(today, summary);
+      if (grid) grid.innerHTML = stores.map(storeCard).join('');
+      if (rem) {
+        var r = today.timeRemainingLabel || '';
+        rem.textContent = (r && r !== 'Closed') ? r + ' left' : r;
+      }
+    }).catch(function(err) { console.warn('[sky] wall fetch failed:', err); });
+  }
+
+  // Merge the recent-sales ticker across all stores into the bottom marquee.
+  function paintTicker() {
+    var slugs = GC.STORE_SLUGS || [];
+    Promise.all(slugs.map(function(slug) {
+      return GC.api.fetchStoreToday(slug)
+        .then(function(r) { return ((r && r.ticker) || []).map(function(t) { t.slug = slug; return t; }); })
+        .catch(function() { return []; });
+    })).then(function(lists) {
+      if (window.location.hash !== '#/sky') return;
+      var run = document.getElementById('skyTickerRun');
+      if (!run) return;
+      var all = [].concat.apply([], lists)
+        .sort(function(a, b) { return (a.ts < b.ts) ? 1 : (a.ts > b.ts) ? -1 : 0; })  // newest first
+        .slice(0, 24);
+      if (!all.length) {
+        run.style.animation = 'none';
+        run.innerHTML = '<span class="sky-tick-item"><span class="who">Awaiting sales…</span></span>';
+        return;
+      }
+      var html = all.map(tickItem).join('');
+      run.innerHTML = html + html;                          // duplicate for seamless loop
+      var dur = Math.max(28, all.length * 3);               // ~3 s per item
+      run.style.animation = 'skyMarquee ' + dur + 's linear infinite';
+    });
   }
 
   function start() {
-    fetchAndRender();
-    clearInterval(_timer);
-    _timer = setInterval(fetchAndRender, 60000);   // near-live; directorall is server-cached ≤5 min
     startClock();
+    paintWall();   paintTicker();
+    clearInterval(_wallTimer); _wallTimer = setInterval(paintWall, 60000);
+    clearInterval(_tickTimer); _tickTimer = setInterval(paintTicker, 60000);
     // Hide the floating bug-report button — this is a passive wall display.
     var bug = document.getElementById('bugBtn');
     if (bug) bug.style.display = 'none';
     GC.router.onLeave(function() {
-      clearInterval(_timer);  _timer = null;
-      clearInterval(_clock);  _clock = null;
+      clearInterval(_wallTimer); _wallTimer = null;
+      clearInterval(_tickTimer); _tickTimer = null;
+      clearInterval(_clock);     _clock = null;
       var b = document.getElementById('bugBtn');
-      if (b) b.style.display = '';   // restore for other views
+      if (b) b.style.display = '';
     });
   }
 
-  function renderLoading() {
-    return '<div class="sky-wrap" style="align-items:center;justify-content:center">'
-      + '<div style="color:var(--text-dim)">Loading store wall…</div></div>';
-  }
-
-  return { start: start, renderLoading: renderLoading };
+  return { start: start, shell: shell };
 })();
 
 </script>
