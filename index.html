@@ -366,16 +366,26 @@ html, body {
 .sales-cell .sales-pct.over { color: var(--green); }
 
 .bar-track {
-  height: 4px;
+  position: relative;
+  height: 6px;
   width: 100%;
   background: var(--border);
-  border-radius: 2px;
-  overflow: hidden;
+  border-radius: 99px;
 }
+/* Charging-up gradient (dim → bright green) like the store-sales / Sky bars. */
 .bar-fill {
   height: 100%;
-  background: var(--green);
-  border-radius: 2px;
+  border-radius: 99px;
+  background: linear-gradient(to right, rgba(74, 222, 128, 0.25) 0%, var(--green) 100%);
+  transition: width 1s ease-out;
+}
+/* Top seller (100% of the leader) gets the over-goal glow treatment. */
+.bar-fill.lead {
+  animation: barLeadPulse 2.4s ease-in-out infinite;
+}
+@keyframes barLeadPulse {
+  0%, 100% { box-shadow: 0 0 4px #86efac, 0 0 8px rgba(134, 239, 172, 0.5); }
+  50%       { box-shadow: 0 0 7px #4ade80, 0 0 14px rgba(134, 239, 172, 0.7); }
 }
 
 /* ── Discount Bar ────────────────────────────────────────── */
@@ -3741,7 +3751,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.338';
+window.GC = window.GC || {}; GC.VERSION = 'v1.339';
 
 </script>
 
@@ -9125,7 +9135,7 @@ var lb = (function() {
         + '<td>'
         + '  <div class="sales-cell">'
         + '    <span class="sales-amt num">' + e(GC.fmtCurrency(s.sales)) + '</span>'
-        + '    <div class="bar-track"><div class="bar-fill" style="width:' + barPct + '%"></div></div>'
+        + '    <div class="bar-track"><div class="bar-fill' + (barPct >= 100 ? ' lead' : '') + '" style="width:' + barPct + '%"></div></div>'
         + '  </div>'
         + '</td>'
         + '<td class="num">' + e(s.transactions) + '</td>'
