@@ -3741,7 +3741,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.331';
+window.GC = window.GC || {}; GC.VERSION = 'v1.333';
 
 </script>
 
@@ -5045,6 +5045,12 @@ GC.router = (function() {
       render: function() { GC.views.renderDirector(); },
     },
     {
+      id: 'sky',
+      pattern: /^\/sky$/,
+      roles: ['owner','director'],
+      render: function() { GC.views.renderSky(); },
+    },
+    {
       id: 'store',
       pattern: /^\/store\/([a-z]+)$/,
       roles: ['owner','director','store_manager','asst_manager','budtender'],
@@ -5188,6 +5194,7 @@ GC.router = (function() {
 GC.views = {
   renderLogin:       function() { console.warn('[GC.views] renderLogin not registered'); },
   renderDirector:    function() { console.warn('[GC.views] renderDirector not registered'); },
+  renderSky:         function() { console.warn('[GC.views] renderSky not registered'); },
   renderKiosk:       function(slug) { console.warn('[GC.views] renderKiosk not registered:', slug); },
   renderLeaderboard: function() { console.warn('[GC.views] renderLeaderboard not registered'); },
   renderSettings:    function() { console.warn('[GC.views] renderSettings not registered'); },
@@ -6822,6 +6829,171 @@ var director = (function() {
       GC.state.set('dir.storePeriod', 'mtd');
     },
   };
+})();
+
+</script>
+
+<style>
+/* ===== Sky Wall — iPad single-screen all-stores overview (#/sky) ===== */
+.sky-wrap {
+  position: fixed; inset: 0;
+  background: var(--bg, #0d1311);
+  color: var(--text, #e6efe9);
+  display: flex; flex-direction: column;
+  padding: 1.6vmin; gap: 1.4vmin;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.sky-top {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 2vmin;
+  background: var(--card-bg, #141a17); border: 1px solid var(--border, #232a27);
+  border-radius: 14px; padding: 1.4vmin 2.2vmin;
+}
+.sky-logo { height: 3.4vmin; width: auto; flex: 0 0 auto; }
+.sky-agg { display: flex; align-items: center; gap: 2.6vmin; flex: 1 1 auto; justify-content: center; }
+.sky-agg-pct { display: flex; flex-direction: column; align-items: center; line-height: 1; }
+.sky-agg-pct .pct { font-size: 5.2vmin; font-weight: 800; }
+.sky-agg-pct .sub { font-size: 1.5vmin; color: var(--text-mute, #7c8a82); text-transform: uppercase; letter-spacing: .08em; margin-top: .4vmin; }
+.sky-agg-stats { display: flex; gap: 2.6vmin; }
+.sky-stat { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.1; }
+.sky-stat .lbl { font-size: 1.4vmin; color: var(--text-mute, #7c8a82); text-transform: uppercase; letter-spacing: .07em; }
+.sky-stat .val { font-size: 2.8vmin; font-weight: 700; }
+.sky-clock { text-align: right; flex: 0 0 auto; line-height: 1.1; }
+.sky-clock .t { font-size: 3vmin; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sky-clock .r { font-size: 1.5vmin; color: var(--text-mute, #7c8a82); }
+.sky-grid {
+  flex: 1 1 auto; min-height: 0;
+  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr);
+  gap: 1.4vmin;
+}
+.sky-card {
+  background: var(--card-bg, #141a17); border: 1px solid var(--border, #232a27);
+  border-radius: 14px; padding: 1.8vmin 2.2vmin;
+  display: flex; flex-direction: column; justify-content: space-between; min-height: 0;
+}
+.sky-card-hd { display: flex; align-items: center; gap: 1.2vmin; font-size: 2.1vmin; font-weight: 700; color: var(--text, #e6efe9); text-transform: uppercase; letter-spacing: .04em; }
+.sky-dot { width: 1.5vmin; height: 1.5vmin; border-radius: 50%; flex: 0 0 auto; }
+.sky-sold { font-size: 6vmin; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.sky-goal { font-size: 1.9vmin; color: var(--text-dim, #94a39b); margin-top: .4vmin; }
+.sky-bar { height: 1.4vmin; background: #232a27; border-radius: 99px; overflow: hidden; margin: .4vmin 0; }
+.sky-bar > span { display: block; height: 100%; border-radius: 99px; transition: width .8s cubic-bezier(.2,.7,.3,1); }
+.sky-foot { display: flex; align-items: baseline; justify-content: space-between; font-size: 1.9vmin; }
+.sky-pace { font-weight: 700; }
+.sky-pace.up { color: var(--green, #4ade80); }
+.sky-pace.down { color: var(--red, #ef4444); }
+.sky-pace.flat { color: var(--amber, #eab308); }
+.sky-proj { color: var(--text-mute, #7c8a82); }
+</style>
+
+<script>
+// ============================================================
+//  Green Cross — Sky Wall (#/sky)
+//  Single-screen, no-scroll all-stores overview sized for iPad
+//  landscape. Today-focused: per-store sold/goal/%/pace/projected
+//  plus the aggregate, auto-refreshed every 60 s from the cached
+//  directorall payload. Owner/director only.
+// ============================================================
+window.GC = window.GC || {};
+
+GC.views.renderSky = function() {
+  var app = document.getElementById('app');
+  if (!app) return;
+  app.innerHTML = sky.renderLoading();
+  sky.start();
+};
+
+var sky = (function() {
+  var _timer = null, _clock = null;
+
+  function e(s) { return GC.esc(String(s == null ? '' : s)); }
+  function pctStr(p) { return Math.round((p || 0) * 100) + '%'; }
+  function paceLabel(p) { return (p > 0 ? '+' : '') + Math.round((p || 0) * 100) + '%'; }
+  function paceCls(p) { return p > 0.01 ? 'up' : p < -0.01 ? 'down' : 'flat'; }
+  function barColor(p) {
+    var c = GC.paceDotClass(p || 0);
+    return c === 'green' ? 'var(--green)' : c === 'red' ? 'var(--red)' : 'var(--amber)';
+  }
+  function stat(lbl, val) {
+    return '<div class="sky-stat"><span class="lbl">' + e(lbl) + '</span><span class="val">' + val + '</span></div>';
+  }
+
+  function storeCard(s) {
+    var t   = s.today || {};
+    var pct = t.pctToGoal || 0;
+    var w   = Math.min(Math.round(pct * 100), 100);
+    return '<div class="sky-card">'
+      + '<div class="sky-card-hd"><span class="sky-dot" style="background:var(--store-' + e(s.slug) + ', var(--green))"></span>' + e(s.name) + '</div>'
+      + '<div><div class="sky-sold">' + GC.fmtCurrency(t.revenue || 0) + '</div>'
+      +   '<div class="sky-goal">of ' + GC.fmtCurrency(t.goal || 0) + ' &middot; ' + pctStr(pct) + ' to goal</div></div>'
+      + '<div class="sky-bar"><span style="width:' + w + '%;background:' + barColor(t.pace) + '"></span></div>'
+      + '<div class="sky-foot">'
+      +   '<span class="sky-pace ' + paceCls(t.pace || 0) + '">' + paceLabel(t.pace || 0) + ' pace</span>'
+      +   '<span class="sky-proj">proj ' + GC.fmtCurrency(t.projected || 0) + '</span>'
+      + '</div>'
+      + '</div>';
+  }
+
+  function render(data) {
+    var today   = data.today || {};
+    var summary = data.summary || {};
+    var stores  = (data.stores && data.stores.stores) || [];
+    var rem     = today.timeRemainingLabel || '';
+    var remLine = rem && rem !== 'Closed' ? rem + ' left' : (rem || '');
+
+    return '<div class="sky-wrap">'
+      + '<header class="sky-top">'
+      +   '<img class="sky-logo" src="' + GC.LOGO_PNG + '" alt="Green Cross">'
+      +   '<div class="sky-agg">'
+      +     '<div class="sky-agg-pct"><span class="pct">' + pctStr(today.pctToGoal) + '</span><span class="sub">All stores &middot; to daily goal</span></div>'
+      +     '<div class="sky-agg-stats">'
+      +       stat('Sold today',  GC.fmtCurrency(today.revenue || 0))
+      +       stat('Daily goal',  GC.fmtCurrency(today.goal || 0))
+      +       stat('Projected',   GC.fmtCurrency(today.projectedRevenue || 0))
+      +       stat('Pace',        '<span class="sky-pace ' + paceCls(today.pace || 0) + '">' + paceLabel(today.pace || 0) + '</span>')
+      +       stat('MTD',         GC.fmtCurrency(summary.totalSales || 0))
+      +     '</div>'
+      +   '</div>'
+      +   '<div class="sky-clock"><div class="t" id="skyTime">—</div><div class="r">' + e(remLine) + '</div></div>'
+      + '</header>'
+      + '<div class="sky-grid">' + stores.map(storeCard).join('') + '</div>'
+      + '</div>';
+  }
+
+  function startClock() {
+    clearInterval(_clock);
+    function tick() { var el = document.getElementById('skyTime'); if (el) el.textContent = GC.fmtTime(new Date()); }
+    tick();
+    _clock = setInterval(tick, 1000);
+  }
+
+  function fetchAndRender() {
+    GC.api.fetchDirectorAll('mtd').then(function(data) {
+      if (window.location.hash !== '#/sky') return;          // navigated away mid-fetch
+      if (!data || data.ok === false) return;                // keep last good screen on error
+      var app = document.getElementById('app');
+      if (!app) return;
+      app.innerHTML = render(data);
+    }).catch(function(err) { console.warn('[sky] fetch failed:', err); });
+  }
+
+  function start() {
+    fetchAndRender();
+    clearInterval(_timer);
+    _timer = setInterval(fetchAndRender, 60000);   // near-live; directorall is server-cached ≤5 min
+    startClock();
+    GC.router.onLeave(function() {
+      clearInterval(_timer);  _timer = null;
+      clearInterval(_clock);  _clock = null;
+    });
+  }
+
+  function renderLoading() {
+    return '<div class="sky-wrap" style="align-items:center;justify-content:center">'
+      + '<div style="color:var(--text-dim)">Loading store wall…</div></div>';
+  }
+
+  return { start: start, renderLoading: renderLoading };
 })();
 
 </script>
