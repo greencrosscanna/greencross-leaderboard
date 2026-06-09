@@ -3741,7 +3741,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.333';
+window.GC = window.GC || {}; GC.VERSION = 'v1.334';
 
 </script>
 
@@ -6982,9 +6982,14 @@ var sky = (function() {
     clearInterval(_timer);
     _timer = setInterval(fetchAndRender, 60000);   // near-live; directorall is server-cached ≤5 min
     startClock();
+    // Hide the floating bug-report button — this is a passive wall display.
+    var bug = document.getElementById('bugBtn');
+    if (bug) bug.style.display = 'none';
     GC.router.onLeave(function() {
       clearInterval(_timer);  _timer = null;
       clearInterval(_clock);  _clock = null;
+      var b = document.getElementById('bugBtn');
+      if (b) b.style.display = '';   // restore for other views
     });
   }
 
