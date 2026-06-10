@@ -3751,7 +3751,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.340';
+window.GC = window.GC || {}; GC.VERSION = 'v1.341';
 
 </script>
 
@@ -6902,10 +6902,21 @@ var director = (function() {
 .sky-sold { font-size: 5.2vmin; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
 .sky-goal { font-size: 1.7vmin; color: var(--text-dim, #94a39b); }
 
-/* progress bar — dashboard treatment: pace hash mark + over-goal glow (pace colors kept) */
-.sky-bar { position: relative; height: 1.2vmin; background: #232a27; border-radius: 99px; margin-top: .5vmin; }
+/* progress bar — dashboard emp-bar treatment: tall pace hash + leading-edge
+   %-chevron tick + over-pace glow (pace colors kept). margin-top leaves room
+   for the tick that rides above the bar. */
+.sky-bar { position: relative; height: 1.2vmin; background: #232a27; border-radius: 99px; margin-top: 3vmin; }
 .sky-bar > span { display: block; height: 100%; border-radius: 99px; transition: width .8s cubic-bezier(.2,.7,.3,1); }
-.sky-bar-mark { position: absolute; top: -.5vmin; bottom: -.5vmin; width: .3vmin; background: var(--text-mute, #7c8a82); opacity: .55; border-radius: 1px; pointer-events: none; transition: left .8s cubic-bezier(.2,.7,.3,1); }
+/* Pace hash — extends well beyond the bar vertically. */
+.sky-bar-mark { position: absolute; top: -1vmin; bottom: -1vmin; width: .35vmin; background: var(--text-mute, #7c8a82); opacity: .6; border-radius: 1px; pointer-events: none; transition: left .8s cubic-bezier(.2,.7,.3,1); }
+/* Chevron + % riding above the fill's leading edge. */
+.sky-bar-tick { position: absolute; top: -2.7vmin; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; line-height: 1; pointer-events: none; white-space: nowrap; transition: left .8s cubic-bezier(.2,.7,.3,1); }
+.sky-bar-tick .pct  { font-size: 1.7vmin; font-weight: 800; }
+.sky-bar-tick .chev { font-size: 1vmin; margin-top: .15vmin; line-height: 1; }
+.sky-bar-tick.up   { color: var(--green, #4ade80); }
+.sky-bar-tick.down { color: var(--red, #ef4444); }
+.sky-bar-tick.flat { color: var(--amber, #eab308); }
+/* Glow when over pace (fill at/past the hash) — green achievement glow. */
 .sky-bar.over > span { box-shadow: 0 0 .8vmin var(--green, #4ade80), 0 0 1.6vmin #86efac; animation: skyGlow 2s ease-in-out infinite; }
 .sky-bar.over .sky-bar-mark { background: var(--green, #4ade80); opacity: .85; box-shadow: 0 0 .5vmin #86efac; }
 @keyframes skyGlow { 0%,100% { box-shadow: 0 0 .6vmin var(--green,#4ade80), 0 0 1.2vmin #86efac; } 50% { box-shadow: 0 0 1vmin var(--green,#4ade80), 0 0 2vmin #86efac; } }
@@ -7025,7 +7036,7 @@ var sky = (function() {
     var sv = document.getElementById('skySoldVal'); if (sv) sv.textContent = fullCur(_liveSold);
     var pe = document.getElementById('skyAggPct');  if (pe) pe.textContent = Math.round(pct * 100) + '%';
     var fl = document.getElementById('skyAggFill');  if (fl) fl.style.width = Math.min(pct * 100, 100) + '%';
-    var bw = document.getElementById('skyAggBar');   if (bw) bw.classList.toggle('over', pct >= 1);
+    var bw = document.getElementById('skyAggBar');   if (bw) bw.classList.toggle('over', _dayFrac > 0 && pct >= _dayFrac); // over pace
   }
 
   // _liveSold = authoritative total minus the value still queued (not yet shown),
@@ -7045,18 +7056,20 @@ var sky = (function() {
     var df   = (t.dayFrac != null ? t.dayFrac : 0);
     var mark = Math.min(Math.round(df * 100), 100);
     var col  = barFill(t.pace);
-    var over = pct >= 1;
+    var over = df > 0 && pct >= df;                 // fill at/past the pace hash → over pace
+    var tcls = paceCls(t.pace || 0);
     return '<div class="sky-card">'
       + '<div class="sky-card-hd">'
       +   '<span class="sky-card-name"><span class="sky-dot" style="background:var(--store-' + e(s.slug) + ', var(--green))"></span>' + e(s.name) + '</span>'
-      +   '<span class="sky-pace ' + paceCls(t.pace || 0) + '">' + paceLabel(t.pace || 0) + '</span>'
+      +   '<span class="sky-pace ' + tcls + '">' + paceLabel(t.pace || 0) + '</span>'
       + '</div>'
       + '<div class="sky-sold">' + fullCur(t.revenue) + '</div>'
       + '<div class="sky-card-foot">'
-      +   '<div class="sky-goal">of ' + fullCur(t.goal) + ' &middot; ' + Math.round(pct * 100) + '%</div>'
+      +   '<div class="sky-goal">of ' + fullCur(t.goal) + '</div>'
       +   '<div class="sky-bar' + (over ? ' over' : '') + '">'
       +     '<span style="width:' + w + '%;background:' + col + '"></span>'
       +     (mark > 0 && mark < 100 ? '<span class="sky-bar-mark" style="left:' + mark + '%"></span>' : '')
+      +     '<span class="sky-bar-tick ' + tcls + '" style="left:' + w + '%"><span class="pct">' + Math.round(pct * 100) + '%</span><span class="chev">&#9662;</span></span>'
       +   '</div>'
       + '</div>'
       + '</div>';
