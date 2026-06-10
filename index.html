@@ -3751,7 +3751,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.339';
+window.GC = window.GC || {}; GC.VERSION = 'v1.340';
 
 </script>
 
@@ -6970,6 +6970,14 @@ var sky = (function() {
     var c = GC.paceDotClass(p || 0);
     return c === 'green' ? 'var(--green)' : c === 'red' ? 'var(--red)' : 'var(--amber)';
   }
+  // Charging-up gradient (dim → bright) in the pace color — the store-sales /
+  // staff-leaderboard bar treatment, keeping the Sky pace color coding.
+  function barFill(p) {
+    var c = GC.paceDotClass(p || 0);
+    var dim    = c === 'green' ? 'rgba(74,222,128,0.28)' : c === 'red' ? 'rgba(239,68,68,0.28)' : 'rgba(234,179,8,0.28)';
+    var bright = c === 'green' ? '#4ade80'               : c === 'red' ? '#ef4444'             : '#eab308';
+    return 'linear-gradient(to right, ' + dim + ' 0%, ' + bright + ' 100%)';
+  }
   // Full, un-abbreviated currency for the wall (e.g. $20,710 not $20.7k).
   function fullCur(n) { return '$' + Math.round(n || 0).toLocaleString('en-US'); }
   function stat(lbl, val) { return '<div class="st"><span class="lbl">' + e(lbl) + '</span><span class="val">' + val + '</span></div>'; }
@@ -6992,7 +7000,7 @@ var sky = (function() {
 
   // ── Aggregate bar: KPI row + one long progress bar (live values fill in) ──
   function aggHtml(summary) {
-    var col  = barColor(_pace);
+    var col  = barFill(_pace);
     var mark = Math.min(Math.round(_dayFrac * 100), 100);
     return '<div class="sky-aggbar-top">'
       +   '<div class="agg-pct"><span class="pct" id="skyAggPct">—</span><span class="sub">All stores &middot; to daily goal</span></div>'
@@ -7036,7 +7044,7 @@ var sky = (function() {
     var w    = Math.min(Math.round(pct * 100), 100);
     var df   = (t.dayFrac != null ? t.dayFrac : 0);
     var mark = Math.min(Math.round(df * 100), 100);
-    var col  = barColor(t.pace);
+    var col  = barFill(t.pace);
     var over = pct >= 1;
     return '<div class="sky-card">'
       + '<div class="sky-card-hd">'
