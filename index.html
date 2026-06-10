@@ -3751,7 +3751,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.342';
+window.GC = window.GC || {}; GC.VERSION = 'v1.343';
 
 </script>
 
@@ -6906,7 +6906,7 @@ var director = (function() {
    %-chevron tick + over-pace glow (pace colors kept). margin-top leaves room
    for the tick that rides above the bar. */
 .sky-bar { position: relative; height: 1.2vmin; background: #232a27; border-radius: 99px; margin-top: 3vmin; }
-.sky-bar > span { display: block; height: 100%; border-radius: 99px; transition: width .8s cubic-bezier(.2,.7,.3,1); }
+.sky-bar > .sky-fill { display: block; height: 100%; border-radius: 99px; transition: width .8s cubic-bezier(.2,.7,.3,1); }
 /* Pace hash — extends well beyond the bar vertically. */
 .sky-bar-mark { position: absolute; top: -1vmin; bottom: -1vmin; width: .35vmin; background: var(--text-mute, #7c8a82); opacity: .6; border-radius: 1px; pointer-events: none; transition: left .8s cubic-bezier(.2,.7,.3,1); }
 /* Leading-edge tick: a vertical line through + beyond the bar (above AND below),
@@ -6919,8 +6919,8 @@ var director = (function() {
 .sky-bar-tick.down { color: var(--red, #ef4444); }
 .sky-bar-tick.flat { color: var(--amber, #eab308); }
 /* Over pace: glow ONLY the fill segment beyond the hash (from --seg → leading edge). */
-.sky-bar.over > span { position: relative; }
-.sky-bar.over > span::after {
+.sky-bar.over > .sky-fill { position: relative; }
+.sky-bar.over > .sky-fill::after {
   content: ''; position: absolute; top: 0; bottom: 0; left: var(--seg, 100%); right: 0;
   border-radius: 0 99px 99px 0; background: var(--green, #4ade80);
   box-shadow: 0 0 .8vmin #86efac, 0 0 1.6vmin #86efac;
@@ -7032,7 +7032,7 @@ var sky = (function() {
       +   '</div>'
       + '</div>'
       + '<div class="sky-bar lg" id="skyAggBar">'
-      +   '<span id="skyAggFill" style="width:0%;background:' + col + '"></span>'
+      +   '<span class="sky-fill" id="skyAggFill" style="width:0%;background:' + col + '"></span>'
       +   (mark > 0 && mark < 100 ? '<span class="sky-bar-mark" style="left:' + mark + '%"></span>' : '')
       + '</div>';
   }
@@ -7082,7 +7082,7 @@ var sky = (function() {
       + '<div class="sky-card-foot">'
       +   '<div class="sky-goal">of ' + fullCur(t.goal) + '</div>'
       +   '<div class="sky-bar' + (over ? ' over' : '') + '">'
-      +     '<span style="width:' + w + '%;background:' + col + ';--seg:' + seg + '%"></span>'
+      +     '<span class="sky-fill" style="width:' + w + '%;background:' + col + ';--seg:' + seg + '%"></span>'
       +     (mark > 0 && mark < 100 ? '<span class="sky-bar-mark" style="left:' + mark + '%"></span>' : '')
       +     '<span class="sky-bar-tick ' + tcls + '" style="left:' + w + '%"><span class="lbl"><span class="pct">' + Math.round(pct * 100) + '%</span><span class="chev">&#9662;</span></span></span>'
       +   '</div>'
