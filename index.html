@@ -3751,7 +3751,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.348';
+window.GC = window.GC || {}; GC.VERSION = 'v1.349';
 
 </script>
 
@@ -6985,22 +6985,18 @@ var sky = (function() {
 
   function e(s) { return GC.esc(String(s == null ? '' : s)); }
   function paceLabel(p) { return (p > 0 ? '+' : '') + Math.round((p || 0) * 100) + '%'; }
-  // Color class for pace text/chevron — uses the SAME banding as the bar fill
-  // (GC.paceDotClass) so the %/chevron always match their bar's color.
-  function paceCls(p) {
-    var c = GC.paceDotClass(p || 0);
-    return c === 'green' ? 'up' : c === 'red' ? 'down' : 'flat';
+  // Pace band for the Sky wall: GREEN whenever at/above pace (the same condition
+  // that triggers the glow), otherwise amber/red by how far behind — so the bar,
+  // chevron, % and header badge always agree.
+  function bandFor(pace, over) {
+    if (over) return 'green';
+    return GC.paceDotClass(pace || 0) === 'red' ? 'red' : 'amber';
   }
-  function barColor(p) {
-    var c = GC.paceDotClass(p || 0);
-    return c === 'green' ? 'var(--green)' : c === 'red' ? 'var(--red)' : 'var(--amber)';
-  }
-  // Charging-up gradient (dim → bright) in the pace color — the store-sales /
-  // staff-leaderboard bar treatment, keeping the Sky pace color coding.
-  function barFill(p) {
-    var c = GC.paceDotClass(p || 0);
-    var dim    = c === 'green' ? 'rgba(74,222,128,0.28)' : c === 'red' ? 'rgba(239,68,68,0.28)' : 'rgba(234,179,8,0.28)';
-    var bright = c === 'green' ? '#4ade80'               : c === 'red' ? '#ef4444'             : '#eab308';
+  function bandCls(b) { return b === 'green' ? 'up' : b === 'red' ? 'down' : 'flat'; }
+  // Charging-up gradient (dim → bright) for a band — the store-sales / staff bar look.
+  function barFill(b) {
+    var dim    = b === 'green' ? 'rgba(74,222,128,0.28)' : b === 'red' ? 'rgba(239,68,68,0.28)' : 'rgba(234,179,8,0.28)';
+    var bright = b === 'green' ? '#4ade80'               : b === 'red' ? '#ef4444'             : '#eab308';
     return 'linear-gradient(to right, ' + dim + ' 0%, ' + bright + ' 100%)';
   }
   // Full, un-abbreviated currency for the wall (e.g. $20,710 not $20.7k).
@@ -7025,7 +7021,9 @@ var sky = (function() {
 
   // ── Aggregate bar: KPI row + one long progress bar (live values fill in) ──
   function aggHtml(summary) {
-    var col  = barFill(_pace);
+    var aggOver = (_pace || 0) >= 0;                 // at/above pace
+    var aggBand = bandFor(_pace, aggOver);
+    var col  = barFill(aggBand);
     var mark = Math.min(Math.round(_dayFrac * 100), 100);
     return '<div class="sky-aggbar-top">'
       +   '<div class="agg-pct"><span class="pct" id="skyAggPct">—</span><span class="sub">All stores &middot; to daily goal</span></div>'
@@ -7033,7 +7031,7 @@ var sky = (function() {
       +     '<div class="st"><span class="lbl">Sold today</span><span class="val" id="skySoldVal">—</span></div>'
       +     stat('Daily goal', fullCur(_goal))
       +     stat('Projected',  fullCur(_projected))
-      +     stat('Pace',       '<span class="sky-pace ' + paceCls(_pace) + '">' + paceLabel(_pace) + '</span>')
+      +     stat('Pace',       '<span class="sky-pace ' + bandCls(aggBand) + '">' + paceLabel(_pace) + '</span>')
       +     stat('MTD',        fullCur(summary.totalSales))
       +   '</div>'
       + '</div>'
@@ -7055,6 +7053,7 @@ var sky = (function() {
     var fl = document.getElementById('skyAggFill');  if (fl) {
       fl.style.width = w + '%';
       fl.style.setProperty('--seg', (over && w > 0 ? Math.min(100, mark / w * 100) : 100) + '%');  // glow only beyond the hash
+      fl.style.background = barFill(bandFor(_pace, over));   // green once at/above pace
     }
     var bw = document.getElementById('skyAggBar');   if (bw) bw.classList.toggle('over', over);
   }
@@ -7079,10 +7078,11 @@ var sky = (function() {
     // Hash = the 100%-goal line when over goal (so the overage is proportional &
     // distinguishes 104 / 110 / 112%), otherwise the pace line (day fraction).
     var mark = overGoal ? Math.round(100 / pct) : (paceMark > 0 && paceMark < 100 ? paceMark : null);
-    var col  = barFill(t.pace);
-    var over = df > 0 && pct >= df;                 // fill at/past the hash → glows
+    var over = df > 0 && pct >= df;                 // fill at/past the hash → over pace (glows)
+    var band = bandFor(t.pace, over);               // green when over pace, else amber/red
+    var col  = barFill(band);
     var seg  = (over && mark != null && w > 0) ? Math.min(100, Math.round((mark / w) * 1000) / 10) : 100;  // glow starts at the hash
-    var tcls = paceCls(t.pace || 0);
+    var tcls = bandCls(band);
     return '<div class="sky-card">'
       + '<div class="sky-card-hd">'
       +   '<span class="sky-card-name"><span class="sky-dot" style="background:var(--store-' + e(s.slug) + ', var(--green))"></span>' + e(s.name) + '</span>'
