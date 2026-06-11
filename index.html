@@ -3751,7 +3751,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.347';
+window.GC = window.GC || {}; GC.VERSION = 'v1.348';
 
 </script>
 
@@ -6985,7 +6985,12 @@ var sky = (function() {
 
   function e(s) { return GC.esc(String(s == null ? '' : s)); }
   function paceLabel(p) { return (p > 0 ? '+' : '') + Math.round((p || 0) * 100) + '%'; }
-  function paceCls(p) { return p > 0.01 ? 'up' : p < -0.01 ? 'down' : 'flat'; }
+  // Color class for pace text/chevron — uses the SAME banding as the bar fill
+  // (GC.paceDotClass) so the %/chevron always match their bar's color.
+  function paceCls(p) {
+    var c = GC.paceDotClass(p || 0);
+    return c === 'green' ? 'up' : c === 'red' ? 'down' : 'flat';
+  }
   function barColor(p) {
     var c = GC.paceDotClass(p || 0);
     return c === 'green' ? 'var(--green)' : c === 'red' ? 'var(--red)' : 'var(--amber)';
