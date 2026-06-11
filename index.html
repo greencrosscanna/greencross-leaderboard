@@ -3751,7 +3751,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.349';
+window.GC = window.GC || {}; GC.VERSION = 'v1.350';
 
 </script>
 
@@ -6883,6 +6883,8 @@ var director = (function() {
 .sky-aggstats .st { display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
 .sky-aggstats .st .lbl { font-size: 1.35vmin; color: var(--text-mute, #7c8a82); text-transform: uppercase; letter-spacing: .07em; }
 .sky-aggstats .st .val { font-size: 3vmin; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: .3vmin; }
+/* PACE value matches the other stat values on the strip (not the smaller card badge size). */
+.sky-aggstats .st .val .sky-pace { font-size: inherit; }
 
 /* — condensed store cards — */
 .sky-grid { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); gap: 1.1vmin; }
