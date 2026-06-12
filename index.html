@@ -3751,7 +3751,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.350';
+window.GC = window.GC || {}; GC.VERSION = 'v1.351';
 
 </script>
 
@@ -5923,7 +5923,7 @@ var director = (function() {
     var pctDisp    = Math.round(pct * 100) + '%';
     var capped     = Math.min(pct, 1);
     var offset     = Math.round(DIR_ARC_LEN * (1 - capped));
-    var paceOffset = Math.round(DIR_ARC_LEN * (1 - Math.min(today.dayFrac || GC.dayFrac(), 1)));
+    var paceOffset = Math.round(DIR_ARC_LEN * (1 - Math.min(GC.dayFrac(), 1)));  // live pace marker (not the cached server dayFrac)
     var closed  = today.timeRemainingLabel === 'Closed';
 
     var soldStr = GC.fmtCurrency(today.revenue || 0);
@@ -7026,7 +7026,7 @@ var sky = (function() {
     var aggOver = (_pace || 0) >= 0;                 // at/above pace
     var aggBand = bandFor(_pace, aggOver);
     var col  = barFill(aggBand);
-    var mark = Math.min(Math.round(_dayFrac * 100), 100);
+    var mark = Math.min(+(_dayFrac * 100).toFixed(2), 100);   // live pace line, 2-dp for smooth glide
     return '<div class="sky-aggbar-top">'
       +   '<div class="agg-pct"><span class="pct" id="skyAggPct">—</span><span class="sub">All stores &middot; to daily goal</span></div>'
       +   '<div class="sky-aggstats">'
@@ -7075,15 +7075,15 @@ var sky = (function() {
     var pct  = t.pctToGoal || 0;
     var overGoal = pct > 1;
     var w    = Math.min(Math.round(pct * 100), 100);
-    var df   = (t.dayFrac != null ? t.dayFrac : 0);
-    var paceMark = Math.round(df * 100);
+    var df   = GC.dayFrac();                         // LIVE pace line off the client clock — advances each render (not the ≤5-min-cached server value)
+    var paceMark = +(df * 100).toFixed(2);           // 2-dp so it glides instead of snapping to whole %
     // Hash = the 100%-goal line when over goal (so the overage is proportional &
-    // distinguishes 104 / 110 / 112%), otherwise the pace line (day fraction).
+    // distinguishes 104 / 110 / 112%), otherwise the live pace line (day fraction).
     var mark = overGoal ? Math.round(100 / pct) : (paceMark > 0 && paceMark < 100 ? paceMark : null);
-    var over = df > 0 && pct >= df;                 // fill at/past the hash → over pace (glows)
-    var band = bandFor(t.pace, over);               // green when over pace, else amber/red
+    var over = (t.pace || 0) >= 0;                  // SERVER pace decides glow/green (stable; no flicker vs the live hash)
+    var band = bandFor(t.pace, over);               // green when over pace, else amber/red by severity
     var col  = barFill(band);
-    var seg  = (over && mark != null && w > 0) ? Math.min(100, Math.round((mark / w) * 1000) / 10) : 100;  // glow starts at the hash
+    var seg  = (over && mark != null && w > 0) ? Math.min(100, Math.round((mark / w) * 1000) / 10) : 100;  // glow starts at the (live) hash
     var tcls = bandCls(band);
     return '<div class="sky-card">'
       + '<div class="sky-card-hd">'
@@ -7128,7 +7128,7 @@ var sky = (function() {
       _goal      = today.goal || 0;
       _projected = today.projectedRevenue || 0;
       _pace      = today.pace || 0;
-      _dayFrac   = today.dayFrac != null ? today.dayFrac : GC.dayFrac();
+      _dayFrac   = GC.dayFrac();   // LIVE pace line (hash position); server pace value still drives the % math
       if (_liveSold == null) _liveSold = today.revenue || 0;   // initial baseline; store polls refine it
       var agg  = document.getElementById('skyAgg');
       var grid = document.getElementById('skyGrid');
@@ -7561,7 +7561,7 @@ var kiosk = (function() {
     var isFinal    = closed || preOpen;
     // Arc for "M 22 122 A 98 98 0 0 1 218 122" ≈ π × 98 = 308
     var ARC_LEN    = 308;
-    var paceOffset = Math.round(ARC_LEN * (1 - Math.min(today.dayFrac || GC.dayFrac(), 1)));
+    var paceOffset = Math.round(ARC_LEN * (1 - Math.min(GC.dayFrac(), 1)));  // live pace marker (not the cached server dayFrac)
 
     // Card label: "Yesterday's Results" pre-open, "Daily Goal · $X" otherwise
     var cardLabel = preOpen
