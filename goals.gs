@@ -56,12 +56,12 @@ function getManualPPGoals_() {
 /**
  * Lazy-compute store-level revenue goals for the current pay period.
  *
- * Fetches the last 26 completed pay periods (= 364 days = a full year, 52
+ * Fetches the last 12 completed pay periods (= 168 days ≈ 6 months, 24
  * occurrences of each day of week) in parallel via fetchAllStoresTransactionsMulti_.
- * A full year de-seasonalizes the trend — 12 PPs (~6 months) still carried the
- * most recent two seasons and ran hot/cold heading into the opposite season.
- * Computes:
- *   ppGoal  — average of 26 PP revenue totals (the seasonally-neutral run-rate)
+ * A ~6-month window tracks the store's recent run-rate — responsive enough that
+ * an improving store's goal rises with it (rather than lagging a full year and
+ * leaving an incentive target too easy to beat). Computes:
+ *   ppGoal  — average of 12 PP revenue totals (recent run-rate trend)
  *   dowAvg  — { 0..6: avg daily revenue } where 0=Sun,1=Mon,...,6=Sat (matches ptNow_().dow)
  *   monthly — exact sum of DOW averages × actual weekday count for current month
  *
@@ -95,8 +95,8 @@ function getOrComputeGoals_(forceRecompute) {
 
   Logger.log('[goals] Computing goals for PP ' + ppStartStr + '…');
 
-  // Build 26 prior completed PP date ranges (= a full trailing year)
-  const ROLLING_PP = 26;
+  // Build 12 prior completed PP date ranges (≈ trailing 6 months)
+  const ROLLING_PP = 12;
   const ranges = [];
   for (var i = ROLLING_PP; i >= 1; i--) {
     var fromMs = ppStartMs - i * PP_MS;
@@ -107,13 +107,13 @@ function getOrComputeGoals_(forceRecompute) {
   var reportFromStr = Utilities.formatDate(new Date(ppStartMs - ROLLING_PP * PP_MS), STORE_TZ, 'yyyy-MM-dd');
   var reportToStr   = Utilities.formatDate(new Date(ppStartMs - 1), STORE_TZ, 'yyyy-MM-dd');
 
-  // 156 first-page requests (26 PP ranges × 6 stores), chunked inside the fetch engine
+  // 72 first-page requests (12 PP ranges × 6 stores), chunked inside the fetch engine
   Logger.log('[goals] Firing ' + (ranges.length * STORES.length) + ' parallel requests…');
   var fetched = fetchAllStoresTransactionsMulti_(ranges);
 
   var goals = {};
   STORES.forEach(function(store) {
-    // Merge all 26 PP ranges into one daily revenue map and track per-PP totals
+    // Merge all 12 PP ranges into one daily revenue map and track per-PP totals
     var allByDay = {};
     var ppTotals = [];
 
@@ -128,7 +128,7 @@ function getOrComputeGoals_(forceRecompute) {
       ppTotals.push(ppSum);
     });
 
-    // PP goal: average of the 26 completed PP totals (full-year de-seasonalized run-rate)
+    // PP goal: average of the 12 completed PP totals (recent ~6-month run-rate)
     var ppGoal = ppTotals.length > 0
       ? Math.round(ppTotals.reduce(function(a, b) { return a + b; }, 0) / ppTotals.length)
       : 0;
@@ -193,6 +193,40 @@ function recalculateGoals_() {
     Logger.log('recalculateGoals_ error: ' + e.message);
     return { ok: false, error: e.message };
   }
+}
+
+/**
+ * Diagnostic: per-pay-period revenue series for ONE store over the last `n`
+ * completed PPs (oldest → newest). Feeds goal-window modeling (short vs long
+ * vs recency-weighted trend). Director-only.
+ */
+function getPPSeries_(slug, n) {
+  var props = getProps_();
+  var pp = currentPPStart_(props);
+  var ppStartMs = pp.ppStartMs, PP_MS = pp.PP_MS;
+  n = n || 26;
+  var reqs = [];
+  for (var i = n; i >= 1; i--) {
+    var fromMs = ppStartMs - i * PP_MS;
+    reqs.push({
+      key:      String(n - i),
+      storeKey: getDutchieStoreKey_(slug),
+      fromUTC:  new Date(fromMs).toISOString(),
+      toUTC:    new Date(fromMs + PP_MS - 1).toISOString(),
+      _fromMs:  fromMs,
+    });
+  }
+  var byKey  = fetchTxnPagesByKey_(reqs);
+  var series = reqs.map(function(r) {
+    var txns  = (byKey[r.key] || []).filter(function(t) { return t.transactionType === 'Retail'; });
+    var total = 0;
+    txns.forEach(function(t) { total += txNet_(t); });
+    return {
+      from:  Utilities.formatDate(new Date(r._fromMs), STORE_TZ, 'yyyy-MM-dd'),
+      total: Math.round(total),
+    };
+  });
+  return { ok: true, store: slug, ppCount: series.length, series: series };
 }
 
 /**

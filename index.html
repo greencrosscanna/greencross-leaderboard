@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.354';
+window.GC = window.GC || {}; GC.VERSION = 'v1.355';
 
 </script>
 
@@ -9727,7 +9727,7 @@ var settings = (function() {
       + '<div class="settings-card-head">'
       +   '<div>'
       +     '<div class="settings-card-title">Revenue Goals &mdash; Current PP</div>'
-      +     '<div class="settings-card-sub">Active goal = higher of the Rolling 12-month trend vs. the same-season-last-year floor (highlighted). Stretch = your growth target, applied on top.</div>'
+      +     '<div class="settings-card-sub">Active goal = higher of the Rolling 6-month trend vs. the same-season-last-year floor (highlighted). Stretch = your growth target, applied on top.</div>'
       +     '<div class="settings-goals-meta" id="goalsMeta">' + e(fullMeta) + '</div>'
       +   '</div>'
       +   '<div class="settings-card-actions">'
@@ -9743,7 +9743,7 @@ var settings = (function() {
       + '<table class="settings-table settings-goals-table" id="goalsTable">'
       + '<thead><tr>'
       +   '<th>Store</th>'
-      +   '<th title="R = Rolling 12-month trend (26 PP avg) · Y = same season last year (floor) · Green = prevailing">Baseline</th>'
+      +   '<th title="R = Rolling 6-month trend (12 PP avg) · Y = same season last year (floor) · Green = prevailing">Baseline</th>'
       +   '<th title="Active goal — edit to override">Goal PP</th>'
       +   '<th>Monthly</th>'
       +   '<th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th>'

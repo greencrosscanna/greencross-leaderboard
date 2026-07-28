@@ -309,6 +309,10 @@ function doGet(e) {
       requireRole_(auth, ['owner','director']);
       return jsonOut(prefetchYoY1_(), params.callback);
     }
+    if (params.action === 'ppseries') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(getPPSeries_(params.store || 'baseline', parseInt(params.n, 10) || 26), params.callback);
+    }
 
     // ── Plan management ────────────────────────────────────
     if (params.action === 'setplan') {
