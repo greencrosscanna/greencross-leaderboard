@@ -1508,7 +1508,7 @@ function getIncentiveData_(ppStartParam, forceRefresh) {
   // A completed period's transactions never change, so cache the derived numbers
   // permanently. Only the CURRENT period is fetched every time (still settling).
   // Force-refresh (forceRefresh) re-pulls a completed period if data settled late.
-  var perfKey = 'GC_INC_PERF_' + ppStartStr;
+  var perfKey = 'GC_INC_PERF_v2_' + ppStartStr;   // v2: full-store aggregation (includes managers/excluded sellers)
   var perf = null, fromCache = false;
   if (!isCurrent && !forceRefresh) {
     try { var c = props.getProperty(perfKey); if (c) { perf = JSON.parse(c); fromCache = true; } } catch(e) {}
@@ -1557,51 +1557,56 @@ function getIncentiveData_(ppStartParam, forceRefresh) {
 function computeIncentivePerf_(props, selMs, PP_MS) {
   var range   = { fromUTC: new Date(selMs).toISOString(), toUTC: new Date(selMs + PP_MS - 1).toISOString() };
   var byStore = fetchAllStoresTransactions_(range);
-  var staff   = (getDirectorStaff({ period: 'pp' }, { byStore: byStore }).staff) || [];
   var roles   = getRoles_();
   var users   = {};
   try { users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}'); } catch(e) {}
 
-  var mgmtKeys = {}, adminName = 'Mike Kettler', storeMgrName = {};
+  // Classify: management (owner/director) is skipped; store managers are counted
+  // in the store total but shown as the manager row (not a budtender). NOTE: we
+  // intentionally do NOT apply the leaderboard exclusion (getExcluded_) — the
+  // incentive must include every seller (incl. managers) to match Dutchie's raw
+  // leader report, which is what the sheet used.
+  var mgmtKeys = {}, adminName = 'Mike Kettler', storeMgrName = {}, storeMgrKey = {};
   Object.keys(users).forEach(function(uname) {
     var u = users[uname] || {};
     if (u.role === 'owner' || u.role === 'director') {
       mgmtKeys[nameToKey_(u.displayName || uname)] = true;
       if (String(uname).toLowerCase() === 'mike' || /(^|\s)mike\b/i.test(u.displayName || '')) adminName = u.displayName || 'Mike';
     }
-    if (u.role === 'store_manager' && u.storeSlug) storeMgrName[u.storeSlug] = u.displayName || uname;
-  });
-
-  var agg = {}, mgrKeyByStore = {}, budtenders = [];
-  staff.forEach(function(s) {
-    var slug = s.storeSlug;
-    if (!slug) return;
-    var a = agg[slug] || (agg[slug] = { sales: 0, dSum: 0, dN: 0, aSum: 0, aN: 0 });
-    a.sales += s.sales || 0;
-    if (typeof s.discountRate === 'number')  { a.dSum += s.discountRate;  a.dN++; }
-    if (typeof s.avgOrderValue === 'number') { a.aSum += s.avgOrderValue; a.aN++; }
-    if (roles[s.nameKey] === 'store_manager') { mgrKeyByStore[slug] = s.nameKey; return; }
-    if (mgmtKeys[s.nameKey]) return;
-    budtenders.push({
-      name: s.name, nameKey: s.nameKey, storeSlug: slug, storeName: s.storeName,
-      txn: s.transactions || 0, sales: s.sales || 0,
-      discount: s.discountRate || 0, aov: s.avgOrderValue || 0,
-    });
-  });
-
-  var stores = {}, adminActual = 0;
-  STORES.forEach(function(store) {
-    var slug = store.slug, a = agg[slug] || { sales: 0, dSum: 0, dN: 0, aSum: 0, aN: 0 };
-    var mgrName = storeMgrName[slug] || '';
-    if (!mgrName && mgrKeyByStore[slug]) {
-      var ms = staff.filter(function(x) { return x.nameKey === mgrKeyByStore[slug]; })[0];
-      mgrName = ms ? ms.name : '';
+    if (u.role === 'store_manager' && u.storeSlug) {
+      storeMgrName[u.storeSlug] = u.displayName || uname;
+      storeMgrKey[u.storeSlug]  = nameToKey_(u.displayName || uname);
     }
+  });
+
+  function mean(arr) { return arr.length ? arr.reduce(function(a, b) { return a + b; }, 0) / arr.length : 0; }
+
+  var budtenders = [], stores = {}, adminActual = 0;
+  STORES.forEach(function(store) {
+    var slug = store.slug;
+    var agg  = aggregateTransactions_(byStore[slug] || []);   // every seller who rang — no exclusion
+    var mgrKey = storeMgrKey[slug] || '', mgrName = storeMgrName[slug] || '';
+    var storeSales = 0, dList = [], aList = [];
+    Object.keys(agg.byEmployee).forEach(function(k) {
+      var emp = agg.byEmployee[k];
+      var nk  = nameToKey_(emp.name);
+      storeSales += emp.sales || 0;                            // store total incl. the manager's own sales
+      var isMgr = (mgrKey && nk === mgrKey) || roles[nk] === 'store_manager';
+      if (isMgr) { if (!mgrKey) mgrKey = nk; if (!mgrName) mgrName = emp.name; return; }
+      if (mgmtKeys[nk]) return;
+      var aov  = emp.transactions > 0 ? emp.sales / emp.transactions : 0;
+      var disc = emp.subtotal     > 0 ? emp.discounts / emp.subtotal : 0;
+      budtenders.push({
+        name: emp.name, nameKey: nk, storeSlug: slug, storeName: store.name,
+        txn: emp.transactions || 0, sales: r2_(emp.sales), discount: disc, aov: aov,
+      });
+      dList.push(disc); aList.push(aov);       // store avg = budtenders only (matches the sheet's AVERAGEIF)
+    });
     stores[slug] = {
-      sales: r2_(a.sales), discount: a.dN ? a.dSum / a.dN : 0, aov: a.aN ? a.aSum / a.aN : 0,
-      mgrName: mgrName, mgrKey: mgrKeyByStore[slug] || nameToKey_(mgrName),
+      sales: r2_(storeSales), discount: mean(dList), aov: mean(aList),
+      mgrName: mgrName, mgrKey: mgrKey || nameToKey_(mgrName),
     };
-    adminActual += a.sales;
+    adminActual += storeSales;
   });
 
   return { adminName: adminName, adminActual: r2_(adminActual), stores: stores, budtenders: budtenders };
