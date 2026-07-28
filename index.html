@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.355';
+window.GC = window.GC || {}; GC.VERSION = 'v1.356';
 
 </script>
 
@@ -4997,6 +4997,8 @@ GC.api = (function() {
     },
     fetchLeaderboardStaff: fetchLeaderboardStaff,
     fetchSettings:    fetchSettings,
+    fetchIncentive:   function() { return gasCall('incentive', {}); },
+    saveIncentive:    function(payload) { return gasCall('saveincentive', payload); },
     fetchAvatarData:  fetchAvatarData,
     saveSettings:     saveSettings,
     gasCall:          gasCall,
@@ -5091,6 +5093,12 @@ GC.router = (function() {
       pattern: /^\/avatar$/,
       roles: ['owner','director','store_manager','asst_manager','budtender'],
       render: function(params, queryParams) { GC.views.renderAvatar(queryParams); },
+    },
+    {
+      id: 'incentive',
+      pattern: /^\/incentive$/,
+      roles: ['owner','director'],   // finer gate (owner + Mike) enforced in the view + backend
+      render: function() { GC.views.renderIncentive(); },
     },
   ];
 
@@ -5217,6 +5225,7 @@ GC.views = {
   renderLeaderboard: function() { console.warn('[GC.views] renderLeaderboard not registered'); },
   renderSettings:    function() { console.warn('[GC.views] renderSettings not registered'); },
   renderAvatar:      function(qp) { console.warn('[GC.views] renderAvatar not registered', qp); },
+  renderIncentive:   function() { console.warn('[GC.views] renderIncentive not registered'); },
 };
 
 </script>
@@ -7218,6 +7227,337 @@ var sky = (function() {
   }
 
   return { start: start, shell: shell };
+})();
+
+</script>
+
+<style>
+/* ===== Incentive Dashboard (#/incentive) ===== */
+.inc-wrap { max-width: 1500px; margin: 0 auto; padding: 20px 24px 60px; }
+.inc-denied { padding: 60px; text-align: center; color: var(--text-mute); }
+.inc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 18px; }
+.inc-title { font-size: 22px; font-weight: 800; }
+.inc-sub { color: var(--text-mute); font-size: 13px; margin-top: 2px; }
+.inc-totals { display: flex; gap: 22px; flex-wrap: wrap; }
+.inc-tot { text-align: right; }
+.inc-tot .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-mute); }
+.inc-tot .val { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.inc-actions { display: flex; gap: 8px; margin-top: 10px; }
+.inc-btn { background: var(--card-bg); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.inc-btn.primary { background: var(--green); color: #08130c; border-color: var(--green); }
+.inc-btn:hover { border-color: var(--green); }
+.inc-section { margin-top: 22px; }
+.inc-section h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-mute); margin: 0 0 8px; }
+.inc-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+table.inc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 900px; }
+.inc-table th { text-align: right; padding: 9px 12px; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-mute); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.inc-table th:first-child, .inc-table th.l { text-align: left; }
+.inc-table td { text-align: right; padding: 9px 12px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.inc-table td:first-child, .inc-table td.l { text-align: left; }
+.inc-table tbody tr:hover { background: rgba(74,222,128,0.03); }
+.inc-table .name { font-weight: 600; }
+.inc-store-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; }
+.inc-att { width: 17px; height: 17px; accent-color: var(--green); cursor: pointer; }
+.inc-spiff { width: 62px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px 6px; text-align: right; font-variant-numeric: tabular-nums; }
+.inc-spiff:focus { outline: none; border-color: var(--green); }
+.inc-bonus { font-weight: 700; }
+.inc-pay { color: var(--green); font-weight: 700; }
+.inc-muted { color: var(--text-mute); }
+.inc-below { color: var(--text-dim); }
+.inc-thr { margin-top: 26px; }
+.inc-thr summary { cursor: pointer; font-size: 12px; color: var(--text-mute); text-transform: uppercase; letter-spacing: .06em; }
+.inc-thr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px 18px; margin-top: 12px; }
+.inc-thr-grid label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-dim); }
+.inc-thr-grid input { width: 72px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px 6px; text-align: right; }
+.inc-savenote { font-size: 11px; color: var(--text-mute); margin-left: 8px; }
+@media print {
+  body * { visibility: hidden; }
+  .inc-wrap, .inc-wrap * { visibility: visible; }
+  .inc-wrap { position: absolute; left: 0; top: 0; }
+  .inc-actions, .inc-thr, .inc-att, .inc-spiff { display: none !important; }
+  .inc-att-print, .inc-spiff-print { display: inline !important; }
+}
+</style>
+
+<script>
+// ============================================================
+//  Green Cross — Incentive Dashboard (#/incentive)
+//  Bonus calculation for the pay period. Owner + Mike only.
+//  Data (per-staff PP stats, store goals, saved inputs, thresholds) comes from
+//  the `incentive` endpoint; the bonus MATH runs here so attendance/SPIFF edits
+//  recompute live. Mirrors the "Green Cross Incentive Program" Google Sheet.
+// ============================================================
+window.GC = window.GC || {};
+
+GC.views.renderIncentive = function() {
+  var app = document.getElementById('app'); if (!app) return;
+  var sess = (GC.auth && GC.auth.load && GC.auth.load()) || {};
+  var uname = String(sess.username || '').toLowerCase();
+  if (sess.role !== 'owner' && uname !== 'mike') {
+    app.innerHTML = '<div class="inc-wrap"><div class="inc-denied">This page is restricted to authorized users.</div></div>';
+    return;
+  }
+  incentive.start(app);
+};
+
+var incentive = (function() {
+  var _d = null, _inp = {}, _T = null, _saveTimer = null, _app = null;
+
+  function e(s)  { return GC.esc(String(s == null ? '' : s)); }
+  function m0(n) { return '$' + Math.round(n || 0).toLocaleString('en-US'); }
+  function m2(n) { return '$' + (Math.round((n || 0) * 100) / 100).toFixed(2); }
+  function pctStr(p) { return (Math.round(p * 10) / 10).toFixed(1) + '%'; }
+  function inpOf(k) { var i = _inp[k]; return { att: !!(i && i.att), spiff: (i && +i.spiff) || 0 }; }
+
+  // ── Bonus math (exact port of the sheet formulas) ──
+  function calcBud(b) {
+    var T = _T.budtender, i = inpOf(b.nameKey);
+    var low  = (T.lowVolStores || []).indexOf(b.storeSlug) !== -1;
+    var qual = b.txn >= (low ? T.txnQualifyLowVol : T.txnQualify);
+    var aovB = (qual && b.aov >= T.aovTarget) ? T.aovBonus : 0;
+    var disB = (qual && b.discount * 100 <= T.discountMaxPct) ? T.discountBonus : 0;
+    var attB = i.att ? T.attendanceBonus : 0;
+    var bonus = aovB + disB + attB + i.spiff;
+    return { qual: qual, bonus: bonus, payroll: bonus - i.spiff, hr: bonus / _T.hoursPerPeriod };
+  }
+  function teamAtt(slug) {
+    return _d.budtenders.filter(function(b) { return b.storeSlug === slug && inpOf(b.nameKey).att; }).length;
+  }
+  function calcMgr(mgr) {
+    var T = _T.manager, i = inpOf(mgr.nameKey);
+    var p = mgr.target > 0 ? mgr.sales / mgr.target * 100 : 0;
+    var sB = 0; for (var a = 0; a < T.salesTiers.length; a++)    { if (p  >= T.salesTiers[a].pct)    { sB = T.salesTiers[a].bonus; break; } }
+    var dp = mgr.discount * 100, dB = 0;
+    for (var c = 0; c < T.discountTiers.length; c++)             { if (dp <= T.discountTiers[c].maxPct) { dB = T.discountTiers[c].bonus; break; } }
+    var aB = mgr.aov >= T.aovTarget ? T.aovBonus : 0;
+    var tA = teamAtt(mgr.storeSlug) * T.teamAttendancePerHead;
+    var payroll = sB + dB + aB + tA, bonus = payroll + i.spiff;
+    return { pct: p, teamA: tA, payroll: payroll, bonus: bonus, hr: bonus / _T.hoursPerPeriod };
+  }
+  function calcAdmin() {
+    var T = _T.admin, a = _d.admin;
+    var p = a.target > 0 ? a.actual / a.target * 100 : 0;
+    var tier = 0; for (var t = 0; t < T.tiers.length; t++) { if (p >= T.tiers[t].pct) { tier = T.tiers[t].bonus; break; } }
+    var bonus = Math.min(tier, a.stores * T.maxPerStore);
+    return { pct: p, bonus: bonus, hr: bonus / _T.hoursPerPeriod };
+  }
+
+  function dot(slug) { return '<span class="inc-store-dot" style="background:var(--store-' + e(slug) + ', var(--text-mute))"></span>'; }
+
+  function render() {
+    var admin = _d.admin;
+    var mgrRows = _d.managers.map(function(m) {
+      return '<tr>'
+        + '<td class="l name">' + e(m.name || '—') + '</td>'
+        + '<td class="l">' + dot(m.storeSlug) + e(m.storeName) + '</td>'
+        + '<td>' + m0(m.target) + '</td>'
+        + '<td>' + m0(m.sales) + '</td>'
+        + '<td id="mp-' + e(m.nameKey) + '"></td>'
+        + '<td>' + pctStr(m.discount * 100) + '</td>'
+        + '<td>' + m2(m.aov) + '</td>'
+        + '<td id="mt-' + e(m.nameKey) + '"></td>'
+        + '<td><span class="inc-muted">$</span><input class="inc-spiff" type="number" min="0" step="5" data-k="' + e(m.nameKey) + '" value="' + inpOf(m.nameKey).spiff + '"><span class="inc-spiff-print" style="display:none">' + inpOf(m.nameKey).spiff + '</span></td>'
+        + '<td class="inc-bonus" id="mb-' + e(m.nameKey) + '"></td>'
+        + '<td class="inc-pay" id="mk-' + e(m.nameKey) + '"></td>'
+        + '<td class="inc-muted" id="mh-' + e(m.nameKey) + '"></td>'
+        + '</tr>';
+    }).join('');
+
+    var budRows = _d.budtenders.map(function(b) {
+      var ck = inpOf(b.nameKey);
+      return '<tr>'
+        + '<td class="l name">' + e(b.name) + '</td>'
+        + '<td class="l">' + dot(b.storeSlug) + e(b.storeName) + '</td>'
+        + '<td>' + e(b.txn) + '</td>'
+        + '<td>' + m0(b.sales) + '</td>'
+        + '<td>' + pctStr(b.discount * 100) + '</td>'
+        + '<td>' + m2(b.aov) + '</td>'
+        + '<td><input class="inc-att" type="checkbox" data-k="' + e(b.nameKey) + '"' + (ck.att ? ' checked' : '') + '><span class="inc-att-print" style="display:none">' + (ck.att ? '✓' : '') + '</span></td>'
+        + '<td><span class="inc-muted">$</span><input class="inc-spiff" type="number" min="0" step="5" data-k="' + e(b.nameKey) + '" value="' + ck.spiff + '"><span class="inc-spiff-print" style="display:none">' + ck.spiff + '</span></td>'
+        + '<td class="inc-bonus" id="bb-' + e(b.nameKey) + '"></td>'
+        + '<td class="inc-pay" id="bk-' + e(b.nameKey) + '"></td>'
+        + '<td class="inc-muted" id="bh-' + e(b.nameKey) + '"></td>'
+        + '</tr>';
+    }).join('');
+
+    _app.innerHTML = '<div class="inc-wrap">'
+      + '<div class="inc-top">'
+      +   '<div><div class="inc-title">Incentive Dashboard</div>'
+      +     '<div class="inc-sub">Pay Period ' + e(_d.payPeriod.start) + ' → ' + e(_d.payPeriod.end)
+      +       ' · <span class="inc-below">live mid-cycle — sales bonuses lock at period end</span></div>'
+      +     '<div class="inc-actions">'
+      +       '<button class="inc-btn primary" id="incPrint">Approve &amp; Print PDF</button>'
+      +       '<button class="inc-btn" id="incCsv">Export Payroll CSV (Capstone)</button>'
+      +       '<span class="inc-savenote" id="incSave"></span>'
+      +     '</div>'
+      +   '</div>'
+      +   '<div class="inc-totals">'
+      +     '<div class="inc-tot"><div class="lbl">Manager Bonuses</div><div class="val" id="totMgr"></div></div>'
+      +     '<div class="inc-tot"><div class="lbl">Budtender Bonuses</div><div class="val" id="totBud"></div></div>'
+      +     '<div class="inc-tot"><div class="lbl">Total → Capstone</div><div class="val inc-pay" id="totPay"></div></div>'
+      +   '</div>'
+      + '</div>'
+
+      // Admin
+      + '<div class="inc-section"><h3>Admin</h3><div class="inc-scroll"><table class="inc-table">'
+      +   '<thead><tr><th class="l">Name</th><th>Target Revenue</th><th>Period Sales</th><th>% to Goal</th><th>Bonus</th><th>Payroll</th><th>$/hr</th></tr></thead>'
+      +   '<tbody><tr><td class="l name">' + e(admin.name) + '</td><td>' + m0(admin.target) + '</td><td>' + m0(admin.actual) + '</td>'
+      +     '<td id="ap"></td><td class="inc-bonus" id="ab"></td><td class="inc-pay" id="ak"></td><td class="inc-muted" id="ah"></td></tr></tbody>'
+      + '</table></div></div>'
+
+      // Managers
+      + '<div class="inc-section"><h3>Store Managers</h3><div class="inc-scroll"><table class="inc-table">'
+      +   '<thead><tr><th class="l">Manager</th><th class="l">Store</th><th>Target</th><th>Sales</th><th>% Goal</th><th>Discount</th><th>AOV</th><th>Team Att.</th><th>SPIFF</th><th>Bonus</th><th>Payroll</th><th>$/hr</th></tr></thead>'
+      +   '<tbody>' + mgrRows + '</tbody>'
+      + '</table></div></div>'
+
+      // Budtenders
+      + '<div class="inc-section"><h3>Budtenders (' + _d.budtenders.length + ')</h3><div class="inc-scroll"><table class="inc-table">'
+      +   '<thead><tr><th class="l">Name</th><th class="l">Store</th><th>Txn</th><th>Sales</th><th>Discount</th><th>AOV</th><th>Att.</th><th>SPIFF</th><th>Bonus</th><th>Payroll</th><th>$/hr</th></tr></thead>'
+      +   '<tbody>' + budRows + '</tbody>'
+      + '</table></div></div>'
+
+      + thresholdsHtml()
+      + '</div>';
+
+    // Wire events (delegation)
+    var wrap = _app.querySelector('.inc-wrap');
+    wrap.addEventListener('change', onEdit);
+    wrap.addEventListener('input', onEdit);
+    _app.querySelector('#incCsv').addEventListener('click', exportCsv);
+    _app.querySelector('#incPrint').addEventListener('click', function() { save(true); window.print(); });
+    recompute();
+  }
+
+  function setTxt(id, txt, cls) { var el = document.getElementById(id); if (el) { el.textContent = txt; if (cls) el.className = cls; } }
+
+  function recompute() {
+    var totMgr = 0, totBud = 0, totPay = 0;
+    var ad = calcAdmin();
+    setTxt('ap', pctStr(ad.pct)); setTxt('ab', m0(ad.bonus)); setTxt('ak', m0(ad.bonus)); setTxt('ah', ad.bonus ? m2(ad.hr) : '—');
+    totPay += ad.bonus;
+    _d.managers.forEach(function(m) {
+      var r = calcMgr(m);
+      setTxt('mp-' + m.nameKey, pctStr(r.pct));
+      setTxt('mt-' + m.nameKey, m0(r.teamA));
+      setTxt('mb-' + m.nameKey, r.bonus ? m0(r.bonus) : '—');
+      setTxt('mk-' + m.nameKey, r.payroll ? m0(r.payroll) : '—');
+      setTxt('mh-' + m.nameKey, r.bonus ? m2(r.hr) : '—');
+      totMgr += r.bonus; totPay += r.payroll;
+    });
+    _d.budtenders.forEach(function(b) {
+      var r = calcBud(b);
+      setTxt('bb-' + b.nameKey, r.bonus ? m0(r.bonus) : '—');
+      setTxt('bk-' + b.nameKey, r.payroll ? m0(r.payroll) : '—');
+      setTxt('bh-' + b.nameKey, r.bonus ? m2(r.hr) : '—');
+      totBud += r.bonus; totPay += r.payroll;
+    });
+    setTxt('totMgr', m0(totMgr)); setTxt('totBud', m0(totBud)); setTxt('totPay', m0(totPay));
+  }
+
+  function onEdit(ev) {
+    var t = ev.target;
+    if (!t.dataset) return;
+    if (t.dataset.thr) {
+      applyThreshold(t.dataset.thr, +t.value);
+    } else if (t.dataset.k) {
+      var k = t.dataset.k;
+      _inp[k] = _inp[k] || { att: false, spiff: 0 };
+      if (t.classList.contains('inc-att'))        _inp[k].att   = t.checked;
+      else if (t.classList.contains('inc-spiff')) _inp[k].spiff = +t.value || 0;
+    } else return;
+    recompute();
+    save(false);
+  }
+
+  // ── Thresholds editor ──
+  function thresholdsHtml() {
+    var T = _T, B = T.budtender, M = T.manager, A = T.admin;
+    function f(path, label, val) { return '<label>' + e(label) + '<input type="number" step="0.25" data-thr="' + e(path) + '" value="' + val + '"></label>'; }
+    return '<details class="inc-thr"><summary>Edit thresholds</summary><div class="inc-thr-grid">'
+      + f('b.txnQualify', 'Budtender qualify txns', B.txnQualify)
+      + f('b.txnQualifyLowVol', 'Qualify txns (low-vol)', B.txnQualifyLowVol)
+      + f('b.aovTarget', 'Budtender AOV target $', B.aovTarget)
+      + f('b.aovBonus', 'Budtender AOV bonus $', B.aovBonus)
+      + f('b.discountMaxPct', 'Budtender max discount %', B.discountMaxPct)
+      + f('b.discountBonus', 'Budtender discount bonus $', B.discountBonus)
+      + f('b.attendanceBonus', 'Budtender attendance $', B.attendanceBonus)
+      + f('m.s0', 'Mgr sales ≥110% $', M.salesTiers[0].bonus)
+      + f('m.s1', 'Mgr sales ≥105% $', M.salesTiers[1].bonus)
+      + f('m.s2', 'Mgr sales ≥100% $', M.salesTiers[2].bonus)
+      + f('m.d0', 'Mgr discount ≤2.5% $', M.discountTiers[0].bonus)
+      + f('m.d1', 'Mgr discount ≤2.75% $', M.discountTiers[1].bonus)
+      + f('m.aovBonus', 'Mgr AOV bonus $', M.aovBonus)
+      + f('m.teamAttendancePerHead', 'Mgr team-att per head $', M.teamAttendancePerHead)
+      + f('a.maxPerStore', 'Admin cap per store $', A.maxPerStore)
+      + f('h.hoursPerPeriod', 'Hours per period', T.hoursPerPeriod)
+      + '</div></details>';
+  }
+  function applyThreshold(path, v) {
+    if (isNaN(v)) return;
+    var T = _T;
+    var map = {
+      'b.txnQualify': function() { T.budtender.txnQualify = v; },
+      'b.txnQualifyLowVol': function() { T.budtender.txnQualifyLowVol = v; },
+      'b.aovTarget': function() { T.budtender.aovTarget = v; },
+      'b.aovBonus': function() { T.budtender.aovBonus = v; },
+      'b.discountMaxPct': function() { T.budtender.discountMaxPct = v; },
+      'b.discountBonus': function() { T.budtender.discountBonus = v; },
+      'b.attendanceBonus': function() { T.budtender.attendanceBonus = v; },
+      'm.s0': function() { T.manager.salesTiers[0].bonus = v; },
+      'm.s1': function() { T.manager.salesTiers[1].bonus = v; },
+      'm.s2': function() { T.manager.salesTiers[2].bonus = v; },
+      'm.d0': function() { T.manager.discountTiers[0].bonus = v; },
+      'm.d1': function() { T.manager.discountTiers[1].bonus = v; },
+      'm.aovBonus': function() { T.manager.aovBonus = v; },
+      'm.teamAttendancePerHead': function() { T.manager.teamAttendancePerHead = v; },
+      'a.maxPerStore': function() { T.admin.maxPerStore = v; },
+      'h.hoursPerPeriod': function() { T.hoursPerPeriod = v || 80; },
+    };
+    if (map[path]) map[path]();
+  }
+
+  // ── Persist (debounced) ──
+  function save(now) {
+    clearTimeout(_saveTimer);
+    var note = document.getElementById('incSave');
+    function doSave() {
+      if (note) note.textContent = 'Saving…';
+      GC.api.saveIncentive({
+        ppStart:    _d.payPeriod.start,
+        inputs:     JSON.stringify(_inp),
+        thresholds: JSON.stringify(_T),
+      }).then(function() { if (note) note.textContent = 'Saved ✓'; })
+        .catch(function() { if (note) note.textContent = 'Save failed'; });
+    }
+    if (now) doSave(); else _saveTimer = setTimeout(doSave, 800);
+  }
+
+  // ── CSV export (payroll → Capstone) ──
+  function exportCsv() {
+    var rows = [['Section', 'Name', 'Store', 'Payroll']];
+    var ad = calcAdmin();
+    rows.push(['Admin', _d.admin.name, 'All', ad.bonus.toFixed(2)]);
+    _d.managers.forEach(function(m) { rows.push(['Manager', m.name, m.storeName, calcMgr(m).payroll.toFixed(2)]); });
+    _d.budtenders.forEach(function(b) { rows.push(['Budtender', b.name, b.storeName, calcBud(b).payroll.toFixed(2)]); });
+    var csv = rows.map(function(r) { return r.map(function(c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+    var a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    a.download = 'incentive-payroll-' + _d.payPeriod.start + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+
+  function start(app) {
+    _app = app;
+    app.innerHTML = '<div class="inc-wrap"><div class="inc-denied">Loading incentive data…</div></div>';
+    GC.api.fetchIncentive().then(function(d) {
+      if (!d || d.ok === false) { app.innerHTML = '<div class="inc-wrap"><div class="inc-denied">' + e((d && d.error) || 'Failed to load') + '</div></div>'; return; }
+      _d = d; _inp = d.saved || {}; _T = d.thresholds;
+      render();
+    }).catch(function(err) { app.innerHTML = '<div class="inc-wrap"><div class="inc-denied">Error: ' + e(String(err)) + '</div></div>'; });
+  }
+
+  return { start: start };
 })();
 
 </script>

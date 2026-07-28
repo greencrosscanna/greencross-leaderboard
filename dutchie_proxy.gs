@@ -42,6 +42,8 @@ const GC_MANUAL_PP_KEY      = 'GC_MANUAL_PP_GOALS_JSON'; // slug→final PP goal
 const GC_AVATAR_CONFIGS_KEY  = 'GC_AVATAR_CONFIGS_JSON'; // { nameKey: { ...avatar_config } }
 const GC_HOURLY_DIST_KEY     = 'GC_HOURLY_DIST_JSON';   // per-store same-DOW hourly revenue weights, cached per day
 const GC_EOM_KEY             = 'gc_eom_current';         // { employeeKey, since } — Employee of the Month
+const GC_INCENTIVE_INPUTS_KEY = 'GC_INCENTIVE_INPUTS_JSON';  // { ppStart: { nameKey: { att:bool, spiff:num } } }
+const GC_INCENTIVE_THRESH_KEY = 'GC_INCENTIVE_THRESH_JSON';  // editable bonus thresholds (see incentiveDefaults_)
 const PP_DAYS                = 14;     // pay-period length in days
 const TARGET_LOOKBACK_MONTHS = 6;      // rolling lookback for target calculation
 const DUTCHIE_TAKE           = 5000;   // Take param sent to Dutchie; also the truncation-warning threshold
@@ -312,6 +314,14 @@ function doGet(e) {
     if (params.action === 'ppseries') {
       requireRole_(auth, ['owner','director']);
       return jsonOut(getPPSeries_(params.store || 'baseline', parseInt(params.n, 10) || 26), params.callback);
+    }
+    // ── Incentive Dashboard (owner + Mike only) ────────────
+    if (params.action === 'incentive' || params.action === 'saveincentive') {
+      if (!incentiveAccessOk_(auth)) return jsonOut({ ok: false, error: 'Forbidden' }, params.callback);
+      return jsonOut(
+        params.action === 'incentive' ? getIncentiveData_() : saveIncentiveInputs_(params),
+        params.callback
+      );
     }
 
     // ── Plan management ────────────────────────────────────

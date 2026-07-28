@@ -1429,3 +1429,167 @@ function clearAvatarConfig_(params) {
   Logger.log('[avatar] cleared config for ' + params.nameKey + ' (keys removed: ' + deleted.join(', ') + ')');
   return { ok: true, nameKey: params.nameKey, deleted: deleted };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Incentive Dashboard (bonus calculation) — owner + Mike only.
+//  Mirrors the Google Sheet "Green Cross Incentive Program". The bonus MATH is
+//  done client-side (live edits); this endpoint just assembles the raw inputs:
+//  per-staff PP performance, per-store aggregates + official goal, saved manual
+//  inputs (attendance / SPIFF), and the editable thresholds.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Default (editable) bonus thresholds. Amounts in $, discounts/AOV as shown. */
+function incentiveDefaults_() {
+  return {
+    hoursPerPeriod: 80,
+    budtender: {
+      txnQualify: 200,               // min transactions to qualify for perf bonuses
+      txnQualifyLowVol: 150,         // lower bar for low-volume stores
+      lowVolStores: ['center', 'portland'],
+      aovTarget: 33, aovBonus: 25,   // +$ if qualified & AOV ≥ target
+      discountMaxPct: 2.75, discountBonus: 25, // +$ if qualified & discount ≤ max%
+      attendanceBonus: 15,           // +$ if 100% attendance
+    },
+    manager: {
+      salesTiers: [ { pct: 110, bonus: 300 }, { pct: 105, bonus: 200 }, { pct: 100, bonus: 100 } ],
+      discountTiers: [ { maxPct: 2.5, bonus: 100 }, { maxPct: 2.75, bonus: 50 } ],
+      aovTarget: 33, aovBonus: 50,
+      teamAttendancePerHead: 25,      // +$ per team member with 100% attendance
+    },
+    admin: {
+      tiers: [ { pct: 110, bonus: 600 }, { pct: 105, bonus: 450 }, { pct: 100, bonus: 300 } ],
+      maxPerStore: 50,                // cap = #stores × this
+    },
+  };
+}
+
+function getIncentiveThresholds_() {
+  try {
+    var saved = JSON.parse(getProps_().getProperty(GC_INCENTIVE_THRESH_KEY) || 'null');
+    if (saved && saved.budtender && saved.manager && saved.admin) return saved;
+  } catch(e) {}
+  return incentiveDefaults_();
+}
+
+/** Access gate: owner (you) or the user 'Mike'. */
+function incentiveAccessOk_(auth) {
+  if (!auth || !auth.ok || !auth.user) return false;
+  if (String(auth.user).toLowerCase() === 'mike') return true;
+  try {
+    var u = (JSON.parse(getProps_().getProperty(GC_USERS_KEY) || '{}'))[auth.user] || {};
+    return u.role === 'owner';
+  } catch(e) { return false; }
+}
+
+/** Assemble the incentive dashboard payload for the current pay period. */
+function getIncentiveData_() {
+  var props = getProps_();
+  var pp = currentPPStart_(props);
+  var ppStartStr = Utilities.formatDate(new Date(pp.ppStartMs), STORE_TZ, 'yyyy-MM-dd');
+  var ppEndStr   = Utilities.formatDate(new Date(pp.ppStartMs + pp.PP_MS - 1), STORE_TZ, 'yyyy-MM-dd');
+
+  var staff = (getDirectorStaff({ period: 'pp' }).staff) || [];
+  var roles = getRoles_();  // { nameKey: 'store_manager'|'asst_manager'|'budtender' }
+  var users = {};
+  try { users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}'); } catch(e) {}
+
+  // Management (owner/director) nameKeys — excluded from the budtender list.
+  // Also locate Mike (the sole admin earner).
+  var mgmtKeys = {}, adminName = 'Mike Kettler';
+  Object.keys(users).forEach(function(uname) {
+    var u = users[uname] || {};
+    if (u.role === 'owner' || u.role === 'director') {
+      mgmtKeys[nameToKey_(u.displayName || uname)] = true;
+      if (String(uname).toLowerCase() === 'mike' || /(^|\s)mike\b/i.test(u.displayName || '')) {
+        adminName = u.displayName || 'Mike';
+      }
+    }
+  });
+  // Store-manager display name per store (from the user roster).
+  var storeMgrName = {};
+  Object.keys(users).forEach(function(uname) {
+    var u = users[uname] || {};
+    if (u.role === 'store_manager' && u.storeSlug) storeMgrName[u.storeSlug] = u.displayName || uname;
+  });
+
+  // Per-store aggregate (store total sales, team-avg discount/AOV) + budtender rows.
+  var agg = {};        // slug: { sales, dSum, dN, aSum, aN, count }
+  var mgrKeyByStore = {};
+  var budtenders = [];
+  staff.forEach(function(s) {
+    var slug = s.storeSlug;
+    if (!slug) return;
+    var a = agg[slug] || (agg[slug] = { sales: 0, dSum: 0, dN: 0, aSum: 0, aN: 0, count: 0 });
+    a.sales += s.sales || 0;
+    if (typeof s.discountRate === 'number')  { a.dSum += s.discountRate;  a.dN++; }
+    if (typeof s.avgOrderValue === 'number') { a.aSum += s.avgOrderValue; a.aN++; }
+    a.count++;
+    if (roles[s.nameKey] === 'store_manager') { mgrKeyByStore[slug] = s.nameKey; return; }
+    if (mgmtKeys[s.nameKey]) return;
+    budtenders.push({
+      name: s.name, nameKey: s.nameKey, storeSlug: slug, storeName: s.storeName,
+      txn: s.transactions || 0, sales: s.sales || 0,
+      discount: s.discountRate || 0, aov: s.avgOrderValue || 0,
+    });
+  });
+
+  // Manager rows (one per store) + admin totals.
+  var managers = [], adminTarget = 0, adminActual = 0;
+  STORES.forEach(function(store) {
+    var slug = store.slug;
+    var a = agg[slug] || { sales: 0, dSum: 0, dN: 0, aSum: 0, aN: 0, count: 0 };
+    var goal = 0;
+    try { goal = resolveGoal_(slug).effectivePP || 0; } catch(e) {}
+    var mgrName = storeMgrName[slug] || '';
+    if (!mgrName && mgrKeyByStore[slug]) {
+      var ms = staff.filter(function(x) { return x.nameKey === mgrKeyByStore[slug]; })[0];
+      mgrName = ms ? ms.name : '';
+    }
+    managers.push({
+      name: mgrName, nameKey: mgrKeyByStore[slug] || nameToKey_(mgrName),
+      storeSlug: slug, storeName: store.name,
+      target: goal, sales: a.sales,
+      discount: a.dN ? a.dSum / a.dN : 0,
+      aov: a.aN ? a.aSum / a.aN : 0,
+    });
+    adminTarget += goal;
+    adminActual += a.sales;
+  });
+
+  var allInputs = {};
+  try { allInputs = JSON.parse(props.getProperty(GC_INCENTIVE_INPUTS_KEY) || '{}'); } catch(e) {}
+
+  return {
+    ok: true,
+    payPeriod: { start: ppStartStr, end: ppEndStr },
+    admin:      { name: adminName, target: r2_(adminTarget), actual: r2_(adminActual), stores: STORES.length },
+    managers:   managers,
+    budtenders: budtenders,
+    saved:      allInputs[ppStartStr] || {},   // { nameKey: { att, spiff } }
+    thresholds: getIncentiveThresholds_(),
+  };
+}
+
+/**
+ * Persist incentive manual inputs (attendance/SPIFF) for a pay period, and/or the
+ * editable thresholds. params.ppStart, params.inputs (JSON {nameKey:{att,spiff}}),
+ * params.thresholds (JSON).
+ */
+function saveIncentiveInputs_(params) {
+  var props = getProps_();
+  if (params.inputs && params.ppStart) {
+    var all = {};
+    try { all = JSON.parse(props.getProperty(GC_INCENTIVE_INPUTS_KEY) || '{}'); } catch(e) {}
+    var incoming = {};
+    try { incoming = JSON.parse(params.inputs); } catch(e) { return { ok: false, error: 'bad inputs' }; }
+    all[params.ppStart] = incoming;
+    props.setProperty(GC_INCENTIVE_INPUTS_KEY, JSON.stringify(all));
+  }
+  if (params.thresholds) {
+    try {
+      var t = JSON.parse(params.thresholds);
+      if (t && t.budtender && t.manager && t.admin) props.setProperty(GC_INCENTIVE_THRESH_KEY, JSON.stringify(t));
+    } catch(e) { return { ok: false, error: 'bad thresholds' }; }
+  }
+  return { ok: true };
+}
