@@ -1125,8 +1125,9 @@ html, body {
 #staffTable th:nth-child(10) { width: 110px; }   /* Trend     */
 /* Truncate long text rather than wrapping */
 #staffTable td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* But let the staff name cell wrap on 2 lines if needed */
-#staffTable td:nth-child(2) { white-space: normal; }
+/* But let the staff name cell wrap on 2 lines if needed. overflow:visible so the
+   tag hover tooltips (WATCH/TOP/FLAG) aren't clipped by the cell / row above. */
+#staffTable td:nth-child(2) { white-space: normal; overflow: visible; }
 
 /* ── Lower Panel Grid (Alerts + Watch) ───────────────────── */
 /* ── EOM prompt banner ───────────────────────────────────── */
@@ -3751,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.351';
+window.GC = window.GC || {}; GC.VERSION = 'v1.352';
 
 </script>
 
