@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.356';
+window.GC = window.GC || {}; GC.VERSION = 'v1.357';
 
 </script>
 
@@ -7292,8 +7292,8 @@ window.GC = window.GC || {};
 GC.views.renderIncentive = function() {
   var app = document.getElementById('app'); if (!app) return;
   var sess = (GC.auth && GC.auth.load && GC.auth.load()) || {};
-  var uname = String(sess.username || '').toLowerCase();
-  if (sess.role !== 'owner' && uname !== 'mike') {
+  var uname = String(sess.user || '').toLowerCase();
+  if (uname !== 'sky' && uname !== 'mike') {   // allowlist — both are 'director' role, so gate by username
     app.innerHTML = '<div class="inc-wrap"><div class="inc-denied">This page is restricted to authorized users.</div></div>';
     return;
   }

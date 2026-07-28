@@ -1471,14 +1471,11 @@ function getIncentiveThresholds_() {
   return incentiveDefaults_();
 }
 
-/** Access gate: owner (you) or the user 'Mike'. */
+/** Access gate: username allowlist (sky + Mike — both are 'director' role, so role check won't distinguish them). */
 function incentiveAccessOk_(auth) {
   if (!auth || !auth.ok || !auth.user) return false;
-  if (String(auth.user).toLowerCase() === 'mike') return true;
-  try {
-    var u = (JSON.parse(getProps_().getProperty(GC_USERS_KEY) || '{}'))[auth.user] || {};
-    return u.role === 'owner';
-  } catch(e) { return false; }
+  var u = String(auth.user).toLowerCase();
+  return u === 'sky' || u === 'mike';
 }
 
 /** Assemble the incentive dashboard payload for the current pay period. */
