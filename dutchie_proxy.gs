@@ -319,7 +319,7 @@ function doGet(e) {
     if (params.action === 'incentive' || params.action === 'saveincentive') {
       if (!incentiveAccessOk_(auth)) return jsonOut({ ok: false, error: 'Forbidden' }, params.callback);
       return jsonOut(
-        params.action === 'incentive' ? getIncentiveData_(params.ppStart) : saveIncentiveInputs_(params),
+        params.action === 'incentive' ? getIncentiveData_(params.ppStart, params.refresh === '1' || params.refresh === true) : saveIncentiveInputs_(params),
         params.callback
       );
     }

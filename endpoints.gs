@@ -1483,7 +1483,7 @@ function incentiveAccessOk_(auth) {
  * pass a 'YYYY-MM-DD' ppStart to view a past period (for comparison vs Dutchie
  * reports, or history). Also returns the list of selectable periods.
  */
-function getIncentiveData_(ppStartParam) {
+function getIncentiveData_(ppStartParam, forceRefresh) {
   var props = getProps_();
   var cur   = currentPPStart_(props);
   var PP_MS = cur.PP_MS;
@@ -1504,46 +1504,82 @@ function getIncentiveData_(ppStartParam) {
     });
   }
 
-  // Per-staff stats for the selected period (fetch that PP's window, reuse the
-  // director-staff aggregator on it via the pre-fetch hook).
+  // ── Performance data (the expensive fetch + aggregation) ──
+  // A completed period's transactions never change, so cache the derived numbers
+  // permanently. Only the CURRENT period is fetched every time (still settling).
+  // Force-refresh (forceRefresh) re-pulls a completed period if data settled late.
+  var perfKey = 'GC_INC_PERF_' + ppStartStr;
+  var perf = null, fromCache = false;
+  if (!isCurrent && !forceRefresh) {
+    try { var c = props.getProperty(perfKey); if (c) { perf = JSON.parse(c); fromCache = true; } } catch(e) {}
+  }
+  if (!perf) {
+    perf = computeIncentivePerf_(props, selMs, PP_MS);
+    if (!isCurrent) { try { props.setProperty(perfKey, JSON.stringify(perf)); } catch(e) {} }
+  }
+
+  // ── Overlay the mutable bits fresh: goal target, saved inputs, thresholds ──
+  var managers = [], adminTarget = 0;
+  STORES.forEach(function(store) {
+    var slug = store.slug;
+    var st = perf.stores[slug] || { sales: 0, discount: 0, aov: 0, mgrName: '', mgrKey: '' };
+    var goal = 0;
+    try { goal = resolveGoal_(slug).effectivePP || 0; } catch(e) {}
+    managers.push({
+      name: st.mgrName, nameKey: st.mgrKey || nameToKey_(st.mgrName),
+      storeSlug: slug, storeName: store.name,
+      target: goal, sales: st.sales, discount: st.discount, aov: st.aov,
+    });
+    adminTarget += goal;
+  });
+
+  var allInputs = {};
+  try { allInputs = JSON.parse(props.getProperty(GC_INCENTIVE_INPUTS_KEY) || '{}'); } catch(e) {}
+
+  return {
+    ok: true,
+    payPeriod: { start: ppStartStr, end: ppEndStr, current: isCurrent, cached: fromCache },
+    periods:    periods,
+    admin:      { name: perf.adminName, target: r2_(adminTarget), actual: perf.adminActual, stores: STORES.length },
+    managers:   managers,
+    budtenders: perf.budtenders,
+    saved:      allInputs[ppStartStr] || {},   // { nameKey: { att, spiff } }
+    thresholds: getIncentiveThresholds_(),
+  };
+}
+
+/**
+ * The cacheable performance slice: fetch the PP window and derive per-budtender
+ * stats + per-store team aggregates + admin actual. No goal/target/inputs here —
+ * those are overlaid fresh so a cached completed period still reflects the current
+ * goal and edited attendance/SPIFF.
+ */
+function computeIncentivePerf_(props, selMs, PP_MS) {
   var range   = { fromUTC: new Date(selMs).toISOString(), toUTC: new Date(selMs + PP_MS - 1).toISOString() };
   var byStore = fetchAllStoresTransactions_(range);
-  var staff = (getDirectorStaff({ period: 'pp' }, { byStore: byStore }).staff) || [];
-  var roles = getRoles_();  // { nameKey: 'store_manager'|'asst_manager'|'budtender' }
-  var users = {};
+  var staff   = (getDirectorStaff({ period: 'pp' }, { byStore: byStore }).staff) || [];
+  var roles   = getRoles_();
+  var users   = {};
   try { users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}'); } catch(e) {}
 
-  // Management (owner/director) nameKeys — excluded from the budtender list.
-  // Also locate Mike (the sole admin earner).
-  var mgmtKeys = {}, adminName = 'Mike Kettler';
+  var mgmtKeys = {}, adminName = 'Mike Kettler', storeMgrName = {};
   Object.keys(users).forEach(function(uname) {
     var u = users[uname] || {};
     if (u.role === 'owner' || u.role === 'director') {
       mgmtKeys[nameToKey_(u.displayName || uname)] = true;
-      if (String(uname).toLowerCase() === 'mike' || /(^|\s)mike\b/i.test(u.displayName || '')) {
-        adminName = u.displayName || 'Mike';
-      }
+      if (String(uname).toLowerCase() === 'mike' || /(^|\s)mike\b/i.test(u.displayName || '')) adminName = u.displayName || 'Mike';
     }
-  });
-  // Store-manager display name per store (from the user roster).
-  var storeMgrName = {};
-  Object.keys(users).forEach(function(uname) {
-    var u = users[uname] || {};
     if (u.role === 'store_manager' && u.storeSlug) storeMgrName[u.storeSlug] = u.displayName || uname;
   });
 
-  // Per-store aggregate (store total sales, team-avg discount/AOV) + budtender rows.
-  var agg = {};        // slug: { sales, dSum, dN, aSum, aN, count }
-  var mgrKeyByStore = {};
-  var budtenders = [];
+  var agg = {}, mgrKeyByStore = {}, budtenders = [];
   staff.forEach(function(s) {
     var slug = s.storeSlug;
     if (!slug) return;
-    var a = agg[slug] || (agg[slug] = { sales: 0, dSum: 0, dN: 0, aSum: 0, aN: 0, count: 0 });
+    var a = agg[slug] || (agg[slug] = { sales: 0, dSum: 0, dN: 0, aSum: 0, aN: 0 });
     a.sales += s.sales || 0;
     if (typeof s.discountRate === 'number')  { a.dSum += s.discountRate;  a.dN++; }
     if (typeof s.avgOrderValue === 'number') { a.aSum += s.avgOrderValue; a.aN++; }
-    a.count++;
     if (roles[s.nameKey] === 'store_manager') { mgrKeyByStore[slug] = s.nameKey; return; }
     if (mgmtKeys[s.nameKey]) return;
     budtenders.push({
@@ -1553,42 +1589,22 @@ function getIncentiveData_(ppStartParam) {
     });
   });
 
-  // Manager rows (one per store) + admin totals.
-  var managers = [], adminTarget = 0, adminActual = 0;
+  var stores = {}, adminActual = 0;
   STORES.forEach(function(store) {
-    var slug = store.slug;
-    var a = agg[slug] || { sales: 0, dSum: 0, dN: 0, aSum: 0, aN: 0, count: 0 };
-    var goal = 0;
-    try { goal = resolveGoal_(slug).effectivePP || 0; } catch(e) {}
+    var slug = store.slug, a = agg[slug] || { sales: 0, dSum: 0, dN: 0, aSum: 0, aN: 0 };
     var mgrName = storeMgrName[slug] || '';
     if (!mgrName && mgrKeyByStore[slug]) {
       var ms = staff.filter(function(x) { return x.nameKey === mgrKeyByStore[slug]; })[0];
       mgrName = ms ? ms.name : '';
     }
-    managers.push({
-      name: mgrName, nameKey: mgrKeyByStore[slug] || nameToKey_(mgrName),
-      storeSlug: slug, storeName: store.name,
-      target: goal, sales: a.sales,
-      discount: a.dN ? a.dSum / a.dN : 0,
-      aov: a.aN ? a.aSum / a.aN : 0,
-    });
-    adminTarget += goal;
+    stores[slug] = {
+      sales: r2_(a.sales), discount: a.dN ? a.dSum / a.dN : 0, aov: a.aN ? a.aSum / a.aN : 0,
+      mgrName: mgrName, mgrKey: mgrKeyByStore[slug] || nameToKey_(mgrName),
+    };
     adminActual += a.sales;
   });
 
-  var allInputs = {};
-  try { allInputs = JSON.parse(props.getProperty(GC_INCENTIVE_INPUTS_KEY) || '{}'); } catch(e) {}
-
-  return {
-    ok: true,
-    payPeriod: { start: ppStartStr, end: ppEndStr, current: isCurrent },
-    periods:    periods,
-    admin:      { name: adminName, target: r2_(adminTarget), actual: r2_(adminActual), stores: STORES.length },
-    managers:   managers,
-    budtenders: budtenders,
-    saved:      allInputs[ppStartStr] || {},   // { nameKey: { att, spiff } }
-    thresholds: getIncentiveThresholds_(),
-  };
+  return { adminName: adminName, adminActual: r2_(adminActual), stores: stores, budtenders: budtenders };
 }
 
 /**

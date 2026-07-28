@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.358';
+window.GC = window.GC || {}; GC.VERSION = 'v1.359';
 
 </script>
 
@@ -4997,7 +4997,7 @@ GC.api = (function() {
     },
     fetchLeaderboardStaff: fetchLeaderboardStaff,
     fetchSettings:    fetchSettings,
-    fetchIncentive:   function(ppStart) { return gasCall('incentive', ppStart ? { ppStart: ppStart } : {}); },
+    fetchIncentive:   function(ppStart, refresh) { var p = {}; if (ppStart) p.ppStart = ppStart; if (refresh) p.refresh = '1'; return gasCall('incentive', p); },
     saveIncentive:    function(payload) { return gasCall('saveincentive', payload); },
     fetchAvatarData:  fetchAvatarData,
     saveSettings:     saveSettings,
@@ -7243,6 +7243,8 @@ var sky = (function() {
 .inc-sub { color: var(--text-mute); font-size: 13px; margin-top: 2px; }
 .inc-period { background: var(--card-bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 2px 6px; font-size: 12px; font-variant-numeric: tabular-nums; cursor: pointer; }
 .inc-period:focus { outline: none; border-color: var(--green); }
+.inc-refresh { background: none; border: none; color: var(--text-mute); cursor: pointer; font-size: 13px; padding: 0 4px; }
+.inc-refresh:hover { color: var(--green); }
 .inc-totals { display: flex; gap: 22px; flex-wrap: wrap; }
 .inc-tot { text-align: right; }
 .inc-tot .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-mute); }
@@ -7391,13 +7393,14 @@ var incentive = (function() {
     }).join('');
     var statusNote = _d.payPeriod.current
       ? 'live mid-cycle — sales bonuses lock at period end'
-      : 'completed period';
+      : ('completed period' + (_d.payPeriod.cached ? ' · cached' : ''));
 
     _app.innerHTML = '<div class="inc-wrap">'
       + '<div class="inc-top">'
       +   '<div><div class="inc-title">Incentive Dashboard</div>'
       +     '<div class="inc-sub">Pay Period <select id="incPeriod" class="inc-period">' + periodOpts + '</select>'
-      +       ' · <span class="inc-below">' + statusNote + '</span></div>'
+      +       ' · <span class="inc-below">' + statusNote + '</span>'
+      +       (_d.payPeriod.current ? '' : ' <button class="inc-refresh" id="incRefresh" title="Re-pull this period from Dutchie">↻</button>') + '</div>'
       +     '<div class="inc-actions">'
       +       '<button class="inc-btn primary" id="incPrint">Approve &amp; Print PDF</button>'
       +       '<button class="inc-btn" id="incCsv">Export Payroll CSV (Capstone)</button>'
@@ -7440,6 +7443,8 @@ var incentive = (function() {
     _app.querySelector('#incCsv').addEventListener('click', exportCsv);
     _app.querySelector('#incPrint').addEventListener('click', function() { save(true); window.print(); });
     _app.querySelector('#incPeriod').addEventListener('change', function(ev) { start(_app, ev.target.value); });
+    var refBtn = _app.querySelector('#incRefresh');
+    if (refBtn) refBtn.addEventListener('click', function() { start(_app, _d.payPeriod.start, true); });
     recompute();
   }
 
@@ -7561,10 +7566,10 @@ var incentive = (function() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   }
 
-  function start(app, ppStart) {
+  function start(app, ppStart, refresh) {
     _app = app;
     app.innerHTML = '<div class="inc-wrap"><div class="inc-denied">Loading incentive data…</div></div>';
-    GC.api.fetchIncentive(ppStart).then(function(d) {
+    GC.api.fetchIncentive(ppStart, refresh).then(function(d) {
       if (!d || d.ok === false) { app.innerHTML = '<div class="inc-wrap"><div class="inc-denied">' + e((d && d.error) || 'Failed to load') + '</div></div>'; return; }
       _d = d; _inp = d.saved || {}; _T = d.thresholds;
       render();
