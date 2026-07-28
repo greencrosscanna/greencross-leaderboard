@@ -309,10 +309,6 @@ function doGet(e) {
       requireRole_(auth, ['owner','director']);
       return jsonOut(prefetchYoY1_(), params.callback);
     }
-    if (params.action === 'prefetchyoy2') {
-      requireRole_(auth, ['owner','director']);
-      return jsonOut(prefetchYoY2_(), params.callback);
-    }
 
     // ── Plan management ────────────────────────────────────
     if (params.action === 'setplan') {
@@ -370,11 +366,6 @@ function doGet(e) {
       var y1PP  = (y1Cache.ppTotals  && y1Cache.ppTotals[diagSlug])  || 0;
       var y1Dow = (y1Cache.dowAvg    && y1Cache.dowAvg[diagSlug])    || {};
 
-      // Y2 sub-cache
-      var y2Cache = {};
-      try { y2Cache = JSON.parse(diagProps.getProperty(GC_YOY2_CACHE_KEY) || '{}'); } catch(e2) {}
-      var y2PP = (y2Cache.totals && y2Cache.totals[diagSlug]) || 0;
-
       // Resolved goal (what the kiosk actually uses)
       var resolved = resolveGoal_(diagSlug);
       var pt = ptNow_();
@@ -383,10 +374,7 @@ function doGet(e) {
         store:      diagSlug,
         stretch:    stretch,
         y1CacheKey: y1Cache.key || null,
-        y2CacheKey: y2Cache.key || null,
-        y1PP:       Math.round(y1PP),
-        y2PP:       Math.round(y2PP),
-        realizedGrowth: gy.realizedGrowth || 0,
+        y1PP:       Math.round(y1PP),   // same-season floor (raw year-ago avg)
         rolling: {
           ppGoal:    gr.ppGoal  || 0,
           monthly:   gr.monthly || 0,

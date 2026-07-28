@@ -56,9 +56,12 @@ function getManualPPGoals_() {
 /**
  * Lazy-compute store-level revenue goals for the current pay period.
  *
- * Fetches the last 12 completed pay periods (= 168 days = 24 occurrences of each
- * day of week) in parallel via fetchAllStoresTransactionsMulti_, then computes:
- *   ppGoal  — average of 12 PP revenue totals
+ * Fetches the last 26 completed pay periods (= 364 days = a full year, 52
+ * occurrences of each day of week) in parallel via fetchAllStoresTransactionsMulti_.
+ * A full year de-seasonalizes the trend — 12 PPs (~6 months) still carried the
+ * most recent two seasons and ran hot/cold heading into the opposite season.
+ * Computes:
+ *   ppGoal  — average of 26 PP revenue totals (the seasonally-neutral run-rate)
  *   dowAvg  — { 0..6: avg daily revenue } where 0=Sun,1=Mon,...,6=Sat (matches ptNow_().dow)
  *   monthly — exact sum of DOW averages × actual weekday count for current month
  *
@@ -92,24 +95,25 @@ function getOrComputeGoals_(forceRecompute) {
 
   Logger.log('[goals] Computing goals for PP ' + ppStartStr + '…');
 
-  // Build 12 prior completed PP date ranges
+  // Build 26 prior completed PP date ranges (= a full trailing year)
+  const ROLLING_PP = 26;
   const ranges = [];
-  for (var i = 12; i >= 1; i--) {
+  for (var i = ROLLING_PP; i >= 1; i--) {
     var fromMs = ppStartMs - i * PP_MS;
     var toMs   = fromMs + PP_MS - 1;
     ranges.push({ fromUTC: new Date(fromMs).toISOString(), toUTC: new Date(toMs).toISOString() });
   }
   // Report range: oldest PP start → newest completed PP end
-  var reportFromStr = Utilities.formatDate(new Date(ppStartMs - 12 * PP_MS), STORE_TZ, 'yyyy-MM-dd');
+  var reportFromStr = Utilities.formatDate(new Date(ppStartMs - ROLLING_PP * PP_MS), STORE_TZ, 'yyyy-MM-dd');
   var reportToStr   = Utilities.formatDate(new Date(ppStartMs - 1), STORE_TZ, 'yyyy-MM-dd');
 
-  // 72 parallel requests (12 PP ranges × 6 stores)
+  // 156 first-page requests (26 PP ranges × 6 stores), chunked inside the fetch engine
   Logger.log('[goals] Firing ' + (ranges.length * STORES.length) + ' parallel requests…');
   var fetched = fetchAllStoresTransactionsMulti_(ranges);
 
   var goals = {};
   STORES.forEach(function(store) {
-    // Merge all 12 PP ranges into one daily revenue map and track per-PP totals
+    // Merge all 26 PP ranges into one daily revenue map and track per-PP totals
     var allByDay = {};
     var ppTotals = [];
 
@@ -124,7 +128,7 @@ function getOrComputeGoals_(forceRecompute) {
       ppTotals.push(ppSum);
     });
 
-    // PP goal: average of the 12 completed PP totals
+    // PP goal: average of the 26 completed PP totals (full-year de-seasonalized run-rate)
     var ppGoal = ppTotals.length > 0
       ? Math.round(ppTotals.reduce(function(a, b) { return a + b; }, 0) / ppTotals.length)
       : 0;
@@ -192,14 +196,18 @@ function recalculateGoals_() {
 }
 
 /**
- * Lazy-compute YoY store-level revenue goals.
+ * Lazy-compute the same-season FLOOR — store-level revenue for the equivalent
+ * period one year ago.
  *
  * Fetches a 6-PP window (±3 PPs) centered on the equivalent week from 52 weeks
- * ago (364 days = exactly 52 weeks, preserves day-of-week alignment).
- * 36 parallel requests (6 ranges × 6 stores). Cached per PP start date.
+ * ago (364 days = exactly 52 weeks, preserves day-of-week alignment) and averages
+ * it. 36 parallel requests (6 ranges × 6 stores). Cached per PP start date.
  *
- * The stretch multiplier applied on top represents the YoY growth target —
- * e.g. 2.5% stretch = "we want to grow 2.5% over last year this period."
+ * This is a pure seasonal floor: the raw year-ago average, NO growth projection.
+ * Growth is expressed once, explicitly, via the stretch multiplier applied on top
+ * (goal = max(rolling trend, this floor) × (1 + stretch)). The active goal picks
+ * whichever of the rolling trend vs. this floor is higher — so the floor only
+ * binds when last year's same season beat the current run-rate (i.e. seasonal peaks).
  *
  * @param  {boolean} forceRecompute  True → ignore cache and recompute
  * @return {Object}  { storeSlug: { ppGoal, dowAvg, monthly, yoyFrom, yoyTo, computedAt } }
@@ -222,65 +230,22 @@ function getOrComputeYoYGoals_(forceRecompute) {
   }
 
   // Equivalent base: 52 weeks (364 days) ago — preserves day-of-week alignment
-  var YEAR_MS         = 364 * 24 * 60 * 60 * 1000;
-  var yoyBaseMs       = ppStartMs - YEAR_MS;          // Y1: 1 year ago (same season)
-  var yoy2BaseMs      = ppStartMs - 2 * YEAR_MS;     // Y2: 2 years ago (same season — avoids Q4 vs Q2 mismatch)
+  var YEAR_MS   = 364 * 24 * 60 * 60 * 1000;
+  var yoyBaseMs = ppStartMs - YEAR_MS;          // 1 year ago, same season
 
-  // 6 bi-weekly windows around each anchor (−3 to +2 PPs)
-  var ranges = [];   // year-ago windows
-  var ranges2 = [];  // two-years-ago windows
+  // 6 bi-weekly windows around the anchor (−3 to +2 PPs) — smooths the floor so
+  // one anomalous fortnight last year (a storm, a one-off promo) can't skew it.
+  var ranges = [];
   for (var i = -3; i <= 2; i++) {
-    var f1 = yoyBaseMs  + i * PP_MS;
-    var f2 = yoy2BaseMs + i * PP_MS;
-    ranges.push ({ fromUTC: new Date(f1).toISOString(), toUTC: new Date(f1 + PP_MS - 1).toISOString() });
-    ranges2.push({ fromUTC: new Date(f2).toISOString(), toUTC: new Date(f2 + PP_MS - 1).toISOString() });
+    var f1 = yoyBaseMs + i * PP_MS;
+    ranges.push({ fromUTC: new Date(f1).toISOString(), toUTC: new Date(f1 + PP_MS - 1).toISOString() });
   }
 
   var yoyFrom = Utilities.formatDate(new Date(yoyBaseMs - 3 * PP_MS), STORE_TZ, 'yyyy-MM-dd');
   var yoyTo   = Utilities.formatDate(new Date(yoyBaseMs + 3 * PP_MS - 1), STORE_TZ, 'yyyy-MM-dd');
+  Logger.log('[yoy] Computing same-season floor for PP ' + ppStartStr + ' | window: ' + yoyFrom + ' – ' + yoyTo);
 
-  var yoy2From = Utilities.formatDate(new Date(yoy2BaseMs - 3 * PP_MS), STORE_TZ, 'yyyy-MM-dd');
-  var yoy2To   = Utilities.formatDate(new Date(yoy2BaseMs + 3 * PP_MS - 1), STORE_TZ, 'yyyy-MM-dd');
-  Logger.log('[yoy] Computing YoY goals for PP ' + ppStartStr
-    + ' | Y1 window: ' + yoyFrom + ' – ' + yoyTo
-    + ' | Y2 window: ' + yoy2From + ' – ' + yoy2To + ' (6mo prior to Y1)');
-
-  // Y2 data (~18 months ago) is purely historical — cache aggregated PP totals permanently.
-  // Key on the range start dates so a new PP automatically busts the cache.
-  var y2CacheKey = ranges2.map(function(r) { return r.fromUTC.slice(0,10); }).join(',');
-  var ppTotalsY2ByStore = null; // { slug: avgPPSales }
-  try {
-    var y2Cached = JSON.parse(props.getProperty(GC_YOY2_CACHE_KEY) || '{}');
-    if (y2Cached.key === y2CacheKey && y2Cached.totals) {
-      Logger.log('[yoy] Y2 cache hit — skipping 36 Dutchie requests');
-      ppTotalsY2ByStore = y2Cached.totals;
-    }
-  } catch(e2) { /* ignore, will refetch */ }
-
-  if (!ppTotalsY2ByStore) {
-    Logger.log('[yoy] Y2 cache miss — fetching 36 historical requests');
-    var fetchedY2 = fetchAllStoresTransactionsMulti_(ranges2);
-    ppTotalsY2ByStore = {};
-    STORES.forEach(function(store) {
-      var ppTotals = [];
-      fetchedY2.forEach(function(byStore) {
-        var txns   = byStore[store.slug] || [];
-        var byDay  = aggregateByDay_(txns);
-        var ppSum  = 0;
-        Object.keys(byDay).forEach(function(day) { ppSum += byDay[day]; });
-        ppTotals.push(ppSum);
-      });
-      ppTotalsY2ByStore[store.slug] = ppTotals.length > 0
-        ? ppTotals.reduce(function(a, b) { return a + b; }, 0) / ppTotals.length
-        : 0;
-    });
-    try {
-      props.setProperty(GC_YOY2_CACHE_KEY, JSON.stringify({ key: y2CacheKey, totals: ppTotalsY2ByStore }));
-      Logger.log('[yoy] Y2 aggregates cached for key: ' + y2CacheKey);
-    } catch(e2) { Logger.log('[yoy] Y2 cache save failed: ' + e2.message); }
-  }
-
-  // Y1 data (1 year ago) is also historical within a PP — cache aggregated totals + DOW buckets.
+  // Y1 data (1 year ago) is historical within a PP — cache aggregated totals + DOW buckets.
   var y1CacheKey = ranges.map(function(r) { return r.fromUTC.slice(0,10); }).join(',');
   var y1Cache = null; // { ppTotals: { slug: avg }, dowByDay: { slug: { 'YYYY-MM-DD': sales } } }
   try {
@@ -331,54 +296,36 @@ function getOrComputeYoYGoals_(forceRecompute) {
     } catch(e1) { Logger.log('[yoy] Y1 cache save failed: ' + e1.message); }
   }
 
-  // Max realized growth applied to YoY baseline (caps outlier years — new stores, one-off events)
-  var MAX_REALIZED_GROWTH = 0.20; // 20%
-
   var goals = {};
   var pt    = ptNow_();
 
   STORES.forEach(function(store) {
-    // ── Year-ago baseline (from cache) ────────────────────
-    var ppY1        = ppTotalsY1ByStore[store.slug] || 0;
-    var dowAvgY1    = dowAvgByStore[store.slug]     || {};
+    // Same-season FLOOR = the raw year-ago window average. No growth projection —
+    // growth is expressed once, explicitly, via the stretch multiplier on top.
+    var ppY1     = ppTotalsY1ByStore[store.slug] || 0;
+    var dowAvgY1 = dowAvgByStore[store.slug]     || {};
 
-    // ── Two-years-ago baseline (for realized growth rate) — from cache ──
-    var ppY2 = ppTotalsY2ByStore[store.slug] || 0;
-
-    // ── Realized growth rate (Y1 vs Y2, floored at 0, capped at MAX) ──
-    // Guard: if Y2 < 50% of Y1 the store was newly open 2 years ago — unreliable
-    // baseline, so treat as growth = 0% rather than projecting a new-store ramp.
-    var realizedGrowth = 0;
-    if (ppY2 > 0 && ppY1 > 0 && ppY2 >= 0.5 * ppY1) {
-      realizedGrowth = Math.max(0, Math.min(MAX_REALIZED_GROWTH, (ppY1 - ppY2) / ppY2));
-    }
-
-    // ── Forward goal = Y1 × (1 + realizedGrowth) ──────────
-    var ppGoal    = ppY1 > 0 ? Math.round(ppY1 * (1 + realizedGrowth)) : 0;
+    var ppGoal    = Math.round(ppY1);
     var flatDaily = ppGoal > 0 ? Math.round(ppGoal / PP_DAYS) : 0;
 
-    // ── Scale cached DOW averages by realized growth ──────
     var dowAvg = {};
     for (var d = 0; d <= 6; d++) {
-      var base  = dowAvgY1[d] != null ? dowAvgY1[d] : flatDaily / (1 + realizedGrowth);
-      dowAvg[d] = Math.round(base * (1 + realizedGrowth));
+      dowAvg[d] = (dowAvgY1[d] != null) ? Math.round(dowAvgY1[d]) : flatDaily;
     }
 
     var monthly = computeAccurateMonthly_(dowAvg, pt.year, pt.month);
 
     goals[store.slug] = {
-      ppGoal:        ppGoal,
-      dowAvg:        dowAvg,
-      monthly:       monthly,
-      yoyFrom:       yoyFrom,
-      yoyTo:         yoyTo,
-      ppStart:       ppStartStr,
-      realizedGrowth: Math.round(realizedGrowth * 1000) / 1000, // stored for display (e.g. 0.124 = 12.4%)
-      computedAt:    new Date().toISOString(),
+      ppGoal:     ppGoal,
+      dowAvg:     dowAvg,
+      monthly:    monthly,
+      yoyFrom:    yoyFrom,
+      yoyTo:      yoyTo,
+      ppStart:    ppStartStr,
+      computedAt: new Date().toISOString(),
     };
 
-    Logger.log('[yoy] ' + store.slug + ' Y1=$' + Math.round(ppY1) + ' Y2=$' + Math.round(ppY2)
-      + ' growth=' + Math.round(realizedGrowth * 100) + '% → pp=$' + ppGoal + ' mon=$' + monthly);
+    Logger.log('[yoy] ' + store.slug + ' same-season floor=$' + ppGoal + ' mon=$' + monthly);
   });
 
   props.setProperty(GC_YOY_GOALS_KEY, JSON.stringify({
@@ -452,44 +399,6 @@ function prefetchYoY1_() {
     return { ok: true };
   } catch(e) {
     Logger.log('prefetchYoY1_ error: ' + e.message);
-    return { ok: false, error: e.message };
-  }
-}
-
-/** Prefetch + cache Y2 data only (36 requests). Called from frontend before recalculate. */
-function prefetchYoY2_() {
-  try {
-    var props     = getProps_();
-    var { ppStartMs, PP_MS } = currentPPStart_(props);
-    var YEAR_MS    = 364 * 24 * 60 * 60 * 1000;
-    var yoyBaseMs  = ppStartMs - YEAR_MS;
-    var yoy2BaseMs = ppStartMs - 2 * YEAR_MS; // 2 years ago, same season as Y1
-
-    var ranges2 = [];
-    for (var i = -3; i <= 2; i++) {
-      var f = yoy2BaseMs + i * PP_MS;
-      ranges2.push({ fromUTC: new Date(f).toISOString(), toUTC: new Date(f + PP_MS - 1).toISOString() });
-    }
-
-    var y2CacheKey = ranges2.map(function(r) { return r.fromUTC.slice(0,10); }).join(',');
-    var fetched = fetchAllStoresTransactionsMulti_(ranges2);
-    var ppTotalsY2ByStore = {};
-    STORES.forEach(function(store) {
-      var ppTotals = [];
-      fetched.forEach(function(byStore) {
-        var txns  = byStore[store.slug] || [];
-        var byDay = aggregateByDay_(txns);
-        var ppSum = 0;
-        Object.keys(byDay).forEach(function(day) { ppSum += byDay[day]; });
-        ppTotals.push(ppSum);
-      });
-      ppTotalsY2ByStore[store.slug] = ppTotals.length > 0 ? ppTotals.reduce(function(a,b){return a+b;},0)/ppTotals.length : 0;
-    });
-    props.setProperty(GC_YOY2_CACHE_KEY, JSON.stringify({ key: y2CacheKey, totals: ppTotalsY2ByStore }));
-    Logger.log('[prefetchYoY2_] cached Y2 for key: ' + y2CacheKey);
-    return { ok: true };
-  } catch(e) {
-    Logger.log('prefetchYoY2_ error: ' + e.message);
     return { ok: false, error: e.message };
   }
 }

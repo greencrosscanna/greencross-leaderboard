@@ -70,25 +70,33 @@ function fetchTxnPagesByKey_(reqs) {
     };
   });
 
-  const responses = UrlFetchApp.fetchAll(httpReqs);
+  // Chunk the fetchAll: a large batch (e.g. the 26-PP × 6-store = 156 detailed
+  // requests behind the rolling trend) would otherwise hold every response in
+  // memory at once and can blow the runtime ceiling. Parse + release each chunk
+  // before firing the next. 72 = the long-proven single-call size.
+  const CHUNK = 72;
   const byKey = {};
-  reqs.forEach(function(r, i) {
-    byKey[r.key] = [];
-    const resp = responses[i];
-    if (resp.getResponseCode() !== 200) {
-      Logger.log('Dutchie ' + resp.getResponseCode() + ' for ' + r.key);
-      return;
+  for (var start = 0; start < httpReqs.length; start += CHUNK) {
+    var responses = UrlFetchApp.fetchAll(httpReqs.slice(start, start + CHUNK));
+    for (var j = 0; j < responses.length; j++) {
+      var r    = reqs[start + j];
+      var resp = responses[j];
+      byKey[r.key] = [];
+      if (resp.getResponseCode() !== 200) {
+        Logger.log('Dutchie ' + resp.getResponseCode() + ' for ' + r.key);
+        continue;
+      }
+      var data;
+      try { data = JSON.parse(resp.getContentText()); }
+      catch(e) { Logger.log('Parse error for ' + r.key + ': ' + e.message); continue; }
+      var page = Array.isArray(data) ? data : (data.transactions || data.data || []);
+      byKey[r.key] = page;
+      if (page.length === DUTCHIE_TAKE) {
+        Logger.log('⚠️ ' + r.key + ' returned exactly ' + DUTCHIE_TAKE + ' rows — Dutchie may be ' +
+          'enforcing a hard cap; split this date range into smaller windows.');
+      }
     }
-    let data;
-    try { data = JSON.parse(resp.getContentText()); }
-    catch(e) { Logger.log('Parse error for ' + r.key + ': ' + e.message); return; }
-    const page = Array.isArray(data) ? data : (data.transactions || data.data || []);
-    byKey[r.key] = page;
-    if (page.length === DUTCHIE_TAKE) {
-      Logger.log('⚠️ ' + r.key + ' returned exactly ' + DUTCHIE_TAKE + ' rows — Dutchie may be ' +
-        'enforcing a hard cap; split this date range into smaller windows.');
-    }
-  });
+  }
   return byKey;
 }
 
