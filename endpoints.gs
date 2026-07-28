@@ -1478,14 +1478,37 @@ function incentiveAccessOk_(auth) {
   return u === 'sky' || u === 'mike';
 }
 
-/** Assemble the incentive dashboard payload for the current pay period. */
-function getIncentiveData_() {
+/**
+ * Assemble the incentive dashboard payload. Defaults to the current pay period;
+ * pass a 'YYYY-MM-DD' ppStart to view a past period (for comparison vs Dutchie
+ * reports, or history). Also returns the list of selectable periods.
+ */
+function getIncentiveData_(ppStartParam) {
   var props = getProps_();
-  var pp = currentPPStart_(props);
-  var ppStartStr = Utilities.formatDate(new Date(pp.ppStartMs), STORE_TZ, 'yyyy-MM-dd');
-  var ppEndStr   = Utilities.formatDate(new Date(pp.ppStartMs + pp.PP_MS - 1), STORE_TZ, 'yyyy-MM-dd');
+  var cur   = currentPPStart_(props);
+  var PP_MS = cur.PP_MS;
 
-  var staff = (getDirectorStaff({ period: 'pp' }).staff) || [];
+  var selMs = ppStartParam ? ptDateToUtcMs_(ppStartParam) : cur.ppStartMs;
+  var ppStartStr = Utilities.formatDate(new Date(selMs), STORE_TZ, 'yyyy-MM-dd');
+  var ppEndStr   = Utilities.formatDate(new Date(selMs + PP_MS - 1), STORE_TZ, 'yyyy-MM-dd');
+  var isCurrent  = selMs === cur.ppStartMs;
+
+  // Selectable periods: current + last 8 completed.
+  var periods = [];
+  for (var pi = 0; pi <= 8; pi++) {
+    var ms = cur.ppStartMs - pi * PP_MS;
+    periods.push({
+      start:   Utilities.formatDate(new Date(ms), STORE_TZ, 'yyyy-MM-dd'),
+      end:     Utilities.formatDate(new Date(ms + PP_MS - 1), STORE_TZ, 'yyyy-MM-dd'),
+      current: pi === 0,
+    });
+  }
+
+  // Per-staff stats for the selected period (fetch that PP's window, reuse the
+  // director-staff aggregator on it via the pre-fetch hook).
+  var range   = { fromUTC: new Date(selMs).toISOString(), toUTC: new Date(selMs + PP_MS - 1).toISOString() };
+  var byStore = fetchAllStoresTransactions_(range);
+  var staff = (getDirectorStaff({ period: 'pp' }, { byStore: byStore }).staff) || [];
   var roles = getRoles_();  // { nameKey: 'store_manager'|'asst_manager'|'budtender' }
   var users = {};
   try { users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}'); } catch(e) {}
@@ -1558,7 +1581,8 @@ function getIncentiveData_() {
 
   return {
     ok: true,
-    payPeriod: { start: ppStartStr, end: ppEndStr },
+    payPeriod: { start: ppStartStr, end: ppEndStr, current: isCurrent },
+    periods:    periods,
     admin:      { name: adminName, target: r2_(adminTarget), actual: r2_(adminActual), stores: STORES.length },
     managers:   managers,
     budtenders: budtenders,

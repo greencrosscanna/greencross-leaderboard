@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.357';
+window.GC = window.GC || {}; GC.VERSION = 'v1.358';
 
 </script>
 
@@ -4997,7 +4997,7 @@ GC.api = (function() {
     },
     fetchLeaderboardStaff: fetchLeaderboardStaff,
     fetchSettings:    fetchSettings,
-    fetchIncentive:   function() { return gasCall('incentive', {}); },
+    fetchIncentive:   function(ppStart) { return gasCall('incentive', ppStart ? { ppStart: ppStart } : {}); },
     saveIncentive:    function(payload) { return gasCall('saveincentive', payload); },
     fetchAvatarData:  fetchAvatarData,
     saveSettings:     saveSettings,
@@ -5532,6 +5532,9 @@ var director = (function() {
       +   'History'
       + '</button>'
       + '<input type="date" id="histDateInput" class="hist-date-input">'
+      + (session && ['sky','mike'].indexOf(String(session.user || '').toLowerCase()) !== -1
+          ? '<button class="btn-history" onclick="GC.router.navigate(\'#/incentive\')" title="Incentive Dashboard — bonus calculation">Incentive</button>'
+          : '')
       + '<button class="btn-icon dir-settings-btn" id="btnSettings" title="Settings">'
       +   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
       +     '<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>'
@@ -7238,6 +7241,8 @@ var sky = (function() {
 .inc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 18px; }
 .inc-title { font-size: 22px; font-weight: 800; }
 .inc-sub { color: var(--text-mute); font-size: 13px; margin-top: 2px; }
+.inc-period { background: var(--card-bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 2px 6px; font-size: 12px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.inc-period:focus { outline: none; border-color: var(--green); }
 .inc-totals { display: flex; gap: 22px; flex-wrap: wrap; }
 .inc-tot { text-align: right; }
 .inc-tot .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-mute); }
@@ -7380,11 +7385,19 @@ var incentive = (function() {
         + '</tr>';
     }).join('');
 
+    var periodOpts = (_d.periods || []).map(function(p) {
+      var lbl = p.start + ' → ' + p.end + (p.current ? '  (current)' : '');
+      return '<option value="' + e(p.start) + '"' + (p.start === _d.payPeriod.start ? ' selected' : '') + '>' + e(lbl) + '</option>';
+    }).join('');
+    var statusNote = _d.payPeriod.current
+      ? 'live mid-cycle — sales bonuses lock at period end'
+      : 'completed period';
+
     _app.innerHTML = '<div class="inc-wrap">'
       + '<div class="inc-top">'
       +   '<div><div class="inc-title">Incentive Dashboard</div>'
-      +     '<div class="inc-sub">Pay Period ' + e(_d.payPeriod.start) + ' → ' + e(_d.payPeriod.end)
-      +       ' · <span class="inc-below">live mid-cycle — sales bonuses lock at period end</span></div>'
+      +     '<div class="inc-sub">Pay Period <select id="incPeriod" class="inc-period">' + periodOpts + '</select>'
+      +       ' · <span class="inc-below">' + statusNote + '</span></div>'
       +     '<div class="inc-actions">'
       +       '<button class="inc-btn primary" id="incPrint">Approve &amp; Print PDF</button>'
       +       '<button class="inc-btn" id="incCsv">Export Payroll CSV (Capstone)</button>'
@@ -7426,6 +7439,7 @@ var incentive = (function() {
     wrap.addEventListener('input', onEdit);
     _app.querySelector('#incCsv').addEventListener('click', exportCsv);
     _app.querySelector('#incPrint').addEventListener('click', function() { save(true); window.print(); });
+    _app.querySelector('#incPeriod').addEventListener('change', function(ev) { start(_app, ev.target.value); });
     recompute();
   }
 
@@ -7547,10 +7561,10 @@ var incentive = (function() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   }
 
-  function start(app) {
+  function start(app, ppStart) {
     _app = app;
     app.innerHTML = '<div class="inc-wrap"><div class="inc-denied">Loading incentive data…</div></div>';
-    GC.api.fetchIncentive().then(function(d) {
+    GC.api.fetchIncentive(ppStart).then(function(d) {
       if (!d || d.ok === false) { app.innerHTML = '<div class="inc-wrap"><div class="inc-denied">' + e((d && d.error) || 'Failed to load') + '</div></div>'; return; }
       _d = d; _inp = d.saved || {}; _T = d.thresholds;
       render();
@@ -9413,11 +9427,13 @@ var lb = (function() {
     var initials = sess.initials || '??';
     var displayName = sess.displayName || 'Director';
 
+    var _inc = ['sky', 'mike'].indexOf(String(sess.user || '').toLowerCase()) !== -1;
     return '<nav class="lb-nav">'
       + '<img class="gc-logo-img" src="' + GC.LOGO_PNG + '" alt="Green Cross" height="28">'
       + '<div class="lb-nav-tabs">'
       + '  <button class="lb-nav-tab" onclick="GC.router.navigate(\'#/director\')">← Director</button>'
       + '  <button class="lb-nav-tab active">Leaderboard</button>'
+      + (_inc ? '  <button class="lb-nav-tab" onclick="GC.router.navigate(\'#/incentive\')">Incentive</button>' : '')
       + '</div>'
       + '<div class="lb-nav-right">'
       + '  <button class="btn-ghost" id="lbRefreshBtn">↻ Refresh</button>'
