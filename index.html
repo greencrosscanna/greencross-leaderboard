@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.353';
+window.GC = window.GC || {}; GC.VERSION = 'v1.354';
 
 </script>
 
@@ -9576,7 +9576,18 @@ var settings = (function() {
 
     function fmtDate(iso) {
       if (!iso) return '—';
-      var s = String(iso).slice(0, 10);
+      var s = String(iso);
+      // Full UTC timestamps (e.g. computedAt) must be read as the Pacific calendar
+      // day, not the UTC one — otherwise an evening-PT recompute shows tomorrow's
+      // date. Bare 'YYYY-MM-DD' strings are already PT, so leave them untouched.
+      if (s.indexOf('T') > -1) {
+        try {
+          s = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit'
+          }).format(new Date(s));
+        } catch(e) {}
+      }
+      s = s.slice(0, 10);
       var parts = s.split('-');
       if (parts.length !== 3) return iso;
       return parts[1].replace(/^0/, '') + '-' + parts[2].replace(/^0/, '') + '-' + parts[0].slice(2);
