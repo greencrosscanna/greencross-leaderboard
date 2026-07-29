@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.362';
+window.GC = window.GC || {}; GC.VERSION = 'v1.363';
 
 </script>
 
@@ -7409,9 +7409,9 @@ var incentive = (function() {
 
   function applySort(tid) {
     var st = _sort[tid];
-    if (st.col == null) return;
+    var arr = tid === 'mgr' ? _d.managers : _d.budtenders;
+    if (st.col == null) { arr.sort(function(a, b) { return (a._ord || 0) - (b._ord || 0); }); return; } // original order
     var cols = tid === 'mgr' ? MGR_COLS : BUD_COLS;
-    var arr  = tid === 'mgr' ? _d.managers : _d.budtenders;
     var kf = cols[st.col].key;
     arr.sort(function(a, b) {
       var va = kf(a), vb = kf(b), r;
@@ -7421,13 +7421,16 @@ var incentive = (function() {
     });
   }
 
+  // Tri-state per column: 1st click → default dir, 2nd → flip, 3rd → clear (original order).
   function onSort(ev) {
     var th = ev.target.closest ? ev.target.closest('[data-sort]') : null;
     if (!th) return;
     var parts = th.dataset.sort.split(':'), tid = parts[0], col = +parts[1];
     var st = _sort[tid];
-    if (st.col === col) { st.dir = -st.dir; }
-    else { st.col = col; st.dir = (tid === 'mgr' ? MGR_COLS : BUD_COLS)[col].l ? 1 : -1; } // text asc, numbers desc first
+    var d0 = (tid === 'mgr' ? MGR_COLS : BUD_COLS)[col].l ? 1 : -1; // text asc first, numbers desc first
+    if (st.col !== col)      { st.col = col; st.dir = d0; }  // 1st click
+    else if (st.dir === d0)  { st.dir = -d0; }               // 2nd click: flip
+    else                     { st.col = null; st.dir = 1; }  // 3rd click: remove sort
     render();
   }
 
@@ -7667,6 +7670,8 @@ var incentive = (function() {
     GC.api.fetchIncentive(ppStart, refresh).then(function(d) {
       if (!d || d.ok === false) { app.innerHTML = '<div class="inc-wrap"><div class="inc-denied">' + e((d && d.error) || 'Failed to load') + '</div></div>'; return; }
       _d = d; _inp = d.saved || {}; _T = d.thresholds;
+      (_d.managers || []).forEach(function(m, i) { m._ord = i; });   // remember load order for tri-state "clear sort"
+      (_d.budtenders || []).forEach(function(b, i) { b._ord = i; });
       render();
     }).catch(function(err) { app.innerHTML = '<div class="inc-wrap"><div class="inc-denied">Error: ' + e(String(err)) + '</div></div>'; });
   }
