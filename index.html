@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.361';
+window.GC = window.GC || {}; GC.VERSION = 'v1.362';
 
 </script>
 
@@ -7236,9 +7236,12 @@ var sky = (function() {
 
 <style>
 /* ===== Incentive Dashboard (#/incentive) ===== */
-.inc-wrap { max-width: 1500px; margin: 0 auto; padding: 20px 24px 60px; }
+.inc-wrap { max-width: 1500px; margin: 0 auto; padding: 20px 24px 60px; position: relative; }
 .inc-denied { padding: 60px; text-align: center; color: var(--text-mute); }
+.inc-gear { position: absolute; top: 18px; right: 22px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text-mute); font-size: 17px; line-height: 1; cursor: pointer; z-index: 5; }
+.inc-gear:hover { border-color: var(--green); color: var(--green); }
 .inc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 18px; }
+.inc-totals { margin-right: 48px; }
 .inc-title { font-size: 22px; font-weight: 800; }
 .inc-sub { color: var(--text-mute); font-size: 13px; margin-top: 2px; }
 .inc-period { background: var(--card-bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 2px 6px; font-size: 12px; font-variant-numeric: tabular-nums; cursor: pointer; }
@@ -7279,7 +7282,7 @@ table.inc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-w
 /* Settings tray */
 .inc-tray-back { position: fixed; inset: 0; background: rgba(0,0,0,0.5); opacity: 0; pointer-events: none; transition: opacity .2s ease; z-index: 90; }
 .inc-tray-back.open { opacity: 1; pointer-events: auto; }
-.inc-tray { position: fixed; top: 0; right: 0; height: 100%; width: 360px; max-width: 88vw; background: var(--card-bg); border-left: 1px solid var(--border); box-shadow: -8px 0 28px rgba(0,0,0,0.35); transform: translateX(100%); transition: transform .22s ease; z-index: 91; display: flex; flex-direction: column; }
+.inc-tray { position: fixed; top: 0; right: 0; height: 100%; width: 360px; max-width: 88vw; background: var(--surface-2); border-left: 1px solid var(--border); box-shadow: -8px 0 28px rgba(0,0,0,0.55); transform: translateX(100%); transition: transform .22s ease; z-index: 91; display: flex; flex-direction: column; }
 .inc-tray.open { transform: translateX(0); }
 .inc-tray-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--border); font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-mute); }
 .inc-tray-x { background: none; border: none; color: var(--text-mute); font-size: 16px; cursor: pointer; line-height: 1; padding: 2px 6px; border-radius: 6px; }
@@ -7293,7 +7296,7 @@ table.inc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-w
   body * { visibility: hidden; }
   .inc-wrap, .inc-wrap * { visibility: visible; }
   .inc-wrap { position: absolute; left: 0; top: 0; }
-  .inc-actions, .inc-tray, .inc-tray-back, .inc-att, .inc-spiff, .inc-arrow { display: none !important; }
+  .inc-actions, .inc-gear, .inc-tray, .inc-tray-back, .inc-att, .inc-spiff, .inc-arrow { display: none !important; }
   .inc-att-print, .inc-spiff-print { display: inline !important; }
 }
 </style>
@@ -7474,6 +7477,7 @@ var incentive = (function() {
       : ('completed period' + (_d.payPeriod.cached ? ' · cached' : ''));
 
     _app.innerHTML = '<div class="inc-wrap">'
+      + '<button class="inc-gear" id="incGear" title="Edit bonus thresholds" aria-label="Thresholds">⚙</button>'
       + '<div class="inc-top">'
       +   '<div><div class="inc-title">Incentive Dashboard</div>'
       +     '<div class="inc-sub">Pay Period <select id="incPeriod" class="inc-period">' + periodOpts + '</select>'
@@ -7482,7 +7486,6 @@ var incentive = (function() {
       +     '<div class="inc-actions">'
       +       '<button class="inc-btn primary" id="incPrint">Approve &amp; Print PDF</button>'
       +       '<button class="inc-btn" id="incCsv">Export Payroll CSV (Capstone)</button>'
-      +       '<button class="inc-btn" id="incSettings" title="Edit bonus thresholds">⚙ Thresholds</button>'
       +       '<span class="inc-savenote" id="incSave"></span>'
       +     '</div>'
       +   '</div>'
@@ -7522,7 +7525,7 @@ var incentive = (function() {
     wrap.addEventListener('click', onSort);
     _app.querySelector('#incCsv').addEventListener('click', exportCsv);
     _app.querySelector('#incPrint').addEventListener('click', function() { save(true); window.print(); });
-    _app.querySelector('#incSettings').addEventListener('click', function() { toggleTray(true); });
+    _app.querySelector('#incGear').addEventListener('click', function() { toggleTray(true); });
     _app.querySelector('#incTrayClose').addEventListener('click', function() { toggleTray(false); });
     _app.querySelector('#incTrayBack').addEventListener('click', function() { toggleTray(false); });
     _app.querySelector('#incPeriod').addEventListener('change', function(ev) { start(_app, ev.target.value); });
