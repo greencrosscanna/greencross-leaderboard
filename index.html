@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.360';
+window.GC = window.GC || {}; GC.VERSION = 'v1.361';
 
 </script>
 
@@ -7271,17 +7271,29 @@ table.inc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-w
 .inc-pay { color: var(--green); font-weight: 700; }
 .inc-muted { color: var(--text-mute); }
 .inc-below { color: var(--text-dim); }
-.inc-thr { margin-top: 26px; }
-.inc-thr summary { cursor: pointer; font-size: 12px; color: var(--text-mute); text-transform: uppercase; letter-spacing: .06em; }
-.inc-thr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px 18px; margin-top: 12px; }
+/* Sortable headers */
+.inc-table th.sortable { cursor: pointer; user-select: none; }
+.inc-table th.sortable:hover { color: var(--text); }
+.inc-table th.sorted { color: var(--green); }
+.inc-arrow { display: inline-block; margin-left: 4px; font-size: 9px; width: 8px; }
+/* Settings tray */
+.inc-tray-back { position: fixed; inset: 0; background: rgba(0,0,0,0.5); opacity: 0; pointer-events: none; transition: opacity .2s ease; z-index: 90; }
+.inc-tray-back.open { opacity: 1; pointer-events: auto; }
+.inc-tray { position: fixed; top: 0; right: 0; height: 100%; width: 360px; max-width: 88vw; background: var(--card-bg); border-left: 1px solid var(--border); box-shadow: -8px 0 28px rgba(0,0,0,0.35); transform: translateX(100%); transition: transform .22s ease; z-index: 91; display: flex; flex-direction: column; }
+.inc-tray.open { transform: translateX(0); }
+.inc-tray-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--border); font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-mute); }
+.inc-tray-x { background: none; border: none; color: var(--text-mute); font-size: 16px; cursor: pointer; line-height: 1; padding: 2px 6px; border-radius: 6px; }
+.inc-tray-x:hover { color: var(--text); background: var(--bg); }
+.inc-thr-grid { display: grid; grid-template-columns: 1fr; gap: 10px; padding: 16px 18px; overflow-y: auto; }
 .inc-thr-grid label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-dim); }
-.inc-thr-grid input { width: 72px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px 6px; text-align: right; }
-.inc-savenote { font-size: 11px; color: var(--text-mute); margin-left: 8px; }
+.inc-thr-grid input { width: 80px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 7px; text-align: right; }
+.inc-thr-grid input:focus { outline: none; border-color: var(--green); }
+.inc-savenote { font-size: 11px; color: var(--text-mute); margin-left: 8px; align-self: center; }
 @media print {
   body * { visibility: hidden; }
   .inc-wrap, .inc-wrap * { visibility: visible; }
   .inc-wrap { position: absolute; left: 0; top: 0; }
-  .inc-actions, .inc-thr, .inc-att, .inc-spiff { display: none !important; }
+  .inc-actions, .inc-tray, .inc-tray-back, .inc-att, .inc-spiff, .inc-arrow { display: none !important; }
   .inc-att-print, .inc-spiff-print { display: inline !important; }
 }
 </style>
@@ -7309,6 +7321,7 @@ GC.views.renderIncentive = function() {
 
 var incentive = (function() {
   var _d = null, _inp = {}, _T = null, _saveTimer = null, _app = null;
+  var _sort = { mgr: { col: null, dir: 1 }, bud: { col: null, dir: 1 } };
 
   function e(s)  { return GC.esc(String(s == null ? '' : s)); }
   function m0(n) { return '$' + Math.round(n || 0).toLocaleString('en-US'); }
@@ -7351,8 +7364,73 @@ var incentive = (function() {
 
   function dot(slug) { return '<span class="inc-store-dot" style="background:var(--store-' + e(slug) + ', var(--text-mute))"></span>'; }
 
+  // ── Sortable columns ──
+  // Each column: label, l (left-align/text), key(row) → sortable value.
+  var MGR_COLS = [
+    { label: 'Manager',   l: true, key: function(m) { return (m.name || '').toLowerCase(); } },
+    { label: 'Store',     l: true, key: function(m) { return (m.storeName || '').toLowerCase(); } },
+    { label: 'Target',             key: function(m) { return m.target; } },
+    { label: 'Sales',              key: function(m) { return m.sales; } },
+    { label: '% Goal',             key: function(m) { return calcMgr(m).pct; } },
+    { label: 'Discount',           key: function(m) { return m.discount; } },
+    { label: 'AOV',                key: function(m) { return m.aov; } },
+    { label: 'Team Att.',          key: function(m) { return calcMgr(m).teamA; } },
+    { label: 'SPIFF',              key: function(m) { return inpOf(m.nameKey).spiff; } },
+    { label: 'Bonus',              key: function(m) { return calcMgr(m).bonus; } },
+    { label: 'Payroll',            key: function(m) { return calcMgr(m).payroll; } },
+    { label: '$/hr',               key: function(m) { return calcMgr(m).hr; } }
+  ];
+  var BUD_COLS = [
+    { label: 'Name',      l: true, key: function(b) { return (b.name || '').toLowerCase(); } },
+    { label: 'Store',     l: true, key: function(b) { return (b.storeName || '').toLowerCase(); } },
+    { label: 'Txn',                key: function(b) { return b.txn; } },
+    { label: 'Sales',              key: function(b) { return b.sales; } },
+    { label: 'Discount',           key: function(b) { return b.discount; } },
+    { label: 'AOV',                key: function(b) { return b.aov; } },
+    { label: 'Att.',               key: function(b) { return inpOf(b.nameKey).att ? 1 : 0; } },
+    { label: 'SPIFF',              key: function(b) { return inpOf(b.nameKey).spiff; } },
+    { label: 'Bonus',              key: function(b) { return calcBud(b).bonus; } },
+    { label: 'Payroll',            key: function(b) { return calcBud(b).payroll; } },
+    { label: '$/hr',               key: function(b) { return calcBud(b).hr; } }
+  ];
+
+  function theadHtml(cols, tid) {
+    var st = _sort[tid];
+    return '<thead><tr>' + cols.map(function(c, i) {
+      var active = st.col === i;
+      var arrow = active ? (st.dir > 0 ? '▲' : '▼') : '';
+      return '<th class="sortable' + (c.l ? ' l' : '') + (active ? ' sorted' : '') + '" data-sort="' + tid + ':' + i + '">'
+        + e(c.label) + '<span class="inc-arrow">' + arrow + '</span></th>';
+    }).join('') + '</tr></thead>';
+  }
+
+  function applySort(tid) {
+    var st = _sort[tid];
+    if (st.col == null) return;
+    var cols = tid === 'mgr' ? MGR_COLS : BUD_COLS;
+    var arr  = tid === 'mgr' ? _d.managers : _d.budtenders;
+    var kf = cols[st.col].key;
+    arr.sort(function(a, b) {
+      var va = kf(a), vb = kf(b), r;
+      if (typeof va === 'string') r = va < vb ? -1 : va > vb ? 1 : 0;
+      else r = (va || 0) - (vb || 0);
+      return r * st.dir;
+    });
+  }
+
+  function onSort(ev) {
+    var th = ev.target.closest ? ev.target.closest('[data-sort]') : null;
+    if (!th) return;
+    var parts = th.dataset.sort.split(':'), tid = parts[0], col = +parts[1];
+    var st = _sort[tid];
+    if (st.col === col) { st.dir = -st.dir; }
+    else { st.col = col; st.dir = (tid === 'mgr' ? MGR_COLS : BUD_COLS)[col].l ? 1 : -1; } // text asc, numbers desc first
+    render();
+  }
+
   function render() {
     var admin = _d.admin;
+    applySort('mgr'); applySort('bud');
     var mgrRows = _d.managers.map(function(m) {
       return '<tr>'
         + '<td class="l name">' + e(m.name || '—') + '</td>'
@@ -7404,6 +7482,7 @@ var incentive = (function() {
       +     '<div class="inc-actions">'
       +       '<button class="inc-btn primary" id="incPrint">Approve &amp; Print PDF</button>'
       +       '<button class="inc-btn" id="incCsv">Export Payroll CSV (Capstone)</button>'
+      +       '<button class="inc-btn" id="incSettings" title="Edit bonus thresholds">⚙ Thresholds</button>'
       +       '<span class="inc-savenote" id="incSave"></span>'
       +     '</div>'
       +   '</div>'
@@ -7423,13 +7502,13 @@ var incentive = (function() {
 
       // Managers
       + '<div class="inc-section"><h3>Store Managers</h3><div class="inc-scroll"><table class="inc-table">'
-      +   '<thead><tr><th class="l">Manager</th><th class="l">Store</th><th>Target</th><th>Sales</th><th>% Goal</th><th>Discount</th><th>AOV</th><th>Team Att.</th><th>SPIFF</th><th>Bonus</th><th>Payroll</th><th>$/hr</th></tr></thead>'
+      +   theadHtml(MGR_COLS, 'mgr')
       +   '<tbody>' + mgrRows + '</tbody>'
       + '</table></div></div>'
 
       // Budtenders
       + '<div class="inc-section"><h3>Budtenders (' + _d.budtenders.length + ')</h3><div class="inc-scroll"><table class="inc-table">'
-      +   '<thead><tr><th class="l">Name</th><th class="l">Store</th><th>Txn</th><th>Sales</th><th>Discount</th><th>AOV</th><th>Att.</th><th>SPIFF</th><th>Bonus</th><th>Payroll</th><th>$/hr</th></tr></thead>'
+      +   theadHtml(BUD_COLS, 'bud')
       +   '<tbody>' + budRows + '</tbody>'
       + '</table></div></div>'
 
@@ -7440,8 +7519,12 @@ var incentive = (function() {
     var wrap = _app.querySelector('.inc-wrap');
     wrap.addEventListener('change', onEdit);
     wrap.addEventListener('input', onEdit);
+    wrap.addEventListener('click', onSort);
     _app.querySelector('#incCsv').addEventListener('click', exportCsv);
     _app.querySelector('#incPrint').addEventListener('click', function() { save(true); window.print(); });
+    _app.querySelector('#incSettings').addEventListener('click', function() { toggleTray(true); });
+    _app.querySelector('#incTrayClose').addEventListener('click', function() { toggleTray(false); });
+    _app.querySelector('#incTrayBack').addEventListener('click', function() { toggleTray(false); });
     _app.querySelector('#incPeriod').addEventListener('change', function(ev) { start(_app, ev.target.value); });
     var refBtn = _app.querySelector('#incRefresh');
     if (refBtn) refBtn.addEventListener('click', function() { start(_app, _d.payPeriod.start, true); });
@@ -7489,11 +7572,14 @@ var incentive = (function() {
     save(false);
   }
 
-  // ── Thresholds editor ──
+  // ── Thresholds editor (settings tray) ──
   function thresholdsHtml() {
     var T = _T, B = T.budtender, M = T.manager, A = T.admin;
     function f(path, label, val) { return '<label>' + e(label) + '<input type="number" step="0.25" data-thr="' + e(path) + '" value="' + val + '"></label>'; }
-    return '<details class="inc-thr"><summary>Edit thresholds</summary><div class="inc-thr-grid">'
+    return '<div class="inc-tray-back" id="incTrayBack"></div>'
+      + '<aside class="inc-tray" id="incTray" aria-hidden="true">'
+      +   '<div class="inc-tray-head"><span>Bonus Thresholds</span><button class="inc-tray-x" id="incTrayClose" title="Close">✕</button></div>'
+      +   '<div class="inc-thr-grid">'
       + f('b.txnQualify', 'Budtender qualify txns', B.txnQualify)
       + f('b.txnQualifyLowVol', 'Qualify txns (low-vol)', B.txnQualifyLowVol)
       + f('b.aovTarget', 'Budtender AOV target $', B.aovTarget)
@@ -7510,7 +7596,13 @@ var incentive = (function() {
       + f('m.teamAttendancePerHead', 'Mgr team-att per head $', M.teamAttendancePerHead)
       + f('a.maxPerStore', 'Admin cap per store $', A.maxPerStore)
       + f('h.hoursPerPeriod', 'Hours per period', T.hoursPerPeriod)
-      + '</div></details>';
+      + '</div></aside>';
+  }
+  function toggleTray(open) {
+    var tray = document.getElementById('incTray'), back = document.getElementById('incTrayBack');
+    if (!tray || !back) return;
+    tray.classList.toggle('open', open); back.classList.toggle('open', open);
+    tray.setAttribute('aria-hidden', open ? 'false' : 'true');
   }
   function applyThreshold(path, v) {
     if (isNaN(v)) return;
