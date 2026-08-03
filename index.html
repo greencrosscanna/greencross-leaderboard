@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.363';
+window.GC = window.GC || {}; GC.VERSION = 'v1.364';
 
 </script>
 
@@ -10222,7 +10222,7 @@ var settings = (function() {
 
   // ── Shared: build a table row for one employee ────────────
   function empRow(emp, nicknames, avatarConfigs, showNick, excludedSet, currentEomKey, roles) {
-    var empRole = (roles || {})[emp.key] || '';
+    var empRole = (roles || {})[emp.key] || 'budtender';   // new/unassigned staff default to Budtender
     var nick   = (nicknames || {})[emp.key] || '';
     var config = (avatarConfigs || {})[emp.key] || null;
     if (!config) {
@@ -10254,7 +10254,6 @@ var settings = (function() {
             + '</td>'
             + '<td>'
             +   '<select class="settings-input settings-role-select" data-key="' + encKey + '">'
-            +     '<option value="">—</option>'
             +     '<option value="budtender"' + (empRole === 'budtender' ? ' selected' : '') + '>Budtender</option>'
             +     '<option value="asst_manager"' + (empRole === 'asst_manager' ? ' selected' : '') + '>Asst. Manager</option>'
             +     '<option value="store_manager"' + (empRole === 'store_manager' ? ' selected' : '') + '>Store Manager</option>'
