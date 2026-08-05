@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.382';
+window.GC = window.GC || {}; GC.VERSION = 'v1.383';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -6000,7 +6000,6 @@ var director = (function() {
           + avatarHtml(s.initials, null, s.name, s.nameKey)
           + '<div>'
           + '<div class="who-name">' + e(s.name) + tagsHtml(tags, null, sTips) + '</div>'
-          + '<div class="who-sub">' + e(s.hoursWorked) + 'h this PP</div>'
           + '</div></div></td>'
         + '<td><div class="store-cell">'
           + storeDotHtml(s.storeSlug)
@@ -6427,7 +6426,6 @@ var director = (function() {
         + '<td><div class="who">'
           + avatarHtml(s.initials, null, s.name, s.nameKey)
           + '<div><div class="who-name">' + e(s.name) + tagsHtml(tags, null, sTips) + '</div>'
-          + '<div class="who-sub">' + e(s.hoursWorked) + 'h this PP</div>'
           + '</div></div></td>'
         + '<td><div class="store-cell">' + storeDotHtml(s.storeSlug) + '<span>' + e(s.storeName) + '</span></div></td>'
         + '<td>' + e(s.roleLabel) + '</td>'
@@ -6837,7 +6835,6 @@ var director = (function() {
         + '<td><div class="who">'
           + avatarHtml(s.initials, null, s.name, s.nameKey)
           + '<div><div class="who-name">' + e(s.name) + tagsHtml(tags, null, sTips) + '</div>'
-          + '<div class="who-sub">' + e(s.hoursWorked) + 'h this PP</div>'
           + '</div></div></td>'
         + '<td><div class="store-cell">' + storeDotHtml(s.storeSlug) + '<span>' + e(s.storeName) + '</span></div></td>'
         + '<td>' + e(s.roleLabel) + '</td>'
