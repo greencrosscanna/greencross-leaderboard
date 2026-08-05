@@ -530,11 +530,13 @@ function doGet(e) {
 
     // Re-pull + rewrite EOD snapshots for the last N days (repairs historical
     // per-employee txns on snapshots taken before that field was captured).
+    // Uses backfillDateRange_ — parallel fetchAll batches, safe for 31 days.
     if (params.action === 'backfillsnapshots') {
       requireRole_(auth, ['owner','director']);
       var _bfDays = Math.min(Math.max(parseInt(params.days, 10) || 7, 1), 31);
-      backfillRecentDays_(_bfDays);
-      return jsonOut({ ok: true, message: 'Backfilled last ' + _bfDays + ' days of snapshots.' }, params.callback);
+      var _bfFrom = Utilities.formatDate(new Date(Date.now() - _bfDays * 86400000), STORE_TZ, 'yyyy-MM-dd');
+      backfillDateRange_(_bfFrom);   // toDateStr defaults to yesterday
+      return jsonOut({ ok: true, message: 'Backfilled snapshots from ' + _bfFrom + ' through yesterday.' }, params.callback);
     }
 
     return jsonOut({ ok: false, error: 'Unknown action: ' + params.action }, params.callback);
