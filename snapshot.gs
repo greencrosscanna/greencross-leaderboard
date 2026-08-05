@@ -267,8 +267,8 @@ function getStoreForDate_(store, dateStr) {
 // Public entry point so GAS editor can run it (functions ending in _ are private)
 function backfillRecentDays() { backfillRecentDays_(); }
 
-function backfillRecentDays_() {
-  var NUM_DAYS = 7;  // ← adjust as needed (7 = full week)
+function backfillRecentDays_(numDays) {
+  var NUM_DAYS = numDays || 7;  // ← adjust as needed (7 = full week)
   var sheet = getSnapshotSheet_();
 
   for (var d = 1; d <= NUM_DAYS; d++) {

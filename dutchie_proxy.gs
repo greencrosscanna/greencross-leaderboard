@@ -528,6 +528,15 @@ function doGet(e) {
       return jsonOut({ ok: true, message: 'Trigger installed and cache warmed.' }, params.callback);
     }
 
+    // Re-pull + rewrite EOD snapshots for the last N days (repairs historical
+    // per-employee txns on snapshots taken before that field was captured).
+    if (params.action === 'backfillsnapshots') {
+      requireRole_(auth, ['owner','director']);
+      var _bfDays = Math.min(Math.max(parseInt(params.days, 10) || 7, 1), 31);
+      backfillRecentDays_(_bfDays);
+      return jsonOut({ ok: true, message: 'Backfilled last ' + _bfDays + ' days of snapshots.' }, params.callback);
+    }
+
     return jsonOut({ ok: false, error: 'Unknown action: ' + params.action }, params.callback);
 
   } catch(err) {

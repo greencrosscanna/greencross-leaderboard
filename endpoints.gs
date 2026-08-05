@@ -944,12 +944,13 @@ function getStoreToday(store, params) {
     .filter(emp => !_excluded.has(nameToKey_(emp.name)))
     .sort((a, b) => b.sales - a.sales)
     .map(emp => ({
-      initials: emp.initials,
-      name:     applyNickname_(emp.name, _shiftNicks),  // apply nickname for consistent display
-      nameKey:  nameToKey_(emp.name),  // pre-nickname canonical key — frontend uses this for initials + avatar lookup
-      status:   'on',
-      sales:    emp.sales,
-      note:     null,
+      initials:     emp.initials,
+      name:         applyNickname_(emp.name, _shiftNicks),  // apply nickname for consistent display
+      nameKey:      nameToKey_(emp.name),  // pre-nickname canonical key — frontend uses this for initials + avatar lookup
+      status:       'on',
+      sales:        emp.sales,
+      transactions: emp.transactions || 0,  // stored in EOD snapshot → historical view shows per-employee txns
+      note:         null,
     }));
 
   const activeIds = new Set(
@@ -963,12 +964,13 @@ function getStoreToday(store, params) {
   const rosterEmps = (getEmployeeRoster_()[store.slug] || [])
     .filter(e => !activeIds.has(String(e.id)) && !activeNames.has(e.name.toLowerCase()) && !_excluded.has(nameToKey_(e.name)))
     .map(e => ({
-      initials: e.initials,
-      name:     applyNickname_(e.name, _shiftNicks),
-      nameKey:  nameToKey_(e.name),  // pre-nickname canonical key
-      status:   'off',
-      sales:    0,
-      note:     null,
+      initials:     e.initials,
+      name:         applyNickname_(e.name, _shiftNicks),
+      nameKey:      nameToKey_(e.name),  // pre-nickname canonical key
+      status:       'off',
+      sales:        0,
+      transactions: 0,
+      note:         null,
     }));
 
   const onShift = activeEmps.concat(rosterEmps);
