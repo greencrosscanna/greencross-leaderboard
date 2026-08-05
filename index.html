@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.366';
+window.GC = window.GC || {}; GC.VERSION = 'v1.367';
 
 </script>
 
@@ -4999,6 +4999,7 @@ GC.api = (function() {
     fetchSettings:    fetchSettings,
     fetchIncentive:   function(ppStart, refresh) { var p = {}; if (ppStart) p.ppStart = ppStart; if (refresh) p.refresh = '1'; return gasCall('incentive', p); },
     saveIncentive:    function(payload) { return gasCall('saveincentive', payload); },
+    fetchStandings:   function() { return gasCall('standings'); },
     fetchAvatarData:  fetchAvatarData,
     saveSettings:     saveSettings,
     gasCall:          gasCall,
@@ -5099,6 +5100,12 @@ GC.router = (function() {
       pattern: /^\/incentive$/,
       roles: ['owner','director'],   // finer gate (owner + Mike) enforced in the view + backend
       render: function() { GC.views.renderIncentive(); },
+    },
+    {
+      id: 'standings',
+      pattern: /^\/standings$/,
+      roles: ['owner','director','store_manager','asst_manager'],
+      render: function() { GC.views.renderStandings(); },
     },
   ];
 
@@ -5226,6 +5233,7 @@ GC.views = {
   renderSettings:    function() { console.warn('[GC.views] renderSettings not registered'); },
   renderAvatar:      function(qp) { console.warn('[GC.views] renderAvatar not registered', qp); },
   renderIncentive:   function() { console.warn('[GC.views] renderIncentive not registered'); },
+  renderStandings:   function() { console.warn('[GC.views] renderStandings not registered'); },
 };
 
 </script>
@@ -7299,6 +7307,63 @@ table.inc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-w
   .inc-actions, .inc-gear, .inc-tray, .inc-tray-back, .inc-att, .inc-spiff, .inc-arrow { display: none !important; }
   .inc-att-print, .inc-spiff-print { display: inline !important; }
 }
+
+/* ===== Period Standings (#/standings) ===== */
+.stn-wrap { max-width: 1100px; margin: 0 auto; padding: 22px 24px 60px; }
+.stn-num { font-variant-numeric: tabular-nums; }
+.stn-denied { padding: 60px; text-align: center; color: var(--text-mute); }
+.stn-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
+.stn-title { font-size: 24px; font-weight: 800; letter-spacing: -.4px; }
+.stn-sub { color: var(--text-dim); font-size: 13px; margin-top: 4px; }
+.stn-sub b { color: var(--text); }
+.stn-live { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--green); }
+.stn-live .stn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: stnpulse 2s infinite; }
+@keyframes stnpulse { 0% { box-shadow: 0 0 0 0 rgba(74,222,128,.5); } 70% { box-shadow: 0 0 0 7px rgba(74,222,128,0); } 100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); } }
+.stn-back { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 7px 13px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; }
+.stn-back:hover { border-color: var(--green); }
+
+.stn-hero { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; margin-bottom: 12px; }
+.stn-hero-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+.stn-hstat .stn-l { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-mute); margin-bottom: 6px; }
+.stn-hstat .stn-v { font-size: 26px; font-weight: 800; }
+.stn-hstat .stn-v.green { color: var(--green); }
+.stn-hstat .stn-v.amber { color: var(--amber); }
+.stn-hstat .stn-v.red { color: var(--red); }
+.stn-hstat .stn-foot { font-size: 11.5px; color: var(--text-dim); margin-top: 3px; }
+.stn-chain-bar { margin-top: 16px; height: 10px; border-radius: 6px; background: var(--surface-3); position: relative; overflow: hidden; }
+.stn-chain-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; background: linear-gradient(90deg, #265939, var(--green)); }
+.stn-chain-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text-dim); }
+.stn-chain-legend { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-mute); margin-top: 7px; }
+
+.stn-sec { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-mute); margin: 22px 2px 10px; }
+.stn-row { display: grid; grid-template-columns: 34px 1.6fr 1fr 1fr 1.1fr 120px; align-items: center; gap: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 13px 16px; margin-bottom: 9px; }
+.stn-rank { font-size: 18px; font-weight: 800; color: var(--text-mute); text-align: center; }
+.stn-row.lead .stn-rank { color: var(--green); }
+.stn-store { font-weight: 700; font-size: 15px; }
+.stn-mgr { color: var(--text-dim); font-size: 12px; margin-top: 1px; }
+.stn-cl { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-mute); margin-bottom: 3px; }
+.stn-cv { font-size: 15px; font-weight: 700; }
+.stn-cv.dim { color: var(--text-dim); font-weight: 600; }
+.stn-cv .sub { color: var(--text-dim); font-weight: 600; }
+.stn-delta { font-size: 12px; margin-top: 2px; }
+.stn-delta.up { color: var(--green); } .stn-delta.flat { color: var(--amber); } .stn-delta.down { color: var(--red); }
+.stn-pill { font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 999px; text-align: center; white-space: nowrap; }
+.stn-pill.on { background: rgba(74,222,128,.14); color: var(--green); }
+.stn-pill.slight { background: rgba(251,191,36,.14); color: var(--amber); }
+.stn-pill.behind { background: rgba(248,113,113,.14); color: var(--red); }
+.stn-barwrap { grid-column: 1 / -1; margin-top: 12px; height: 7px; border-radius: 5px; background: var(--surface-3); position: relative; }
+.stn-bar { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; transition: width 1s cubic-bezier(.2,.7,.3,1); }
+.stn-bar.on { background: linear-gradient(90deg, #265939, var(--green)); }
+.stn-bar.slight { background: linear-gradient(90deg, #7a5a12, var(--amber)); }
+.stn-bar.behind { background: linear-gradient(90deg, #7a2c2c, var(--red)); }
+.stn-mark { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text-dim); }
+.stn-mark::after { content: "pace"; position: absolute; top: -14px; left: 50%; transform: translateX(-50%); font-size: 8.5px; color: var(--text-mute); white-space: nowrap; }
+.stn-hint { margin-top: 16px; color: var(--text-mute); font-size: 11.5px; text-align: center; }
+@media (max-width: 720px) {
+  .stn-hero-grid { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .stn-row { grid-template-columns: 28px 1.4fr 1fr 110px; }
+  .stn-col-target, .stn-cell-hide { display: none; }
+}
 </style>
 
 <script>
@@ -7682,6 +7747,115 @@ var incentive = (function() {
 </script>
 <script>
 // ============================================================
+//  Green Cross — Period Standings (#/standings)
+//  Manager-facing, all-store standings vs the current-PP goal. The live,
+//  self-serve version of the report Mike broadcasts. Pace-aware; no bonuses.
+//  Data: `standings` endpoint (snapshot history + today). Auto-refreshes.
+// ============================================================
+window.GC = window.GC || {};
+
+GC.views.renderStandings = function() {
+  var app = document.getElementById('app'); if (!app) return;
+  standingsView.start(app);
+};
+
+var standingsView = (function() {
+  var _app = null, _timer = null;
+  var REFRESH_MS = 120000;
+
+  function e(s)   { return GC.esc(String(s == null ? '' : s)); }
+  function m0(n)  { return '$' + Math.round(n || 0).toLocaleString('en-US'); }
+  function pct0(n){ return Math.round((n || 0) * 100) + '%'; }   // n is a fraction
+
+  function compute(d) {
+    var ef = Math.max(0.02, d.payPeriod.elapsedFrac || 0);   // floor tames wild day-1 projections
+    function paceOf(sales, target) {
+      var pctGoal   = target > 0 ? sales / target : 0;
+      var projected = sales / ef;
+      var pace      = target > 0 ? projected / target : 0;
+      var status    = pace >= 1 ? 'on' : (pace >= 0.95 ? 'slight' : 'behind');
+      return { pctGoal: pctGoal, projected: projected, pace: pace, delta: projected - target, status: status };
+    }
+    var stores = d.stores.map(function(s) { return Object.assign({}, s, paceOf(s.sales, s.target)); });
+    stores.sort(function(a, b) { return b.pace - a.pace; });
+    var chain = paceOf(d.chain.sales, d.chain.target);
+    chain.onPace = stores.filter(function(s) { return s.pace >= 1; }).length;
+    return { stores: stores, chain: chain, ef: ef };
+  }
+
+  function statusLabel(st) { return st === 'on' ? 'On pace' : (st === 'slight' ? 'Just behind' : 'Behind'); }
+
+  function render(d) {
+    var c = compute(d), pp = d.payPeriod;
+    var chainCls   = c.chain.status === 'on' ? 'green' : (c.chain.status === 'slight' ? 'amber' : 'red');
+    var elapsedPct = Math.round(c.ef * 100);
+
+    var rows = c.stores.map(function(s, i) {
+      var deltaCls = s.status === 'on' ? 'up' : (s.status === 'slight' ? 'flat' : 'down');
+      var sign     = s.delta >= 0 ? '+' : '−';
+      var fillW    = Math.max(1, Math.min(100, s.pctGoal * 100));
+      return '<div class="stn-row' + (s.status === 'on' ? ' lead' : '') + '">'
+        + '<div class="stn-rank">' + (i + 1) + '</div>'
+        + '<div><div class="stn-store">' + e(s.name) + '</div><div class="stn-mgr">' + e(s.mgrName || '—') + '</div></div>'
+        + '<div class="stn-col-target"><div class="stn-cl">Target</div><div class="stn-cv dim stn-num">' + m0(s.target) + '</div></div>'
+        + '<div><div class="stn-cl">Sold · % goal</div><div class="stn-cv stn-num">' + m0(s.sales) + ' <span class="sub">· ' + pct0(s.pctGoal) + '</span></div></div>'
+        + '<div class="stn-cell-hide"><div class="stn-cl">Projected</div><div class="stn-cv stn-num">' + m0(s.projected) + '</div>'
+        +   '<div class="stn-delta ' + deltaCls + ' stn-num">' + sign + m0(Math.abs(s.delta)) + ' · ' + pct0(s.pace) + ' pace</div></div>'
+        + '<div class="stn-pill ' + s.status + '">' + statusLabel(s.status) + '</div>'
+        + '<div class="stn-barwrap"><div class="stn-bar ' + s.status + '" style="width:' + fillW.toFixed(1) + '%"></div>'
+        +   '<div class="stn-mark" style="left:' + elapsedPct + '%"></div></div>'
+        + '</div>';
+    }).join('');
+
+    var chainFill = Math.max(1, Math.min(100, c.chain.pctGoal * 100));
+
+    _app.innerHTML = '<div class="stn-wrap">'
+      + '<div class="stn-top">'
+      +   '<div><div class="stn-title">Period Standings</div>'
+      +     '<div class="stn-sub">Pay Period · ' + e(pp.start) + ' → ' + e(pp.end) + ' · <b>Day ' + pp.dayNum + ' of ' + pp.daysTotal + '</b></div></div>'
+      +   '<div style="display:flex;gap:10px;align-items:center">'
+      +     '<span class="stn-live"><span class="stn-dot"></span> Live</span>'
+      +     '<a class="stn-back" href="' + e(GC.auth.homeRoute()) + '">← Back</a>'
+      +   '</div>'
+      + '</div>'
+
+      + '<div class="stn-hero"><div class="stn-hero-grid">'
+      +   '<div class="stn-hstat"><div class="stn-l">Total Target</div><div class="stn-v stn-num">' + m0(d.chain.target) + '</div><div class="stn-foot">full period</div></div>'
+      +   '<div class="stn-hstat"><div class="stn-l">Sales to Date</div><div class="stn-v stn-num">' + m0(d.chain.sales) + '</div><div class="stn-foot">' + pct0(c.chain.pctGoal) + ' of goal · day ' + pp.dayNum + '/' + pp.daysTotal + '</div></div>'
+      +   '<div class="stn-hstat"><div class="stn-l">Chain Pace</div><div class="stn-v ' + chainCls + ' stn-num">' + pct0(c.chain.pace) + '</div><div class="stn-foot">projected ' + m0(c.chain.projected) + '</div></div>'
+      +   '<div class="stn-hstat"><div class="stn-l">On Pace</div><div class="stn-v stn-num">' + c.chain.onPace + ' <span style="color:var(--text-mute);font-size:18px">of ' + c.stores.length + '</span></div><div class="stn-foot">stores tracking to hit</div></div>'
+      + '</div>'
+      +   '<div class="stn-chain-bar"><div class="stn-chain-fill" style="width:' + chainFill.toFixed(1) + '%"></div><div class="stn-chain-mark" style="left:' + elapsedPct + '%"></div></div>'
+      +   '<div class="stn-chain-legend"><span>' + m0(d.chain.sales) + ' sold</span><span>pace line · ' + elapsedPct + '% of period elapsed</span><span>' + m0(d.chain.target) + ' goal</span></div>'
+      + '</div>'
+
+      + '<div class="stn-sec">Store Standings — ranked by pace</div>'
+      + rows
+      + '<div class="stn-hint">Refreshes automatically · store sales from nightly snapshots + today’s live total · no bonus figures shown</div>'
+      + '</div>';
+  }
+
+  function load() {
+    GC.api.fetchStandings().then(function(d) {
+      if (!d || d.ok === false) { _app.innerHTML = '<div class="stn-wrap"><div class="stn-denied">' + e((d && d.error) || 'Failed to load standings') + '</div></div>'; return; }
+      render(d);
+    }).catch(function(err) { _app.innerHTML = '<div class="stn-wrap"><div class="stn-denied">Error: ' + e(String(err)) + '</div></div>'; });
+  }
+
+  function start(app) {
+    _app = app;
+    app.innerHTML = '<div class="stn-wrap"><div class="stn-denied">Loading standings…</div></div>';
+    load();
+    clearInterval(_timer);
+    _timer = setInterval(load, REFRESH_MS);
+    GC.router.onLeave(function() { clearInterval(_timer); _timer = null; });
+  }
+
+  return { start: start };
+})();
+</script>
+<script>
+// ============================================================
 //  Green Cross — Kiosk View
 //  Renders /store/:slug — store-floor display
 //  Gamified, kinetic, celebratory
@@ -7786,11 +7960,16 @@ var kiosk = (function() {
   function renderHeader(store) {
     var sess = GC.auth.load() || {};
     var isDirector = sess.role === 'director' || sess.role === 'owner';
+    var canStandings = ['owner','director','store_manager','asst_manager'].indexOf(sess.role) !== -1;
     var backBtn = isDirector
       ? '<button class="kiosk-back-btn" onclick="GC.router.navigate(\'#/director\')">← Back</button>'
       : '';
+    var standingsBtn = canStandings
+      ? '<button class="kiosk-back-btn" onclick="GC.router.navigate(\'#/standings\')" title="Period standings — all stores vs goal">📊 Standings</button>'
+      : '';
     return '<header class="kiosk-header">'
       + backBtn
+      + standingsBtn
       + '<img class="gc-logo-img" src="' + GC.LOGO_PNG + '" alt="Green Cross" height="28">'
       + '<span class="store-live-badge">' + e(store.name) + '</span>'
       + '<span class="ver-badge">' + (window.GC && GC.VERSION ? GC.VERSION : '') + '</span>'

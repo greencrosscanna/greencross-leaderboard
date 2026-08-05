@@ -1431,6 +1431,83 @@ function clearAvatarConfig_(params) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Period Standings — manager-facing, all stores vs current-PP goal.
+//  The live, self-serve version of the standings Mike broadcasts a few times per
+//  period. NO bonus figures. Cheap by design: completed-day sales come from the
+//  EOD_Snapshots sheet (one read), and only TODAY is pulled fresh from Dutchie.
+//  Pace/projection is computed client-side from elapsedFrac.
+// ─────────────────────────────────────────────────────────────────────────────
+function getStandings_() {
+  var props     = getProps_();
+  var pp        = currentPPStart_(props);
+  var ppStartMs = pp.ppStartMs, PP_MS = pp.PP_MS;
+  var DAY_MS    = 86400000;
+  var nowMs     = Date.now();
+
+  var ppStartStr = Utilities.formatDate(new Date(ppStartMs),            STORE_TZ, 'yyyy-MM-dd');
+  var ppEndStr   = Utilities.formatDate(new Date(ppStartMs + PP_MS - 1), STORE_TZ, 'yyyy-MM-dd');
+  var todayStr   = Utilities.formatDate(new Date(nowMs),               STORE_TZ, 'yyyy-MM-dd');
+  var daysTotal  = Math.round(PP_MS / DAY_MS);
+  var elapsedFrac = Math.max(0, Math.min(1, (nowMs - ppStartMs) / PP_MS));
+  var dayNum      = Math.max(1, Math.min(daysTotal, Math.floor((nowMs - ppStartMs) / DAY_MS) + 1));
+
+  // 1. Completed-day sales per store from EOD_Snapshots (ppStart .. yesterday).
+  var snapSales = {};
+  STORES.forEach(function(s) { snapSales[s.slug] = 0; });
+  try {
+    var sheet = getSnapshotSheet_();
+    var vals  = sheet.getDataRange().getValues();
+    var hdr   = vals[0], idx = {};
+    hdr.forEach(function(c, i) { idx[c] = i; });
+    for (var r = 1; r < vals.length; r++) {
+      var d = normDateCell_(vals[r][idx['date']]);
+      if (d >= ppStartStr && d < todayStr) {
+        var slug = vals[r][idx['store_slug']];
+        if (snapSales[slug] !== undefined) snapSales[slug] += Number(vals[r][idx['revenue']]) || 0;
+      }
+    }
+  } catch (e) { /* snapshot sheet missing → completed days count as 0, today still shows */ }
+
+  // 2. Today's sales per store — one batched Dutchie pull (same idiom as getAggTicker_).
+  var todaySales = {};
+  STORES.forEach(function(s) { todaySales[s.slug] = 0; });
+  try {
+    var byStoreToday = fetchAllStoresTransactions_(getDateRange_('today'));
+    STORES.forEach(function(s) {
+      todaySales[s.slug] = aggregateTransactions_(byStoreToday[s.slug] || []).sales || 0;
+    });
+  } catch (e) { /* today pull failed → PP-to-date is snapshot-only for this refresh */ }
+
+  // 3. Assemble: goal (effectivePP) + roster manager per store.
+  var users = {};
+  try { users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}'); } catch (e) {}
+  var chainTarget = 0, chainSales = 0;
+  var stores = STORES.map(function(store) {
+    var sales  = (snapSales[store.slug] || 0) + (todaySales[store.slug] || 0);
+    var target = 0;
+    try { target = resolveGoal_(store.slug).effectivePP || 0; } catch (e) {}
+    var mgr = Object.values(users).find(function(u) {
+      return u.storeSlug === store.slug && u.role === 'store_manager';
+    }) || {};
+    chainTarget += target; chainSales += sales;
+    return {
+      slug:    store.slug,
+      name:    store.name,
+      mgrName: mgr.displayName || '',
+      target:  Math.round(target),
+      sales:   Math.round(sales),
+    };
+  });
+
+  return {
+    ok: true,
+    payPeriod: { start: ppStartStr, end: ppEndStr, dayNum: dayNum, daysTotal: daysTotal, elapsedFrac: r3_(elapsedFrac) },
+    chain:     { target: Math.round(chainTarget), sales: Math.round(chainSales) },
+    stores:    stores,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Incentive Dashboard (bonus calculation) — owner + Mike only.
 //  Mirrors the Google Sheet "Green Cross Incentive Program". The bonus MATH is
 //  done client-side (live edits); this endpoint just assembles the raw inputs:

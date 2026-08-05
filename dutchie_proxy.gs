@@ -315,6 +315,11 @@ function doGet(e) {
       requireRole_(auth, ['owner','director']);
       return jsonOut(getPPSeries_(params.store || 'baseline', parseInt(params.n, 10) || 26), params.callback);
     }
+    // ── Period Standings (managers + directors) ────────────
+    if (params.action === 'standings') {
+      requireRole_(auth, ['owner','director','store_manager','asst_manager']);
+      return jsonOut(getStandings_(), params.callback);
+    }
     // ── Incentive Dashboard (owner + Mike only) ────────────
     if (params.action === 'incentive' || params.action === 'saveincentive') {
       if (!incentiveAccessOk_(auth)) return jsonOut({ ok: false, error: 'Forbidden' }, params.callback);
