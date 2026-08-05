@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.371';
+window.GC = window.GC || {}; GC.VERSION = 'v1.372';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -3779,6 +3779,43 @@ GC.CHANGELOG = [
   { v: 'v1.360', date: 'Jul 27, 2026', items: [
     'New Incentive Dashboard: live bonus calculation for the pay period (managers, budtenders, admin) with editable attendance / SPIFF and thresholds, plus CSV / print export.',
     'Reconciled against a full year of historical payout reports. Owner + Mike only.',
+  ] },
+  { v: 'v1.356', date: 'Jul 27, 2026', items: [
+    'Goal engine finalized: each store’s pay-period target is the higher of its 12-period rolling trend and its same-season-last-year floor, plus an owner-set stretch %.',
+  ] },
+  { v: 'v1.334', date: 'Jun 9, 2026', items: [
+    'New owner iPad wall (#/sky): every store’s live pace and the company aggregate on one screen, with a rolling sales ticker.',
+  ] },
+  { v: 'v1.302', date: 'May 29, 2026', items: [
+    'Added the 🐞 bug reporter — a floating button to log an issue (with priority) straight to a tracking sheet.',
+  ] },
+  { v: 'v1.243', date: 'May 27, 2026', items: [
+    'EOD snapshot system + historical view: pick any past date on the director dashboard to see that day’s numbers.',
+    'Added the director Slideshow that auto-cycles through every store kiosk.',
+  ] },
+  { v: 'v1.213', date: 'May 26, 2026', items: [
+    'Smarter goals: day-of-week-aware targets from the trailing pay periods, with a year-over-year floor and a stretch multiplier — the goal never moves backward.',
+  ] },
+  { v: 'v1.133', date: 'May 25, 2026', items: [
+    'Per-employee avatars on the leaderboard, with a picker.',
+  ] },
+  { v: 'v1.107', date: 'May 24, 2026', items: [
+    'Settings page: per-store targets, employee nicknames, and goal recalculation.',
+  ] },
+  { v: 'v1.99', date: 'May 24, 2026', items: [
+    'Director view gained aggregate daily-goal, pace, and hourly-sales widgets up top.',
+  ] },
+  { v: 'v1.40', date: 'May 22, 2026', items: [
+    'Kiosk store-floor redesign: leader cards with avatars + streaks, per-staff progress bars toward personal targets, and the goal-arc / pace-gauge treatment.',
+  ] },
+  { v: 'v1.14', date: 'May 20, 2026', items: [
+    'Rolling 6-month pay-period sales targets (replacing static goals), plus a live sales ticker.',
+  ] },
+  { v: 'v1.4', date: 'May 20, 2026', items: [
+    'Connected to live Dutchie data through the Google Apps Script backend.',
+  ] },
+  { v: 'v1.1', date: 'May 20, 2026', items: [
+    'First release: Director dashboard, store Kiosk floor display, and cross-store Leaderboard.',
   ] },
 ];
 
