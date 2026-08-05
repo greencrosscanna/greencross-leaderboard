@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.369';
+window.GC = window.GC || {}; GC.VERSION = 'v1.370';
 
 </script>
 
@@ -4124,9 +4124,11 @@ GC.sparklineCell = function(trend30d, trendPct) {
  * @param {Object} summary  Summary object from GAS (same shape in both views)
  * @return {string} HTML string
  */
-GC.renderKpiBlock = function(summary) {
+GC.renderKpiBlock = function(summary, periodLabel) {
   if (!summary) return '';
   var d = summary.deltas || {};
+  periodLabel = periodLabel || 'MTD';
+  var priorLabel = periodLabel === 'MTD' ? 'vs. last month' : 'vs. prior period';
 
   function bigKpi(label, value, deltaHtml, colorClass) {
     return '<div class="kpi">'
@@ -4145,8 +4147,8 @@ GC.renderKpiBlock = function(summary) {
   }
 
   var bigRow = '<div class="kpi-row large">'
-    + bigKpi('Total Sales · MTD',    GC.fmtCurrency(summary.totalSales),   GC.fmtDeltaPct(d.totalSalesPct))
-    + bigKpi('Transactions',         GC.fmtNum(summary.transactions),       GC.fmtDeltaNum(d.transactions, '') + ' vs. last month')
+    + bigKpi('Total Sales · ' + periodLabel, GC.fmtCurrency(summary.totalSales),   GC.fmtDeltaPct(d.totalSalesPct))
+    + bigKpi('Transactions',         GC.fmtNum(summary.transactions),       GC.fmtDeltaNum(d.transactions, '') + ' ' + priorLabel)
     + bigKpi('Avg Order Value',      GC.fmtCurrency(summary.avgOrderValue), GC.fmtDeltaCurrency(d.avgOrderValue), 'v-green')
     + '</div>';
 
@@ -5365,6 +5367,8 @@ var director = (function() {
   var _storeMtdData  = null;   // data cache for tab switching, never persisted
   var _storePpStores = null;   // data cache for tab switching, never persisted
   var _storePpLoading = false; // in-flight guard (init may fire twice on cache-warm)
+  var _ppSummary       = null; // PP KPI summary (9 pills follow the store period), lazy-loaded
+  var _ppSummaryLoading = false;
 
   // ── Helpers ────────────────────────────────────────────
 
@@ -5542,6 +5546,10 @@ var director = (function() {
       +   'History'
       + '</button>'
       + '<input type="date" id="histDateInput" class="hist-date-input">'
+      + '<button class="btn-history" onclick="GC.router.navigate(\'#/standings\')" title="Period Standings — all stores vs goal">'
+      +   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>'
+      +   'Standings'
+      + '</button>'
       + (session && ['sky','mike'].indexOf(String(session.user || '').toLowerCase()) !== -1
           ? '<button class="btn-history" onclick="GC.router.navigate(\'#/incentive\')" title="Incentive Dashboard — bonus calculation">Incentive</button>'
           : '')
@@ -6167,7 +6175,7 @@ var director = (function() {
               + renderDirHourlyCard(today)
             + '</div>'
           : '')
-      + renderKPIs(sum)
+      + '<div id="dirKpiBlock">' + kpiBlockHtml() + '</div>'
       + renderStoreTable(stores, range)
       + renderFilterPills()
       + renderStaffTable(staff, range)
@@ -6310,16 +6318,17 @@ var director = (function() {
           window.scrollTo(0, scrollY);
         }
         if (showToast) GC.toast('Dashboard refreshed', 'success');
-        // Re-apply the active staff period after refresh
-        if (_staffPeriod === 'pp' && _staffPpData) {
-          updateStaffTable(_staffPpData);
+        // Active PP sections: show cached instantly, then silently re-fetch fresh
+        // PP data so the default view keeps updating on the 5-min cycle.
+        if (_staffPeriod === 'pp') {
+          if (_staffPpData) updateStaffTable(_staffPpData);
+          loadStaffPp(true);
         }
-        // Re-apply the active store period after refresh
-        if (prevStorePeriod === 'pp' && _storePpStores) {
+        if (prevStorePeriod === 'pp') {
           _storePeriod = 'pp';
-          if (_data.stores) _data.stores.stores = _storePpStores;
-          refreshStoreTable();
-          syncStorePeriodTabs();
+          if (_storePpStores && _data.stores) { _data.stores.stores = _storePpStores; refreshStoreTable(); syncStorePeriodTabs(); }
+          loadStorePp(true);
+          refreshKpiBlock(true);
         }
       })
       .catch(function(err) {
@@ -6328,12 +6337,33 @@ var director = (function() {
       });
   }
 
+  // ── KPI pills follow the Store Leaderboard period ──
+  // MTD summary rides in _data.summary; PP summary is fetched once (and refreshed
+  // when new dashboard data lands). The label + numbers track _storePeriod.
+  function kpiBlockHtml() {
+    if (_storePeriod === 'pp' && _ppSummary) return GC.renderKpiBlock(_ppSummary, 'Pay Period');
+    return GC.renderKpiBlock(_data && _data.summary, 'MTD');
+  }
+  function refreshKpiBlock(forceFetch) {
+    var el = document.getElementById('dirKpiBlock');
+    if (el) el.innerHTML = kpiBlockHtml();   // shows cached (or MTD placeholder) instantly
+    if (_storePeriod === 'pp' && (forceFetch || !_ppSummary) && !_ppSummaryLoading) {
+      _ppSummaryLoading = true;
+      GC.api.fetchDirectorSummary('pp')
+        .then(function(s) {
+          _ppSummaryLoading = false;
+          _ppSummary = s;
+          if (_storePeriod === 'pp') { var e2 = document.getElementById('dirKpiBlock'); if (e2) e2.innerHTML = kpiBlockHtml(); }
+        })
+        .catch(function(err) { _ppSummaryLoading = false; console.warn('[director] PP summary fetch failed:', err); });
+    }
+  }
+
   // ── Pay-Period loaders (shared by tab toggle + default-on-load) ──
-  function loadStorePp() {
+  function loadStorePp(silent) {
     if (_storePpLoading) return;
     _storePpLoading = true;
-    var tab = document.querySelector('.store-period-tab[data-store-period="pp"]');
-    if (tab) tab.textContent = 'Loading…';
+    if (!silent) { var tab = document.querySelector('.store-period-tab[data-store-period="pp"]'); if (tab) tab.textContent = 'Loading…'; }
     GC.api.fetchDirectorStores('pp')
       .then(function(ppData) {
         _storePpLoading = false;
@@ -6344,39 +6374,39 @@ var director = (function() {
         if (_storeMtdData) _storeMtdData.forEach(function(s) { trendMap[s.slug] = { trend30d: s.trend30d, trendPct: s.trendPct }; });
         ppStores = ppStores.map(function(s) { var t = trendMap[s.slug]; return t ? Object.assign({}, s, t) : s; });
         _storePpStores = ppStores;
-        if (_data && _data.stores) _data.stores.stores = ppStores;
-        refreshStoreTable();
-        syncStorePeriodTabs();
+        if (_storePeriod === 'pp' && _data && _data.stores) { _data.stores.stores = ppStores; refreshStoreTable(); syncStorePeriodTabs(); }
       })
       .catch(function(err) {
         _storePpLoading = false;
-        _storePeriod = 'mtd';
-        GC.state.set('dir.storePeriod', 'mtd');
-        if (_storeMtdData && _data && _data.stores) _data.stores.stores = _storeMtdData;
-        refreshStoreTable();
-        syncStorePeriodTabs();
+        if (!silent) {   // interactive load failed → fall back to MTD; silent refresh just keeps the last good PP data
+          _storePeriod = 'mtd';
+          GC.state.set('dir.storePeriod', 'mtd');
+          if (_storeMtdData && _data && _data.stores) _data.stores.stores = _storeMtdData;
+          refreshStoreTable();
+          syncStorePeriodTabs();
+        }
         console.warn('[director] PP stores fetch failed:', err);
       });
   }
-  function loadStaffPp() {
+  function loadStaffPp(silent) {
     if (_staffPpLoading) return;
     _staffPpLoading = true;
-    var tab = document.querySelector('.staff-period-tab[data-staff-period="pp"]');
-    if (tab) tab.textContent = 'Loading…';
+    if (!silent) { var tab = document.querySelector('.staff-period-tab[data-staff-period="pp"]'); if (tab) tab.textContent = 'Loading…'; }
     GC.api.fetchDirectorStaff('pp')
       .then(function(ppData) {
         _staffPpLoading = false;
         _staffPpData = ppData.staff || [];
         if (ppData.dateRange) _staffPpRange = GC.fmtDateRange(ppData.dateRange.from, ppData.dateRange.to);
-        updateStaffTable(_staffPpData);
-        syncPeriodTabs();
+        if (_staffPeriod === 'pp') { updateStaffTable(_staffPpData); syncPeriodTabs(); }
       })
       .catch(function(err) {
         _staffPpLoading = false;
-        _staffPeriod = 'mtd';
-        GC.state.set('dir.staffPeriod', 'mtd');
-        refreshStaffTable();
-        syncPeriodTabs();
+        if (!silent) {
+          _staffPeriod = 'mtd';
+          GC.state.set('dir.staffPeriod', 'mtd');
+          refreshStaffTable();
+          syncPeriodTabs();
+        }
         console.warn('[director] PP staff fetch failed:', err);
       });
   }
@@ -6401,6 +6431,7 @@ var director = (function() {
       if (_storePpStores) { if (_data.stores) _data.stores.stores = _storePpStores; refreshStoreTable(); syncStorePeriodTabs(); }
       else loadStorePp();
     }
+    refreshKpiBlock();   // KPI pills follow the store period (fetches PP summary if needed)
 
     // Teardown on navigation away — stop the clock + the 5-min auto-refresh so
     // they don't keep firing (or stack a second interval) after leaving director.
@@ -6599,6 +6630,7 @@ var director = (function() {
           } else {
             loadStorePp();
           }
+          refreshKpiBlock();   // KPI pills follow the store period
         }
 
         // Store table column-header sort
