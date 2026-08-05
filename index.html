@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.373';
+window.GC = window.GC || {}; GC.VERSION = 'v1.374';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -4884,7 +4884,7 @@ GC.api = (function() {
       var timeout = setTimeout(function() {
         delete window[cbName];
         reject(new Error('JSONP timeout: ' + url));
-      }, 45000);
+      }, 65000);   // headroom for a cold GAS cache build (~30s) so it completes instead of hard-erroring
 
       window[cbName] = function(data) {
         clearTimeout(timeout);
@@ -5516,6 +5516,7 @@ var director = (function() {
   var _storePpLoading = false; // in-flight guard (init may fire twice on cache-warm)
   var _ppSummary       = null; // PP KPI summary (9 pills follow the store period), lazy-loaded
   var _ppSummaryLoading = false;
+  var _ppAllLoading    = false; // guard for the single combined directorall('pp') load
 
   // ── Helpers ────────────────────────────────────────────
 
@@ -6466,17 +6467,12 @@ var director = (function() {
         }
         if (showToast) GC.toast('Dashboard refreshed', 'success');
         // Active PP sections: show cached instantly, then silently re-fetch fresh
-        // PP data so the default view keeps updating on the 5-min cycle.
-        if (_staffPeriod === 'pp') {
-          if (_staffPpData) updateStaffTable(_staffPpData);
-          loadStaffPp(true);
-        }
-        if (prevStorePeriod === 'pp') {
-          _storePeriod = 'pp';
-          if (_storePpStores && _data.stores) { _data.stores.stores = _storePpStores; refreshStoreTable(); syncStorePeriodTabs(); }
-          loadStorePp(true);
-          refreshKpiBlock(true);
-        }
+        // PP data (one combined cached call) so the default view keeps updating.
+        if (prevStorePeriod === 'pp') _storePeriod = 'pp';
+        if (_storePeriod === 'pp' && _storePpStores && _data.stores) { _data.stores.stores = _storePpStores; refreshStoreTable(); syncStorePeriodTabs(); }
+        if (_staffPeriod === 'pp' && _staffPpData) updateStaffTable(_staffPpData);
+        refreshKpiBlock();
+        if (_storePeriod === 'pp' || _staffPeriod === 'pp') loadPpAll(true);
       })
       .catch(function(err) {
         if (showToast) GC.toast('Refresh failed: ' + err.message, 'error');
@@ -6491,70 +6487,51 @@ var director = (function() {
     if (_storePeriod === 'pp' && _ppSummary) return GC.renderKpiBlock(_ppSummary, 'Pay Period');
     return GC.renderKpiBlock(_data && _data.summary, 'MTD');
   }
-  function refreshKpiBlock(forceFetch) {
+  function refreshKpiBlock() {
     var el = document.getElementById('dirKpiBlock');
-    if (el) el.innerHTML = kpiBlockHtml();   // shows cached (or MTD placeholder) instantly
-    if (_storePeriod === 'pp' && (forceFetch || !_ppSummary) && !_ppSummaryLoading) {
-      _ppSummaryLoading = true;
-      GC.api.fetchDirectorSummary('pp')
-        .then(function(s) {
-          _ppSummaryLoading = false;
-          _ppSummary = s;
-          if (_storePeriod === 'pp') { var e2 = document.getElementById('dirKpiBlock'); if (e2) e2.innerHTML = kpiBlockHtml(); }
-        })
-        .catch(function(err) { _ppSummaryLoading = false; console.warn('[director] PP summary fetch failed:', err); });
-    }
+    if (el) el.innerHTML = kpiBlockHtml();
   }
 
-  // ── Pay-Period loaders (shared by tab toggle + default-on-load) ──
-  function loadStorePp(silent) {
-    if (_storePpLoading) return;
-    _storePpLoading = true;
-    if (!silent) { var tab = document.querySelector('.store-period-tab[data-store-period="pp"]'); if (tab) tab.textContent = 'Loading…'; }
-    GC.api.fetchDirectorStores('pp')
-      .then(function(ppData) {
-        _storePpLoading = false;
-        var ppStores = ppData.stores || [];
-        if (ppData.dateRange) _storePpRange = GC.fmtDateRange(ppData.dateRange.from, ppData.dateRange.to);
-        // Merge 30d trend from MTD data (trend is period-independent)
+  // ── Pay-Period data: ONE combined, chunk-cached, pre-warmed directorall('pp')
+  //    call feeds stores + staff + KPI summary. Replaces three separate 14-day
+  //    Dutchie pulls that were overloading GAS and tripping the 45s JSONP timeout.
+  function loadPpAll(silent) {
+    if (_ppAllLoading) return;
+    _ppAllLoading = true;
+    if (!silent) {
+      var st = document.querySelector('.store-period-tab[data-store-period="pp"]');
+      var ft = document.querySelector('.staff-period-tab[data-staff-period="pp"]');
+      if (st && _storePeriod === 'pp') st.textContent = 'Loading…';
+      if (ft && _staffPeriod === 'pp') ft.textContent = 'Loading…';
+    }
+    GC.api.fetchDirectorAll('pp')
+      .then(function(pp) {
+        _ppAllLoading = false;
+        // Stores (merge period-independent 30d trend from the MTD set)
+        var ppStores = (pp.stores && pp.stores.stores) || [];
         var trendMap = {};
         if (_storeMtdData) _storeMtdData.forEach(function(s) { trendMap[s.slug] = { trend30d: s.trend30d, trendPct: s.trendPct }; });
         ppStores = ppStores.map(function(s) { var t = trendMap[s.slug]; return t ? Object.assign({}, s, t) : s; });
         _storePpStores = ppStores;
-        if (_storePeriod === 'pp' && _data && _data.stores) { _data.stores.stores = ppStores; refreshStoreTable(); syncStorePeriodTabs(); }
-      })
-      .catch(function(err) {
-        _storePpLoading = false;
-        if (!silent) {   // interactive load failed → fall back to MTD; silent refresh just keeps the last good PP data
-          _storePeriod = 'mtd';
-          GC.state.set('dir.storePeriod', 'mtd');
-          if (_storeMtdData && _data && _data.stores) _data.stores.stores = _storeMtdData;
-          refreshStoreTable();
-          syncStorePeriodTabs();
-        }
-        console.warn('[director] PP stores fetch failed:', err);
-      });
-  }
-  function loadStaffPp(silent) {
-    if (_staffPpLoading) return;
-    _staffPpLoading = true;
-    if (!silent) { var tab = document.querySelector('.staff-period-tab[data-staff-period="pp"]'); if (tab) tab.textContent = 'Loading…'; }
-    GC.api.fetchDirectorStaff('pp')
-      .then(function(ppData) {
-        _staffPpLoading = false;
-        _staffPpData = ppData.staff || [];
-        if (ppData.dateRange) _staffPpRange = GC.fmtDateRange(ppData.dateRange.from, ppData.dateRange.to);
+        if (pp.stores && pp.stores.dateRange) _storePpRange = GC.fmtDateRange(pp.stores.dateRange.from, pp.stores.dateRange.to);
+        // Staff
+        _staffPpData = (pp.staff && pp.staff.staff) || [];
+        if (pp.staff && pp.staff.dateRange) _staffPpRange = GC.fmtDateRange(pp.staff.dateRange.from, pp.staff.dateRange.to);
+        // KPI summary
+        if (pp.summary) _ppSummary = pp.summary;
+        // Apply to whichever sections are on Pay Period
+        if (_storePeriod === 'pp' && _data && _data.stores) { _data.stores.stores = _storePpStores; refreshStoreTable(); syncStorePeriodTabs(); }
         if (_staffPeriod === 'pp') { updateStaffTable(_staffPpData); syncPeriodTabs(); }
+        refreshKpiBlock();
       })
       .catch(function(err) {
-        _staffPpLoading = false;
-        if (!silent) {
-          _staffPeriod = 'mtd';
-          GC.state.set('dir.staffPeriod', 'mtd');
-          refreshStaffTable();
-          syncPeriodTabs();
+        _ppAllLoading = false;
+        if (!silent) {   // interactive load failed → fall back to MTD; silent refresh keeps last-good PP
+          if (_storePeriod === 'pp') { _storePeriod = 'mtd'; GC.state.set('dir.storePeriod', 'mtd'); if (_storeMtdData && _data && _data.stores) _data.stores.stores = _storeMtdData; refreshStoreTable(); syncStorePeriodTabs(); }
+          if (_staffPeriod === 'pp') { _staffPeriod = 'mtd'; GC.state.set('dir.staffPeriod', 'mtd'); refreshStaffTable(); syncPeriodTabs(); }
+          refreshKpiBlock();
         }
-        console.warn('[director] PP staff fetch failed:', err);
+        console.warn('[director] PP (directorall) fetch failed:', err);
       });
   }
 
@@ -6568,17 +6545,15 @@ var director = (function() {
     animateStoreSparklines();
     animateStaffSparklines();
 
-    // Sections default to Pay Period — apply cached PP data or load it. Guarded
-    // loaders make this safe across the multiple init() calls on cache-warm/refresh.
-    if (_staffPeriod === 'pp') {
-      if (_staffPpData) { updateStaffTable(_staffPpData); syncPeriodTabs(); }
-      else loadStaffPp();
-    }
-    if (_storePeriod === 'pp') {
-      if (_storePpStores) { if (_data.stores) _data.stores.stores = _storePpStores; refreshStoreTable(); syncStorePeriodTabs(); }
-      else loadStorePp();
-    }
-    refreshKpiBlock();   // KPI pills follow the store period (fetches PP summary if needed)
+    // Both sections default to Pay Period. Apply any cached PP data instantly,
+    // then load once via the single combined directorall('pp') call if missing.
+    if (_storePeriod === 'pp' && _storePpStores && _data.stores) { _data.stores.stores = _storePpStores; refreshStoreTable(); syncStorePeriodTabs(); }
+    if (_staffPeriod === 'pp' && _staffPpData) { updateStaffTable(_staffPpData); syncPeriodTabs(); }
+    refreshKpiBlock();
+    var needPp = (_storePeriod === 'pp' && !_storePpStores)
+              || (_staffPeriod === 'pp' && !_staffPpData)
+              || ((_storePeriod === 'pp' || _staffPeriod === 'pp') && !_ppSummary);
+    if (needPp) loadPpAll();
 
     // Teardown on navigation away — stop the clock + the 5-min auto-refresh so
     // they don't keep firing (or stack a second interval) after leaving director.
@@ -6720,7 +6695,7 @@ var director = (function() {
             updateStaffTable(_staffPpData);
             syncPeriodTabs();
           } else {
-            loadStaffPp();
+            loadPpAll();
           }
         }
 
@@ -6775,7 +6750,7 @@ var director = (function() {
             refreshStoreTable();
             syncStorePeriodTabs();
           } else {
-            loadStorePp();
+            loadPpAll();
           }
           refreshKpiBlock();   // KPI pills follow the store period
         }
@@ -7459,6 +7434,8 @@ var sky = (function() {
 .inc-denied { padding: 60px; text-align: center; color: var(--text-mute); }
 .inc-gear { position: absolute; top: 18px; right: 22px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text-mute); font-size: 17px; line-height: 1; cursor: pointer; z-index: 5; }
 .inc-gear:hover { border-color: var(--green); color: var(--green); }
+.inc-back { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 7px 13px; font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 14px; }
+.inc-back:hover { border-color: var(--green); }
 .inc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 18px; }
 .inc-totals { margin-right: 48px; }
 .inc-title { font-size: 22px; font-weight: 800; }
@@ -7756,6 +7733,7 @@ var incentive = (function() {
       : ('completed period' + (_d.payPeriod.cached ? ' · cached' : ''));
 
     _app.innerHTML = '<div class="inc-wrap">'
+      + '<button class="inc-back" id="incBack">← Back</button>'
       + '<button class="inc-gear" id="incGear" title="Edit bonus thresholds" aria-label="Thresholds">⚙</button>'
       + '<div class="inc-top">'
       +   '<div><div class="inc-title">Incentive Dashboard</div>'
@@ -7805,6 +7783,7 @@ var incentive = (function() {
     _app.querySelector('#incCsv').addEventListener('click', exportCsv);
     _app.querySelector('#incPrint').addEventListener('click', function() { save(true); window.print(); });
     _app.querySelector('#incGear').addEventListener('click', function() { toggleTray(true); });
+    _app.querySelector('#incBack').addEventListener('click', function() { GC.router.navigate(GC.auth.homeRoute()); });
     _app.querySelector('#incTrayClose').addEventListener('click', function() { toggleTray(false); });
     _app.querySelector('#incTrayBack').addEventListener('click', function() { toggleTray(false); });
     _app.querySelector('#incPeriod').addEventListener('change', function(ev) { start(_app, ev.target.value); });
