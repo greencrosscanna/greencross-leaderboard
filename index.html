@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.378';
+window.GC = window.GC || {}; GC.VERSION = 'v1.379';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -5201,7 +5201,6 @@ GC.api = (function() {
 //    #/login              → login form (unauthenticated default)
 //    #/director           → director view (owner, director)
 //    #/store/:slug        → kiosk view (store_manager, asst_manager, budtender)
-//    #/leaderboard        → cross-store staff table (director+)
 //
 //  Auth guard: any route other than /login redirects to /login
 //  if there's no valid session. After login, router.navigate()
@@ -5256,12 +5255,6 @@ GC.router = (function() {
       pattern: /^\/store\/([a-z]+)$/,
       roles: ['owner','director','store_manager','asst_manager','budtender'],
       render: function(params) { GC.views.renderKiosk(params[1]); },
-    },
-    {
-      id: 'leaderboard',
-      pattern: /^\/leaderboard$/,
-      roles: ['owner','director'],
-      render: function() { GC.views.renderLeaderboard(); },
     },
     {
       id: 'settings',
@@ -5409,7 +5402,6 @@ GC.views = {
   renderDirector:    function() { console.warn('[GC.views] renderDirector not registered'); },
   renderSky:         function() { console.warn('[GC.views] renderSky not registered'); },
   renderKiosk:       function(slug) { console.warn('[GC.views] renderKiosk not registered:', slug); },
-  renderLeaderboard: function() { console.warn('[GC.views] renderLeaderboard not registered'); },
   renderSettings:    function() { console.warn('[GC.views] renderSettings not registered'); },
   renderAvatar:      function(qp) { console.warn('[GC.views] renderAvatar not registered', qp); },
   renderIncentive:   function() { console.warn('[GC.views] renderIncentive not registered'); },
@@ -6029,7 +6021,6 @@ var director = (function() {
       +   '<button class="staff-period-tab' + (!mtdActive ? ' active' : '') + '" data-staff-period="pp">' + (_staffPpRange ? 'Pay Period · ' + e(_staffPpRange) : 'Pay Period') + '</button>'
       +   '<button class="staff-period-tab' + (mtdActive  ? ' active' : '') + '" data-staff-period="mtd">MTD</button>'
       + '</span>'
-      + '<a class="sh-link" id="viewFullLeaderboard">View full leaderboard →</a>'
       + '</div>'
       + '<table class="gc-table" id="staffTable">'
       + '<thead id="staffTableHead"><tr>'
@@ -6700,11 +6691,6 @@ var director = (function() {
         var ssStore = ev.target.closest('.ss-store[data-slug]');
         if (ssStore) {
           GC.router.navigate('#/store/' + ssStore.dataset.slug);
-        }
-
-        // View full leaderboard link
-        if (ev.target.id === 'viewFullLeaderboard') {
-          GC.router.navigate('#/leaderboard');
         }
 
         // Staff period tab toggle
@@ -9883,488 +9869,6 @@ var kiosk = (function() {
 </script>
 <script>
 // ============================================================
-//  Green Cross — Leaderboard View
-//  Renders /leaderboard — cross-store staff table
-//  Director+ only. Dense, table-driven.
-// ============================================================
-
-window.GC = window.GC || {};
-
-GC.views.renderLeaderboard = function(period) {
-  var app = document.getElementById('app');
-  if (!app) return;
-  // Fall back to the persisted period (not a hard 'mtd') so the selection
-  // survives navigation, matching the director view's behaviour.
-  period = period || GC.state.get('lb.period', 'mtd');
-  app.innerHTML = '<div style="padding:60px;text-align:center;color:var(--text-dim)">Loading leaderboard…</div>';
-
-  // Single round-trip reusing the directorall mega-batch
-  GC.api.fetchDirectorAll(period)
-    .then(function(data) {
-      var lbData = lb.normalizeStaff(data.staff, data.avatarConfigs || {});
-      app.innerHTML = lb.render(data.summary, data.alerts, lbData, period, data.eomKey || null);
-      lb.init(period);
-    })
-    .catch(function(err) {
-      console.error('[leaderboard] fetch failed:', err);
-      app.innerHTML = '<div style="padding:40px;color:var(--text-dim)">Failed to load leaderboard.</div>';
-    });
-};
-
-// ── Private module ──────────────────────────────────────────
-var lb = (function() {
-
-  var _lbData      = null;   // never persisted — always reloaded fresh
-  var _summary  = null;
-  var _alerts   = null;
-  var _eomKey   = null;
-  var _storeFilter = GC.state.get('lb.storeFilter', 'all');
-  var _tagFilter   = null;
-  var _search      = '';
-  var _sortKey     = GC.state.get('lb.sortKey',     'sales');
-  var _sortDir     = GC.state.get('lb.sortDir',     -1);
-  var _period      = GC.state.get('lb.period',      'mtd');
-
-  function e(s) { return GC.esc(String(s == null ? '' : s)); } // local alias for GC.esc
-
-  // ── Render: Nav ──────────────────────────────────────────
-  function renderNav() {
-    var sess = GC.auth.load() || {};
-    var initials = sess.initials || '??';
-    var displayName = sess.displayName || 'Director';
-
-    var _inc = ['sky', 'mike'].indexOf(String(sess.user || '').toLowerCase()) !== -1;
-    return '<nav class="lb-nav">'
-      + '<img class="gc-logo-img" src="' + GC.LOGO_PNG + '" alt="Green Cross" height="28">'
-      + '<div class="lb-nav-tabs">'
-      + '  <button class="lb-nav-tab" onclick="GC.router.navigate(\'#/director\')">← Director</button>'
-      + '  <button class="lb-nav-tab active">Leaderboard</button>'
-      + (_inc ? '  <button class="lb-nav-tab" onclick="GC.router.navigate(\'#/incentive\')">Incentive</button>' : '')
-      + '</div>'
-      + '<div class="lb-nav-right">'
-      + '  <button class="btn-ghost" id="lbRefreshBtn">↻ Refresh</button>'
-      + '  <div class="user-chip">'
-      + '    <span class="uc-initials">' + e(initials) + '</span>'
-      + '    <span class="uc-name">' + e(displayName) + '</span>'
-      + '  </div>'
-      + '</div>'
-      + '</nav>';
-  }
-
-  // ── Render: KPI rows (reuse summary data) ────────────────
-  function renderKPIs(summary) { return GC.renderKpiBlock(summary); }
-
-  // ── Render: Filters + controls ───────────────────────────
-  function renderFilters(period) {
-    period = period || 'mtd';
-    var stores = ['Baseline','Center','Century','Commercial','Portland','River'];
-    var storePills = stores.map(function(s) {
-      return '<button class="pill store-pill" data-slug="' + s.toLowerCase() + '">' + e(s) + '</button>';
-    }).join('');
-
-    function opt(val, label) {
-      return '<option value="' + val + '"' + (period === val ? ' selected' : '') + '>' + label + '</option>';
-    }
-
-    return '<div class="filter-row">'
-      + '<button class="pill active" id="lbAllStores" data-slug="all">All Stores</button>'
-      + storePills
-      + '<div style="margin-left:auto;display:flex;gap:8px">'
-      + '  <button class="pill tag-pill" data-tag="top">Top 10</button>'
-      + '  <button class="pill tag-pill" data-tag="rising">Rising</button>'
-      + '  <button class="pill tag-pill" data-tag="watch">Watch</button>'
-      + '  <button class="pill tag-pill" data-tag="flag">Flagged</button>'
-      + '</div>'
-      + '</div>'
-      + '<div class="controls">'
-      + '  <input type="text" id="lbSearch" placeholder="Search staff or store…" />'
-      + '  <select id="lbPeriod">'
-      + opt('pp',    'Period: Pay Period (2-wk)')
-      + opt('mtd',   'Period: Month-to-Date')
-      + opt('today', 'Period: Today')
-      + opt('wtd',   'Period: Week-to-Date')
-      + opt('qtd',   'Period: Quarter-to-Date')
-      + opt('ytd',   'Period: Year-to-Date')
-      + '  </select>'
-      + '  <select id="lbRole">'
-      + '    <option value="">All Roles</option>'
-      + '    <option value="Store Mgr">Store Mgr</option>'
-      + '    <option value="Asst Mgr">Asst Mgr</option>'
-      + '    <option value="Budtender">Budtender</option>'
-      + '  </select>'
-      + '  <select id="lbSort">'
-      + '    <option value="sales,-1">Sort: Sales ↓</option>'
-      + '    <option value="avgOrderValue,-1">AOV ↓</option>'
-      + '    <option value="avgUPT,-1">UPT ↓</option>'
-      + '    <option value="discountRate,1">Discount % ↑</option>'
-      + '  </select>'
-      + '</div>';
-  }
-
-  // ── Render: Staff table ──────────────────────────────────
-  function renderTable(staffData, eomKey) {
-    var staff   = applyFilters(staffData.staff || []);
-    var total   = staffData.totalStaff || staff.length;
-    var maxSales = staff.length > 0 ? staff[0].sales : 1;
-
-    var metaHtml = '<div class="lb-meta-row">'
-      + '<span class="lb-showing">Showing ' + staff.length + ' of ' + total + ' staff</span>'
-      + '<span id="lbLastRefresh" style="color:var(--text-mute)">Last refresh ' + GC.fmtTime(new Date()) + '</span>'
-      + '</div>';
-
-    var rows = staff.map(function(s) {
-      var rankCls   = GC.rankPillClass(s.rank, total);
-      var barPct    = maxSales > 0 ? Math.round((s.sales / maxSales) * 100) : 0;
-      var isRowEom  = !!(eomKey && s.nameKey && s.nameKey === eomKey);
-
-      var tagsHtml = (s.tags || []).map(function(t) {
-        var labels = { top: 'TOP', rising: 'RISING', watch: 'WATCH', flag: 'FLAG', new: 'NEW' };
-        return '<span class="tag ' + e(t) + '">' + e(labels[t] || t) + '</span>';
-      }).join('');
-      var eomTagHtml = isRowEom
-        ? '<span class="eom-badge" style="margin-left:6px;vertical-align:middle"><span class="eom-star">★</span> EoM</span>'
-        : '';
-
-      return '<tr' + (isRowEom ? ' style="background:rgba(212,168,71,0.04)"' : '') + '>'
-        + '<td><span class="rank-pill ' + e(rankCls) + '">#' + e(s.rank) + '</span></td>'
-        + '<td>'
-        + '  <div class="who">'
-        + GC.lbAvaPuck(s.nameKey, s.avatarConfig, s.initials, true)
-        + '    <div>'
-        + '      <div class="who-name">' + e(s.name)
-        +          eomTagHtml
-        +          (tagsHtml ? ' <span class="tags">' + tagsHtml + '</span>' : '')
-        + '      </div>'
-        + '      <div class="who-sub">' + (s.role ? e(s.role) + ' · ' : '') + e(s.hours) + 'h MTD</div>'
-        + '    </div>'
-        + '  </div>'
-        + '</td>'
-        + '<td class="store-col lb-store-dot">'
-        + '  <span class="store-dot ' + e(s.storeSlug) + '"></span>'
-        + '  <span class="lb-store-label">' + e(s.storeName) + '</span>'
-        + '</td>'
-        + '<td>'
-        + '  <div class="sales-cell">'
-        + '    <span class="sales-amt num">' + e(GC.fmtCurrency(s.sales)) + '</span>'
-        + '    <div class="bar-track"><div class="bar-fill' + (barPct >= 100 ? ' lead' : '') + '" style="width:' + barPct + '%"></div></div>'
-        + '  </div>'
-        + '</td>'
-        + '<td class="num">' + e(s.transactions) + '</td>'
-        + '<td class="num">' + e('$' + s.avgOrderValue.toFixed(2)) + '</td>'
-        + '<td class="num">' + e(s.avgUPT.toFixed(1)) + '</td>'
-        + '<td>' + GC.discountCell(s.discountRate) + '</td>'
-        + '<td>'
-        + GC.sparklineCell(s.trend30d, s.trendPct)
-        + '</td>'
-        + '<td class="actions-col">'
-        + '  <button class="row-action-btn" title="More">⋯</button>'
-        + '</td>'
-        + '</tr>';
-    }).join('');
-
-    function thSort(label, key) {
-      var isActive = _sortKey === key;
-      var arrow = isActive ? (_sortDir === -1 ? ' ▼' : ' ▲') : '';
-      return '<th class="lb-th-sort' + (isActive ? ' active' : '') + '" data-sort="' + key + '" style="cursor:pointer;user-select:none">'
-        + label + arrow + '</th>';
-    }
-
-    var tableHtml = '<table class="gc-table lb-table">'
-      + '<thead><tr>'
-      + '  <th class="lb-th-sort' + (_sortKey === 'rank' ? ' active' : '') + '" data-sort="rank" style="width:60px;cursor:pointer;user-select:none">RANK' + (_sortKey === 'rank' ? (_sortDir === -1 ? ' ▼' : ' ▲') : '') + '</th>'
-      + thSort('STAFF', 'name')
-      + thSort('STORE', 'storeName')
-      + thSort('SALES', 'sales')
-      + thSort('TXNS', 'transactions')
-      + thSort('AOV', 'avgOrderValue')
-      + thSort('UPT', 'avgUPT')
-      + thSort('DISCOUNT', 'discountRate')
-      + thSort('TREND · 30D', 'trendPct')
-      + '  <th class="actions-col"></th>'
-      + '</tr></thead>'
-      + '<tbody>' + rows + '</tbody>'
-      + '</table>';
-
-    return metaHtml + tableHtml;
-  }
-
-  // ── Render: Discount Watch panel ─────────────────────────
-  function renderWatchPanel(alerts) {
-    var watchList = (alerts && alerts.discountWatch) || [];
-    if (!watchList.length) return '';
-
-    var items = watchList.map(function(w) {
-      var discCls = GC.discountSeverity(w.discountRate);
-      var detail = w.ordersOver15Pct
-        ? w.ordersOver15Pct + ' orders >15% off'
-          + (w.topReason  ? ' · "' + w.topReason + '"' : '')
-          + (w.reasonNote ? ' · ' + w.reasonNote       : '')
-        : (w.detail || '');
-      var storeName = w.storeName || w.store || '';
-      return '<div class="watch-row">'
-        + '<div class="user-chip" style="background:transparent;padding:0;border:none">'
-        + '  <span class="uc-initials">' + e(w.initials || w.name.slice(0,2).toUpperCase()) + '</span>'
-        + '  <div style="display:flex;flex-direction:column;gap:1px">'
-        + '    <span style="font-weight:600;font-size:12px">' + e(w.name) + '</span>'
-        + '    <span style="font-size:10px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.8px">' + e(storeName) + '</span>'
-        + '  </div>'
-        + '</div>'
-        + '<div class="watch-detail" style="margin-top:6px;font-size:11px;color:var(--text-mute)">' + e(detail) + '</div>'
-        + '<span class="watch-pct disc ' + e(discCls) + '" style="margin-top:6px;display:inline-block">' + e(GC.fmtPct(w.discountRate)) + '</span>'
-        + '</div>';
-    }).join('');
-
-    return '<div class="lb-watch-panel">'
-      + '<div class="lb-watch-head">'
-      + '  <h3>Discount Watch</h3>'
-      + '  <span class="lb-watch-sub">Staff above the 6.5% chain benchmark · 14-day rolling</span>'
-      + '</div>'
-      + '<div class="lb-watch-grid">' + items + '</div>'
-      + '</div>';
-  }
-
-  // ── Apply filters ────────────────────────────────────────
-  function applyFilters(staff) {
-    var result = staff.slice();
-
-    if (_storeFilter !== 'all') {
-      result = result.filter(function(s) { return s.storeSlug === _storeFilter; });
-    }
-    if (_tagFilter) {
-      result = result.filter(function(s) { return (s.tags || []).indexOf(_tagFilter) !== -1; });
-    }
-    if (_roleFilter) {
-      var rq = _roleFilter.toLowerCase();
-      result = result.filter(function(s) { return (s.role || '').toLowerCase().indexOf(rq) !== -1; });
-    }
-    if (_search) {
-      var q = _search.toLowerCase();
-      result = result.filter(function(s) {
-        return s.name.toLowerCase().indexOf(q) !== -1
-          || (s.storeName || '').toLowerCase().indexOf(q) !== -1
-          || (s.role || '').toLowerCase().indexOf(q) !== -1;
-      });
-    }
-
-    result.sort(function(a, b) {
-      var av = a[_sortKey] != null ? a[_sortKey] : '';
-      var bv = b[_sortKey] != null ? b[_sortKey] : '';
-      if (typeof av === 'string' || typeof bv === 'string') {
-        return _sortDir * String(av).localeCompare(String(bv));
-      }
-      return _sortDir * ((Number(av) || 0) - (Number(bv) || 0));
-    });
-
-    // Re-rank after filter
-    result.forEach(function(s, i) { s._displayRank = i + 1; });
-
-    return result;
-  }
-
-  // ── Normalize: directorall.staff → leaderboard shape ────────
-  // directorall returns staff with totalActive / hoursWorked / roleLabel.
-  // The table expects totalStaff / hours / role.
-  function normalizeStaff(staffData, avatarConfigs) {
-    if (!staffData) return { totalStaff: 0, showing: 0, staff: [] };
-    avatarConfigs = avatarConfigs || {};
-    var staff = (staffData.staff || []).map(function(s) {
-      var nameKey = s.nameKey || GC.nameToKey(s.name || '');
-      var altKey  = GC.nameToKey(s.name || ''); // nickname-derived fallback
-      return {
-        rank:          s.rank          || 0,
-        initials:      GC.nickInitials(s.name, nameKey, s.initials || ''),
-        name:          s.name          || '',
-        nameKey:       nameKey,
-        avatarConfig:  GC.findAvatarCfg(avatarConfigs, nameKey, altKey),
-        role:          s.roleLabel     || s.role || '',
-        hours:         s.hoursWorked   || s.hours || 0,
-        storeSlug:     s.storeSlug     || '',
-        storeName:     s.storeName     || '',
-        sales:         s.sales         || 0,
-        transactions:  s.transactions  || 0,
-        avgOrderValue: s.avgOrderValue || 0,
-        avgUPT:        s.avgUPT        || 0,
-        discountRate:  s.discountRate  || 0,
-        trendPct:      s.trendPct      || 0,
-        trend30d:      s.trend30d      || [],
-        tags:          s.tags          || [],
-      };
-    });
-    return {
-      totalStaff: staffData.totalActive || staffData.totalStaff || staff.length,
-      showing:    staff.length,
-      staff:      staff,
-    };
-  }
-
-  // ── Full render ──────────────────────────────────────────
-  function render(summary, alerts, lbData, period, eomKey) {
-    _summary = summary;
-    _alerts  = alerts;
-    _lbData  = lbData;
-    _eomKey  = eomKey || null;
-    _period  = period || 'mtd';
-
-    var periodLabels = { today: 'Today', wtd: 'WTD', mtd: 'MTD', qtd: 'QTD', ytd: 'YTD' };
-    var periodLabel  = periodLabels[_period] || _period.toUpperCase();
-
-    return '<div class="lb-page">'
-      + renderNav()
-      + renderKPIs(summary)
-      + renderFilters(_period)
-      + '<div id="lbTableWrap">' + renderTable(lbData, _eomKey) + '</div>'
-      + renderWatchPanel(alerts)
-      + '<div class="lb-footer">Live data · All Stores · ' + e(periodLabel) + ' · '
-      + '<span id="lbFooterRefresh">Last refresh ' + GC.fmtTime(new Date()) + '</span>'
-      + '</div>'
-      + '</div>';
-  }
-
-  // ── Re-render table only ─────────────────────────────────
-  function refreshTable() {
-    var wrap = document.getElementById('lbTableWrap');
-    if (wrap && _lbData) wrap.innerHTML = renderTable(_lbData, _eomKey);
-    animateLbSparklines();
-  }
-
-  function animateLbSparklines() {
-    document.querySelectorAll('#lbTableWrap tbody tr').forEach(function(row, i) {
-      var poly = row.querySelector('.sparkline-cell polyline');
-      if (!poly) return;
-      poly.style.animationPlayState = 'paused';
-      setTimeout(function() {
-        if (poly.isConnected) poly.style.animationPlayState = 'running';
-      }, i * 400);
-    });
-  }
-
-  var _roleFilter = '';
-
-  // ── init ─────────────────────────────────────────────────
-  function init(period) {
-    _period = period || 'mtd';
-    GC.state.set('lb.period', _period);
-
-    // Refresh button — full reload via directorall
-    var refreshBtn = document.getElementById('lbRefreshBtn');
-    if (refreshBtn) {
-      refreshBtn.addEventListener('click', function() {
-        refreshBtn.disabled = true;
-        refreshBtn.textContent = '↻ Refreshing…';
-        GC.api.fetchDirectorAll(_period).then(function(data) {
-          _lbData   = normalizeStaff(data.staff, data.avatarConfigs || {});
-          _summary  = data.summary;
-          _alerts   = data.alerts;
-          if (data.eomKey !== undefined) _eomKey = data.eomKey || null;
-          refreshTable();
-          refreshBtn.disabled = false;
-          refreshBtn.textContent = '↻ Refresh';
-          var el = document.getElementById('lbFooterRefresh');
-          if (el) el.textContent = 'Last refresh ' + GC.fmtTime(new Date());
-        }).catch(function() {
-          refreshBtn.disabled = false;
-          refreshBtn.textContent = '↻ Refresh';
-        });
-      });
-    }
-
-    // Period change — full page reload with new period
-    var periodEl = document.getElementById('lbPeriod');
-    if (periodEl) {
-      periodEl.addEventListener('change', function() {
-        GC.views.renderLeaderboard(periodEl.value);
-      });
-    }
-
-    // Role filter
-    var roleEl = document.getElementById('lbRole');
-    if (roleEl) {
-      roleEl.addEventListener('change', function() {
-        _roleFilter = roleEl.value;
-        refreshTable();
-      });
-    }
-
-    // Store pills
-    document.querySelectorAll('.store-pill, #lbAllStores').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        document.querySelectorAll('.store-pill, #lbAllStores').forEach(function(b) {
-          b.classList.remove('active');
-        });
-        btn.classList.add('active');
-        _storeFilter = btn.getAttribute('data-slug');
-        GC.state.set('lb.storeFilter', _storeFilter);
-        refreshTable();
-      });
-    });
-
-    // Tag pills
-    document.querySelectorAll('.tag-pill').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        var tag = btn.getAttribute('data-tag');
-        if (_tagFilter === tag) {
-          _tagFilter = null;
-          btn.classList.remove('active');
-        } else {
-          document.querySelectorAll('.tag-pill').forEach(function(b) { b.classList.remove('active'); });
-          _tagFilter = tag;
-          btn.classList.add('active');
-        }
-        refreshTable();
-      });
-    });
-
-    // Search
-    var searchEl = document.getElementById('lbSearch');
-    if (searchEl) {
-      searchEl.addEventListener('input', function() {
-        _search = searchEl.value.trim();
-        refreshTable();
-      });
-    }
-
-    // Sort
-    var sortEl = document.getElementById('lbSort');
-    if (sortEl) {
-      sortEl.addEventListener('change', function() {
-        var parts = sortEl.value.split(',');
-        _sortKey = parts[0];
-        _sortDir = parseInt(parts[1], 10);
-        GC.state.set('lb.sortKey', _sortKey);
-        GC.state.set('lb.sortDir', _sortDir);
-        refreshTable();
-      });
-    }
-
-    // Column-header sort — event delegation on the table wrap
-    var lbTableWrap = document.getElementById('lbTableWrap');
-    if (lbTableWrap) {
-      lbTableWrap.addEventListener('click', function(evt) {
-        var th = evt.target.closest('th[data-sort]');
-        if (!th) return;
-        var key = th.dataset.sort;
-        if (_sortKey === key) {
-          _sortDir = _sortDir * -1;  // toggle direction
-        } else {
-          _sortKey = key;
-          _sortDir = -1;  // default desc
-        }
-        GC.state.set('lb.sortKey', _sortKey);
-        GC.state.set('lb.sortDir', _sortDir);
-        refreshTable();
-      });
-    }
-
-    animateLbSparklines();
-  }
-
-  return { render: render, init: init, normalizeStaff: normalizeStaff };
-
-})();
-
-</script>
-<script>
-// ============================================================
 //  Green Cross — Settings View
 //  Route: #/settings (director/owner only)
 //
@@ -11705,8 +11209,8 @@ GC.views.renderLogin = function() {
   setTimeout(function() { userInput.focus(); }, 50);
 };
 
-// renderKiosk and renderLeaderboard are defined inline in the kiosk and
-// leaderboard <script> blocks above (this file is a self-contained monolith).
+// renderKiosk is defined inline in the kiosk <script> block above
+// (this file is a self-contained monolith).
 </script>
 
 <!-- ── Boot ────────────────────────────────────────────────── -->
