@@ -3752,11 +3752,17 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.379';
+window.GC = window.GC || {}; GC.VERSION = 'v1.380';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
 GC.CHANGELOG = [
+  { v: 'v1.380', date: 'Aug 5, 2026', items: [
+    'Much faster loads: once a day closes it’s cached and locked, so only today is pulled live. A "Hard refresh" in Settings re-pulls everything and re-locks — use it after a return is applied to an earlier date.',
+    'New Period Standings screen (all stores vs goal, pace-aware) — reachable from the header and each store view.',
+    'Pay Period is now the default across the Store Leaderboard, Top Performers, and the summary KPIs (its pill sits first; MTD is one click away).',
+    'Sign out moved into Settings.',
+  ] },
   { v: 'v1.371', date: 'Aug 4, 2026', items: [
     'Click the version number (top-right) anytime to open this changelog.',
     'New updates now greet directors with a "What’s New" popup on login.',
@@ -9924,6 +9930,7 @@ var settings = (function() {
     return '<header class="settings-header">'
       + '<button class="btn-ghost settings-back" id="settingsBack">← Back</button>'
       + '<h1 class="settings-title">Settings</h1>'
+      + '<button class="btn-ghost settings-logout" id="settingsLogout" style="margin-left:auto" title="Sign out of this device">Sign out</button>'
       + '</header>';
   }
 
@@ -10262,6 +10269,16 @@ var settings = (function() {
     var back = document.getElementById('settingsBack');
     if (back) back.addEventListener('click', function() {
       GC.router.navigate('#/director');
+    });
+
+    // Sign out
+    var logout = document.getElementById('settingsLogout');
+    if (logout) logout.addEventListener('click', function() {
+      if (confirm('Sign out?')) {
+        GC.auth.clear();
+        GC.state.reset();
+        GC.router.navigate('#/login');
+      }
     });
 
     // Recalculate button — chains prefetchY2 → prefetchY1 → recalculategoals
