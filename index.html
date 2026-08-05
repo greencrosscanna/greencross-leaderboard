@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.368';
+window.GC = window.GC || {}; GC.VERSION = 'v1.369';
 
 </script>
 
@@ -5354,15 +5354,17 @@ var director = (function() {
   var _clockTimer    = null;
   var _staffSortKey  = GC.state.get('dir.staffSortKey',  'sales');
   var _staffSortDir  = GC.state.get('dir.staffSortDir',  -1);
-  var _staffPeriod   = GC.state.get('dir.staffPeriod',   'mtd');
+  var _staffPeriod   = GC.state.get('dir.staffPeriod',   'pp');   // default to Pay Period
   var _staffPpData   = null;   // lazy-loaded, never persisted
   var _staffPpRange  = null;   // derived from data, never persisted
-  var _storePeriod   = GC.state.get('dir.storePeriod',   'mtd');
+  var _staffPpLoading = false; // in-flight guard (init may fire twice on cache-warm)
+  var _storePeriod   = GC.state.get('dir.storePeriod',   'pp');   // default to Pay Period
   var _storeSortKey  = GC.state.get('dir.storeSortKey',  'vsplan');
   var _storeSortDir  = GC.state.get('dir.storeSortDir',  -1);
   var _storePpRange  = null;   // derived from data, never persisted
   var _storeMtdData  = null;   // data cache for tab switching, never persisted
   var _storePpStores = null;   // data cache for tab switching, never persisted
+  var _storePpLoading = false; // in-flight guard (init may fire twice on cache-warm)
 
   // ── Helpers ────────────────────────────────────────────
 
@@ -6326,6 +6328,59 @@ var director = (function() {
       });
   }
 
+  // ── Pay-Period loaders (shared by tab toggle + default-on-load) ──
+  function loadStorePp() {
+    if (_storePpLoading) return;
+    _storePpLoading = true;
+    var tab = document.querySelector('.store-period-tab[data-store-period="pp"]');
+    if (tab) tab.textContent = 'Loading…';
+    GC.api.fetchDirectorStores('pp')
+      .then(function(ppData) {
+        _storePpLoading = false;
+        var ppStores = ppData.stores || [];
+        if (ppData.dateRange) _storePpRange = GC.fmtDateRange(ppData.dateRange.from, ppData.dateRange.to);
+        // Merge 30d trend from MTD data (trend is period-independent)
+        var trendMap = {};
+        if (_storeMtdData) _storeMtdData.forEach(function(s) { trendMap[s.slug] = { trend30d: s.trend30d, trendPct: s.trendPct }; });
+        ppStores = ppStores.map(function(s) { var t = trendMap[s.slug]; return t ? Object.assign({}, s, t) : s; });
+        _storePpStores = ppStores;
+        if (_data && _data.stores) _data.stores.stores = ppStores;
+        refreshStoreTable();
+        syncStorePeriodTabs();
+      })
+      .catch(function(err) {
+        _storePpLoading = false;
+        _storePeriod = 'mtd';
+        GC.state.set('dir.storePeriod', 'mtd');
+        if (_storeMtdData && _data && _data.stores) _data.stores.stores = _storeMtdData;
+        refreshStoreTable();
+        syncStorePeriodTabs();
+        console.warn('[director] PP stores fetch failed:', err);
+      });
+  }
+  function loadStaffPp() {
+    if (_staffPpLoading) return;
+    _staffPpLoading = true;
+    var tab = document.querySelector('.staff-period-tab[data-staff-period="pp"]');
+    if (tab) tab.textContent = 'Loading…';
+    GC.api.fetchDirectorStaff('pp')
+      .then(function(ppData) {
+        _staffPpLoading = false;
+        _staffPpData = ppData.staff || [];
+        if (ppData.dateRange) _staffPpRange = GC.fmtDateRange(ppData.dateRange.from, ppData.dateRange.to);
+        updateStaffTable(_staffPpData);
+        syncPeriodTabs();
+      })
+      .catch(function(err) {
+        _staffPpLoading = false;
+        _staffPeriod = 'mtd';
+        GC.state.set('dir.staffPeriod', 'mtd');
+        refreshStaffTable();
+        syncPeriodTabs();
+        console.warn('[director] PP staff fetch failed:', err);
+      });
+  }
+
   // ── Wire Interactivity ─────────────────────────────────
   function init(data) {
     _data = data;
@@ -6335,6 +6390,17 @@ var director = (function() {
     animateStoreBars();
     animateStoreSparklines();
     animateStaffSparklines();
+
+    // Sections default to Pay Period — apply cached PP data or load it. Guarded
+    // loaders make this safe across the multiple init() calls on cache-warm/refresh.
+    if (_staffPeriod === 'pp') {
+      if (_staffPpData) { updateStaffTable(_staffPpData); syncPeriodTabs(); }
+      else loadStaffPp();
+    }
+    if (_storePeriod === 'pp') {
+      if (_storePpStores) { if (_data.stores) _data.stores.stores = _storePpStores; refreshStoreTable(); syncStorePeriodTabs(); }
+      else loadStorePp();
+    }
 
     // Teardown on navigation away — stop the clock + the 5-min auto-refresh so
     // they don't keep firing (or stack a second interval) after leaving director.
@@ -6471,24 +6537,12 @@ var director = (function() {
               var thead = document.getElementById('staffTableHead');
               if (tbody) refreshStaffTable();
             }
+          } else if (_staffPpData) {
+            // Already cached — apply instantly
+            updateStaffTable(_staffPpData);
+            syncPeriodTabs();
           } else {
-            // Switch to PP — fetch if not cached
-            periodTab.textContent = 'Loading…';
-            GC.api.fetchDirectorStaff('pp')
-              .then(function(ppData) {
-                _staffPpData = ppData.staff || [];
-                if (ppData.dateRange) {
-                  _staffPpRange = GC.fmtDateRange(ppData.dateRange.from, ppData.dateRange.to);
-                }
-                updateStaffTable(_staffPpData);
-                syncPeriodTabs(); // restore correct labels after updateStaffTable
-              })
-              .catch(function(err) {
-                _staffPeriod = 'mtd';
-                GC.state.set('dir.staffPeriod', 'mtd');
-                syncPeriodTabs();
-                console.warn('[director] PP staff fetch failed:', err);
-              });
+            loadStaffPp();
           }
         }
 
@@ -6537,35 +6591,13 @@ var director = (function() {
               _data.stores.stores = _storeMtdData;
               refreshStoreTable();
             }
+          } else if (_storePpStores) {
+            // Already cached — apply instantly
+            if (_data.stores) _data.stores.stores = _storePpStores;
+            refreshStoreTable();
+            syncStorePeriodTabs();
           } else {
-            // Fetch PP store data
-            storePeriodTab.textContent = 'Loading…';
-            GC.api.fetchDirectorStores('pp')
-              .then(function(ppData) {
-                var ppStores = ppData.stores || [];
-                if (ppData.dateRange) {
-                  _storePpRange = GC.fmtDateRange(ppData.dateRange.from, ppData.dateRange.to);
-                }
-                // Merge 30d trend from MTD data (trend is independent of period)
-                var trendMap = {};
-                if (_storeMtdData) {
-                  _storeMtdData.forEach(function(s) { trendMap[s.slug] = { trend30d: s.trend30d, trendPct: s.trendPct }; });
-                }
-                ppStores = ppStores.map(function(s) {
-                  var t = trendMap[s.slug];
-                  return t ? Object.assign({}, s, t) : s;
-                });
-                _storePpStores = ppStores; // cache for re-apply after background refresh
-                if (_data.stores) _data.stores.stores = ppStores;
-                refreshStoreTable();
-                syncStorePeriodTabs(); // updates h2 with date range once loaded
-              })
-              .catch(function(err) {
-                _storePeriod = 'mtd';
-                GC.state.set('dir.storePeriod', 'mtd');
-                syncStorePeriodTabs();
-                console.warn('[director] PP stores fetch failed:', err);
-              });
+            loadStorePp();
           }
         }
 
