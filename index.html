@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.376';
+window.GC = window.GC || {}; GC.VERSION = 'v1.377';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -4899,7 +4899,8 @@ GC.api = (function() {
 
   // ── JSONP helper (same pattern as greencross-inventory) ──
   var _cbIndex = 0;
-  function jsonp(url, params) {
+  function jsonp(url, params, _attempt) {
+    _attempt = _attempt || 0;
     return new Promise(function(resolve, reject) {
       var cbName = '__gc_cb_' + (++_cbIndex);
       var timeout = setTimeout(function() {
@@ -4927,7 +4928,13 @@ GC.api = (function() {
         clearTimeout(timeout);
         delete window[cbName];
         script.remove();
-        reject(new Error('JSONP script error: ' + url));
+        // A script error is a network-level blip (not a slow server). Retry once
+        // after a short backoff so a transient hiccup self-heals instead of surfacing.
+        if (_attempt < 1) {
+          setTimeout(function() { jsonp(url, params, _attempt + 1).then(resolve, reject); }, 900);
+        } else {
+          reject(new Error('JSONP script error: ' + url));
+        }
       };
       document.head.appendChild(script);
     });
@@ -5722,10 +5729,6 @@ var director = (function() {
       + '<button class="btn-history" onclick="GC.router.navigate(\'#/standings\')" title="Period Standings — all stores vs goal">'
       +   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>'
       +   'Standings'
-      + '</button>'
-      + '<button class="btn-history" id="btnHardRefresh" onclick="GC.hardRefresh(this)" title="Hard refresh — re-pull every day live from Dutchie and re-lock closed days. Use after a retroactive return; slow (~1 min).">'
-      +   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>'
-      +   'Hard refresh'
       + '</button>'
       + (session && ['sky','mike'].indexOf(String(session.user || '').toLowerCase()) !== -1
           ? '<button class="btn-history" onclick="GC.router.navigate(\'#/incentive\')" title="Incentive Dashboard — bonus calculation">Incentive</button>'
@@ -10723,6 +10726,19 @@ var settings = (function() {
   }
 
   // ── Full page render ──────────────────────────────────────
+  // ── Data / maintenance ────────────────────────────────────
+  function renderDataCard() {
+    return '<div class="settings-card">'
+      + '<div class="settings-card-head"><div>'
+      +   '<div class="settings-card-title">Data</div>'
+      +   '<div class="settings-card-sub">Closed days are cached and locked — only today is pulled live, so the dashboard stays fast. <strong>Hard refresh</strong> re-pulls every day from Dutchie and re-locks the cache; use it only after a return was applied to an earlier date. Slow (~1 min). It does <strong>not</strong> touch locked Incentive payout history.</div>'
+      + '</div></div>'
+      + '<div class="settings-card-actions">'
+      +   '<button class="btn-secondary" id="settingsHardRefresh" onclick="GC.hardRefresh(this)">↻ Hard refresh — re-pull all data</button>'
+      + '</div>'
+      + '</div>';
+  }
+
   function render(data) {
     return '<div class="app-page settings-page">'
       + renderHeader()
@@ -10730,6 +10746,7 @@ var settings = (function() {
       +   renderGoalsSection(data)
       +   renderManagement(data.employees, data.avatarConfigs)
       +   renderEmployees(data.employees, data.nicknames, data.avatarConfigs, data.excluded, data.eom, data.roles)
+      +   renderDataCard()
       + '</div>'
       + '</div>';
   }
