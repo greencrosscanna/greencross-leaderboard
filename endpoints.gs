@@ -1437,10 +1437,12 @@ function clearAvatarConfig_(params) {
 //  EOD_Snapshots sheet (one read), and only TODAY is pulled fresh from Dutchie.
 //  Pace/projection is computed client-side from elapsedFrac.
 // ─────────────────────────────────────────────────────────────────────────────
-function getStandings_() {
+function getStandings_(hardRefresh) {
   var cache  = CacheService.getScriptCache();
-  var cached = cache.get('gc_standings_v1');
-  if (cached) { try { return JSON.parse(cached); } catch (e) {} }
+  if (!hardRefresh) {
+    var cached = cache.get('gc_standings_v1');
+    if (cached) { try { return JSON.parse(cached); } catch (e) {} }
+  }
 
   var props     = getProps_();
   var pp        = currentPPStart_(props);
@@ -1454,12 +1456,12 @@ function getStandings_() {
   var daysTotal  = Math.round(PP_MS / DAY_MS);
   var dayNum     = Math.max(1, Math.min(daysTotal, Math.floor((nowMs - ppStartMs) / DAY_MS) + 1));
 
-  // Live PP sales per store — SAME source as the director Store Leaderboard
-  // (aggregateTransactions_ over the full period range), so the two views match
-  // exactly rather than diverging from snapshot timing.
+  // Per-store PP sales via the day-cache: settled closed days come from cache,
+  // only today (+ pre-6am yesterday) is pulled live. Same aggregateTransactions_
+  // basis as the Store Leaderboard, so the two views still match exactly.
   var ppRange = { fromUTC: new Date(ppStartMs).toISOString(), toUTC: new Date(ppStartMs + PP_MS - 1).toISOString() };
-  var byStore = {};
-  try { byStore = fetchAllStoresTransactions_(ppRange); } catch (e) {}
+  var byStoreAgg = {};
+  try { byStoreAgg = byStoreAggCached_(ppRange, hardRefresh); } catch (e) {}
 
   // Day-of-week weighted "expected by now" — a Monday is not a Friday. Uses each
   // store's dowAvg curve (0=Sun..6=Sat) rather than a flat goal/14, so the pace
@@ -1493,8 +1495,7 @@ function getStandings_() {
   try { users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}'); } catch (e) {}
   var chainTarget = 0, chainSales = 0, chainSoFar = 0, chainTotal = 0;
   var stores = STORES.map(function(store) {
-    var sales = 0;
-    try { sales = aggregateTransactions_(byStore[store.slug] || []).sales || 0; } catch (e) {}
+    var sales = (byStoreAgg[store.slug] || {}).sales || 0;
     var res = null;
     try { res = resolveGoal_(store.slug); } catch (e) {}
     var target = res ? (res.effectivePP || 0) : 0;
@@ -1601,12 +1602,13 @@ function getIncentiveData_(ppStartParam, forceRefresh) {
   }
 
   // ── Performance data (the expensive fetch + aggregation) ──
-  // A completed period's transactions never change, so cache the derived numbers
-  // permanently. Only the CURRENT period is fetched every time (still settling).
-  // Force-refresh (forceRefresh) re-pulls a completed period if data settled late.
+  // A completed period is FROZEN: computed once (first view after it closes),
+  // cached permanently, and NEVER recomputed — these numbers paid people, so a
+  // hard-refresh must never change them. forceRefresh is ignored for completed
+  // periods; only the CURRENT (open, still-settling) period is fetched live.
   var perfKey = 'GC_INC_PERF_v2_' + ppStartStr;   // v2: full-store aggregation (includes managers/excluded sellers)
   var perf = null, fromCache = false;
-  if (!isCurrent && !forceRefresh) {
+  if (!isCurrent) {
     try { var c = props.getProperty(perfKey); if (c) { perf = JSON.parse(c); fromCache = true; } } catch(e) {}
   }
   if (!perf) {

@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.374';
+window.GC = window.GC || {}; GC.VERSION = 'v1.375';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -7739,7 +7739,7 @@ var incentive = (function() {
       +   '<div><div class="inc-title">Incentive Dashboard</div>'
       +     '<div class="inc-sub">Pay Period <select id="incPeriod" class="inc-period">' + periodOpts + '</select>'
       +       ' · <span class="inc-below">' + statusNote + '</span>'
-      +       (_d.payPeriod.current ? '' : ' <button class="inc-refresh" id="incRefresh" title="Re-pull this period from Dutchie">↻</button>') + '</div>'
+      +       (_d.payPeriod.current ? '' : ' <span class="inc-below inc-locked" title="Completed period — figures are locked">🔒</span>') + '</div>'
       +     '<div class="inc-actions">'
       +       '<button class="inc-btn primary" id="incPrint">Approve &amp; Print PDF</button>'
       +       '<button class="inc-btn" id="incCsv">Export Payroll CSV (Capstone)</button>'

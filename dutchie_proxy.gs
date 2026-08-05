@@ -318,7 +318,7 @@ function doGet(e) {
     // ── Period Standings (managers + directors) ────────────
     if (params.action === 'standings') {
       requireRole_(auth, ['owner','director','store_manager','asst_manager']);
-      return jsonOut(getStandings_(), params.callback);
+      return jsonOut(getStandings_(params.refresh === '1' || params.refresh === true), params.callback);
     }
     // ── Incentive Dashboard (owner + Mike only) ────────────
     if (params.action === 'incentive' || params.action === 'saveincentive') {

@@ -391,6 +391,125 @@ function aggregateTransactions_(txns) {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Day-level aggregate cache (soft lock) — Director / Standings only.
+//  Once a day closes and settles (~6am next day, after late transactions flush),
+//  its per-store aggregate is locked and served from CacheService instead of
+//  re-pulled every refresh. Only today (+ pre-6am yesterday) is pulled live.
+//  A hard-refresh re-pulls + re-locks closed days (retroactive-return case).
+//  Incentive history is FROZEN separately (ScriptProperties) and never uses this.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Merge day-level aggregateTransactions_ results into one. Totals are re-derived
+ * from the unrounded per-employee sums, so the merge is identical to a single
+ * aggregateTransactions_ over the union of the underlying transactions.
+ */
+function mergeAggs_(list) {
+  const byEmployee = {};
+  (list || []).forEach(function(a) {
+    if (!a || !a.byEmployee) return;
+    Object.keys(a.byEmployee).forEach(function(k) {
+      const e = a.byEmployee[k];
+      let m = byEmployee[k];
+      if (!m) m = byEmployee[k] = { id: e.id, name: e.name, initials: e.initials,
+        sales: 0, transactions: 0, items: 0, discounts: 0, discountsBdt: 0, subtotal: 0 };
+      m.sales += e.sales || 0; m.transactions += e.transactions || 0; m.items += e.items || 0;
+      m.discounts += e.discounts || 0; m.discountsBdt += e.discountsBdt || 0; m.subtotal += e.subtotal || 0;
+    });
+  });
+  let tSales = 0, tTxns = 0, tItems = 0, tDisc = 0, tSub = 0;
+  Object.keys(byEmployee).forEach(function(k) {
+    const e = byEmployee[k];
+    tSales += e.sales; tTxns += e.transactions; tItems += e.items; tDisc += e.discounts; tSub += e.subtotal;
+    e.avgOrderValue = e.transactions > 0 ? r2_(e.sales / e.transactions) : 0;
+    e.avgUPT        = e.transactions > 0 ? r1_(e.items / e.transactions) : 0;
+    e.discountRate  = e.subtotal     > 0 ? r3_(e.discountsBdt / e.subtotal) : 0;
+  });
+  return {
+    sales:          r2_(tSales),
+    transactions:   tTxns,
+    avgOrderValue:  tTxns > 0 ? r2_(tSales / tTxns) : 0,
+    avgUPT:         tTxns > 0 ? r1_(tItems / tTxns) : 0,
+    totalDiscounts: r2_(tDisc),
+    discountRate:   tSub > 0 ? r3_(tDisc / tSub) : 0,
+    byEmployee:     byEmployee,
+  };
+}
+
+/** Latest PT date that has fully settled. Yesterday once past ~6am PT; else the day before. */
+function settledThroughStr_() {
+  const DAY = 86400000;
+  const todayMs  = ptDateToUtcMs_(ptNow_().dateStr);
+  const backDays = ptHourNow_().hour >= 6 ? 1 : 2;
+  return Utilities.formatDate(new Date(todayMs - backDays * DAY + 12 * 3600000), STORE_TZ, 'yyyy-MM-dd');
+}
+
+/** Split a { fromUTC, toUTC } range into PT calendar days: [{ dateStr, fromUTC, toUTC }]. */
+function daysOfRange_(range) {
+  const DAY = 86400000;
+  const fromMs = new Date(range.fromUTC).getTime();
+  const toMs   = new Date(range.toUTC).getTime();
+  const days = [];
+  let dStr      = Utilities.formatDate(new Date(fromMs + 3600000), STORE_TZ, 'yyyy-MM-dd');
+  const lastStr = Utilities.formatDate(new Date(toMs   - 3600000), STORE_TZ, 'yyyy-MM-dd');
+  let guard = 0;
+  while (dStr <= lastStr && guard++ < 400) {
+    const startMs = ptDateToUtcMs_(dStr);
+    const endMs   = startMs + DAY - 1;
+    days.push({ dateStr: dStr,
+      fromUTC: new Date(Math.max(startMs, fromMs)).toISOString(),
+      toUTC:   new Date(Math.min(endMs, toMs)).toISOString() });
+    dStr = Utilities.formatDate(new Date(startMs + DAY + 12 * 3600000), STORE_TZ, 'yyyy-MM-dd');
+  }
+  return days;
+}
+
+/**
+ * Per-store aggregate over a range with settled closed days served from cache and
+ * only live days pulled. Returns { slug: mergedAgg } — identical to
+ * aggregateTransactions_ over the full range. hardRefresh re-pulls + re-locks.
+ */
+function byStoreAggCached_(range, hardRefresh) {
+  const cache = CacheService.getScriptCache();
+  const days  = daysOfRange_(range);
+  const settledThru = settledThroughStr_();
+  const perStore = {};
+  STORES.forEach(function(s) { perStore[s.slug] = []; });
+
+  const liveReqs = [];
+  days.forEach(function(d) {
+    const settled = d.dateStr <= settledThru;
+    STORES.forEach(function(s) {
+      const key = 'GC_DAYAGG_v1_' + s.slug + '_' + d.dateStr;
+      if (settled && !hardRefresh) {
+        const hit = cache.get(key);
+        if (hit) {
+          try { perStore[s.slug].push(JSON.parse(hit)); cache.put(key, hit, 21600); return; } catch(e) {}
+        }
+      }
+      liveReqs.push({ slug: s.slug, settled: settled, key: key, fromUTC: d.fromUTC, toUTC: d.toUTC });
+    });
+  });
+
+  if (liveReqs.length) {
+    const reqs = liveReqs.map(function(r, i) {
+      return { key: String(i), storeKey: getDutchieStoreKey_(r.slug), fromUTC: r.fromUTC, toUTC: r.toUTC };
+    });
+    const byKey = fetchTxnPagesByKey_(reqs);
+    liveReqs.forEach(function(r, i) {
+      const txns = (byKey[String(i)] || []).filter(function(t) { return t.transactionType === 'Retail'; });
+      const agg  = aggregateTransactions_(txns);
+      perStore[r.slug].push(agg);
+      if (r.settled) { try { cache.put(r.key, JSON.stringify(agg), 21600); } catch(e) {} }  // lock ~6h; trigger keeps warm
+    });
+  }
+
+  const out = {};
+  STORES.forEach(function(s) { out[s.slug] = mergeAggs_(perStore[s.slug]); });
+  return out;
+}
+
 /** Bucket transaction totals by hour of day (local time). Returns { h: { revenue, count } }. */
 function aggregateByHour_(txns) {
   const hours = {};
