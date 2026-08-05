@@ -3752,9 +3752,118 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.370';
+window.GC = window.GC || {}; GC.VERSION = 'v1.371';
+
+// ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
+// Curated list — one entry per NOTABLE release, not per auto-stamped version.
+GC.CHANGELOG = [
+  { v: 'v1.371', date: 'Aug 4, 2026', items: [
+    'Click the version number (top-right) anytime to open this changelog.',
+    'New updates now greet directors with a "What’s New" popup on login.',
+  ] },
+  { v: 'v1.370', date: 'Aug 4, 2026', items: [
+    'The 9 summary KPIs up top now follow the Store Leaderboard’s MTD / Pay Period toggle — switch the section and the pills (and their labels) switch with it.',
+    'Added a "Standings" shortcut button to the top bar.',
+  ] },
+  { v: 'v1.369', date: 'Aug 4, 2026', items: [
+    'Store Leaderboard and Top Performers now open on Pay Period by default (MTD is still one click away).',
+  ] },
+  { v: 'v1.367', date: 'Aug 4, 2026', items: [
+    'New Period Standings screen: all six stores ranked against the pay-period goal, pace-aware (day-of-week weighted, so a Monday isn’t judged like a Friday), refreshing live.',
+    'Reachable from the top bar and from each store view. Visible to store managers and directors — no bonus figures shown.',
+  ] },
+  { v: 'v1.363', date: 'Jul 28, 2026', items: [
+    'Incentive Dashboard: click any column header to sort (click again to flip, a third click clears).',
+    'Moved the bonus thresholds into a ⚙ settings tray.',
+  ] },
+  { v: 'v1.360', date: 'Jul 27, 2026', items: [
+    'New Incentive Dashboard: live bonus calculation for the pay period (managers, budtenders, admin) with editable attendance / SPIFF and thresholds, plus CSV / print export.',
+    'Reconciled against a full year of historical payout reports. Owner + Mike only.',
+  ] },
+];
+
+GC._verGt = function(a, b) {   // true when version a is newer than b ('v1.371' > 'v1.370')
+  function parse(x) { return String(x || '').replace(/^v/, '').split('.').map(function(n) { return parseInt(n, 10) || 0; }); }
+  var aa = parse(a), bb = parse(b), n = Math.max(aa.length, bb.length);
+  for (var i = 0; i < n; i++) { var d = (aa[i] || 0) - (bb[i] || 0); if (d) return d > 0; }
+  return false;
+};
+
+GC.showChangelog = function(entries, isWhatsNew) {
+  GC._clIsWn = !!isWhatsNew;
+  var list = entries || GC.CHANGELOG;
+  var latest = (GC.CHANGELOG[0] || {}).v || GC.VERSION;
+  var esc = GC.esc || function(s) { return String(s == null ? '' : s); };
+  var bodyHtml = list.map(function(e) {
+    return '<div class="cl-ver"><div class="cl-ver-head"><span class="cl-ver-num">' + esc(e.v) + '</span><span class="cl-ver-date">' + esc(e.date) + '</span></div>'
+      + '<ul class="cl-items">' + (e.items || []).map(function(i) { return '<li>' + esc(i) + '</li>'; }).join('') + '</ul></div>';
+  }).join('');
+  var overlay = document.getElementById('clOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'clOverlay'; overlay.className = 'cl-overlay';
+    overlay.addEventListener('click', function(ev) { if (ev.target === overlay) GC.closeChangelog(); });
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = '<div class="cl-modal">'
+    + '<div class="cl-header"><div class="cl-icon">🌿</div><div><div class="cl-title">' + (isWhatsNew ? "What’s New" : 'Changelog') + '</div>'
+    +   '<div class="cl-sub">Green Cross Leaderboard · ' + esc(latest) + '</div></div>'
+    +   '<button class="cl-x" onclick="GC.closeChangelog()" title="Close">✕</button></div>'
+    + '<div class="cl-body">' + bodyHtml + '</div>'
+    + '<div class="cl-footer"><button class="cl-ok" onclick="GC.closeChangelog()">' + (isWhatsNew ? 'Got it' : 'Close') + '</button></div>'
+    + '</div>';
+  overlay.classList.add('open');
+};
+
+GC.closeChangelog = function() {
+  var overlay = document.getElementById('clOverlay');
+  if (overlay) overlay.classList.remove('open');
+  if (GC._clIsWn) { try { localStorage.setItem('gc_wn_seen', (GC.CHANGELOG[0] || {}).v || ''); } catch (e) {} GC._clIsWn = false; }
+};
+
+// Show unseen updates once per login — DIRECTORS ONLY.
+GC.checkWhatsNew = function() {
+  if (GC._wnChecked) return; GC._wnChecked = true;
+  var sess = (GC.auth && GC.auth.load && GC.auth.load()) || {};
+  if (sess.role !== 'director' && sess.role !== 'owner') return;
+  var seen = '';
+  try { seen = localStorage.getItem('gc_wn_seen') || ''; } catch (e) {}
+  var unseen = GC.CHANGELOG.filter(function(c) { return GC._verGt(c.v, seen); });
+  if (unseen.length) GC.showChangelog(unseen, true);
+};
+
+// Clicking any version badge opens the full changelog.
+document.addEventListener('click', function(e) {
+  var b = e.target && e.target.closest ? e.target.closest('.ver-badge') : null;
+  if (b) { e.preventDefault(); GC.showChangelog(); }
+});
 
 </script>
+<style>
+/* ── Changelog / What's New modal ── */
+.cl-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.62); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+.cl-overlay.open { display: flex; }
+.cl-modal { background: var(--surface-2, #161c1a); border: 1px solid var(--border); border-radius: 14px; width: 560px; max-width: 100%; max-height: 82vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+.cl-header { display: flex; align-items: center; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--border); }
+.cl-icon { font-size: 26px; line-height: 1; }
+.cl-title { font-size: 17px; font-weight: 800; }
+.cl-sub { font-size: 12px; color: var(--text-mute); margin-top: 2px; }
+.cl-x { margin-left: auto; background: none; border: none; color: var(--text-mute); font-size: 16px; cursor: pointer; padding: 4px 8px; border-radius: 6px; line-height: 1; }
+.cl-x:hover { color: var(--text); background: var(--bg); }
+.cl-body { padding: 6px 20px; overflow-y: auto; }
+.cl-ver { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.cl-ver:last-child { border-bottom: none; }
+.cl-ver-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.cl-ver-num { font-weight: 800; color: var(--green); font-family: monospace; font-size: 13px; }
+.cl-ver-date { font-size: 11px; color: var(--text-mute); }
+.cl-items { margin: 0; padding-left: 18px; }
+.cl-items li { font-size: 13px; color: var(--text-dim); line-height: 1.5; margin-bottom: 5px; }
+.cl-footer { padding: 14px 20px; border-top: 1px solid var(--border); text-align: right; }
+.cl-ok { background: var(--green); color: #08130c; border: none; border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.cl-ok:hover { opacity: 0.9; }
+.ver-badge { cursor: pointer; transition: color .15s, border-color .15s, opacity .15s; }
+.ver-badge:hover { opacity: 0.95; color: var(--text-dim); border-color: var(--green); }
+</style>
 
 <!-- ── Foundation layer (load order matters) ──────────────── -->
 <script>
@@ -5293,6 +5402,7 @@ GC.views.renderDirector = function() {
       }
       app.innerHTML = director.render(data);
       director.init(data);
+      GC.checkWhatsNew();   // directors-only "What's New" popup, once per login
 
       // Pre-warm all kiosk caches so navigating to any store view is instant.
       // Fire after director renders so it doesn't compete with the director fetch.
