@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.367';
+window.GC = window.GC || {}; GC.VERSION = 'v1.368';
 
 </script>
 
@@ -7768,27 +7768,28 @@ var standingsView = (function() {
   function pct0(n){ return Math.round((n || 0) * 100) + '%'; }   // n is a fraction
 
   function compute(d) {
-    var ef = Math.max(0.02, d.payPeriod.elapsedFrac || 0);   // floor tames wild day-1 projections
-    function paceOf(sales, target) {
+    // Each store carries its own day-of-week-weighted expectedFrac from the server.
+    function paceOf(sales, target, efRaw) {
+      var ef        = Math.max(0.02, efRaw || 0);   // floor tames wild day-1 projections
       var pctGoal   = target > 0 ? sales / target : 0;
       var projected = sales / ef;
       var pace      = target > 0 ? projected / target : 0;
       var status    = pace >= 1 ? 'on' : (pace >= 0.95 ? 'slight' : 'behind');
-      return { pctGoal: pctGoal, projected: projected, pace: pace, delta: projected - target, status: status };
+      return { pctGoal: pctGoal, projected: projected, pace: pace, delta: projected - target, status: status, ef: ef };
     }
-    var stores = d.stores.map(function(s) { return Object.assign({}, s, paceOf(s.sales, s.target)); });
+    var stores = d.stores.map(function(s) { return Object.assign({}, s, paceOf(s.sales, s.target, s.expectedFrac)); });
     stores.sort(function(a, b) { return b.pace - a.pace; });
-    var chain = paceOf(d.chain.sales, d.chain.target);
+    var chain = paceOf(d.chain.sales, d.chain.target, d.chain.expectedFrac);
     chain.onPace = stores.filter(function(s) { return s.pace >= 1; }).length;
-    return { stores: stores, chain: chain, ef: ef };
+    return { stores: stores, chain: chain };
   }
 
   function statusLabel(st) { return st === 'on' ? 'On pace' : (st === 'slight' ? 'Just behind' : 'Behind'); }
 
   function render(d) {
     var c = compute(d), pp = d.payPeriod;
-    var chainCls   = c.chain.status === 'on' ? 'green' : (c.chain.status === 'slight' ? 'amber' : 'red');
-    var elapsedPct = Math.round(c.ef * 100);
+    var chainCls = c.chain.status === 'on' ? 'green' : (c.chain.status === 'slight' ? 'amber' : 'red');
+    var chainPct = Math.round(c.chain.ef * 100);   // chain pace-line position (day-of-week weighted)
 
     var rows = c.stores.map(function(s, i) {
       var deltaCls = s.status === 'on' ? 'up' : (s.status === 'slight' ? 'flat' : 'down');
@@ -7803,7 +7804,7 @@ var standingsView = (function() {
         +   '<div class="stn-delta ' + deltaCls + ' stn-num">' + sign + m0(Math.abs(s.delta)) + ' · ' + pct0(s.pace) + ' pace</div></div>'
         + '<div class="stn-pill ' + s.status + '">' + statusLabel(s.status) + '</div>'
         + '<div class="stn-barwrap"><div class="stn-bar ' + s.status + '" style="width:' + fillW.toFixed(1) + '%"></div>'
-        +   '<div class="stn-mark" style="left:' + elapsedPct + '%"></div></div>'
+        +   '<div class="stn-mark" style="left:' + Math.round(s.ef * 100) + '%"></div></div>'
         + '</div>';
     }).join('');
 
@@ -7825,13 +7826,12 @@ var standingsView = (function() {
       +   '<div class="stn-hstat"><div class="stn-l">Chain Pace</div><div class="stn-v ' + chainCls + ' stn-num">' + pct0(c.chain.pace) + '</div><div class="stn-foot">projected ' + m0(c.chain.projected) + '</div></div>'
       +   '<div class="stn-hstat"><div class="stn-l">On Pace</div><div class="stn-v stn-num">' + c.chain.onPace + ' <span style="color:var(--text-mute);font-size:18px">of ' + c.stores.length + '</span></div><div class="stn-foot">stores tracking to hit</div></div>'
       + '</div>'
-      +   '<div class="stn-chain-bar"><div class="stn-chain-fill" style="width:' + chainFill.toFixed(1) + '%"></div><div class="stn-chain-mark" style="left:' + elapsedPct + '%"></div></div>'
-      +   '<div class="stn-chain-legend"><span>' + m0(d.chain.sales) + ' sold</span><span>pace line · ' + elapsedPct + '% of period elapsed</span><span>' + m0(d.chain.target) + ' goal</span></div>'
+      +   '<div class="stn-chain-bar"><div class="stn-chain-fill" style="width:' + chainFill.toFixed(1) + '%"></div><div class="stn-chain-mark" style="left:' + chainPct + '%"></div></div>'
+      +   '<div class="stn-chain-legend"><span>' + m0(d.chain.sales) + ' sold</span><span>pace line · day-of-week weighted</span><span>' + m0(d.chain.target) + ' goal</span></div>'
       + '</div>'
 
       + '<div class="stn-sec">Store Standings — ranked by pace</div>'
       + rows
-      + '<div class="stn-hint">Refreshes automatically · store sales from nightly snapshots + today’s live total · no bonus figures shown</div>'
       + '</div>';
   }
 

@@ -1438,73 +1438,92 @@ function clearAvatarConfig_(params) {
 //  Pace/projection is computed client-side from elapsedFrac.
 // ─────────────────────────────────────────────────────────────────────────────
 function getStandings_() {
+  var cache  = CacheService.getScriptCache();
+  var cached = cache.get('gc_standings_v1');
+  if (cached) { try { return JSON.parse(cached); } catch (e) {} }
+
   var props     = getProps_();
   var pp        = currentPPStart_(props);
   var ppStartMs = pp.ppStartMs, PP_MS = pp.PP_MS;
   var DAY_MS    = 86400000;
   var nowMs     = Date.now();
 
-  var ppStartStr = Utilities.formatDate(new Date(ppStartMs),            STORE_TZ, 'yyyy-MM-dd');
+  var ppStartStr = Utilities.formatDate(new Date(ppStartMs),             STORE_TZ, 'yyyy-MM-dd');
   var ppEndStr   = Utilities.formatDate(new Date(ppStartMs + PP_MS - 1), STORE_TZ, 'yyyy-MM-dd');
-  var todayStr   = Utilities.formatDate(new Date(nowMs),               STORE_TZ, 'yyyy-MM-dd');
+  var todayStr   = Utilities.formatDate(new Date(nowMs),                 STORE_TZ, 'yyyy-MM-dd');
   var daysTotal  = Math.round(PP_MS / DAY_MS);
-  var elapsedFrac = Math.max(0, Math.min(1, (nowMs - ppStartMs) / PP_MS));
-  var dayNum      = Math.max(1, Math.min(daysTotal, Math.floor((nowMs - ppStartMs) / DAY_MS) + 1));
+  var dayNum     = Math.max(1, Math.min(daysTotal, Math.floor((nowMs - ppStartMs) / DAY_MS) + 1));
 
-  // 1. Completed-day sales per store from EOD_Snapshots (ppStart .. yesterday).
-  var snapSales = {};
-  STORES.forEach(function(s) { snapSales[s.slug] = 0; });
-  try {
-    var sheet = getSnapshotSheet_();
-    var vals  = sheet.getDataRange().getValues();
-    var hdr   = vals[0], idx = {};
-    hdr.forEach(function(c, i) { idx[c] = i; });
-    for (var r = 1; r < vals.length; r++) {
-      var d = normDateCell_(vals[r][idx['date']]);
-      if (d >= ppStartStr && d < todayStr) {
-        var slug = vals[r][idx['store_slug']];
-        if (snapSales[slug] !== undefined) snapSales[slug] += Number(vals[r][idx['revenue']]) || 0;
-      }
+  // Live PP sales per store — SAME source as the director Store Leaderboard
+  // (aggregateTransactions_ over the full period range), so the two views match
+  // exactly rather than diverging from snapshot timing.
+  var ppRange = { fromUTC: new Date(ppStartMs).toISOString(), toUTC: new Date(ppStartMs + PP_MS - 1).toISOString() };
+  var byStore = {};
+  try { byStore = fetchAllStoresTransactions_(ppRange); } catch (e) {}
+
+  // Day-of-week weighted "expected by now" — a Monday is not a Friday. Uses each
+  // store's dowAvg curve (0=Sun..6=Sat) rather than a flat goal/14, so the pace
+  // line tracks the real sales shape of the days that have actually elapsed.
+  var DOW = [], elapsedFull = [], todayIdx = -1;
+  for (var i = 0; i < daysTotal; i++) {
+    var noonMs = ppStartMs + i * DAY_MS + 12 * 3600000;   // noon dodges DST edges
+    var dStr   = Utilities.formatDate(new Date(noonMs), STORE_TZ, 'yyyy-MM-dd');
+    var u      = parseInt(Utilities.formatDate(new Date(noonMs), STORE_TZ, 'u'), 10); // 1=Mon..7=Sun
+    DOW.push(u % 7);                    // 7(Sun)->0, 1..6 -> Mon..Sat
+    elapsedFull.push(dStr < todayStr);
+    if (dStr === todayStr) todayIdx = i;
+  }
+  var ptn        = ptHourNow_();
+  var elapsedHrs = Math.max(0, Math.min((ptn.hour + ptn.minute / 60) - STORE_OPEN_HOUR, STORE_HOURS));
+  var intraday   = STORE_HOURS > 0 ? elapsedHrs / STORE_HOURS : 0;
+  function expectedParts(dowAvg) {
+    if (!dowAvg) return null;
+    var total = 0, soFar = 0;
+    for (var j = 0; j < daysTotal; j++) {
+      var w = Number(dowAvg[DOW[j]]) || 0;
+      total += w;
+      if (elapsedFull[j])      soFar += w;                 // fully completed day
+      else if (j === todayIdx) soFar += w * intraday;      // today, so far
     }
-  } catch (e) { /* snapshot sheet missing → completed days count as 0, today still shows */ }
+    return { soFar: soFar, total: total };
+  }
+  var linearFrac = Math.max(0, Math.min(1, (nowMs - ppStartMs) / PP_MS)); // fallback
 
-  // 2. Today's sales per store — one batched Dutchie pull (same idiom as getAggTicker_).
-  var todaySales = {};
-  STORES.forEach(function(s) { todaySales[s.slug] = 0; });
-  try {
-    var byStoreToday = fetchAllStoresTransactions_(getDateRange_('today'));
-    STORES.forEach(function(s) {
-      todaySales[s.slug] = aggregateTransactions_(byStoreToday[s.slug] || []).sales || 0;
-    });
-  } catch (e) { /* today pull failed → PP-to-date is snapshot-only for this refresh */ }
-
-  // 3. Assemble: goal (effectivePP) + roster manager per store.
   var users = {};
   try { users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}'); } catch (e) {}
-  var chainTarget = 0, chainSales = 0;
+  var chainTarget = 0, chainSales = 0, chainSoFar = 0, chainTotal = 0;
   var stores = STORES.map(function(store) {
-    var sales  = (snapSales[store.slug] || 0) + (todaySales[store.slug] || 0);
-    var target = 0;
-    try { target = resolveGoal_(store.slug).effectivePP || 0; } catch (e) {}
+    var sales = 0;
+    try { sales = aggregateTransactions_(byStore[store.slug] || []).sales || 0; } catch (e) {}
+    var res = null;
+    try { res = resolveGoal_(store.slug); } catch (e) {}
+    var target = res ? (res.effectivePP || 0) : 0;
+    var parts  = res && res.g ? expectedParts(res.g.dowAvg) : null;
+    var ef     = (parts && parts.total > 0) ? parts.soFar / parts.total : linearFrac;
+    if (parts) { chainSoFar += parts.soFar; chainTotal += parts.total; }
     var mgr = Object.values(users).find(function(u) {
       return u.storeSlug === store.slug && u.role === 'store_manager';
     }) || {};
     chainTarget += target; chainSales += sales;
     return {
-      slug:    store.slug,
-      name:    store.name,
-      mgrName: mgr.displayName || '',
-      target:  Math.round(target),
-      sales:   Math.round(sales),
+      slug:         store.slug,
+      name:         store.name,
+      mgrName:      mgr.displayName || '',
+      target:       Math.round(target),
+      sales:        Math.round(sales),
+      expectedFrac: r3_(ef),
     };
   });
+  var chainEf = chainTotal > 0 ? chainSoFar / chainTotal : linearFrac;
 
-  return {
+  var out = {
     ok: true,
-    payPeriod: { start: ppStartStr, end: ppEndStr, dayNum: dayNum, daysTotal: daysTotal, elapsedFrac: r3_(elapsedFrac) },
-    chain:     { target: Math.round(chainTarget), sales: Math.round(chainSales) },
+    payPeriod: { start: ppStartStr, end: ppEndStr, dayNum: dayNum, daysTotal: daysTotal },
+    chain:     { target: Math.round(chainTarget), sales: Math.round(chainSales), expectedFrac: r3_(chainEf) },
     stores:    stores,
   };
+  try { cache.put('gc_standings_v1', JSON.stringify(out), 90); } catch (e) {}
+  return out;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
