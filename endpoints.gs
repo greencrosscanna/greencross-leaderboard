@@ -349,15 +349,14 @@ function getDirectorSummary(params, pre) {
   const range  = getDateRange_(period);
   const prior  = getPriorRange_(range);
 
-  // Use pre-fetched data when called from directorall, otherwise fetch independently.
-  const currByStore = pre.byStore     || fetchAllStoresTransactions_(range);
-  const prevByStore = pre.prevByStore || fetchAllStoresTransactions_(prior);
-
-  const allCurr = Object.values(currByStore).flat();
-  const allPrev = Object.values(prevByStore).flat();
-
-  const curr = aggregateTransactions_(allCurr);
-  const prev = aggregateTransactions_(allPrev);
+  // Prefer the day-cached per-store aggregates (merge to a chain total); fall back
+  // to a raw fetch + aggregate when called standalone (directorsummary action).
+  const curr = pre.byStoreAgg
+    ? mergeAggs_(Object.values(pre.byStoreAgg))
+    : aggregateTransactions_(Object.values(pre.byStore || fetchAllStoresTransactions_(range)).flat());
+  const prev = pre.prevByStoreAgg
+    ? mergeAggs_(Object.values(pre.prevByStoreAgg))
+    : aggregateTransactions_(Object.values(pre.prevByStore || fetchAllStoresTransactions_(prior)).flat());
 
   const _excluded     = getExcluded_();
   const allEmps       = Object.values(curr.byEmployee).filter(e => !_excluded.has(nameToKey_(e.name)));
@@ -406,7 +405,9 @@ function getDirectorStores(params, pre) {
   const plans    = getStorePlans_();
 
   // Use pre-fetched data when called from directorall, otherwise fetch independently.
-  const byStore      = pre.byStore      || fetchAllStoresTransactions_(range);
+  // pre.byStoreAgg is the day-cached per-store aggregate (preferred); byStore raw is
+  // only fetched when neither is supplied (standalone directorstores action).
+  const byStore      = pre.byStore      || (pre.byStoreAgg ? {} : fetchAllStoresTransactions_(range));
   const byStoreToday = pre.byStoreToday || (period === 'today' ? byStore : fetchAllStoresTransactions_(todayR));
   const byStore30d   = pre.byStore30d   || null;  // 30-day window for trends (pre-fetched by directorall)
   const storeTrends  = pre.storeTrends  || null;  // pre-computed { slug: {trend30d,trendPct} } from cache
@@ -417,9 +418,8 @@ function getDirectorStores(params, pre) {
   );
 
   const storeSummaries = STORES.map(function(store) {
-    const txns      = byStore[store.slug]      || [];
     const txnsToday = byStoreToday[store.slug] || [];
-    const agg       = aggregateTransactions_(txns);
+    const agg       = (pre.byStoreAgg && pre.byStoreAgg[store.slug]) || aggregateTransactions_(byStore[store.slug] || []);
     const aggToday  = aggregateTransactions_(txnsToday);
 
     const dailyGoal  = getDailyGoal_(store.slug);
@@ -494,7 +494,7 @@ function getDirectorStaff(params, pre) {
   const period    = params.period || 'mtd';
   const range     = getDateRange_(period);
   // Use pre-fetched data when called from directorall, otherwise fetch independently.
-  const byStore   = pre.byStore   || fetchAllStoresTransactions_(range);
+  const byStore   = pre.byStore   || (pre.byStoreAgg ? {} : fetchAllStoresTransactions_(range));
   const byStore30d = pre.byStore30d || null;
 
   // Build per-employee daily revenue buckets from the 30d window (for trend lines).
@@ -518,7 +518,7 @@ function getDirectorStaff(params, pre) {
   const _dirExcluded = getExcluded_();
 
   STORES.forEach(function(store) {
-    const agg = aggregateTransactions_(byStore[store.slug] || []);
+    const agg = (pre.byStoreAgg && pre.byStoreAgg[store.slug]) || aggregateTransactions_(byStore[store.slug] || []);
     Object.values(agg.byEmployee).forEach(function(emp) {
       const key = emp.name.toLowerCase().replace(/\s+/g, '_');
       if (_dirExcluded.has(nameToKey_(emp.name))) return;
@@ -626,13 +626,13 @@ function getDirectorAlerts(pre) {
   pre = pre || {};
   const range     = getDateRange_('mtd');
   // Use pre-fetched data when called from directorall, otherwise fetch independently.
-  const byStore   = pre.byStore || fetchAllStoresTransactions_(range);
+  const byStore   = pre.byStore || (pre.byStoreAgg ? {} : fetchAllStoresTransactions_(range));
   const plans     = getStorePlans_();
   const alerts    = [];
   const discWatch = [];
 
   STORES.forEach(function(store) {
-    const agg          = aggregateTransactions_(byStore[store.slug] || []);
+    const agg          = (pre.byStoreAgg && pre.byStoreAgg[store.slug]) || aggregateTransactions_(byStore[store.slug] || []);
     // DOW-weighted expected revenue for the completed days of the month. (The old
     // formula divided by days-elapsed instead of days-in-month, so every store was
     // always flagged ~−60-95% behind. This compares MTD sales against the realistic

@@ -233,13 +233,17 @@ function doGet(e) {
       // Browser requests make zero Dutchie UrlFetch calls when cache is warm.
       const dirCacheKey = 'gc_dirall_v2_' + period;
       const dirCache    = CacheService.getScriptCache();
-      try {
-        const chunks = getChunkedCache_(dirCache, dirCacheKey);
-        if (chunks) return jsonOut(JSON.parse(chunks), params.callback);
-      } catch(e) { /* cache miss or parse error — fall through to fetch */ }
+      const hardRefresh = params.refresh === '1' || params.refresh === true;
+      if (!hardRefresh) {
+        try {
+          const chunks = getChunkedCache_(dirCache, dirCacheKey);
+          if (chunks) return jsonOut(JSON.parse(chunks), params.callback);
+        } catch(e) { /* cache miss or parse error — fall through to fetch */ }
+      }
 
-      // Cache cold (first load or after GAS restart) — fetch now and warm it.
-      const result = buildDirectorAll_(period);
+      // Cache cold (or hard refresh) — fetch now and warm it. hardRefresh re-pulls
+      // + re-locks the day cache (retroactive-return case).
+      const result = buildDirectorAll_(period, hardRefresh);
       saveChunkedCache_(dirCache, dirCacheKey, JSON.stringify(result), 360);
       return jsonOut(result, params.callback);
     }

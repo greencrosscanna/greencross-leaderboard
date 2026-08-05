@@ -63,7 +63,7 @@ function getChunkedCache_(cache, key) {
  * Fetches all Dutchie data for the given period and returns the
  * full directorall payload object.
  */
-function buildDirectorAll_(period) {
+function buildDirectorAll_(period, hardRefresh) {
   period = period || 'mtd';
   const params = { period: period };
   const range  = getDateRange_(period);
@@ -72,22 +72,26 @@ function buildDirectorAll_(period) {
   const mtdR   = period === 'mtd' ? null : getDateRange_('mtd');
 
   const storeTrendCache = getStoreTrendCache_();
-  const rangeList = [range, prior, todayR];
-  if (mtdR) rangeList.push(mtdR);
-  if (!storeTrendCache) rangeList.push(getDateRange_('30d'));
 
-  const fetched      = fetchAllStoresTransactionsMulti_(rangeList);
-  const byStore      = fetched[0];
-  const prevByStore  = fetched[1];
-  const byStoreToday = fetched[2];
-  const byStoreMTD   = mtdR ? fetched[3] : byStore;
-  const byStore30d   = storeTrendCache ? null : fetched[rangeList.length - 1];
+  // Day-cached per-store aggregates: settled closed days come from CacheService,
+  // only today (+ pre-6am yesterday) is pulled live. hardRefresh re-pulls + re-locks.
+  const byStoreAgg     = byStoreAggCached_(range, hardRefresh);
+  const prevByStoreAgg = byStoreAggCached_(prior, hardRefresh);                 // prior period fully settled → all cached
+  const byStoreMTDAgg  = mtdR ? byStoreAggCached_(mtdR, hardRefresh) : byStoreAgg;
+
+  // Still pulled live/raw: TODAY (intraday pace, ticker, today card) and the
+  // 30-day trend window (only when the trend cache is cold).
+  const rawList = [todayR];
+  if (!storeTrendCache) rawList.push(getDateRange_('30d'));
+  const rawFetched   = fetchAllStoresTransactionsMulti_(rawList);
+  const byStoreToday = rawFetched[0];
+  const byStore30d   = storeTrendCache ? null : rawFetched[rawList.length - 1];
   const storeTrends  = storeTrendCache || saveStoreTrendCache_(byStore30d) || {};
 
-  const summary       = getDirectorSummary(params, { byStore, prevByStore });
-  const stores        = getDirectorStores(params,  { byStore, byStoreToday, byStore30d, storeTrends });
-  const staff         = getDirectorStaff(params,   { byStore, byStore30d });
-  const alerts        = getDirectorAlerts(         { byStore: byStoreMTD });
+  const summary       = getDirectorSummary(params, { byStoreAgg, prevByStoreAgg });
+  const stores        = getDirectorStores(params,  { byStoreAgg, byStoreToday, byStore30d, storeTrends });
+  const staff         = getDirectorStaff(params,   { byStoreAgg, byStore30d });
+  const alerts        = getDirectorAlerts(         { byStoreAgg: byStoreMTDAgg });
   const today         = getDirectorToday(byStoreToday);
   const avatarConfigs = getAvatarConfigs_();
   const eomKey        = (getEomCurrent_() || {}).employeeKey || null;

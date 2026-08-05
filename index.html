@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.375';
+window.GC = window.GC || {}; GC.VERSION = 'v1.376';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -3874,6 +3874,27 @@ document.addEventListener('click', function(e) {
   var b = e.target && e.target.closest ? e.target.closest('.ver-badge') : null;
   if (b) { e.preventDefault(); GC.showChangelog(); }
 });
+
+// Hard refresh — re-pull every day live from Dutchie and re-lock closed days
+// (retroactive-return case). Sequential to avoid overloading GAS. NEVER touches
+// frozen Incentive history. Clears client caches, then reloads.
+GC.hardRefresh = function(btn) {
+  if (!GC.api || !GC.api.fetchDirectorAll) return;
+  var orig = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = 'Re-pulling… (~1 min)'; }
+  GC.api.fetchDirectorAll('pp', null, true)
+    .then(function() { return GC.api.fetchDirectorAll('mtd', null, true); })
+    .then(function() { return GC.api.fetchStandings ? GC.api.fetchStandings(true) : null; })
+    .then(function() {
+      try { Object.keys(localStorage).forEach(function(k) { if (/^gc_cache_director|^gc_cache_kiosk/.test(k)) localStorage.removeItem(k); }); } catch (e) {}
+      if (GC.toast) GC.toast('Hard refresh complete — reloading', 'success');
+      setTimeout(function() { location.reload(); }, 500);
+    })
+    .catch(function(err) {
+      if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+      if (GC.toast) GC.toast('Hard refresh failed: ' + ((err && err.message) || err), 'error');
+    });
+};
 
 </script>
 <style>
@@ -5028,8 +5049,12 @@ GC.api = (function() {
 
   // Convenience: single GAS round-trip returning all four director payloads.
   // onFresh(data) — optional callback fired when background network refresh lands.
-  function fetchDirectorAll(period, onFresh) {
+  function fetchDirectorAll(period, onFresh, hardRefresh) {
     period = period || 'mtd';
+    if (hardRefresh && !USE_FIXTURES) {
+      // Bypass the client cache and tell the server to re-pull + re-lock closed days.
+      return gasCall('directorall', { period: period, refresh: '1' });
+    }
     if (USE_FIXTURES) {
       return Promise.all([
         fetchFixture('director-summary'),
@@ -5147,7 +5172,7 @@ GC.api = (function() {
     fetchSettings:    fetchSettings,
     fetchIncentive:   function(ppStart, refresh) { var p = {}; if (ppStart) p.ppStart = ppStart; if (refresh) p.refresh = '1'; return gasCall('incentive', p); },
     saveIncentive:    function(payload) { return gasCall('saveincentive', payload); },
-    fetchStandings:   function() { return gasCall('standings'); },
+    fetchStandings:   function(refresh) { return gasCall('standings', refresh ? { refresh: '1' } : {}); },
     fetchAvatarData:  fetchAvatarData,
     saveSettings:     saveSettings,
     gasCall:          gasCall,
@@ -5697,6 +5722,10 @@ var director = (function() {
       + '<button class="btn-history" onclick="GC.router.navigate(\'#/standings\')" title="Period Standings — all stores vs goal">'
       +   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>'
       +   'Standings'
+      + '</button>'
+      + '<button class="btn-history" id="btnHardRefresh" onclick="GC.hardRefresh(this)" title="Hard refresh — re-pull every day live from Dutchie and re-lock closed days. Use after a retroactive return; slow (~1 min).">'
+      +   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>'
+      +   'Hard refresh'
       + '</button>'
       + (session && ['sky','mike'].indexOf(String(session.user || '').toLowerCase()) !== -1
           ? '<button class="btn-history" onclick="GC.router.navigate(\'#/incentive\')" title="Incentive Dashboard — bonus calculation">Incentive</button>'
