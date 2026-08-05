@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.372';
+window.GC = window.GC || {}; GC.VERSION = 'v1.373';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -3829,7 +3829,7 @@ GC._verGt = function(a, b) {   // true when version a is newer than b ('v1.371' 
 GC.showChangelog = function(entries, isWhatsNew) {
   GC._clIsWn = !!isWhatsNew;
   var list = entries || GC.CHANGELOG;
-  var latest = (GC.CHANGELOG[0] || {}).v || GC.VERSION;
+  var latest = GC.VERSION || (GC.CHANGELOG[0] || {}).v;   // subtitle = running app version (matches the badge)
   var esc = GC.esc || function(s) { return String(s == null ? '' : s); };
   var bodyHtml = list.map(function(e) {
     return '<div class="cl-ver"><div class="cl-ver-head"><span class="cl-ver-num">' + esc(e.v) + '</span><span class="cl-ver-date">' + esc(e.date) + '</span></div>'
