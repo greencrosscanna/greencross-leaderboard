@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.384';
+window.GC = window.GC || {}; GC.VERSION = 'v1.385';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -5999,7 +5999,7 @@ var director = (function() {
         + '<td><div class="who">'
           + avatarHtml(s.initials, null, s.name, s.nameKey)
           + '<div>'
-          + '<div class="who-name">' + e(s.name) + tagsHtml(tags, null, sTips) + '</div>'
+          + '<div class="who-name">' + e(s.fullName || s.name) + tagsHtml(tags, null, sTips) + '</div>'
           + '</div></div></td>'
         + '<td><div class="store-cell">'
           + storeDotHtml(s.storeSlug)
@@ -6425,7 +6425,7 @@ var director = (function() {
         + '<td>' + rankPillHtml(s.rank, total) + '</td>'
         + '<td><div class="who">'
           + avatarHtml(s.initials, null, s.name, s.nameKey)
-          + '<div><div class="who-name">' + e(s.name) + tagsHtml(tags, null, sTips) + '</div>'
+          + '<div><div class="who-name">' + e(s.fullName || s.name) + tagsHtml(tags, null, sTips) + '</div>'
           + '</div></div></td>'
         + '<td><div class="store-cell">' + storeDotHtml(s.storeSlug) + '<span>' + e(s.storeName) + '</span></div></td>'
         + '<td>' + e(s.roleLabel) + '</td>'
@@ -6834,7 +6834,7 @@ var director = (function() {
         + '<td>' + rankPillHtml(s.rank, total) + '</td>'
         + '<td><div class="who">'
           + avatarHtml(s.initials, null, s.name, s.nameKey)
-          + '<div><div class="who-name">' + e(s.name) + tagsHtml(tags, null, sTips) + '</div>'
+          + '<div><div class="who-name">' + e(s.fullName || s.name) + tagsHtml(tags, null, sTips) + '</div>'
           + '</div></div></td>'
         + '<td><div class="store-cell">' + storeDotHtml(s.storeSlug) + '<span>' + e(s.storeName) + '</span></div></td>'
         + '<td>' + e(s.roleLabel) + '</td>'
