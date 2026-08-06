@@ -585,10 +585,11 @@ function getDirectorStaff(params, pre) {
     // s.name here is still the full Dutchie name ("First Last").
     var _nk = _nicknames[s.nameKey];
     if (_nk) {
-      var _last = s.name.trim().split(/\s+/).slice(1).join(' ');   // last name(s) after the first
-      s.fullName = _last ? _nk + ' ' + _last : _nk;
+      var _parts = s.name.trim().split(/\s+/);
+      var _last  = _parts.length > 1 ? _parts[_parts.length - 1] : '';   // surname = last token
+      s.fullName = _last ? _nk + ' ' + _last : _nk;                       // "Nickname Lastname"
     } else {
-      s.fullName = s.name;   // full Dutchie first + last
+      s.fullName = s.name;   // full Dutchie name
     }
     s.name = applyNickname_(s.name, _nicknames);   // short display (first name / nickname) — kiosk + ticker
     // nameKey stays as the pre-nickname canonical key for avatar lookup
