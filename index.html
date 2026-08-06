@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.387';
+window.GC = window.GC || {}; GC.VERSION = 'v1.388';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -4030,6 +4030,7 @@ GC.slideshow = (function() {
     var current  = _idx + 1;
 
     var intervals = [
+      { label: '30s', ms: 30000 },
       { label: '1m',  ms: 60000 },
       { label: '2m',  ms: 120000 },
       { label: '3m',  ms: 180000 },
