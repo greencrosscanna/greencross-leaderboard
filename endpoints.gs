@@ -580,10 +580,16 @@ function getDirectorStaff(params, pre) {
   const _nicknames = getNicknames_();
   staffList.forEach(function(s, i) {
     s.rank = i + 1;
-    // fullName: the nickname if one is set (usually already disambiguated, e.g.
-    // "Zach B"), otherwise the FULL Dutchie name (first + last) so duplicate first
-    // names are distinguished. s.name here is still the full Dutchie name.
-    s.fullName = _nicknames[s.nameKey] || s.name;
+    // fullName (management view): nickname REPLACES the first name but the Dutchie
+    // last name is kept — e.g. "Sunshine Ward". No nickname → full Dutchie name.
+    // s.name here is still the full Dutchie name ("First Last").
+    var _nk = _nicknames[s.nameKey];
+    if (_nk) {
+      var _last = s.name.trim().split(/\s+/).slice(1).join(' ');   // last name(s) after the first
+      s.fullName = _last ? _nk + ' ' + _last : _nk;
+    } else {
+      s.fullName = s.name;   // full Dutchie first + last
+    }
     s.name = applyNickname_(s.name, _nicknames);   // short display (first name / nickname) — kiosk + ticker
     // nameKey stays as the pre-nickname canonical key for avatar lookup
     if (i < 3 && !s.tags.includes('flag')) s.tags.push('top');
