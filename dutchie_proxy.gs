@@ -556,6 +556,53 @@ function doGet(e) {
         rows: _daRows }, params.callback);
     }
 
+    // Director-only. Per-seller Veteran-discount distribution over a window, to
+    // inform a realistic incentive target. ?action=vetaudit&token=TOKEN[&days=30]
+    if (params.action === 'vetaudit') {
+      requireRole_(auth, ['owner','director']);
+      var _vaDays = Math.min(Math.max(parseInt(params.days, 10) || 30, 7), 90);
+      var _vaNow  = new Date().getTime();
+      var _vaRange = { fromUTC: new Date(_vaNow - _vaDays * 86400000).toISOString(),
+                       toUTC:   new Date(_vaNow).toISOString() };
+      var _vaByStore = fetchAllStoresTransactions_(_vaRange);
+      var _vaEmp = {};   // key -> { name, storeSlug, sales, subtotal, vet, vetCount, bdt, txn }
+      Object.keys(_vaByStore).forEach(function(_slug) {
+        (_vaByStore[_slug] || []).forEach(function(_tx) {
+          var _e = txEmployee_(_tx), _k = nameToKey_(_e.name);
+          var _o = _vaEmp[_k] || (_vaEmp[_k] = { name: _e.name, storeSlug: _slug, sales: 0, subtotal: 0, vet: 0, vetCount: 0, bdt: 0, txn: 0 });
+          _o.sales    += txTotal_(_tx);
+          _o.subtotal += txSubtotal_(_tx);
+          _o.bdt      += txDiscountBudtender_(_tx);
+          _o.txn++;
+          (_tx.discounts || []).forEach(function(_d) {
+            if (/veteran/i.test(_d.discountName || '')) { _o.vet += Number(_d.amount || 0); _o.vetCount++; }
+          });
+        });
+      });
+      var _vaRows = Object.keys(_vaEmp).map(function(_k) {
+        var _o = _vaEmp[_k];
+        return { name: _o.name, storeSlug: _o.storeSlug, txn: _o.txn,
+          sales: Math.round(_o.sales),
+          vetRate: _o.subtotal > 0 ? Math.round(_o.vet / _o.subtotal * 10000) / 100 : 0,   // %
+          bdtRate: _o.subtotal > 0 ? Math.round(_o.bdt / _o.subtotal * 10000) / 100 : 0,   // %
+          vetCount: _o.vetCount,
+          vetPerTxn: _o.txn > 0 ? Math.round(_o.vetCount / _o.txn * 1000) / 10 : 0 };       // % of orders w/ vet
+      }).filter(function(r) { return r.txn >= 20; })   // enough volume for a stable rate
+        .sort(function(a, b) { return b.vetRate - a.vetRate; });
+      function _pct(arr, p) { if (!arr.length) return 0; var s = arr.slice().sort(function(a,b){return a-b;}); var i = Math.min(s.length-1, Math.floor(p/100*s.length)); return s[i]; }
+      var _vr = _vaRows.map(function(r){return r.vetRate;});
+      var _br = _vaRows.map(function(r){return r.bdtRate;});
+      function _mean(a){ return a.length ? Math.round(a.reduce(function(x,y){return x+y;},0)/a.length*100)/100 : 0; }
+      var _vaTotVet = 0, _vaTotSub = 0, _vaTotBdt = 0;
+      Object.keys(_vaEmp).forEach(function(_k){ var _o=_vaEmp[_k]; _vaTotVet+=_o.vet; _vaTotSub+=_o.subtotal; _vaTotBdt+=_o.bdt; });
+      return jsonOut({ ok: true, days: _vaDays, sellers: _vaRows.length,
+        chainVetRate: _vaTotSub>0 ? Math.round(_vaTotVet/_vaTotSub*10000)/100 : 0,
+        chainBdtRate: _vaTotSub>0 ? Math.round(_vaTotBdt/_vaTotSub*10000)/100 : 0,
+        vetRateDist: { mean:_mean(_vr), p50:_pct(_vr,50), p75:_pct(_vr,75), p90:_pct(_vr,90), max:_vr.length?_vr[0]:0 },
+        bdtRateDist: { mean:_mean(_br), p50:_pct(_br,50), p75:_pct(_br,75), p90:_pct(_br,90), max:_br.length?Math.max.apply(null,_br):0 },
+        rows: _vaRows }, params.callback);
+    }
+
     // ── Discount settings (incentive exclusions) — director/owner only ──
     if (params.action === 'discountsettings') {
       requireRole_(auth, ['owner','director']);
