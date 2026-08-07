@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.399';
+window.GC = window.GC || {}; GC.VERSION = 'v1.400';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -7938,8 +7938,8 @@ var incentive = (function() {
       + f('m.s0', 'Mgr sales ≥110% $', M.salesTiers[0].bonus)
       + f('m.s1', 'Mgr sales ≥105% $', M.salesTiers[1].bonus)
       + f('m.s2', 'Mgr sales ≥100% $', M.salesTiers[2].bonus)
-      + f('m.d0', 'Mgr discount ≤2.5% $', M.discountTiers[0].bonus)
-      + f('m.d1', 'Mgr discount ≤2.75% $', M.discountTiers[1].bonus)
+      + f('m.d0', 'Mgr discount ≤' + M.discountTiers[0].maxPct + '% $', M.discountTiers[0].bonus)
+      + f('m.d1', 'Mgr discount ≤' + M.discountTiers[1].maxPct + '% $', M.discountTiers[1].bonus)
       + f('m.aovBonus', 'Mgr AOV bonus $', M.aovBonus)
       + f('m.teamAttendancePerHead', 'Mgr team-att per head $', M.teamAttendancePerHead)
       + f('a.maxPerStore', 'Admin cap per store $', A.maxPerStore)
