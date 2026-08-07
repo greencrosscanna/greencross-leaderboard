@@ -485,6 +485,32 @@ function doGet(e) {
         grand: _dgrand, names: _dnames, currentExclusions: EXCLUDED_DISCOUNT_KEYWORDS }, params.callback);
     }
 
+    // Director-only. Probe Dutchie for a discount-definitions endpoint (with Type)
+    // so we can classify discounts live. ?action=discdefs&token=TOKEN[&store=baseline]
+    if (params.action === 'discdefs') {
+      requireRole_(auth, ['owner','director']);
+      var _ddSlug = params.store || STORES[0].slug;
+      var _ddKey  = getDutchieStoreKey_(_ddSlug);
+      var _ddPaths = ['/discounts', '/reporting/discounts', '/discount', '/inventory/discounts', '/discounts/list'];
+      var _ddOut = [];
+      _ddPaths.forEach(function(_p) {
+        try {
+          var _d   = dutchieFetch_(_ddKey, _p, {});
+          var _arr = Array.isArray(_d) ? _d : (_d.data || _d.discounts || _d.items || []);
+          var _types = {};
+          (_arr || []).forEach(function(_x) {
+            var _t = _x.type || _x.discountType || _x.discountMethod || _x.method || '(none)';
+            _types[_t] = (_types[_t] || 0) + 1;
+          });
+          _ddOut.push({ path: _p, ok: true, count: (_arr || []).length, typeCounts: _types,
+            sampleKeys: (_arr && _arr[0]) ? Object.keys(_arr[0]) : [], sample: (_arr || []).slice(0, 2) });
+        } catch (_e) {
+          _ddOut.push({ path: _p, ok: false, error: String(_e).slice(0, 160) });
+        }
+      });
+      return jsonOut({ ok: true, store: _ddSlug, results: _ddOut }, params.callback);
+    }
+
     if (params.action === 'saveeom') {
       requireRole_(auth, ['owner','director']);
       var eomKey = params.key || null;
