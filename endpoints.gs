@@ -551,9 +551,9 @@ function getDirectorStaff(params, pre) {
 
     const tags = [];
     const staffTagTooltips = [];
-    const discPct = Math.round(disc * 1000) / 10;  // e.g. 0.082 → 8.2
-    if      (disc > DISCOUNT_WATCH_THRESHOLD) { tags.push('flag');  staffTagTooltips.push(discPct + '% avg discount — above 8% threshold'); }
-    else if (disc > DISCOUNT_FLAG_THRESHOLD)  { tags.push('watch'); staffTagTooltips.push(discPct + '% avg discount — above 6.5% threshold'); }
+    // Discount flag/watch tags retired — the discretionary-basis discount rate is
+    // shown as a relative bar, and Veteran-discount outliers surface in the
+    // dedicated Veteran Discount Watch (peer-relative). No stale flat-threshold tags.
 
     return {
       initials:      emp.initials,
@@ -668,40 +668,9 @@ function getDirectorAlerts(pre) {
       }
     }
 
-    // High-discount employees (min 10 transactions to reduce noise)
-    Object.values(agg.byEmployee).forEach(function(emp) {
-      if (emp.discountRate > DISCOUNT_FLAG_THRESHOLD && emp.transactions >= 10) {
-        discWatch.push({
-          employeeId:     emp.id || '',
-          name:           emp.name,
-          initials:       emp.initials,
-          storeSlug:      store.slug,
-          storeName:      store.name,
-          discountRate:   emp.discountRate,
-          ordersOver15Pct: Math.round(emp.transactions * emp.discountRate),
-          topReason:      null,  // requires Dutchie discount reason data
-          reasonNote:     null,
-        });
-      }
-    });
+    // (Discount-watch alert retired — superseded by the Veteran Discount Watch,
+    //  which is peer-relative on the discretionary basis.)
   });
-
-  // Discount alert when any staff flagged
-  if (discWatch.length > 0) {
-    const names = discWatch.slice(0, 3).map(w =>
-      w.name + ' (' + Math.round(w.discountRate * 100) + '%)'
-    ).join(', ');
-    alerts.push({
-      id:          'a-discount',
-      severity:    'hi',
-      icon:        '⚠️',
-      title:       discWatch.length + ' staff exceeded ' + Math.round(DISCOUNT_FLAG_THRESHOLD * 100) + '% discount threshold',
-      description: names + (discWatch.length > 3 ? ' and ' + (discWatch.length - 3) + ' more.' : '.'),
-      when:        'Rolling ' + range.daysElapsed + '-day',
-      ctaLabel:    'Review →',
-      ctaTarget:   'discount-watch',
-    });
-  }
 
   // Sort hi → mid → info
   const sevOrder = { hi: 0, mid: 1, info: 2 };

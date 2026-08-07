@@ -58,9 +58,10 @@ const STORE_OPEN_HOUR  = 8;   // 8 am
 const STORE_CLOSE_HOUR = 22;  // 10 pm
 const STORE_HOURS      = STORE_CLOSE_HOUR - STORE_OPEN_HOUR; // 14
 
-// Discount flag threshold
-const DISCOUNT_FLAG_THRESHOLD  = 0.065;
-const DISCOUNT_WATCH_THRESHOLD = 0.080;
+// Discount flag threshold — the "Flagged Staff" KPI counts staff over this on the
+// discretionary discount basis. Aligned with the leaderboard "red" color (>3%).
+const DISCOUNT_FLAG_THRESHOLD  = 0.03;
+const DISCOUNT_WATCH_THRESHOLD = 0.080;   // (unused since the flat-threshold discount tags/panel were retired)
 
 // Discount names to exclude from the staff discount-rate calculation.
 // These are applied by the loyalty system — not by the budtender.
