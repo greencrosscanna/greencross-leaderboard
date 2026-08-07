@@ -3764,7 +3764,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.401';
+window.GC = window.GC || {}; GC.VERSION = 'v1.402';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -4255,8 +4255,10 @@ GC.fmtDeltaNum = function(n, prefix) {
 /** 0.042 → 'lo' | 0.058 → 'mid' | 0.089 → 'hi' */
 GC.discountSeverity = function(rate) {
   if (rate == null) return 'lo';
-  if (rate >= GC.THRESHOLDS.discountWatch) return 'hi';
-  if (rate >= 0.05) return 'mid';
+  // Recalibrated for the discretionary basis (loyalty/promos excluded): most
+  // staff sit ~1-2%, so ≥4% is a genuine outlier, ≥2.5% is notably above pack.
+  if (rate >= 0.04)  return 'hi';
+  if (rate >= 0.025) return 'mid';
   return 'lo';
 };
 
@@ -4266,13 +4268,25 @@ GC.discountSeverity = function(rate) {
  * @param {number} rate  Discount rate as a decimal (e.g. 0.054 = 5.4%)
  * @return {string} HTML string
  */
-GC.discountCell = function(rate) {
-  var cls = GC.discountSeverity(rate);
-  var w   = Math.min(Math.round((rate / 0.12) * 100), 100);
+// maxRate (optional): scale the bar relative to the group's highest rate, so the
+// top staffer fills the bar and the rest read proportionally — a live "who's high
+// vs. the pack" cue with no fixed ceiling to guess. Falls back to a 12% ceiling.
+GC.discountCell = function(rate, maxRate) {
+  var cls   = GC.discountSeverity(rate);
+  var scale = (maxRate && maxRate > 0) ? maxRate : 0.12;
+  var w     = Math.min(Math.round((rate / scale) * 100), 100);
   return '<span class="disc ' + cls + '">'
     + GC.fmtPct(rate)
     + '<span class="disc-bar"><span style="width:' + w + '%"></span></span>'
     + '</span>';
+};
+
+// Highest discount rate across a list of {discountRate} rows (0 if none) — the
+// denominator for the relative discount bar.
+GC.maxDiscountRate = function(list) {
+  return (list || []).reduce(function(m, s) {
+    return (s && s.discountRate > m) ? s.discountRate : m;
+  }, 0);
 };
 
 /**
@@ -5841,6 +5855,7 @@ var director = (function() {
   function storeTableRows(stores) {
     var total  = stores.length;
     var avgAov = avgOf(stores, 'avgOrderValue');
+    var maxDisc = GC.maxDiscountRate(stores);   // relative discount-bar scale across stores
     return applyStoreSort(stores).map(function(s) {
       var tLabels = s.tagLabels || s.tags;
       var tTips   = s.tagTooltips || [];
@@ -5862,7 +5877,7 @@ var director = (function() {
         + '<td class="num' + aovClass(s.avgOrderValue, avgAov) + '">'
           + e(GC.fmtCurrency(s.avgOrderValue)) + '</td>'
         + '<td class="num">' + e(GC.fmtDecimal(s.avgUPT)) + '</td>'
-        + '<td>' + discountCell(s.discountRate) + '</td>'
+        + '<td>' + discountCell(s.discountRate, maxDisc) + '</td>'
         + '<td>' + sparklineSvg(s.trend30d, s.trendPct) + '</td>'
         + '<td>' + tagsHtml(s.tags, tLabels, tTips) + '</td>'
         + '</tr>';
@@ -6004,6 +6019,7 @@ var director = (function() {
     var maxSales = filtered.length ? filtered[0].sales : 1;
     var total    = staff.length;  // rank pill relative to full list
     var avgAov   = avgOf(filtered, 'avgOrderValue');
+    var maxDisc  = GC.maxDiscountRate(staff);   // relative discount-bar scale (full list, stable across filters)
 
     var rows = filtered.map(function(s) {
       var isNew  = GC.isNewHire(s.hireDate);
@@ -6028,7 +6044,7 @@ var director = (function() {
           + e(GC.fmtCurrency(s.avgOrderValue)) + '</td>'
         + '<td class="num' + (s.avgUPT >= 2.6 ? ' v-green' : '') + '">'
           + e(GC.fmtDecimal(s.avgUPT)) + '</td>'
-        + '<td>' + discountCell(s.discountRate) + '</td>'
+        + '<td>' + discountCell(s.discountRate, maxDisc) + '</td>'
         + '<td>' + sparklineSvg(s.trend30d, s.trendPct) + '</td>'
         + '</tr>';
     }).join('');
@@ -6433,6 +6449,7 @@ var director = (function() {
     var maxSales = filtered.length ? filtered[0].sales : 1;
     var total    = staff.length;
     var avgAov   = avgOf(filtered, 'avgOrderValue');
+    var maxDisc  = GC.maxDiscountRate(staff);   // relative discount-bar scale (full list, stable across filters)
     tbody.innerHTML = filtered.map(function(s) {
       var isNew  = GC.isNewHire(s.hireDate);
       var tags   = s.tags.slice();
@@ -6450,7 +6467,7 @@ var director = (function() {
         + '<td class="num">' + e(GC.fmtNum(s.transactions)) + '</td>'
         + '<td class="num' + aovClass(s.avgOrderValue, avgAov) + '">' + e(GC.fmtCurrency(s.avgOrderValue)) + '</td>'
         + '<td class="num' + (s.avgUPT >= 2.6 ? ' v-green' : '') + '">' + e(GC.fmtDecimal(s.avgUPT)) + '</td>'
-        + '<td>' + discountCell(s.discountRate) + '</td>'
+        + '<td>' + discountCell(s.discountRate, maxDisc) + '</td>'
         + '<td>' + sparklineSvg(s.trend30d, s.trendPct) + '</td>'
         + '</tr>';
     }).join('');
@@ -6871,6 +6888,7 @@ var director = (function() {
     var maxSales = filtered.length ? filtered[0].sales : 1;
     var total    = staff.length;
     var avgAov   = avgOf(filtered, 'avgOrderValue');
+    var maxDisc  = GC.maxDiscountRate(staff);   // relative discount-bar scale (full list, stable across filters)
 
     tbody.innerHTML = filtered.map(function(s) {
       var isNew  = GC.isNewHire(s.hireDate);
@@ -6889,7 +6907,7 @@ var director = (function() {
         + '<td class="num">' + e(GC.fmtNum(s.transactions)) + '</td>'
         + '<td class="num' + aovClass(s.avgOrderValue, avgAov) + '">' + e(GC.fmtCurrency(s.avgOrderValue)) + '</td>'
         + '<td class="num' + (s.avgUPT >= 2.6 ? ' v-green' : '') + '">' + e(GC.fmtDecimal(s.avgUPT)) + '</td>'
-        + '<td>' + discountCell(s.discountRate) + '</td>'
+        + '<td>' + discountCell(s.discountRate, maxDisc) + '</td>'
         + '<td>' + sparklineSvg(s.trend30d, s.trendPct) + '</td>'
         + '</tr>';
     }).join('');
