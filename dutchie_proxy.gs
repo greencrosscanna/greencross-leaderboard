@@ -491,24 +491,21 @@ function doGet(e) {
       requireRole_(auth, ['owner','director']);
       var _ddSlug = params.store || STORES[0].slug;
       var _ddKey  = getDutchieStoreKey_(_ddSlug);
-      var _ddPaths = ['/discounts', '/reporting/discounts', '/discount', '/inventory/discounts', '/discounts/list'];
-      var _ddOut = [];
-      _ddPaths.forEach(function(_p) {
-        try {
-          var _d   = dutchieFetch_(_ddKey, _p, {});
-          var _arr = Array.isArray(_d) ? _d : (_d.data || _d.discounts || _d.items || []);
-          var _types = {};
-          (_arr || []).forEach(function(_x) {
-            var _t = _x.type || _x.discountType || _x.discountMethod || _x.method || '(none)';
-            _types[_t] = (_types[_t] || 0) + 1;
-          });
-          _ddOut.push({ path: _p, ok: true, count: (_arr || []).length, typeCounts: _types,
-            sampleKeys: (_arr && _arr[0]) ? Object.keys(_arr[0]) : [], sample: (_arr || []).slice(0, 2) });
-        } catch (_e) {
-          _ddOut.push({ path: _p, ok: false, error: String(_e).slice(0, 160) });
-        }
+      var _dd   = dutchieFetch_(_ddKey, '/reporting/discounts', {});
+      var _arr  = Array.isArray(_dd) ? _dd : (_dd.data || _dd.discounts || _dd.items || []);
+      var _byMethod = {}, _byAppMethod = {};
+      var _rows = (_arr || []).map(function(_x) {
+        var _dm = _x.discountMethod || '(none)', _am = _x.applicationMethod || '(none)';
+        _byMethod[_dm]    = (_byMethod[_dm]    || 0) + 1;
+        _byAppMethod[_am] = (_byAppMethod[_am] || 0) + 1;
+        return {
+          id: _x.discountId, name: _x.discountName, code: _x.discountCode || '',
+          discountType: _x.discountType, discountMethod: _dm, applicationMethod: _am,
+          isActive: _x.isActive, isDeleted: _x.isDeleted,
+        };
       });
-      return jsonOut({ ok: true, store: _ddSlug, results: _ddOut }, params.callback);
+      return jsonOut({ ok: true, store: _ddSlug, count: _rows.length,
+        byDiscountMethod: _byMethod, byApplicationMethod: _byAppMethod, rows: _rows }, params.callback);
     }
 
     if (params.action === 'saveeom') {
