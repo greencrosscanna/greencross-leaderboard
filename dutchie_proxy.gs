@@ -508,6 +508,54 @@ function doGet(e) {
         byDiscountMethod: _byMethod, byApplicationMethod: _byAppMethod, rows: _rows }, params.callback);
     }
 
+    // Director-only. Union the discount registry across ALL stores and join it
+    // against this pay period's actual discount usage, with a derived class.
+    // ?action=discaudit&token=TOKEN
+    if (params.action === 'discaudit') {
+      requireRole_(auth, ['owner','director']);
+      var _daReg = {};   // discountId -> { name, appMethod, code }
+      STORES.forEach(function(_st) {
+        try {
+          var _k = getDutchieStoreKey_(_st.slug);
+          var _d = dutchieFetch_(_k, '/reporting/discounts', {});
+          var _arr = Array.isArray(_d) ? _d : (_d.data || _d.discounts || _d.items || []);
+          (_arr || []).forEach(function(_x) {
+            if (!_daReg[_x.discountId]) _daReg[_x.discountId] = {
+              name: _x.discountName, appMethod: _x.applicationMethod || '', code: _x.discountCode || '' };
+          });
+        } catch (_e) {}
+      });
+      var _daProps = getProps_();
+      var _daCur   = currentPPStart_(_daProps);
+      var _daRange = { fromUTC: new Date(_daCur.ppStartMs).toISOString(),
+                       toUTC:   new Date(_daCur.ppStartMs + _daCur.PP_MS - 1).toISOString() };
+      var _daByStore = fetchAllStoresTransactions_(_daRange);
+      var _daUsage = {};   // discountId -> { name, count, amount }
+      Object.keys(_daByStore).forEach(function(_slug) {
+        (_daByStore[_slug] || []).forEach(function(_tx) {
+          (_tx.discounts || []).forEach(function(_dd) {
+            var _id = _dd.discountId;
+            if (!_daUsage[_id]) _daUsage[_id] = { name: _dd.discountName || _dd.discountReason || '(unnamed)', count: 0, amount: 0 };
+            _daUsage[_id].count++;
+            _daUsage[_id].amount += Number(_dd.amount || 0);
+          });
+        });
+      });
+      var _daRows = Object.keys(_daUsage).map(function(_id) {
+        var _u = _daUsage[_id], _r = _daReg[_id];
+        var _app = _r ? _r.appMethod : '(NOT IN REGISTRY)';
+        var _isLoyalty = /redemption/i.test(_u.name);
+        var _klass = _app === 'Automatic' ? 'Automatic'
+                   : (_isLoyalty ? 'Loyalty'
+                   : (_app === '(NOT IN REGISTRY)' ? 'Unknown' : _app));   // Code / Manual
+        return { id: _id, name: _u.name, code: _r ? _r.code : '', count: _u.count,
+          amount: Math.round(_u.amount * 100) / 100, appMethod: _app, klass: _klass };
+      }).sort(function(a, b) { return b.amount - a.amount; });
+      return jsonOut({ ok: true, registrySize: Object.keys(_daReg).length,
+        ppStart: Utilities.formatDate(new Date(_daCur.ppStartMs), STORE_TZ, 'yyyy-MM-dd'),
+        rows: _daRows }, params.callback);
+    }
+
     if (params.action === 'saveeom') {
       requireRole_(auth, ['owner','director']);
       var eomKey = params.key || null;
