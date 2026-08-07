@@ -3764,7 +3764,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.404';
+window.GC = window.GC || {}; GC.VERSION = 'v1.405';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -7547,6 +7547,11 @@ table.inc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-w
 .inc-disc-lockgrp > b { font-size: 11px; color: var(--text-dim); }
 .inc-disc-locknames { font-size: 11px; color: var(--text-mute); line-height: 1.6; margin-top: 3px; }
 .inc-disc-built { font-size: 10px; color: var(--text-mute); opacity: .8; }
+.inc-disc-target { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.inc-disc-target-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; font-weight: 600; color: var(--text); }
+.inc-disc-target-row input { width: 84px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 8px; text-align: right; font-size: 14px; }
+.inc-disc-target-row input:focus { outline: none; border-color: var(--green); }
+.inc-disc-target-sub { font-size: 11px; color: var(--text-mute); line-height: 1.5; margin-top: 6px; }
 /* Veteran discount watch */
 .inc-vet h3 { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; color: var(--amber, #f0b429); }
 .inc-vet-sub { font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-mute); }
@@ -7991,8 +7996,17 @@ var incentive = (function() {
         + '<span class="inc-disc-state">' + (x.excluded ? 'Excluded' : 'Counted') + '</span>'
         + '</label>';
     }).join('');
+    var tgt    = (_T && _T.budtender && _T.budtender.discountMaxPct != null) ? _T.budtender.discountMaxPct : 1.5;
+    var tgtStr = (Math.round(tgt * 10) / 10).toString();
+    var redStr = (Math.round(tgt * 2 * 10) / 10).toString();
     body.innerHTML =
-        '<p class="inc-disc-note"><b>Checked = counted</b> against staff in the discount rate. '
+        '<div class="inc-disc-target">'
+      +   '<label class="inc-disc-target-row">Discount target %'
+      +     '<input type="number" step="0.1" min="0.5" max="10" id="incDiscTarget" value="' + tgtStr + '">'
+      +   '</label>'
+      +   '<div class="inc-disc-target-sub">Budtenders earn the bonus at/under target. Leaderboard color: green ≤ target · amber ≤ 2× · red &gt; 2× (red line <span id="incDiscRedLine">' + redStr + '</span>%). Current period forward; locked payout history untouched.</div>'
+      + '</div>'
+      + '<p class="inc-disc-note"><b>Checked = counted</b> against staff in the discount rate. '
       + 'Loyalty redemptions and automatic promos are always excluded.</p>'
       + '<div class="inc-disc-list">' + (rows || '<div class="inc-disc-msg">No discretionary discounts.</div>') + '</div>'
       + '<div class="inc-disc-actions"><button class="inc-btn primary" id="incDiscSave">Save &amp; recalculate</button>'
@@ -8008,6 +8022,12 @@ var incentive = (function() {
         if (st) st.textContent = cb.checked ? 'Counted' : 'Excluded';
       });
     });
+    var tInput = document.getElementById('incDiscTarget');
+    if (tInput) tInput.addEventListener('input', function() {
+      var v  = parseFloat(tInput.value) || 0;
+      var rl = document.getElementById('incDiscRedLine');
+      if (rl) rl.textContent = (Math.round(v * 2 * 10) / 10).toString();
+    });
     var sv = document.getElementById('incDiscSave');
     if (sv) sv.addEventListener('click', saveDiscounts);
   }
@@ -8017,13 +8037,20 @@ var incentive = (function() {
     document.querySelectorAll('.inc-disc-tog').forEach(function(cb) {
       overrides[cb.dataset.name] = !cb.checked;   // excluded = NOT counted
     });
+    var tInput = document.getElementById('incDiscTarget');
+    var tv     = parseFloat(tInput && tInput.value);
+    if (tInput && (isNaN(tv) || tv < 0.5 || tv > 10)) { if (note) note.textContent = 'Target must be 0.5–10%'; return; }
+    var savers = [ GC.api.saveDiscountSettings(overrides) ];
+    if (!isNaN(tv)) savers.push(GC.api.gasCall('savesettings', { discountTarget: String(tv) }));
     if (note) note.textContent = 'Saving…';
-    GC.api.saveDiscountSettings(overrides).then(function(r) {
-      if (!r || r.ok === false) { if (note) note.textContent = 'Save failed'; return; }
+    Promise.all(savers).then(function(rs) {
+      if (!rs.every(function(r) { return r && r.ok !== false; })) { if (note) note.textContent = 'Save failed'; return; }
+      if (!isNaN(tv)) GC.DISCOUNT_TARGET = tv / 100;
       _discData = null;                     // force reload next open
       if (note) note.textContent = 'Saved ✓ recalculating…';
+      try { Object.keys(localStorage).forEach(function(k) { if (/director|dirall/i.test(k)) localStorage.removeItem(k); }); } catch (e) {}
       toggleDiscTray(false);
-      start(_app, _d.payPeriod.start);      // re-fetch incentive with the new basis
+      start(_app, _d.payPeriod.start);      // re-fetch incentive with the new target + basis
     }).catch(function() { if (note) note.textContent = 'Save failed'; });
   }
 
@@ -10352,26 +10379,6 @@ var settings = (function() {
 
   // ── Full page render ──────────────────────────────────────
   // ── Data / maintenance ────────────────────────────────────
-  function renderDiscountCard(data) {
-    var pct    = (data.discountTarget != null ? data.discountTarget : 0.015) * 100;
-    var pctStr = (Math.round(pct * 10) / 10).toString();
-    var redStr = (Math.round(pct * 2 * 10) / 10).toString();
-    return '<div class="settings-card" id="discountCard">'
-      + '<div class="settings-card-head"><div>'
-      +   '<div class="settings-card-title">Discount Target</div>'
-      +   '<div class="settings-card-sub">The budtender discretionary discount goal (loyalty &amp; automatic promos excluded). Drives the incentive bonus line <strong>and</strong> the leaderboard color: at/under target = <span style="color:var(--green)">green</span>, up to 2× = <span style="color:var(--amber,#f0b429)">amber</span>, above 2× = <span style="color:var(--red)">red</span> (red line = <span id="discRedLine">' + redStr + '</span>%). Applies to the current period forward; locked payout history is untouched.</div>'
-      + '</div>'
-      + '<div class="settings-card-actions">'
-      +   '<div class="settings-stretch-group">'
-      +     '<label class="settings-stretch-label">Target %</label>'
-      +     '<input type="number" step="0.1" min="0.5" max="10" class="settings-stretch-select" id="discountTargetInput" value="' + pctStr + '" style="width:80px">'
-      +   '</div>'
-      +   '<button class="btn-primary" id="saveDiscountBtn">Save</button>'
-      +   '<span class="settings-save-status" id="discountSaveStatus"></span>'
-      + '</div>'
-      + '</div>';
-  }
-
   function renderDataCard() {
     return '<div class="settings-card">'
       + '<div class="settings-card-head"><div>'
@@ -10391,7 +10398,6 @@ var settings = (function() {
       +   renderGoalsSection(data)
       +   renderManagement(data.employees, data.avatarConfigs)
       +   renderEmployees(data.employees, data.nicknames, data.avatarConfigs, data.excluded, data.eom, data.roles)
-      +   renderDiscountCard(data)
       +   renderDataCard()
       + '</div>'
       + '</div>';
@@ -10404,27 +10410,6 @@ var settings = (function() {
     var back = document.getElementById('settingsBack');
     if (back) back.addEventListener('click', function() {
       GC.router.navigate('#/director');
-    });
-
-    // Discount target — live red-line preview + save
-    var discInput   = document.getElementById('discountTargetInput');
-    var saveDiscBtn = document.getElementById('saveDiscountBtn');
-    if (discInput) discInput.addEventListener('input', function() {
-      var v  = parseFloat(discInput.value) || 0;
-      var rl = document.getElementById('discRedLine');
-      if (rl) rl.textContent = (Math.round(v * 2 * 10) / 10).toString();
-    });
-    if (saveDiscBtn) saveDiscBtn.addEventListener('click', function() {
-      var v      = parseFloat(discInput && discInput.value);
-      var status = document.getElementById('discountSaveStatus');
-      if (isNaN(v) || v < 0.5 || v > 10) { if (status) status.textContent = 'Enter 0.5–10%'; return; }
-      if (status) status.textContent = 'Saving…';
-      GC.api.gasCall('savesettings', { discountTarget: String(v) }).then(function(r) {
-        if (!r || r.ok === false) { if (status) status.textContent = 'Save failed'; return; }
-        GC.DISCOUNT_TARGET = v / 100;
-        if (status) status.textContent = 'Saved ✓ — incentive & leaderboard updated';
-        try { Object.keys(localStorage).forEach(function(k) { if (/director|dirall/i.test(k)) localStorage.removeItem(k); }); } catch (e) {}
-      }).catch(function() { if (status) status.textContent = 'Save failed'; });
     });
 
     // Sign out
