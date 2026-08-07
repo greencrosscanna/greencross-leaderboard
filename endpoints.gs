@@ -360,7 +360,8 @@ function getDirectorSummary(params, pre) {
 
   const _excluded     = getExcluded_();
   const allEmps       = Object.values(curr.byEmployee).filter(e => !_excluded.has(nameToKey_(e.name)));
-  const flaggedEmps   = allEmps.filter(e => e.discountRate > DISCOUNT_FLAG_THRESHOLD);
+  const _discRed      = discountRedLineDec_();   // 2× the discount target
+  const flaggedEmps   = allEmps.filter(e => e.discountRate > _discRed);
 
   // Sales per hour: total sales ÷ (elapsed days × store open hours)
   const salesPerHour  = range.daysElapsed > 0
@@ -443,8 +444,8 @@ function getDirectorStores(params, pre) {
     // Manager from user records
     const mgr = Object.values(users).find(u => u.storeSlug === store.slug && u.role === 'store_manager') || {};
 
-    // Flagged employees
-    const flaggedEmps = Object.values(agg.byEmployee).filter(e => e.discountRate > DISCOUNT_FLAG_THRESHOLD);
+    // Flagged employees (over 2× the discount target)
+    const flaggedEmps = Object.values(agg.byEmployee).filter(e => e.discountRate > discountRedLineDec_());
 
     // Tags: top / watch / flag (mutually exclusive, escalating severity)
     const tags = [];

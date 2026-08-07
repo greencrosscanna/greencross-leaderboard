@@ -1074,6 +1074,7 @@ function getSettings_(params) {
   return {
     ok:               true,
     stretch:          getStretchMultiplier_(),
+    discountTarget:   getDiscountTargetDec_(),   // decimal, e.g. 0.015 (drives incentive + leaderboard color)
     rollingComputedAt: rollingComputedAt,
     yoyComputedAt:    yoyComputedAt,
     reportFrom:       reportFrom,
@@ -1198,6 +1199,23 @@ function saveSettings_(params) {
 
     props.setProperty(GC_STRETCH_KEY, String(newS));
     Logger.log('[stretch] saved: ' + (newS * 100).toFixed(1) + '%');
+  }
+
+  // Save discount target % (0.5–10%). Single source of truth = the incentive
+  // budtender discountMaxPct; patched here so the incentive bonus line AND the
+  // leaderboard color/KPI move together. Bust the director caches so it shows.
+  if (params.discountTarget !== undefined) {
+    var newT = parseFloat(params.discountTarget);   // percent, e.g. 2.0
+    if (isNaN(newT)) return { ok: false, error: 'Invalid discount target' };
+    newT = Math.max(0.5, Math.min(10, newT));
+    var th = getIncentiveThresholds_();
+    th.budtender.discountMaxPct = newT;
+    props.setProperty(GC_INCENTIVE_THRESH_KEY, JSON.stringify(th));
+    try {
+      var _c = CacheService.getScriptCache();
+      _c.remove('gc_dirall_v2_pp'); _c.remove('gc_dirall_v2_mtd');
+    } catch (e) {}
+    Logger.log('[discountTarget] saved: ' + newT + '%');
   }
 
   return { ok: true };

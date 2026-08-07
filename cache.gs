@@ -96,7 +96,7 @@ function buildDirectorAll_(period, hardRefresh) {
   const avatarConfigs = getAvatarConfigs_();
   const eomKey        = (getEomCurrent_() || {}).employeeKey || null;
 
-  return { summary, stores, staff, alerts, today, avatarConfigs, eomKey };
+  return { summary, stores, staff, alerts, today, avatarConfigs, eomKey, discountTarget: getDiscountTargetDec_() };
 }
 
 /**

@@ -184,6 +184,20 @@ function saveDiscountSettings_(params) {
 //  (less basket-size distortion than $ rate) + peer-relative.
 // ============================================================
 
+// The discount target rate (decimal) — the single knob behind the incentive bonus
+// line AND the leaderboard color/KPI. Source of truth = the incentive budtender
+// discountMaxPct (percent), editable in Settings and the incentive tray. Green at
+// or under target, amber up to 2× target, red above. Default 1.5%.
+function getDiscountTargetDec_() {
+  try {
+    var pct = getIncentiveThresholds_().budtender.discountMaxPct;
+    if (pct != null && !isNaN(pct) && pct > 0) return pct / 100;
+  } catch (e) {}
+  return 0.015;
+}
+// The "red" line — staff above this are flagged and colored red on the leaderboard.
+function discountRedLineDec_() { return 2 * getDiscountTargetDec_(); }
+
 const VET_NAME_RE = /veteran/i;
 
 function _median_(arr) {

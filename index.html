@@ -3764,7 +3764,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.403';
+window.GC = window.GC || {}; GC.VERSION = 'v1.404';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -4253,12 +4253,15 @@ GC.fmtDeltaNum = function(n, prefix) {
 // ── Threshold Classifiers ─────────────────────────────────
 
 /** 0.042 → 'lo' | 0.058 → 'mid' | 0.089 → 'hi' */
+// Adjustable discount target (decimal); default 1.5%. Set from server payloads
+// (directorall / settings) via gasCall. At/under target = green, up to 2× = amber,
+// above 2× = red. Discretionary basis (loyalty/promos excluded).
+GC.DISCOUNT_TARGET = 0.015;
 GC.discountSeverity = function(rate) {
   if (rate == null) return 'lo';
-  // Tied to the incentive target (1.5%): at/under target = green, 1.5–3% = amber,
-  // above 3% = red. Discretionary basis (loyalty/promos excluded).
-  if (rate > 0.03)  return 'hi';
-  if (rate > 0.015) return 'mid';
+  var t = GC.DISCOUNT_TARGET || 0.015;
+  if (rate > 2 * t) return 'hi';
+  if (rate > t)     return 'mid';
   return 'lo';
 };
 
@@ -4946,6 +4949,9 @@ GC.api = (function() {
         delete window[cbName];
         var s = document.getElementById('__gc_jsonp_' + cbName);
         if (s) s.remove();
+        // Adopt the server's discount target if this payload carries it, so the
+        // leaderboard color/KPI track the setting no matter which view loaded it.
+        if (data && data.discountTarget != null) GC.DISCOUNT_TARGET = data.discountTarget;
         resolve(data);
       };
 
@@ -10346,6 +10352,26 @@ var settings = (function() {
 
   // ── Full page render ──────────────────────────────────────
   // ── Data / maintenance ────────────────────────────────────
+  function renderDiscountCard(data) {
+    var pct    = (data.discountTarget != null ? data.discountTarget : 0.015) * 100;
+    var pctStr = (Math.round(pct * 10) / 10).toString();
+    var redStr = (Math.round(pct * 2 * 10) / 10).toString();
+    return '<div class="settings-card" id="discountCard">'
+      + '<div class="settings-card-head"><div>'
+      +   '<div class="settings-card-title">Discount Target</div>'
+      +   '<div class="settings-card-sub">The budtender discretionary discount goal (loyalty &amp; automatic promos excluded). Drives the incentive bonus line <strong>and</strong> the leaderboard color: at/under target = <span style="color:var(--green)">green</span>, up to 2× = <span style="color:var(--amber,#f0b429)">amber</span>, above 2× = <span style="color:var(--red)">red</span> (red line = <span id="discRedLine">' + redStr + '</span>%). Applies to the current period forward; locked payout history is untouched.</div>'
+      + '</div>'
+      + '<div class="settings-card-actions">'
+      +   '<div class="settings-stretch-group">'
+      +     '<label class="settings-stretch-label">Target %</label>'
+      +     '<input type="number" step="0.1" min="0.5" max="10" class="settings-stretch-select" id="discountTargetInput" value="' + pctStr + '" style="width:80px">'
+      +   '</div>'
+      +   '<button class="btn-primary" id="saveDiscountBtn">Save</button>'
+      +   '<span class="settings-save-status" id="discountSaveStatus"></span>'
+      + '</div>'
+      + '</div>';
+  }
+
   function renderDataCard() {
     return '<div class="settings-card">'
       + '<div class="settings-card-head"><div>'
@@ -10365,6 +10391,7 @@ var settings = (function() {
       +   renderGoalsSection(data)
       +   renderManagement(data.employees, data.avatarConfigs)
       +   renderEmployees(data.employees, data.nicknames, data.avatarConfigs, data.excluded, data.eom, data.roles)
+      +   renderDiscountCard(data)
       +   renderDataCard()
       + '</div>'
       + '</div>';
@@ -10377,6 +10404,27 @@ var settings = (function() {
     var back = document.getElementById('settingsBack');
     if (back) back.addEventListener('click', function() {
       GC.router.navigate('#/director');
+    });
+
+    // Discount target — live red-line preview + save
+    var discInput   = document.getElementById('discountTargetInput');
+    var saveDiscBtn = document.getElementById('saveDiscountBtn');
+    if (discInput) discInput.addEventListener('input', function() {
+      var v  = parseFloat(discInput.value) || 0;
+      var rl = document.getElementById('discRedLine');
+      if (rl) rl.textContent = (Math.round(v * 2 * 10) / 10).toString();
+    });
+    if (saveDiscBtn) saveDiscBtn.addEventListener('click', function() {
+      var v      = parseFloat(discInput && discInput.value);
+      var status = document.getElementById('discountSaveStatus');
+      if (isNaN(v) || v < 0.5 || v > 10) { if (status) status.textContent = 'Enter 0.5–10%'; return; }
+      if (status) status.textContent = 'Saving…';
+      GC.api.gasCall('savesettings', { discountTarget: String(v) }).then(function(r) {
+        if (!r || r.ok === false) { if (status) status.textContent = 'Save failed'; return; }
+        GC.DISCOUNT_TARGET = v / 100;
+        if (status) status.textContent = 'Saved ✓ — incentive & leaderboard updated';
+        try { Object.keys(localStorage).forEach(function(k) { if (/director|dirall/i.test(k)) localStorage.removeItem(k); }); } catch (e) {}
+      }).catch(function() { if (status) status.textContent = 'Save failed'; });
     });
 
     // Sign out
