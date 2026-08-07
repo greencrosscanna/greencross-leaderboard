@@ -4,6 +4,7 @@
 !dutchie_proxy.gs
 !auth.gs
 !dutchie_fetch.gs
+!discounts.gs
 !goals.gs
 !endpoints.gs
 !cache.gs
