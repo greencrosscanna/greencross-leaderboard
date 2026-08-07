@@ -3752,7 +3752,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.395';
+window.GC = window.GC || {}; GC.VERSION = 'v1.396';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -5186,6 +5186,8 @@ GC.api = (function() {
     fetchSettings:    fetchSettings,
     fetchIncentive:   function(ppStart, refresh) { var p = {}; if (ppStart) p.ppStart = ppStart; if (refresh) p.refresh = '1'; return gasCall('incentive', p); },
     saveIncentive:    function(payload) { return gasCall('saveincentive', payload); },
+    fetchDiscountSettings: function() { return gasCall('discountsettings', {}); },
+    saveDiscountSettings:  function(overrides) { return gasCall('savediscountsettings', { overrides: JSON.stringify(overrides) }); },
     fetchStandings:   function(refresh) { return gasCall('standings', refresh ? { refresh: '1' } : {}); },
     fetchAvatarData:  fetchAvatarData,
     saveSettings:     saveSettings,
@@ -7510,6 +7512,27 @@ table.inc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-w
 .inc-thr-grid input { width: 80px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 7px; text-align: right; }
 .inc-thr-grid input:focus { outline: none; border-color: var(--green); }
 .inc-savenote { font-size: 11px; color: var(--text-mute); margin-left: 8px; align-self: center; }
+/* Discount-rules tray */
+.inc-disc-tray { width: 420px; }
+.inc-disc-body { padding: 14px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.inc-disc-msg { font-size: 13px; color: var(--text-mute); padding: 8px 0; }
+.inc-disc-note { font-size: 12px; color: var(--text-dim); line-height: 1.5; margin: 0; }
+.inc-disc-list { display: flex; flex-direction: column; gap: 2px; }
+.inc-disc-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 8px; cursor: pointer; }
+.inc-disc-row:hover { background: var(--bg); }
+.inc-disc-tog { width: 16px; height: 16px; accent-color: var(--green); cursor: pointer; }
+.inc-disc-name { font-size: 12.5px; color: var(--text); line-height: 1.35; }
+.inc-disc-code { font-size: 10px; color: var(--text-mute); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; margin-left: 4px; white-space: nowrap; }
+.inc-disc-state { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-mute); justify-self: end; min-width: 62px; text-align: right; }
+.inc-disc-row:has(.inc-disc-tog:checked) .inc-disc-state { color: var(--green); }
+.inc-disc-actions { display: flex; align-items: center; gap: 10px; padding-top: 4px; border-top: 1px solid var(--border); margin-top: 4px; padding-top: 12px; }
+.inc-disc-savenote { font-size: 11px; color: var(--text-mute); }
+.inc-disc-locked { font-size: 11px; color: var(--text-mute); }
+.inc-disc-locked > summary { cursor: pointer; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: 6px 0; }
+.inc-disc-lockgrp { padding: 6px 0; }
+.inc-disc-lockgrp > b { font-size: 11px; color: var(--text-dim); }
+.inc-disc-locknames { font-size: 11px; color: var(--text-mute); line-height: 1.6; margin-top: 3px; }
+.inc-disc-built { font-size: 10px; color: var(--text-mute); opacity: .8; }
 @media print {
   body * { visibility: hidden; }
   .inc-wrap, .inc-wrap * { visibility: visible; }
@@ -7765,6 +7788,7 @@ var incentive = (function() {
       +     '<div class="inc-actions">'
       +       '<button class="inc-btn primary" id="incPrint">Approve &amp; Print PDF</button>'
       +       '<button class="inc-btn" id="incCsv">Export Payroll CSV (Capstone)</button>'
+      +       '<button class="inc-btn" id="incDisc" title="Which discounts count against staff">Discount rules</button>'
       +       '<span class="inc-savenote" id="incSave"></span>'
       +     '</div>'
       +   '</div>'
@@ -7795,6 +7819,7 @@ var incentive = (function() {
       + '</table></div></div>'
 
       + thresholdsHtml()
+      + discountTrayHtml()
       + '</div>';
 
     // Wire events (delegation)
@@ -7807,6 +7832,10 @@ var incentive = (function() {
     _app.querySelector('#incGear').addEventListener('click', function() { toggleTray(true); });
     _app.querySelector('#incBack').addEventListener('click', function() { GC.router.navigate(GC.auth.homeRoute()); });
     _app.querySelector('#incTrayClose').addEventListener('click', function() { toggleTray(false); });
+    var _discBtn = _app.querySelector('#incDisc');
+    if (_discBtn) _discBtn.addEventListener('click', function() { toggleDiscTray(true); });
+    _app.querySelector('#incDiscClose').addEventListener('click', function() { toggleDiscTray(false); });
+    _app.querySelector('#incDiscBack').addEventListener('click', function() { toggleDiscTray(false); });
     _app.querySelector('#incTrayBack').addEventListener('click', function() { toggleTray(false); });
     _app.querySelector('#incPeriod').addEventListener('change', function(ev) { start(_app, ev.target.value); });
     var refBtn = _app.querySelector('#incRefresh');
@@ -7909,6 +7938,75 @@ var incentive = (function() {
       'h.hoursPerPeriod': function() { T.hoursPerPeriod = v || 80; },
     };
     if (map[path]) map[path]();
+  }
+
+  // ── Discount rules (which discounts count against staff) ──
+  var _discData = null;
+  function discountTrayHtml() {
+    return '<div class="inc-tray-back" id="incDiscBack"></div>'
+      + '<aside class="inc-tray inc-disc-tray" id="incDiscTray" aria-hidden="true">'
+      +   '<div class="inc-tray-head"><span>Discount Rules</span><button class="inc-tray-x" id="incDiscClose" title="Close">✕</button></div>'
+      +   '<div class="inc-disc-body" id="incDiscBody"><div class="inc-disc-msg">Loading…</div></div>'
+      + '</aside>';
+  }
+  function toggleDiscTray(open) {
+    var tray = document.getElementById('incDiscTray'), back = document.getElementById('incDiscBack');
+    if (!tray || !back) return;
+    tray.classList.toggle('open', open); back.classList.toggle('open', open);
+    tray.setAttribute('aria-hidden', open ? 'false' : 'true');
+    if (open && !_discData) loadDiscTray();
+  }
+  function loadDiscTray() {
+    var body = document.getElementById('incDiscBody'); if (!body) return;
+    body.innerHTML = '<div class="inc-disc-msg">Loading discount list…</div>';
+    GC.api.fetchDiscountSettings().then(function(d) {
+      if (!d || d.ok === false) { body.innerHTML = '<div class="inc-disc-msg">' + e((d && d.error) || 'Failed to load') + '</div>'; return; }
+      _discData = d; renderDiscTray();
+    }).catch(function(err) { body.innerHTML = '<div class="inc-disc-msg">Error: ' + e(String(err)) + '</div>'; });
+  }
+  function renderDiscTray() {
+    var d = _discData, body = document.getElementById('incDiscBody'); if (!body) return;
+    var rows = d.discretionary.map(function(x) {
+      return '<label class="inc-disc-row">'
+        + '<input type="checkbox" class="inc-disc-tog" data-name="' + e(x.name) + '"' + (x.excluded ? '' : ' checked') + '>'
+        + '<span class="inc-disc-name">' + e(x.name) + (x.code ? ' <span class="inc-disc-code">' + e(x.code) + '</span>' : '') + '</span>'
+        + '<span class="inc-disc-state">' + (x.excluded ? 'Excluded' : 'Counted') + '</span>'
+        + '</label>';
+    }).join('');
+    body.innerHTML =
+        '<p class="inc-disc-note"><b>Checked = counted</b> against staff in the discount rate. '
+      + 'Loyalty redemptions and automatic promos are always excluded.</p>'
+      + '<div class="inc-disc-list">' + (rows || '<div class="inc-disc-msg">No discretionary discounts.</div>') + '</div>'
+      + '<div class="inc-disc-actions"><button class="inc-btn primary" id="incDiscSave">Save &amp; recalculate</button>'
+      +   '<span class="inc-disc-savenote" id="incDiscSaveNote"></span></div>'
+      + '<details class="inc-disc-locked"><summary>Always excluded (' + (d.counts.loyalty + d.counts.automatic) + ')</summary>'
+      +   '<div class="inc-disc-lockgrp"><b>Loyalty · ' + d.counts.loyalty + '</b><div class="inc-disc-locknames">' + (d.autoExcluded.loyalty.map(e).join(' · ') || '—') + '</div></div>'
+      +   '<div class="inc-disc-lockgrp"><b>Automatic promos · ' + d.counts.automatic + '</b><div class="inc-disc-locknames">' + (d.autoExcluded.automatic.map(e).join(' · ') || '—') + '</div></div>'
+      + '</details>'
+      + (d.builtAt ? '<div class="inc-disc-built">Discount list synced ' + e(new Date(d.builtAt).toLocaleString()) + '</div>' : '');
+    body.querySelectorAll('.inc-disc-tog').forEach(function(cb) {
+      cb.addEventListener('change', function() {
+        var st = cb.closest('.inc-disc-row').querySelector('.inc-disc-state');
+        if (st) st.textContent = cb.checked ? 'Counted' : 'Excluded';
+      });
+    });
+    var sv = document.getElementById('incDiscSave');
+    if (sv) sv.addEventListener('click', saveDiscounts);
+  }
+  function saveDiscounts() {
+    var note = document.getElementById('incDiscSaveNote');
+    var overrides = {};
+    document.querySelectorAll('.inc-disc-tog').forEach(function(cb) {
+      overrides[cb.dataset.name] = !cb.checked;   // excluded = NOT counted
+    });
+    if (note) note.textContent = 'Saving…';
+    GC.api.saveDiscountSettings(overrides).then(function(r) {
+      if (!r || r.ok === false) { if (note) note.textContent = 'Save failed'; return; }
+      _discData = null;                     // force reload next open
+      if (note) note.textContent = 'Saved ✓ recalculating…';
+      toggleDiscTray(false);
+      start(_app, _d.payPeriod.start);      // re-fetch incentive with the new basis
+    }).catch(function() { if (note) note.textContent = 'Save failed'; });
   }
 
   // ── Persist (debounced) ──
