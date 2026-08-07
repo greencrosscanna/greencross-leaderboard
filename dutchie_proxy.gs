@@ -560,47 +560,70 @@ function doGet(e) {
     // inform a realistic incentive target. ?action=vetaudit&token=TOKEN[&days=30]
     if (params.action === 'vetaudit') {
       requireRole_(auth, ['owner','director']);
-      var _vaDays = Math.min(Math.max(parseInt(params.days, 10) || 30, 7), 90);
-      var _vaNow  = new Date().getTime();
-      var _vaRange = { fromUTC: new Date(_vaNow - _vaDays * 86400000).toISOString(),
-                       toUTC:   new Date(_vaNow).toISOString() };
-      var _vaByStore = fetchAllStoresTransactions_(_vaRange);
-      var _vaEmp = {};   // key -> { name, storeSlug, sales, subtotal, vet, vetCount, bdt, txn }
-      Object.keys(_vaByStore).forEach(function(_slug) {
-        (_vaByStore[_slug] || []).forEach(function(_tx) {
-          var _e = txEmployee_(_tx), _k = nameToKey_(_e.name);
-          var _o = _vaEmp[_k] || (_vaEmp[_k] = { name: _e.name, storeSlug: _slug, sales: 0, subtotal: 0, vet: 0, vetCount: 0, bdt: 0, txn: 0 });
-          _o.sales    += txTotal_(_tx);
-          _o.subtotal += txSubtotal_(_tx);
-          _o.bdt      += txDiscountBudtender_(_tx);
-          _o.txn++;
-          (_tx.discounts || []).forEach(function(_d) {
-            if (/veteran/i.test(_d.discountName || '')) { _o.vet += Number(_d.amount || 0); _o.vetCount++; }
-          });
-        });
-      });
-      var _vaRows = Object.keys(_vaEmp).map(function(_k) {
-        var _o = _vaEmp[_k];
-        return { name: _o.name, storeSlug: _o.storeSlug, txn: _o.txn,
-          sales: Math.round(_o.sales),
-          vetRate: _o.subtotal > 0 ? Math.round(_o.vet / _o.subtotal * 10000) / 100 : 0,   // %
-          bdtRate: _o.subtotal > 0 ? Math.round(_o.bdt / _o.subtotal * 10000) / 100 : 0,   // %
-          vetCount: _o.vetCount,
-          vetPerTxn: _o.txn > 0 ? Math.round(_o.vetCount / _o.txn * 1000) / 10 : 0 };       // % of orders w/ vet
-      }).filter(function(r) { return r.txn >= 20; })   // enough volume for a stable rate
-        .sort(function(a, b) { return b.vetRate - a.vetRate; });
+      var _vaDays = parseInt(params.days, 10) || 30;
+      var _vaStats = computeVetStats_(_vaDays, 20);
+      var _vaRows = _vaStats.rows.slice().sort(function(a, b){ return b.vetRate - a.vetRate; });
       function _pct(arr, p) { if (!arr.length) return 0; var s = arr.slice().sort(function(a,b){return a-b;}); var i = Math.min(s.length-1, Math.floor(p/100*s.length)); return s[i]; }
+      function _mean(a){ return a.length ? Math.round(a.reduce(function(x,y){return x+y;},0)/a.length*100)/100 : 0; }
       var _vr = _vaRows.map(function(r){return r.vetRate;});
       var _br = _vaRows.map(function(r){return r.bdtRate;});
-      function _mean(a){ return a.length ? Math.round(a.reduce(function(x,y){return x+y;},0)/a.length*100)/100 : 0; }
-      var _vaTotVet = 0, _vaTotSub = 0, _vaTotBdt = 0;
-      Object.keys(_vaEmp).forEach(function(_k){ var _o=_vaEmp[_k]; _vaTotVet+=_o.vet; _vaTotSub+=_o.subtotal; _vaTotBdt+=_o.bdt; });
-      return jsonOut({ ok: true, days: _vaDays, sellers: _vaRows.length,
-        chainVetRate: _vaTotSub>0 ? Math.round(_vaTotVet/_vaTotSub*10000)/100 : 0,
-        chainBdtRate: _vaTotSub>0 ? Math.round(_vaTotBdt/_vaTotSub*10000)/100 : 0,
-        vetRateDist: { mean:_mean(_vr), p50:_pct(_vr,50), p75:_pct(_vr,75), p90:_pct(_vr,90), max:_vr.length?_vr[0]:0 },
+      return jsonOut({ ok: true, days: _vaStats.days, sellers: _vaRows.length,
+        storeMedians: _vaStats.storeMedians,
+        vetRateDist: { mean:_mean(_vr), p50:_pct(_vr,50), p75:_pct(_vr,75), p90:_pct(_vr,90), max:_vr.length?Math.max.apply(null,_vr):0 },
         bdtRateDist: { mean:_mean(_br), p50:_pct(_br,50), p75:_pct(_br,75), p90:_pct(_br,90), max:_br.length?Math.max.apply(null,_br):0 },
         rows: _vaRows }, params.callback);
+    }
+
+    // Owner+Mike. Veteran-discount investigate flags (peer-relative share-of-orders).
+    // ?action=vetflags&token=TOKEN[&days=30]
+    if (params.action === 'vetflags') {
+      if (!incentiveAccessOk_(auth)) return jsonOut({ ok: false, error: 'Forbidden' }, params.callback);
+      return jsonOut(vetFlags_(parseInt(params.days, 10) || 30, {}), params.callback);
+    }
+
+    // Owner+Mike. Force the incentive discount thresholds to the agreed targets,
+    // patching any saved override so the change actually takes effect.
+    // ?action=applydiscounttargets&token=TOKEN&budtenderMax=1.5[&mgrFull=1.5&mgrPartial=2.0]
+    if (params.action === 'applydiscounttargets') {
+      if (!incentiveAccessOk_(auth)) return jsonOut({ ok: false, error: 'Forbidden' }, params.callback);
+      var _bMax = parseFloat(params.budtenderMax); if (isNaN(_bMax)) _bMax = 1.5;
+      var _mFull = parseFloat(params.mgrFull);    if (isNaN(_mFull)) _mFull = 1.5;
+      var _mPart = parseFloat(params.mgrPartial); if (isNaN(_mPart)) _mPart = 2.0;
+      var _th = getIncentiveThresholds_();   // saved-or-default (deep enough to patch)
+      _th.budtender.discountMaxPct = _bMax;
+      _th.manager.discountTiers = [ { maxPct: _mFull, bonus: _th.manager.discountTiers[0].bonus },
+                                    { maxPct: _mPart, bonus: _th.manager.discountTiers[1].bonus } ];
+      getProps_().setProperty(GC_INCENTIVE_THRESH_KEY, JSON.stringify(_th));
+      return jsonOut({ ok: true, budtenderMax: _bMax, mgrFull: _mFull, mgrPartial: _mPart,
+        discountTiers: _th.manager.discountTiers }, params.callback);
+    }
+
+    // Director-only. Probe whether transactions expose customer identity / a Vet
+    // profile flag (for a future "unverified vet discount" metric). Read-only,
+    // dumps only field NAMES + coarse shape — no customer PII values.
+    // ?action=custprobe&token=TOKEN[&store=baseline]
+    if (params.action === 'custprobe') {
+      requireRole_(auth, ['owner','director']);
+      var _cpSlug  = params.store || STORES[0].slug;
+      var _cpRange = getDateRange_('mtd');
+      var _cpTxns  = fetchStoreTransactions_(_cpSlug, _cpRange.fromUTC, _cpRange.toUTC);
+      var _cpVet   = null, _cpAny = _cpTxns[0] || null;
+      for (var _i = 0; _i < _cpTxns.length; _i++) {
+        var _dl = _cpTxns[_i].discounts || [];
+        if (_dl.some(function(d){ return /veteran/i.test(d.discountName || ''); })) { _cpVet = _cpTxns[_i]; break; }
+      }
+      function _custShape(tx) {
+        if (!tx) return null;
+        var topKeys = Object.keys(tx).filter(function(k){ return /customer|loyalt|member|patient|medical|profile|consumer/i.test(k); });
+        var shape = {};
+        topKeys.forEach(function(k){
+          var v = tx[k];
+          shape[k] = (v && typeof v === 'object') ? { _keys: Object.keys(v) } : (typeof v);
+        });
+        return { customerRelatedTopKeys: topKeys, shape: shape, allTopKeysCount: Object.keys(tx).length };
+      }
+      return jsonOut({ ok: true, store: _cpSlug, vetTxnFound: !!_cpVet,
+        vetTxnCustomerShape: _custShape(_cpVet), anyTxnCustomerShape: _custShape(_cpAny) }, params.callback);
     }
 
     // ── Discount settings (incentive exclusions) — director/owner only ──

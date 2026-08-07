@@ -175,3 +175,86 @@ function saveDiscountSettings_(params) {
   } catch (e) {}
   return { ok: true, overrides: overrides };
 }
+
+// ============================================================
+//  Veteran-discount monitoring (loss-prevention backstop)
+//  The incentive rewards a low discount rate; this surfaces the
+//  outliers who apply the Veteran discount far more often than
+//  their store peers — the "winker" signal. Uses share-of-orders
+//  (less basket-size distortion than $ rate) + peer-relative.
+// ============================================================
+
+const VET_NAME_RE = /veteran/i;
+
+function _median_(arr) {
+  if (!arr.length) return 0;
+  var s = arr.slice().sort(function(a, b){ return a - b; });
+  var m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+/**
+ * Per-seller Veteran-discount stats over a trailing window (default 30 days).
+ * Returns rows (sellers with >= minTxn transactions), per-store median vet
+ * share-of-orders, distribution percentiles, and chain rates.
+ */
+function computeVetStats_(days, minTxn) {
+  days   = Math.min(Math.max(days || 30, 7), 90);
+  minTxn = minTxn || 20;
+  var now   = new Date().getTime();
+  var range = { fromUTC: new Date(now - days * 86400000).toISOString(), toUTC: new Date(now).toISOString() };
+  var byStore = fetchAllStoresTransactions_(range);
+  var emp = {};   // key -> { name, storeSlug, sales, subtotal, vet, vetCount, bdt, txn }
+  Object.keys(byStore).forEach(function(slug) {
+    (byStore[slug] || []).forEach(function(tx) {
+      var e = txEmployee_(tx), k = nameToKey_(e.name);
+      var o = emp[k] || (emp[k] = { name: e.name, nameKey: k, storeSlug: slug, sales: 0, subtotal: 0, vet: 0, vetCount: 0, bdt: 0, txn: 0 });
+      o.sales    += txTotal_(tx);
+      o.subtotal += txSubtotal_(tx);
+      o.bdt      += txDiscountBudtender_(tx);
+      o.txn++;
+      (tx.discounts || []).forEach(function(d) {
+        if (VET_NAME_RE.test(d.discountName || '')) { o.vet += Number(d.amount || 0); o.vetCount++; }
+      });
+    });
+  });
+  var rows = Object.keys(emp).map(function(k) {
+    var o = emp[k];
+    return { name: o.name, nameKey: k, storeSlug: o.storeSlug, txn: o.txn, sales: Math.round(o.sales),
+      vetRate:   o.subtotal > 0 ? Math.round(o.vet / o.subtotal * 10000) / 100 : 0,
+      bdtRate:   o.subtotal > 0 ? Math.round(o.bdt / o.subtotal * 10000) / 100 : 0,
+      vetCount:  o.vetCount,
+      vetPerTxn: o.txn > 0 ? Math.round(o.vetCount / o.txn * 1000) / 10 : 0 };
+  }).filter(function(r) { return r.txn >= minTxn; });
+  // Per-store median share-of-orders (peer baseline)
+  var byStoreVals = {};
+  rows.forEach(function(r) { (byStoreVals[r.storeSlug] = byStoreVals[r.storeSlug] || []).push(r.vetPerTxn); });
+  var storeMedians = {};
+  Object.keys(byStoreVals).forEach(function(s) { storeMedians[s] = Math.round(_median_(byStoreVals[s]) * 10) / 10; });
+  return { days: days, rows: rows, storeMedians: storeMedians };
+}
+
+/**
+ * Veteran-discount investigate flags. A seller is flagged when their share of
+ * orders carrying a Veteran discount clears an absolute floor AND runs well
+ * above their own store's median — i.e. high for their store, not just a
+ * vet-dense location. Tunable via opts.
+ */
+function vetFlags_(days, opts) {
+  opts = opts || {};
+  var floor   = opts.floor   || 8;    // min vet share-of-orders (%) to consider
+  var mult    = opts.mult    || 1.5;  // × store median
+  var minTxn  = opts.minTxn  || 40;   // enough volume for a stable share
+  var stats = computeVetStats_(days, minTxn);
+  var flags = stats.rows.map(function(r) {
+    var med = stats.storeMedians[r.storeSlug] || 0;
+    var bar = Math.max(floor, Math.round(med * mult * 10) / 10);
+    var rel = med > 0 ? Math.round(r.vetPerTxn / med * 10) / 10 : null;
+    return { name: r.name, nameKey: r.nameKey, storeSlug: r.storeSlug, txn: r.txn,
+      vetPerTxn: r.vetPerTxn, vetRate: r.vetRate, storeMedian: med, bar: bar, rel: rel,
+      flagged: r.vetPerTxn >= bar };
+  }).filter(function(f) { return f.flagged; })
+    .sort(function(a, b) { return b.vetPerTxn - a.vetPerTxn; });
+  return { ok: true, days: stats.days, floor: floor, mult: mult, minTxn: minTxn,
+    storeMedians: stats.storeMedians, flags: flags };
+}

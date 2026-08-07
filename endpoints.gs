@@ -1557,12 +1557,12 @@ function incentiveDefaults_() {
       txnQualifyLowVol: 150,         // lower bar for low-volume stores
       lowVolStores: ['center', 'portland'],
       aovTarget: 33, aovBonus: 25,   // +$ if qualified & AOV ≥ target
-      discountMaxPct: 2.75, discountBonus: 25, // +$ if qualified & discount ≤ max%
+      discountMaxPct: 1.5, discountBonus: 25, // +$ if qualified & discretionary discount ≤ max% (loyalty/promos already excluded)
       attendanceBonus: 15,           // +$ if 100% attendance
     },
     manager: {
       salesTiers: [ { pct: 110, bonus: 300 }, { pct: 105, bonus: 200 }, { pct: 100, bonus: 100 } ],
-      discountTiers: [ { maxPct: 2.5, bonus: 100 }, { maxPct: 2.75, bonus: 50 } ],
+      discountTiers: [ { maxPct: 1.5, bonus: 100 }, { maxPct: 2.0, bonus: 50 } ],
       aovTarget: 33, aovBonus: 50,
       teamAttendancePerHead: 25,      // +$ per team member with 100% attendance
     },
