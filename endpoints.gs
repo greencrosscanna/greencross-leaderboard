@@ -534,6 +534,7 @@ function getDirectorStaff(params, pre) {
         globalEmps[key].transactions += emp.transactions;
         globalEmps[key].items        += emp.items;
         globalEmps[key].discounts    += emp.discounts;
+        globalEmps[key].discountsBdt += emp.discountsBdt;
         globalEmps[key].subtotal     += emp.subtotal;
       }
     });
@@ -544,7 +545,7 @@ function getDirectorStaff(params, pre) {
   const staffList = Object.values(globalEmps).map(function(emp) {
     const aov    = emp.transactions > 0 ? r2_(emp.sales / emp.transactions) : 0;
     const upt    = emp.transactions > 0 ? r1_(emp.items / emp.transactions)  : 0;
-    const disc   = emp.subtotal     > 0 ? r3_(emp.discounts / emp.subtotal)   : 0;
+    const disc   = emp.subtotal     > 0 ? r3_(emp.discountsBdt / emp.subtotal) : 0;  // discretionary basis (excl. loyalty/promos)
     const empKey = emp.name.toLowerCase().replace(/\s+/g, '_');
     const trend  = trendFromByDay_(empDailyBuckets[empKey] || {}, { useAverage: true });
 

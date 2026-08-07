@@ -336,7 +336,7 @@ function txItems_(tx) {
 
 /** Aggregate a transaction array → summary + per-employee breakdown. */
 function aggregateTransactions_(txns) {
-  let totalSales = 0, totalSubtotal = 0, totalDiscounts = 0, totalItems = 0;
+  let totalSales = 0, totalSubtotal = 0, totalDiscounts = 0, totalDiscountsBdt = 0, totalItems = 0;
   const byEmployee = {};
 
   txns.forEach(function(tx) {
@@ -348,10 +348,11 @@ function aggregateTransactions_(txns) {
     const emp      = txEmployee_(tx);
     const empKey   = emp.name.toLowerCase().replace(/\s+/g, '_');
 
-    totalSales     += sales;
-    totalSubtotal  += sub;
-    totalDiscounts += disc;
-    totalItems     += items;
+    totalSales        += sales;
+    totalSubtotal     += sub;
+    totalDiscounts    += disc;
+    totalDiscountsBdt += discBdt;
+    totalItems        += items;
 
     if (!byEmployee[empKey]) {
       byEmployee[empKey] = {
@@ -386,7 +387,7 @@ function aggregateTransactions_(txns) {
     avgOrderValue:  count > 0 ? r2_(totalSales / count)        : 0,
     avgUPT:         count > 0 ? r1_(totalItems / count)        : 0,
     totalDiscounts: r2_(totalDiscounts),
-    discountRate:   totalSubtotal > 0 ? r3_(totalDiscounts / totalSubtotal) : 0,
+    discountRate:   totalSubtotal > 0 ? r3_(totalDiscountsBdt / totalSubtotal) : 0,  // discretionary basis (excl. loyalty/promos)
     byEmployee:     byEmployee,
   };
 }
@@ -418,10 +419,10 @@ function mergeAggs_(list) {
       m.discounts += e.discounts || 0; m.discountsBdt += e.discountsBdt || 0; m.subtotal += e.subtotal || 0;
     });
   });
-  let tSales = 0, tTxns = 0, tItems = 0, tDisc = 0, tSub = 0;
+  let tSales = 0, tTxns = 0, tItems = 0, tDisc = 0, tDiscBdt = 0, tSub = 0;
   Object.keys(byEmployee).forEach(function(k) {
     const e = byEmployee[k];
-    tSales += e.sales; tTxns += e.transactions; tItems += e.items; tDisc += e.discounts; tSub += e.subtotal;
+    tSales += e.sales; tTxns += e.transactions; tItems += e.items; tDisc += e.discounts; tDiscBdt += e.discountsBdt; tSub += e.subtotal;
     e.avgOrderValue = e.transactions > 0 ? r2_(e.sales / e.transactions) : 0;
     e.avgUPT        = e.transactions > 0 ? r1_(e.items / e.transactions) : 0;
     e.discountRate  = e.subtotal     > 0 ? r3_(e.discountsBdt / e.subtotal) : 0;
@@ -432,7 +433,7 @@ function mergeAggs_(list) {
     avgOrderValue:  tTxns > 0 ? r2_(tSales / tTxns) : 0,
     avgUPT:         tTxns > 0 ? r1_(tItems / tTxns) : 0,
     totalDiscounts: r2_(tDisc),
-    discountRate:   tSub > 0 ? r3_(tDisc / tSub) : 0,
+    discountRate:   tSub > 0 ? r3_(tDiscBdt / tSub) : 0,  // discretionary basis (excl. loyalty/promos)
     byEmployee:     byEmployee,
   };
 }
@@ -481,7 +482,7 @@ function byStoreAggCached_(range, hardRefresh) {
   days.forEach(function(d) {
     const settled = d.dateStr <= settledThru;
     STORES.forEach(function(s) {
-      const key = 'GC_DAYAGG_v1_' + s.slug + '_' + d.dateStr;
+      const key = 'GC_DAYAGG_v2_' + s.slug + '_' + d.dateStr;   // v2: discretionary-basis discountRate + registry-classified discountsBdt
       if (settled && !hardRefresh) {
         const hit = cache.get(key);
         if (hit) {

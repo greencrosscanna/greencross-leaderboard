@@ -574,10 +574,10 @@ function doGet(e) {
         rows: _vaRows }, params.callback);
     }
 
-    // Owner+Mike. Veteran-discount investigate flags (peer-relative share-of-orders).
-    // ?action=vetflags&token=TOKEN[&days=30]
+    // Director/owner. Veteran-discount investigate flags (peer-relative share-of-orders).
+    // Shown below Top Performers on the director view. ?action=vetflags&token=TOKEN[&days=30]
     if (params.action === 'vetflags') {
-      if (!incentiveAccessOk_(auth)) return jsonOut({ ok: false, error: 'Forbidden' }, params.callback);
+      requireRole_(auth, ['owner','director']);
       return jsonOut(vetFlags_(parseInt(params.days, 10) || 30, {}), params.callback);
     }
 

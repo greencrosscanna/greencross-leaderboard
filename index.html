@@ -1105,6 +1105,18 @@ html, body {
   .kpi-row.small { grid-template-columns: repeat(3, 1fr); }
 }
 
+/* ── Veteran Discount Watch (director, below Top Performers) ── */
+.dir-vet { margin: 20px 0 4px; }
+.dir-vet h2 { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; color: var(--amber, #f0b429); font-size: 18px; margin: 0 0 10px; }
+.dir-vet-sub { font-size: 12px; font-weight: 400; color: var(--text-mute); }
+.dir-vet-scroll { overflow-x: auto; }
+.dir-vet-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dir-vet-table th, .dir-vet-table td { padding: 8px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
+.dir-vet-table th.l, .dir-vet-table td.l { text-align: left; }
+.dir-vet-table thead th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-mute); }
+.dir-vet-table .dv-muted { color: var(--text-mute); }
+.dir-vet-note { font-size: 11px; color: var(--text-mute); line-height: 1.5; padding: 8px 2px 2px; }
+
 /* ── Top Performers table — fixed column widths ─────────── */
 /* table-layout: fixed locks column widths regardless of row count,
    so filtering store-by-store doesn't reflow the columns.        */
@@ -3752,7 +3764,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.400';
+window.GC = window.GC || {}; GC.VERSION = 'v1.401';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -6359,6 +6371,7 @@ var director = (function() {
       + renderStoreTable(stores, range)
       + renderFilterPills()
       + renderStaffTable(staff, range)
+      + '<div id="dirVetWatch"></div>'
       + '<div class="director-lower">'
       + renderAlerts(alerts)
       + renderDiscountWatch(alerts)
@@ -6567,6 +6580,34 @@ var director = (function() {
   }
 
   // ── Wire Interactivity ─────────────────────────────────
+  // ── Veteran discount watch (peer-relative investigate flags, rolling 30-day) ──
+  function loadVetWatch() {
+    var host = document.getElementById('dirVetWatch'); if (!host) return;
+    GC.api.fetchVetFlags(30).then(function(v) {
+      if (!v || v.ok === false || !v.flags || !v.flags.length) { host.innerHTML = ''; return; }
+      function esc(s) { return GC.esc(String(s == null ? '' : s)); }
+      var rows = v.flags.map(function(f) {
+        var store = (GC.STORES && GC.STORES[f.storeSlug] && GC.STORES[f.storeSlug].name) || f.storeSlug;
+        var relTxt = f.rel ? f.rel.toFixed(1) + '× store median' : '';
+        return '<tr>'
+          + '<td class="l">' + esc(f.name) + '</td>'
+          + '<td class="l">' + esc(store) + '</td>'
+          + '<td><b>' + f.vetPerTxn.toFixed(1) + '%</b> of orders</td>'
+          + '<td class="dv-muted">' + esc(relTxt) + ' (med ' + f.storeMedian.toFixed(1) + '%)</td>'
+          + '<td class="dv-muted">' + f.vetRate.toFixed(1) + '% $</td>'
+          + '<td class="dv-muted">' + f.txn + ' txns</td>'
+          + '</tr>';
+      }).join('');
+      host.innerHTML = '<div class="dir-vet"><h2>⚑ Veteran Discount Watch '
+        + '<span class="dir-vet-sub">' + v.flags.length + ' flagged · rolling ' + v.days + ' days · applies vet discount to ≥' + v.floor + '% of orders and &gt;' + v.mult + '× their store median</span></h2>'
+        + '<div class="dir-vet-scroll"><table class="dir-vet-table">'
+        + '<thead><tr><th class="l">Name</th><th class="l">Store</th><th>Vet frequency</th><th>vs. store peers</th><th>$ rate</th><th>Volume</th></tr></thead>'
+        + '<tbody>' + rows + '</tbody></table></div>'
+        + '<div class="dir-vet-note">A flag is a prompt to verify against ID / customer-profile records — not proof of misuse. Vet-dense stores read higher, which is why this is peer-relative.</div>'
+        + '</div>';
+    }).catch(function() { host.innerHTML = ''; });
+  }
+
   function init(data) {
     _data = data;
     startClock();
@@ -6596,6 +6637,8 @@ var director = (function() {
     // Update last-refreshed label
     var lr = document.getElementById('lastRefreshed');
     if (lr) lr.textContent = 'Last refresh ' + GC.fmtTime(new Date());
+
+    loadVetWatch();
 
     // Slideshow button
     var btnSlideshow = document.getElementById('btnSlideshow');
@@ -7804,9 +7847,6 @@ var incentive = (function() {
       +   '</div>'
       + '</div>'
 
-      // Veteran discount watch (peer-relative investigate flags) — filled async
-      + '<div id="incVetWatch"></div>'
-
       // Admin
       + '<div class="inc-section"><h3>Admin</h3><div class="inc-scroll"><table class="inc-table">'
       +   '<thead><tr><th class="l">Name</th><th>Target Revenue</th><th>Period Sales</th><th>% to Goal</th><th>Bonus</th><th>Payroll</th><th>$/hr</th></tr></thead>'
@@ -7849,34 +7889,6 @@ var incentive = (function() {
     var refBtn = _app.querySelector('#incRefresh');
     if (refBtn) refBtn.addEventListener('click', function() { start(_app, _d.payPeriod.start, true); });
     recompute();
-    loadVetWatch();
-  }
-
-  // ── Veteran discount watch (peer-relative investigate flags, rolling 30-day) ──
-  function loadVetWatch() {
-    var host = document.getElementById('incVetWatch'); if (!host) return;
-    GC.api.fetchVetFlags(30).then(function(v) {
-      if (!v || v.ok === false || !v.flags || !v.flags.length) { host.innerHTML = ''; return; }
-      var rows = v.flags.map(function(f) {
-        var store = GC.STORES && GC.STORES[f.storeSlug] ? GC.STORES[f.storeSlug].name : f.storeSlug;
-        var relTxt = f.rel ? f.rel.toFixed(1) + '× store median' : '';
-        return '<tr>'
-          + '<td class="l name">' + e(f.name) + '</td>'
-          + '<td class="l">' + e(store) + '</td>'
-          + '<td><b>' + f.vetPerTxn.toFixed(1) + '%</b> of orders</td>'
-          + '<td class="inc-muted">' + e(relTxt) + ' (med ' + f.storeMedian.toFixed(1) + '%)</td>'
-          + '<td class="inc-muted">' + f.vetRate.toFixed(1) + '% $</td>'
-          + '<td class="inc-muted">' + f.txn + ' txns</td>'
-          + '</tr>';
-      }).join('');
-      host.innerHTML = '<div class="inc-section inc-vet"><h3>⚑ Veteran Discount Watch '
-        + '<span class="inc-vet-sub">' + v.flags.length + ' flagged · rolling ' + v.days + ' days · applies vet discount to ≥' + v.floor + '% of orders and >' + v.mult + '× their store median</span></h3>'
-        + '<div class="inc-scroll"><table class="inc-table">'
-        + '<thead><tr><th class="l">Name</th><th class="l">Store</th><th>Vet frequency</th><th>vs. store peers</th><th>$ rate</th><th>Volume</th></tr></thead>'
-        + '<tbody>' + rows + '</tbody></table></div>'
-        + '<div class="inc-vet-note">A flag is a prompt to verify against ID / customer-profile records — not proof of misuse. Stores with a genuinely vet-heavy base will read higher; that\'s why this is peer-relative.</div>'
-        + '</div>';
-    }).catch(function() { host.innerHTML = ''; });
   }
 
   function setTxt(id, txt, cls) { var el = document.getElementById(id); if (el) { el.textContent = txt; if (cls) el.className = cls; } }
