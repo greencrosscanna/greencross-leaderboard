@@ -447,6 +447,44 @@ function doGet(e) {
       }, params.callback);
     }
 
+    // Director-only. Enumerate distinct discount names booked in the current pay
+    // period so we can see exactly how loyalty is recorded. ?action=discnames&token=TOKEN
+    if (params.action === 'discnames') {
+      requireRole_(auth, ['owner','director']);
+      var _dprops = getProps_();
+      var _dcur   = currentPPStart_(_dprops);
+      var _drange = { fromUTC: new Date(_dcur.ppStartMs).toISOString(),
+                      toUTC:   new Date(_dcur.ppStartMs + _dcur.PP_MS - 1).toISOString() };
+      var _dbyStore = fetchAllStoresTransactions_(_drange);
+      var _dnames = {};   // discountName -> { count, amount, sampleKeys, sample, excluded }
+      var _dgrand = { txTotal: 0, txWithDiscount: 0, totalDiscount: 0 };
+      Object.keys(_dbyStore).forEach(function(_slug) {
+        (_dbyStore[_slug] || []).forEach(function(_tx) {
+          _dgrand.txTotal++;
+          var _td = txDiscount_(_tx);
+          if (_td > 0) _dgrand.txWithDiscount++;
+          _dgrand.totalDiscount += _td;
+          (_tx.discounts || []).forEach(function(_d) {
+            var _nm = _d.discountName || _d.discountReason || '(unnamed)';
+            if (!_dnames[_nm]) _dnames[_nm] = {
+              count: 0, amount: 0,
+              sampleKeys: Object.keys(_d),
+              sample: _d,
+              excluded: EXCLUDED_DISCOUNT_KEYWORDS.some(function(_kw) {
+                return _nm.toLowerCase().indexOf(_kw) !== -1; }),
+            };
+            _dnames[_nm].count++;
+            _dnames[_nm].amount += Number(_d.amount || 0);
+          });
+        });
+      });
+      Object.keys(_dnames).forEach(function(_n) { _dnames[_n].amount = Math.round(_dnames[_n].amount * 100) / 100; });
+      _dgrand.totalDiscount = Math.round(_dgrand.totalDiscount * 100) / 100;
+      return jsonOut({ ok: true,
+        ppStart: Utilities.formatDate(new Date(_dcur.ppStartMs), STORE_TZ, 'yyyy-MM-dd'),
+        grand: _dgrand, names: _dnames, currentExclusions: EXCLUDED_DISCOUNT_KEYWORDS }, params.callback);
+    }
+
     if (params.action === 'saveeom') {
       requireRole_(auth, ['owner','director']);
       var eomKey = params.key || null;
