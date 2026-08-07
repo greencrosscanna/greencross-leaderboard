@@ -556,6 +556,22 @@ function doGet(e) {
         rows: _daRows }, params.callback);
     }
 
+    // ── Discount settings (incentive exclusions) — director/owner only ──
+    if (params.action === 'discountsettings') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(getDiscountSettings_(), params.callback);
+    }
+    if (params.action === 'savediscountsettings') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(saveDiscountSettings_(params), params.callback);
+    }
+    if (params.action === 'refreshdiscounts') {
+      requireRole_(auth, ['owner','director']);
+      var _rdReg = buildDiscountRegistry_();
+      return jsonOut({ ok: true, builtAt: _rdReg.builtAt,
+        count: Object.keys(_rdReg.byName || {}).length }, params.callback);
+    }
+
     if (params.action === 'saveeom') {
       requireRole_(auth, ['owner','director']);
       var eomKey = params.key || null;

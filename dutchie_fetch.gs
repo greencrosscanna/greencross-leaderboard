@@ -310,18 +310,18 @@ function txDiscount_(tx) { return Number(tx.totalDiscount  || tx.discountTotal |
 
 /**
  * Returns only the portion of the discount that counts against a budtender —
- * i.e. total discount minus any system-applied discounts (loyalty, points, etc.).
- * Used for discount-rate flagging; revenue calculations still use txDiscount_().
+ * i.e. total discount minus loyalty redemptions, automatic promos, and any
+ * discretionary discount toggled off in the discount config (see discounts.gs).
+ * Used for discount-rate flagging and the incentive; revenue calculations still
+ * use txDiscount_().
  */
 function txDiscountBudtender_(tx) {
   var discountList = tx.discounts || [];
   if (!discountList.length) return txDiscount_(tx);  // no detail → use total
   var excluded = 0;
   discountList.forEach(function(d) {
-    var name = (d.discountName || d.discountReason || '').toLowerCase();
-    if (EXCLUDED_DISCOUNT_KEYWORDS.some(function(kw) { return name.indexOf(kw) !== -1; })) {
-      excluded += Number(d.amount || 0);
-    }
+    var name = d.discountName || d.discountReason || '';
+    if (isExcludedDiscount_(name)) excluded += Number(d.amount || 0);
   });
   return Math.max(0, txDiscount_(tx) - excluded);
 }

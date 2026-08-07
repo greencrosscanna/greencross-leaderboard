@@ -1706,7 +1706,9 @@ function computeIncentivePerf_(props, selMs, PP_MS) {
       if (isMgr) { if (!mgrKey) mgrKey = nk; if (!mgrName) mgrName = emp.name; return; }
       if (mgmtKeys[nk]) return;
       var aov  = emp.transactions > 0 ? emp.sales / emp.transactions : 0;
-      var disc = emp.subtotal     > 0 ? emp.discounts / emp.subtotal : 0;
+      // Budtender-controlled discount only: excludes loyalty redemptions,
+      // automatic promos, and any discretionary discount toggled off (discounts.gs).
+      var disc = emp.subtotal     > 0 ? emp.discountsBdt / emp.subtotal : 0;
       budtenders.push({
         name: emp.name, nameKey: nk, storeSlug: slug, storeName: store.name,
         txn: emp.transactions || 0, sales: r2_(emp.sales), discount: disc, aov: aov,

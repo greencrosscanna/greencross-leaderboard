@@ -119,6 +119,10 @@ function refreshDirectorCache() {
       Logger.log('refreshDirectorCache error [' + period + ']: ' + e.message);
     }
   });
+
+  // Keep the discount registry fresh (only rebuilds if >12h stale → ~2×/day).
+  try { refreshDiscountRegistryIfStale_(12); }
+  catch(e) { Logger.log('refreshDirectorCache: registry refresh error: ' + e.message); }
 }
 
 /**
