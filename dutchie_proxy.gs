@@ -910,40 +910,18 @@ function installWarmupTrigger() {
 
 // ── Bug reporter ─────────────────────────────────────────────
 function handleBugReport_(b) {
-  const props   = PropertiesService.getScriptProperties();
-  let   bugSsId = props.getProperty('GC_LEADERBOARD_BUG_SS_ID');
-  let   bugSs;
-
-  if (!bugSsId) {
-    bugSs   = SpreadsheetApp.create('GC Leaderboard — Bug Reports');
-    bugSsId = bugSs.getId();
-    props.setProperty('GC_LEADERBOARD_BUG_SS_ID', bugSsId);
-  } else {
-    bugSs = SpreadsheetApp.openById(bugSsId);
-  }
-
-  let sheet = bugSs.getSheetByName('Bugs');
-  if (!sheet) {
-    sheet = bugSs.getSheets()[0];
-    sheet.setName('Bugs');
-    sheet.getRange(1, 1, 1, 8).setValues([[
-      'Timestamp', 'Reporter', 'Priority', 'Title', 'Description', 'Store', 'Role', 'Version / Route'
-    ]]);
-    sheet.setFrozenRows(1);
-    sheet.getRange(1, 1, 1, 8).setFontWeight('bold');
-  }
-
   const ts = new Date();
-  sheet.appendRow([
-    ts,
-    b.reporter  || '',
-    b.priority  || 'medium',
-    b.title     || '',
-    b.desc      || '',
-    b.appStore  || '',
-    b.appRole   || '',
-    ((b.appVer || '') + ' ' + (b.appRoute || '')).trim(),
-  ]);
+
+  // Central bug log — GX Command Center is the SINGLE source of truth for bug reports
+  // (GX Core's central bug_reports table, shown in the cockpit; this app's key =
+  // 'performance'). Real library fn is gxIngestBug (NOT ingestBug); it maps our keys
+  // (desc→detail, priority→severity, appStore→store, appVer→app_version) internally.
+  // Runs as Sky (GX Core owner) so the write is authorized.
+  try {
+    GXCore.gxIngestBug('performance', b.reporter, {
+      title: b.title, desc: b.desc, priority: b.priority, store: b.appStore, appVer: b.appVer
+    });
+  } catch (e) { /* central unavailable — the email below is the no-lost-report fallback */ }
 
   try {
     const emoji = { low: '🟢', medium: '🟡', high: '🔴' }[b.priority] || '🟡';
@@ -963,16 +941,6 @@ function handleBugReport_(b) {
       ].join('\n'),
     });
   } catch(mailErr) { /* non-fatal */ }
-
-  // Also forward to the shared GX Command Center (bug_reports in GX Core). The real
-  // library fn is gxIngestBug (NOT ingestBug); it maps our keys (desc/priority/appStore/
-  // appVer) internally. Runs as Sky (GX Core owner) so the write is authorized.
-  // Non-destructive: any GX Core error is swallowed so it never affects the local flow.
-  try {
-    GXCore.gxIngestBug('performance', b.reporter, {
-      title: b.title, desc: b.desc, priority: b.priority, store: b.appStore, appVer: b.appVer
-    });
-  } catch (e) {}
 
   return { ok: true };
 }
