@@ -3764,7 +3764,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.406';
+window.GC = window.GC || {}; GC.VERSION = 'v1.407';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -7556,56 +7556,64 @@ table.inc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-w
 .inc-vet h3 { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; color: var(--amber, #f0b429); }
 .inc-vet-sub { font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-mute); }
 .inc-vet-note { font-size: 11px; color: var(--text-mute); line-height: 1.5; padding: 8px 2px 2px; }
-/* Consolidated incentive settings tray */
-.ist-tray { width: 460px; }
-.ist-body { padding: 16px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; flex: 1; min-height: 0; }
-.ist-sect { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-dim); font-weight: 700; margin: 2px 0 -6px; }
+/* Consolidated incentive settings tray (Claude Design import) */
+.ist-tray { width: 440px; }
+.ist-body { padding: 18px; display: flex; flex-direction: column; gap: 26px; overflow-y: auto; flex: 1; min-height: 0; }
+.ist-sec { display: flex; flex-direction: column; gap: 8px; }
+.ist-sec-t { gap: 10px; }
+.ist-seclabel { font-size: 10.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--text-mute); font-weight: 700; }
+.ist-sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.ist-hint { font-size: 10.5px; color: var(--text-mute); }
+.ist-cnt { color: var(--green); }
+.ist-sub { margin: 0; font-size: 11.5px; color: var(--text-mute); line-height: 1.55; }
 .ist-msg { font-size: 12.5px; color: var(--text-mute); padding: 10px 13px; }
-.ist-target { padding: 11px 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
-.ist-target-row { display: flex; align-items: center; justify-content: space-between; }
-.ist-target-row b { font-size: 13px; }
-.ist-target-inp { width: 92px; background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--text); border-radius: 7px; padding: 6px 10px; text-align: right; font-size: 15px; font-weight: 600; }
-.ist-target-sub { font-size: 11px; color: var(--text-mute); line-height: 1.5; margin-top: 7px; }
-.ist-chip { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; }
-.ist-chip.g { background: var(--green-soft); color: var(--green); }
+.ist-goalrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ist-goallabel { font-size: 13.5px; font-weight: 600; }
+.ist-goalfield { display: flex; align-items: center; gap: 5px; }
+.ist-goalinp { width: 62px; background: var(--bg); border: 1px solid var(--border-strong); color: var(--text); border-radius: 7px; padding: 7px 9px; text-align: right; font-size: 15px; font-weight: 600; }
+.ist-pct { font-size: 13px; color: var(--text-mute); }
+.ist-chips { display: flex; gap: 6px; }
+.ist-chip { flex: 1; border-radius: 6px; padding: 6px 8px; font-size: 10.5px; font-weight: 700; text-align: center; }
+.ist-chip.g { background: rgba(74,222,128,.10); color: var(--green); }
 .ist-chip.a { background: rgba(234,179,8,.12); color: var(--amber); }
 .ist-chip.r { background: rgba(239,68,68,.12); color: var(--red); }
-.ist-legend { font-size: 11px; color: var(--text-mute); display: flex; gap: 16px; align-items: center; }
-.ist-sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
-.ist-sw.t { background: var(--text-dim); } .ist-sw.r { background: var(--green); }
 .ist-role { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-.ist-rhead { padding: 10px 13px; background: var(--surface-3); font-size: 12.5px; font-weight: 700; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.ist-qual { font-size: 11px; font-weight: 400; color: var(--text-dim); }
-.ist-grid { display: grid; grid-template-columns: 108px 1fr 112px; }
-.ist-h { font-size: 9.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--text-mute); padding: 7px 13px; background: var(--surface); border-top: 1px solid var(--border); }
-.ist-h.earn { grid-column: 1 / 3; }
-.ist-h.rew { text-align: right; background: rgba(74,222,128,.06); color: var(--green-dim); border-left: 1px solid var(--border); }
-.ist-c { border-top: 1px solid var(--border); padding: 0 13px; min-height: 38px; display: flex; align-items: center; font-size: 12.5px; }
-.ist-c.m { color: var(--text-dim); }
-.ist-c.t { justify-content: flex-end; gap: 6px; color: var(--text); }
-.ist-c.r { border-left: 1px solid var(--border); background: var(--green-soft); color: var(--green); font-weight: 700; justify-content: flex-end; gap: 2px; }
+.ist-rhead { padding: 10px 14px; background: var(--surface-3); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.ist-rhead > span:first-child { font-size: 12.5px; font-weight: 700; }
+.ist-qual { font-size: 11px; color: var(--text-dim); }
+.ist-grid { display: grid; grid-template-columns: 96px 1fr 96px; }
+.ist-hl { grid-column: 1 / 3; border-top: 1px solid var(--border); }
+.ist-hr { border-top: 1px solid var(--border); border-left: 1px solid var(--border); background: rgba(74,222,128,.05); }
+.ist-c { border-top: 1px solid var(--border); min-height: 40px; display: flex; align-items: center; font-size: 12.5px; }
+.ist-c.m { padding: 0 14px; color: var(--text-dim); }
+.ist-c.t { padding: 0 12px; justify-content: flex-end; gap: 6px; color: var(--text); }
+.ist-c.r { padding: 0 12px; border-left: 1px solid var(--border); background: rgba(74,222,128,.05); justify-content: flex-end; gap: 2px; color: var(--green); font-weight: 700; }
+.ist-c.tall { padding: 11px 12px; min-height: 0; flex-direction: column; align-items: flex-end; gap: 8px; }
+.ist-c.m.tall { padding: 11px 14px; align-items: flex-start; }
+.ist-ln { display: flex; align-items: center; gap: 6px; height: 26px; }
+.ist-c.r .ist-ln { gap: 2px; }
 .ist-op { color: var(--text-mute); font-weight: 600; }
-.ist-u { color: var(--text-mute); font-size: 11px; width: 12px; }
-.ist-mut { color: var(--text-mute); }
+.ist-u { color: var(--text-mute); font-size: 11px; width: 10px; }
+.ist-mut { color: var(--text-dim); }
+.ist-mut2 { color: var(--text-mute); }
 .ist-note { font-size: 9.5px; color: var(--text-mute); }
-.ist-inp { width: 50px; background: var(--surface); border: 1px solid var(--border-strong); color: var(--text); border-radius: 6px; padding: 4px 6px; text-align: right; font-size: 12.5px; }
-.ist-inp:focus { outline: none; border-color: var(--green); }
-.ist-rin { width: 56px; color: var(--green); border-color: var(--green-dim); background: rgba(74,222,128,.06); }
-.ist-tier { display: flex; flex-direction: column; gap: 8px; width: 100%; }
-.ist-tier .ist-ln { display: flex; align-items: center; justify-content: flex-end; gap: 6px; height: 22px; }
-.ist-dr-head { padding: 8px 13px; font-size: 11px; color: var(--text-mute); background: var(--surface); border-top: 1px solid var(--border); line-height: 1.4; }
-.ist-dr { display: flex; align-items: center; gap: 9px; padding: 8px 13px; border-top: 1px solid var(--border); font-size: 12px; cursor: pointer; }
+.ist-note.u { text-transform: uppercase; letter-spacing: .06em; }
+.ist-inp { width: 52px; background: var(--bg); border: 1px solid var(--border-strong); color: var(--text); border-radius: 6px; padding: 5px 7px; text-align: right; font-size: 12.5px; }
+.ist-inp:focus { outline: none; border-color: var(--green-dim); }
+.ist-rin { width: 46px; background: rgba(74,222,128,.06); border-color: var(--green-dim); color: var(--green); font-weight: 700; }
+.ist-hoursrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 2px 0; }
+.ist-hoursrow > span { font-size: 12.5px; color: var(--text-dim); }
+.ist-dr { display: flex; align-items: center; gap: 10px; padding: 9px 13px; font-size: 12px; cursor: pointer; }
+.ist-dr + .ist-dr, .ist-locked { border-top: 1px solid var(--border); }
+.ist-dr:hover { background: var(--surface-3); }
+.ist-dr.off { color: var(--text-mute); }
 .ist-dr input { width: 15px; height: 15px; accent-color: var(--green); flex: none; }
-.ist-dr-name { line-height: 1.3; }
-.ist-code { font-size: 9px; color: var(--text-mute); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; flex: none; }
-.ist-dr-st { margin-left: auto; font-size: 9.5px; letter-spacing: .05em; flex: none; }
-.ist-dr-st.c { color: var(--green); } .ist-dr-st.x { color: var(--text-mute); }
-.ist-locked { border-top: 1px solid var(--border); }
-.ist-locked > summary { padding: 8px 13px; font-size: 11px; color: var(--text-mute); cursor: pointer; }
-.ist-locknames { padding: 2px 13px 8px; font-size: 10.5px; color: var(--text-mute); line-height: 1.6; }
-.ist-built { padding: 6px 13px; font-size: 10px; color: var(--text-mute); opacity: .8; }
-.ist-save-row { display: flex; align-items: center; gap: 12px; }
-.ist-save-row .inc-btn { flex: 1; justify-content: center; }
+.ist-dr-name { flex: 1; line-height: 1.3; }
+.ist-code { font-size: 9.5px; color: var(--text-mute); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; flex: none; }
+.ist-locked { padding: 9px 13px; font-size: 10.5px; color: var(--text-mute); background: var(--surface); }
+.ist-footer { flex: none; padding: 14px 18px; border-top: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; gap: 12px; }
+.ist-savebtn { flex: 1; background: var(--green); color: #05130a; border: none; border-radius: 9px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.ist-savebtn:hover { background: #6ee79b; }
 .ist-savenote { font-size: 11px; color: var(--text-mute); }
 @media print {
   body * { visibility: hidden; }
@@ -7969,67 +7977,69 @@ var incentive = (function() {
     var goal = (B.discountMaxPct != null) ? B.discountMaxPct : 1.5;
     function tin(path, val, w) { return '<input class="ist-inp" type="number" step="0.25" data-thr="' + e(path) + '" value="' + val + '"' + (w ? ' style="width:' + w + 'px"' : '') + '>'; }
     function rin(path, val) { return '<input class="ist-inp ist-rin" type="number" step="1" data-thr="' + e(path) + '" value="' + val + '">'; }
+    var hrow = '<div class="ist-hl"></div><div class="ist-hr"></div>';
     return '<div class="inc-tray-back" id="incTrayBack"></div>'
       + '<aside class="inc-tray ist-tray" id="incTray" aria-hidden="true">'
       +   '<div class="inc-tray-head"><span>Incentive Settings</span><button class="inc-tray-x" id="incTrayClose" title="Close">✕</button></div>'
       +   '<div class="ist-body">'
 
-      +   '<div class="ist-sect">Discount target</div>'
-      +   '<div class="ist-target">'
-      +     '<label class="ist-target-row"><b>Discretionary discount goal</b>'
-      +       '<input class="ist-target-inp" type="number" step="0.1" min="0.5" max="10" data-thr="b.discountMaxPct" value="' + gstr_(goal) + '"></label>'
-      +     '<div class="ist-target-sub">Budtenders earn the discount bonus at/under this. Leaderboard color: '
-      +       '<span class="ist-chip g">≤ <span id="istGreen">' + gstr_(goal) + '</span>% green</span> '
-      +       '<span class="ist-chip a">≤ <span id="istRed">' + gstr_(goal * 2) + '</span>% amber</span> '
-      +       '<span class="ist-chip r">&gt; <span id="istRed2">' + gstr_(goal * 2) + '</span>% red</span>. '
-      +       'Manager store-discount tiers follow this goal. Loyalty &amp; automatic promos never count.</div>'
-      +   '</div>'
+      +   '<section class="ist-sec ist-sec-t">'
+      +     '<div class="ist-seclabel">Discount target</div>'
+      +     '<div class="ist-goalrow"><span class="ist-goallabel">Discretionary discount goal</span>'
+      +       '<div class="ist-goalfield"><input class="ist-goalinp" type="number" step="0.1" min="0.5" max="10" data-thr="b.discountMaxPct" value="' + gstr_(goal) + '"><span class="ist-pct">%</span></div></div>'
+      +     '<div class="ist-chips"><div class="ist-chip g">≤ <span id="istGreen">' + gstr_(goal) + '</span>% GREEN</div>'
+      +       '<div class="ist-chip a">≤ <span id="istRed">' + gstr_(goal * 2) + '</span>% AMBER</div>'
+      +       '<div class="ist-chip r">&gt; <span id="istRed2">' + gstr_(goal * 2) + '</span>% RED</div></div>'
+      +     '<p class="ist-sub">Budtenders earn the discount bonus at/under this. Manager store-discount tiers follow this goal. Loyalty &amp; automatic promos never count.</p>'
+      +   '</section>'
 
-      +   '<div class="ist-sect">Bonus thresholds</div>'
-      +   '<div class="ist-legend"><span><span class="ist-sw t"></span>Trigger — earn it when</span><span><span class="ist-sw r"></span>Reward — payout</span></div>'
+      +   '<section class="ist-sec">'
+      +     '<div class="ist-sechead"><div class="ist-seclabel">Bonus thresholds</div><div class="ist-hint">Earn it when → reward</div></div>'
 
-      +   '<div class="ist-role">'
-      +     '<div class="ist-rhead"><span>Budtenders</span><span class="ist-qual">Qualify ≥ ' + tin('b.txnQualify', B.txnQualify, 44) + ' txns · low-vol ≥ ' + tin('b.txnQualifyLowVol', B.txnQualifyLowVol, 44) + '</span></div>'
-      +     '<div class="ist-grid">'
-      +       '<div class="ist-h earn">Earn it when</div><div class="ist-h rew">Reward</div>'
-      +       '<div class="ist-c m">AOV</div><div class="ist-c t"><span class="ist-op">≥ $</span>' + tin('b.aovTarget', B.aovTarget) + '</div><div class="ist-c r">$' + rin('b.aovBonus', B.aovBonus) + '</div>'
-      +       '<div class="ist-c m">Discount</div><div class="ist-c t"><span class="ist-op">≤</span><span class="ist-mut" id="istBudDisc">' + gstr_(goal) + '%</span><span class="ist-note">goal</span></div><div class="ist-c r">$' + rin('b.discountBonus', B.discountBonus) + '</div>'
-      +       '<div class="ist-c m">Attendance</div><div class="ist-c t"><span class="ist-mut">100%</span></div><div class="ist-c r">$' + rin('b.attendanceBonus', B.attendanceBonus) + '</div>'
+      +     '<div class="ist-role">'
+      +       '<div class="ist-rhead"><span>Budtenders</span><span class="ist-qual">Qualify: ≥ ' + tin('b.txnQualify', B.txnQualify, 44) + ' txns · low-vol ≥ ' + tin('b.txnQualifyLowVol', B.txnQualifyLowVol, 44) + '</span></div>'
+      +       '<div class="ist-grid">' + hrow
+      +         '<div class="ist-c m">AOV</div><div class="ist-c t"><span class="ist-op">≥ $</span>' + tin('b.aovTarget', B.aovTarget) + '</div><div class="ist-c r">$' + rin('b.aovBonus', B.aovBonus) + '</div>'
+      +         '<div class="ist-c m">Discount</div><div class="ist-c t"><span class="ist-op">≤</span><span class="ist-mut" id="istBudDisc">' + gstr_(goal) + '%</span><span class="ist-note u">goal</span></div><div class="ist-c r">$' + rin('b.discountBonus', B.discountBonus) + '</div>'
+      +         '<div class="ist-c m">Attendance</div><div class="ist-c t"><span class="ist-mut">100%</span></div><div class="ist-c r">$' + rin('b.attendanceBonus', B.attendanceBonus) + '</div>'
+      +       '</div>'
       +     '</div>'
-      +   '</div>'
 
-      +   '<div class="ist-role">'
-      +     '<div class="ist-rhead"><span>Store Managers</span></div>'
-      +     '<div class="ist-grid">'
-      +       '<div class="ist-h earn">Earn it when</div><div class="ist-h rew">Reward</div>'
-      +       '<div class="ist-c m">Sales vs goal</div>'
-      +       '<div class="ist-c t"><div class="ist-tier"><div class="ist-ln"><span class="ist-op">≥</span>' + tin('m.p0', M.salesTiers[0].pct) + '<span class="ist-u">%</span></div><div class="ist-ln"><span class="ist-op">≥</span>' + tin('m.p1', M.salesTiers[1].pct) + '<span class="ist-u">%</span></div><div class="ist-ln"><span class="ist-op">≥</span>' + tin('m.p2', M.salesTiers[2].pct) + '<span class="ist-u">%</span></div></div></div>'
-      +       '<div class="ist-c r"><div class="ist-tier"><div class="ist-ln">$' + rin('m.s0', M.salesTiers[0].bonus) + '</div><div class="ist-ln">$' + rin('m.s1', M.salesTiers[1].bonus) + '</div><div class="ist-ln">$' + rin('m.s2', M.salesTiers[2].bonus) + '</div></div></div>'
-      +       '<div class="ist-c m">Store discount</div>'
-      +       '<div class="ist-c t"><div class="ist-tier"><div class="ist-ln"><span class="ist-note">−33%</span><span class="ist-op">≤</span><span class="ist-mut" id="istMgrD0">' + gstr_(goal * 2 / 3) + '%</span></div><div class="ist-ln"><span class="ist-note">goal</span><span class="ist-op">≤</span><span class="ist-mut" id="istMgrD1">' + gstr_(goal) + '%</span></div></div></div>'
-      +       '<div class="ist-c r"><div class="ist-tier"><div class="ist-ln">$' + rin('m.d0', M.discountTiers[0].bonus) + '</div><div class="ist-ln">$' + rin('m.d1', M.discountTiers[1].bonus) + '</div></div></div>'
-      +       '<div class="ist-c m">AOV</div><div class="ist-c t"><span class="ist-op">≥ $</span>' + tin('m.aovTarget', M.aovTarget) + '</div><div class="ist-c r">$' + rin('m.aovBonus', M.aovBonus) + '</div>'
-      +       '<div class="ist-c m">Team att.</div><div class="ist-c t"><span class="ist-mut">per member · 100%</span></div><div class="ist-c r">$' + rin('m.teamAttendancePerHead', M.teamAttendancePerHead) + '</div>'
+      +     '<div class="ist-role">'
+      +       '<div class="ist-rhead"><span>Store Managers</span></div>'
+      +       '<div class="ist-grid">' + hrow
+      +         '<div class="ist-c m tall">Sales vs goal</div>'
+      +         '<div class="ist-c t tall"><div class="ist-ln"><span class="ist-op">≥</span>' + tin('m.p0', M.salesTiers[0].pct) + '<span class="ist-u">%</span></div><div class="ist-ln"><span class="ist-op">≥</span>' + tin('m.p1', M.salesTiers[1].pct) + '<span class="ist-u">%</span></div><div class="ist-ln"><span class="ist-op">≥</span>' + tin('m.p2', M.salesTiers[2].pct) + '<span class="ist-u">%</span></div></div>'
+      +         '<div class="ist-c r tall"><div class="ist-ln">$' + rin('m.s0', M.salesTiers[0].bonus) + '</div><div class="ist-ln">$' + rin('m.s1', M.salesTiers[1].bonus) + '</div><div class="ist-ln">$' + rin('m.s2', M.salesTiers[2].bonus) + '</div></div>'
+      +         '<div class="ist-c m tall">Store discount</div>'
+      +         '<div class="ist-c t tall"><div class="ist-ln"><span class="ist-note">−33%</span><span class="ist-op">≤</span><span class="ist-mut" id="istMgrD0">' + gstr_(goal * 2 / 3) + '%</span></div><div class="ist-ln"><span class="ist-note u">goal</span><span class="ist-op">≤</span><span class="ist-mut" id="istMgrD1">' + gstr_(goal) + '%</span></div></div>'
+      +         '<div class="ist-c r tall"><div class="ist-ln">$' + rin('m.d0', M.discountTiers[0].bonus) + '</div><div class="ist-ln">$' + rin('m.d1', M.discountTiers[1].bonus) + '</div></div>'
+      +         '<div class="ist-c m">AOV</div><div class="ist-c t"><span class="ist-op">≥ $</span>' + tin('m.aovTarget', M.aovTarget) + '</div><div class="ist-c r">$' + rin('m.aovBonus', M.aovBonus) + '</div>'
+      +         '<div class="ist-c m">Team att.</div><div class="ist-c t"><span class="ist-mut">per member · 100%</span></div><div class="ist-c r">$' + rin('m.teamAttendancePerHead', M.teamAttendancePerHead) + '</div>'
+      +       '</div>'
       +     '</div>'
-      +   '</div>'
 
-      +   '<div class="ist-role">'
-      +     '<div class="ist-rhead"><span>Admin (Chain)</span><span class="ist-qual">Cap $' + tin('a.maxPerStore', A.maxPerStore, 44) + ' × stores</span></div>'
-      +     '<div class="ist-grid">'
-      +       '<div class="ist-h earn">Earn it when</div><div class="ist-h rew">Reward</div>'
-      +       '<div class="ist-c m">Chain sales</div>'
-      +       '<div class="ist-c t"><div class="ist-tier"><div class="ist-ln"><span class="ist-op">≥</span>' + tin('a.p0', A.tiers[0].pct) + '<span class="ist-u">%</span></div><div class="ist-ln"><span class="ist-op">≥</span>' + tin('a.p1', A.tiers[1].pct) + '<span class="ist-u">%</span></div><div class="ist-ln"><span class="ist-op">≥</span>' + tin('a.p2', A.tiers[2].pct) + '<span class="ist-u">%</span></div></div></div>'
-      +       '<div class="ist-c r"><div class="ist-tier"><div class="ist-ln">$' + rin('a.t0', A.tiers[0].bonus) + '</div><div class="ist-ln">$' + rin('a.t1', A.tiers[1].bonus) + '</div><div class="ist-ln">$' + rin('a.t2', A.tiers[2].bonus) + '</div></div></div>'
+      +     '<div class="ist-role">'
+      +       '<div class="ist-rhead"><span>Admin (Chain)</span><span class="ist-qual">Cap: $' + tin('a.maxPerStore', A.maxPerStore, 44) + ' × stores</span></div>'
+      +       '<div class="ist-grid">' + hrow
+      +         '<div class="ist-c m tall">Chain sales</div>'
+      +         '<div class="ist-c t tall"><div class="ist-ln"><span class="ist-op">≥</span>' + tin('a.p0', A.tiers[0].pct) + '<span class="ist-u">%</span></div><div class="ist-ln"><span class="ist-op">≥</span>' + tin('a.p1', A.tiers[1].pct) + '<span class="ist-u">%</span></div><div class="ist-ln"><span class="ist-op">≥</span>' + tin('a.p2', A.tiers[2].pct) + '<span class="ist-u">%</span></div></div>'
+      +         '<div class="ist-c r tall"><div class="ist-ln">$' + rin('a.t0', A.tiers[0].bonus) + '</div><div class="ist-ln">$' + rin('a.t1', A.tiers[1].bonus) + '</div><div class="ist-ln">$' + rin('a.t2', A.tiers[2].bonus) + '</div></div>'
+      +       '</div>'
       +     '</div>'
+
+      +     '<div class="ist-hoursrow"><span>Hours per period <span class="ist-mut2">(for $/hr)</span></span>' + tin('h.hoursPerPeriod', T.hoursPerPeriod, 62) + '</div>'
+      +   '</section>'
+
+      +   '<section class="ist-sec">'
+      +     '<div class="ist-sechead"><div class="ist-seclabel">Discount rules</div><div class="ist-hint"><b class="ist-cnt" id="istCounted">—</b> of <span id="istTotal">11</span> counted</div></div>'
+      +     '<p class="ist-sub">Checked rules count against staff discount rates. Loyalty &amp; automatic promos are always excluded.</p>'
+      +     '<div class="ist-role" id="istDiscList"><div class="ist-msg">Loading discount list…</div></div>'
+      +   '</section>'
+
       +   '</div>'
-
-      +   '<div class="ist-target ist-target-row"><b>Hours per period <span class="ist-mut" style="font-weight:400">(for $/hr)</span></b>' + tin('h.hoursPerPeriod', T.hoursPerPeriod, 68) + '</div>'
-
-      +   '<div class="ist-sect">Discount rules — what counts against staff</div>'
-      +   '<div class="ist-role" id="istDiscList"><div class="ist-msg">Loading discount list…</div></div>'
-
-      +   '<div class="ist-save-row"><button class="inc-btn primary" id="istSave">Save &amp; recalculate</button><span class="ist-savenote" id="istSaveNote"></span></div>'
-      +   '</div></aside>';
+      +   '<div class="ist-footer"><button class="ist-savebtn" id="istSave">Save &amp; recalculate</button><span class="ist-savenote" id="istSaveNote"></span></div>'
+      +   '</aside>';
   }
   function updateGoalDerived_() {
     var g = _T.budtender.discountMaxPct; if (isNaN(g)) return;
@@ -8091,23 +8101,25 @@ var incentive = (function() {
   function renderDiscList() {
     var d = _discData, host = document.getElementById('istDiscList'); if (!host) return;
     var rows = d.discretionary.map(function(x) {
-      return '<label class="ist-dr"><input type="checkbox" class="ist-tog" data-name="' + e(x.name) + '"' + (x.excluded ? '' : ' checked') + '>'
+      return '<label class="ist-dr' + (x.excluded ? ' off' : '') + '"><input type="checkbox" class="ist-tog" data-name="' + e(x.name) + '"' + (x.excluded ? '' : ' checked') + '>'
         + '<span class="ist-dr-name">' + e(x.name) + '</span>'
-        + (x.code ? '<span class="ist-code">' + e(x.code) + '</span>' : '')
-        + '<span class="ist-dr-st ' + (x.excluded ? 'x' : 'c') + '">' + (x.excluded ? 'EXCLUDED' : 'COUNTED') + '</span></label>';
+        + (x.code ? '<span class="ist-code">' + e(x.code) + '</span>' : '') + '</label>';
     }).join('');
-    host.innerHTML = '<div class="ist-dr-head">Checked = counted in the discount rate. Loyalty &amp; automatic promos always excluded.</div>'
-      + (rows || '<div class="ist-msg">No discretionary discounts.</div>')
-      + '<details class="ist-locked"><summary>Always excluded — Loyalty (' + d.counts.loyalty + ') · Automatic promos (' + d.counts.automatic + ')</summary>'
-      +   '<div class="ist-locknames"><b>Loyalty:</b> ' + (d.autoExcluded.loyalty.map(e).join(' · ') || '—') + '</div>'
-      +   '<div class="ist-locknames"><b>Automatic:</b> ' + (d.autoExcluded.automatic.map(e).join(' · ') || '—') + '</div></details>'
-      + (d.builtAt ? '<div class="ist-built">Discount list synced ' + e(new Date(d.builtAt).toLocaleString()) + '</div>' : '');
+    host.innerHTML = (rows || '<div class="ist-msg">No discretionary discounts.</div>')
+      + '<div class="ist-locked" title="' + e((d.autoExcluded.loyalty.concat(d.autoExcluded.automatic)).join(' · ')) + '">Always excluded — Loyalty (' + d.counts.loyalty + ') · Automatic promos (' + d.counts.automatic + ')</div>';
+    var tot = document.getElementById('istTotal'); if (tot) tot.textContent = d.discretionary.length;
+    updateDiscCount_();
     host.querySelectorAll('.ist-tog').forEach(function(cb) {
       cb.addEventListener('change', function() {
-        var st = cb.closest('.ist-dr').querySelector('.ist-dr-st');
-        if (st) { st.textContent = cb.checked ? 'COUNTED' : 'EXCLUDED'; st.className = 'ist-dr-st ' + (cb.checked ? 'c' : 'x'); }
+        cb.closest('.ist-dr').classList.toggle('off', !cb.checked);
+        updateDiscCount_();
       });
     });
+  }
+  function updateDiscCount_() {
+    var el = document.getElementById('istCounted'); if (!el) return;
+    var n = 0; document.querySelectorAll('.ist-tog').forEach(function(cb) { if (cb.checked) n++; });
+    el.textContent = n;
   }
   // One Save for the whole tray: thresholds + target + discount toggles, then reload.
   function saveSettingsTray() {
