@@ -3764,7 +3764,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.407';
+window.GC = window.GC || {}; GC.VERSION = 'v1.408';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -7598,9 +7598,9 @@ table.inc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-w
 .ist-mut2 { color: var(--text-mute); }
 .ist-note { font-size: 9.5px; color: var(--text-mute); }
 .ist-note.u { text-transform: uppercase; letter-spacing: .06em; }
-.ist-inp { width: 52px; background: var(--bg); border: 1px solid var(--border-strong); color: var(--text); border-radius: 6px; padding: 5px 7px; text-align: right; font-size: 12.5px; }
+.ist-inp { width: 56px; background: var(--bg); border: 1px solid var(--border-strong); color: var(--text); border-radius: 6px; padding: 5px 7px; text-align: right; font-size: 12.5px; }
 .ist-inp:focus { outline: none; border-color: var(--green-dim); }
-.ist-rin { width: 46px; background: rgba(74,222,128,.06); border-color: var(--green-dim); color: var(--green); font-weight: 700; }
+.ist-rin { width: 58px; background: rgba(74,222,128,.06); border-color: var(--green-dim); color: var(--green); font-weight: 700; }
 .ist-hoursrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 2px 0; }
 .ist-hoursrow > span { font-size: 12.5px; color: var(--text-dim); }
 .ist-dr { display: flex; align-items: center; gap: 10px; padding: 9px 13px; font-size: 12px; cursor: pointer; }
@@ -7997,7 +7997,7 @@ var incentive = (function() {
       +     '<div class="ist-sechead"><div class="ist-seclabel">Bonus thresholds</div><div class="ist-hint">Earn it when → reward</div></div>'
 
       +     '<div class="ist-role">'
-      +       '<div class="ist-rhead"><span>Budtenders</span><span class="ist-qual">Qualify: ≥ ' + tin('b.txnQualify', B.txnQualify, 44) + ' txns · low-vol ≥ ' + tin('b.txnQualifyLowVol', B.txnQualifyLowVol, 44) + '</span></div>'
+      +       '<div class="ist-rhead"><span>Budtenders</span><span class="ist-qual">Qualify: ≥ ' + tin('b.txnQualify', B.txnQualify, 52) + ' txns · low-vol ≥ ' + tin('b.txnQualifyLowVol', B.txnQualifyLowVol, 52) + '</span></div>'
       +       '<div class="ist-grid">' + hrow
       +         '<div class="ist-c m">AOV</div><div class="ist-c t"><span class="ist-op">≥ $</span>' + tin('b.aovTarget', B.aovTarget) + '</div><div class="ist-c r">$' + rin('b.aovBonus', B.aovBonus) + '</div>'
       +         '<div class="ist-c m">Discount</div><div class="ist-c t"><span class="ist-op">≤</span><span class="ist-mut" id="istBudDisc">' + gstr_(goal) + '%</span><span class="ist-note u">goal</span></div><div class="ist-c r">$' + rin('b.discountBonus', B.discountBonus) + '</div>'
