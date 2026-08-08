@@ -3764,7 +3764,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.405';
+window.GC = window.GC || {}; GC.VERSION = 'v1.406';
 
 // ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
 // Curated list — one entry per NOTABLE release, not per auto-stamped version.
@@ -7556,6 +7556,57 @@ table.inc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-w
 .inc-vet h3 { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; color: var(--amber, #f0b429); }
 .inc-vet-sub { font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-mute); }
 .inc-vet-note { font-size: 11px; color: var(--text-mute); line-height: 1.5; padding: 8px 2px 2px; }
+/* Consolidated incentive settings tray */
+.ist-tray { width: 460px; }
+.ist-body { padding: 16px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; flex: 1; min-height: 0; }
+.ist-sect { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-dim); font-weight: 700; margin: 2px 0 -6px; }
+.ist-msg { font-size: 12.5px; color: var(--text-mute); padding: 10px 13px; }
+.ist-target { padding: 11px 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.ist-target-row { display: flex; align-items: center; justify-content: space-between; }
+.ist-target-row b { font-size: 13px; }
+.ist-target-inp { width: 92px; background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--text); border-radius: 7px; padding: 6px 10px; text-align: right; font-size: 15px; font-weight: 600; }
+.ist-target-sub { font-size: 11px; color: var(--text-mute); line-height: 1.5; margin-top: 7px; }
+.ist-chip { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+.ist-chip.g { background: var(--green-soft); color: var(--green); }
+.ist-chip.a { background: rgba(234,179,8,.12); color: var(--amber); }
+.ist-chip.r { background: rgba(239,68,68,.12); color: var(--red); }
+.ist-legend { font-size: 11px; color: var(--text-mute); display: flex; gap: 16px; align-items: center; }
+.ist-sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+.ist-sw.t { background: var(--text-dim); } .ist-sw.r { background: var(--green); }
+.ist-role { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.ist-rhead { padding: 10px 13px; background: var(--surface-3); font-size: 12.5px; font-weight: 700; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.ist-qual { font-size: 11px; font-weight: 400; color: var(--text-dim); }
+.ist-grid { display: grid; grid-template-columns: 108px 1fr 112px; }
+.ist-h { font-size: 9.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--text-mute); padding: 7px 13px; background: var(--surface); border-top: 1px solid var(--border); }
+.ist-h.earn { grid-column: 1 / 3; }
+.ist-h.rew { text-align: right; background: rgba(74,222,128,.06); color: var(--green-dim); border-left: 1px solid var(--border); }
+.ist-c { border-top: 1px solid var(--border); padding: 0 13px; min-height: 38px; display: flex; align-items: center; font-size: 12.5px; }
+.ist-c.m { color: var(--text-dim); }
+.ist-c.t { justify-content: flex-end; gap: 6px; color: var(--text); }
+.ist-c.r { border-left: 1px solid var(--border); background: var(--green-soft); color: var(--green); font-weight: 700; justify-content: flex-end; gap: 2px; }
+.ist-op { color: var(--text-mute); font-weight: 600; }
+.ist-u { color: var(--text-mute); font-size: 11px; width: 12px; }
+.ist-mut { color: var(--text-mute); }
+.ist-note { font-size: 9.5px; color: var(--text-mute); }
+.ist-inp { width: 50px; background: var(--surface); border: 1px solid var(--border-strong); color: var(--text); border-radius: 6px; padding: 4px 6px; text-align: right; font-size: 12.5px; }
+.ist-inp:focus { outline: none; border-color: var(--green); }
+.ist-rin { width: 56px; color: var(--green); border-color: var(--green-dim); background: rgba(74,222,128,.06); }
+.ist-tier { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.ist-tier .ist-ln { display: flex; align-items: center; justify-content: flex-end; gap: 6px; height: 22px; }
+.ist-dr-head { padding: 8px 13px; font-size: 11px; color: var(--text-mute); background: var(--surface); border-top: 1px solid var(--border); line-height: 1.4; }
+.ist-dr { display: flex; align-items: center; gap: 9px; padding: 8px 13px; border-top: 1px solid var(--border); font-size: 12px; cursor: pointer; }
+.ist-dr input { width: 15px; height: 15px; accent-color: var(--green); flex: none; }
+.ist-dr-name { line-height: 1.3; }
+.ist-code { font-size: 9px; color: var(--text-mute); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; flex: none; }
+.ist-dr-st { margin-left: auto; font-size: 9.5px; letter-spacing: .05em; flex: none; }
+.ist-dr-st.c { color: var(--green); } .ist-dr-st.x { color: var(--text-mute); }
+.ist-locked { border-top: 1px solid var(--border); }
+.ist-locked > summary { padding: 8px 13px; font-size: 11px; color: var(--text-mute); cursor: pointer; }
+.ist-locknames { padding: 2px 13px 8px; font-size: 10.5px; color: var(--text-mute); line-height: 1.6; }
+.ist-built { padding: 6px 13px; font-size: 10px; color: var(--text-mute); opacity: .8; }
+.ist-save-row { display: flex; align-items: center; gap: 12px; }
+.ist-save-row .inc-btn { flex: 1; justify-content: center; }
+.ist-savenote { font-size: 11px; color: var(--text-mute); }
 @media print {
   body * { visibility: hidden; }
   .inc-wrap, .inc-wrap * { visibility: visible; }
@@ -7671,8 +7722,15 @@ var incentive = (function() {
     var T = _T.manager, i = inpOf(mgr.nameKey);
     var p = mgr.target > 0 ? mgr.sales / mgr.target * 100 : 0;
     var sB = 0; for (var a = 0; a < T.salesTiers.length; a++)    { if (p  >= T.salesTiers[a].pct)    { sB = T.salesTiers[a].bonus; break; } }
+    // Store-discount tiers follow the discount goal: meet goal → lower bonus,
+    // beat it by a third (≤ goal × ⅔) → higher bonus. Only the $ are stored.
+    var goal = _T.budtender.discountMaxPct;
+    var mgrDiscTiers = [
+      { maxPct: goal * 2 / 3, bonus: T.discountTiers[0].bonus },
+      { maxPct: goal,         bonus: T.discountTiers[1].bonus },
+    ];
     var dp = mgr.discount * 100, dB = 0;
-    for (var c = 0; c < T.discountTiers.length; c++)             { if (dp <= T.discountTiers[c].maxPct) { dB = T.discountTiers[c].bonus; break; } }
+    for (var c = 0; c < mgrDiscTiers.length; c++)               { if (dp <= mgrDiscTiers[c].maxPct) { dB = mgrDiscTiers[c].bonus; break; } }
     var aB = mgr.aov >= T.aovTarget ? T.aovBonus : 0;
     var tA = teamAtt(mgr.storeSlug) * T.teamAttendancePerHead;
     var payroll = sB + dB + aB + tA, bonus = payroll + i.spiff;
@@ -7802,7 +7860,7 @@ var incentive = (function() {
 
     _app.innerHTML = '<div class="inc-wrap">'
       + '<button class="inc-back" id="incBack">← Back</button>'
-      + '<button class="inc-gear" id="incGear" title="Edit bonus thresholds" aria-label="Thresholds">⚙</button>'
+      + '<button class="inc-gear" id="incGear" title="Incentive settings — target, thresholds, discount rules" aria-label="Settings">⚙</button>'
       + '<div class="inc-top">'
       +   '<div><div class="inc-title">Incentive Dashboard</div>'
       +     '<div class="inc-sub">Pay Period <select id="incPeriod" class="inc-period">' + periodOpts + '</select>'
@@ -7811,7 +7869,6 @@ var incentive = (function() {
       +     '<div class="inc-actions">'
       +       '<button class="inc-btn primary" id="incPrint">Approve &amp; Print PDF</button>'
       +       '<button class="inc-btn" id="incCsv">Export Payroll CSV (Capstone)</button>'
-      +       '<button class="inc-btn" id="incDisc" title="Which discounts count against staff">Discount rules</button>'
       +       '<span class="inc-savenote" id="incSave"></span>'
       +     '</div>'
       +   '</div>'
@@ -7841,8 +7898,7 @@ var incentive = (function() {
       +   '<tbody>' + budRows + '</tbody>'
       + '</table></div></div>'
 
-      + thresholdsHtml()
-      + discountTrayHtml()
+      + settingsTrayHtml()
       + '</div>';
 
     // Wire events (delegation)
@@ -7855,11 +7911,8 @@ var incentive = (function() {
     _app.querySelector('#incGear').addEventListener('click', function() { toggleTray(true); });
     _app.querySelector('#incBack').addEventListener('click', function() { GC.router.navigate(GC.auth.homeRoute()); });
     _app.querySelector('#incTrayClose').addEventListener('click', function() { toggleTray(false); });
-    var _discBtn = _app.querySelector('#incDisc');
-    if (_discBtn) _discBtn.addEventListener('click', function() { toggleDiscTray(true); });
-    _app.querySelector('#incDiscClose').addEventListener('click', function() { toggleDiscTray(false); });
-    _app.querySelector('#incDiscBack').addEventListener('click', function() { toggleDiscTray(false); });
     _app.querySelector('#incTrayBack').addEventListener('click', function() { toggleTray(false); });
+    _app.querySelector('#istSave').addEventListener('click', saveSettingsTray);
     _app.querySelector('#incPeriod').addEventListener('change', function(ev) { start(_app, ev.target.value); });
     var refBtn = _app.querySelector('#incRefresh');
     if (refBtn) refBtn.addEventListener('click', function() { start(_app, _d.payPeriod.start, true); });
@@ -7897,47 +7950,99 @@ var incentive = (function() {
     if (!t.dataset) return;
     if (t.dataset.thr) {
       applyThreshold(t.dataset.thr, +t.value);
+      if (t.dataset.thr === 'b.discountMaxPct') updateGoalDerived_();   // goal drives budtender + store-discount tiers
+      recompute();                       // live preview; thresholds persist on the tray's Save
     } else if (t.dataset.k) {
       var k = t.dataset.k;
       _inp[k] = _inp[k] || { att: false, spiff: 0 };
       if (t.classList.contains('inc-att'))        _inp[k].att   = t.checked;
       else if (t.classList.contains('inc-spiff')) _inp[k].spiff = +t.value || 0;
-    } else return;
-    recompute();
-    save(false);
+      recompute();
+      save(false);                       // per-employee attendance/SPIFF auto-save
+    }
   }
 
   // ── Thresholds editor (settings tray) ──
-  function thresholdsHtml() {
+  function gstr_(v) { return (Math.round(v * 10) / 10).toString(); }
+  function settingsTrayHtml() {
     var T = _T, B = T.budtender, M = T.manager, A = T.admin;
-    function f(path, label, val) { return '<label>' + e(label) + '<input type="number" step="0.25" data-thr="' + e(path) + '" value="' + val + '"></label>'; }
+    var goal = (B.discountMaxPct != null) ? B.discountMaxPct : 1.5;
+    function tin(path, val, w) { return '<input class="ist-inp" type="number" step="0.25" data-thr="' + e(path) + '" value="' + val + '"' + (w ? ' style="width:' + w + 'px"' : '') + '>'; }
+    function rin(path, val) { return '<input class="ist-inp ist-rin" type="number" step="1" data-thr="' + e(path) + '" value="' + val + '">'; }
     return '<div class="inc-tray-back" id="incTrayBack"></div>'
-      + '<aside class="inc-tray" id="incTray" aria-hidden="true">'
-      +   '<div class="inc-tray-head"><span>Bonus Thresholds</span><button class="inc-tray-x" id="incTrayClose" title="Close">✕</button></div>'
-      +   '<div class="inc-thr-grid">'
-      + f('b.txnQualify', 'Budtender qualify txns', B.txnQualify)
-      + f('b.txnQualifyLowVol', 'Qualify txns (low-vol)', B.txnQualifyLowVol)
-      + f('b.aovTarget', 'Budtender AOV target $', B.aovTarget)
-      + f('b.aovBonus', 'Budtender AOV bonus $', B.aovBonus)
-      + f('b.discountMaxPct', 'Budtender max discount %', B.discountMaxPct)
-      + f('b.discountBonus', 'Budtender discount bonus $', B.discountBonus)
-      + f('b.attendanceBonus', 'Budtender attendance $', B.attendanceBonus)
-      + f('m.s0', 'Mgr sales ≥110% $', M.salesTiers[0].bonus)
-      + f('m.s1', 'Mgr sales ≥105% $', M.salesTiers[1].bonus)
-      + f('m.s2', 'Mgr sales ≥100% $', M.salesTiers[2].bonus)
-      + f('m.d0', 'Mgr discount ≤' + M.discountTiers[0].maxPct + '% $', M.discountTiers[0].bonus)
-      + f('m.d1', 'Mgr discount ≤' + M.discountTiers[1].maxPct + '% $', M.discountTiers[1].bonus)
-      + f('m.aovBonus', 'Mgr AOV bonus $', M.aovBonus)
-      + f('m.teamAttendancePerHead', 'Mgr team-att per head $', M.teamAttendancePerHead)
-      + f('a.maxPerStore', 'Admin cap per store $', A.maxPerStore)
-      + f('h.hoursPerPeriod', 'Hours per period', T.hoursPerPeriod)
-      + '</div></aside>';
+      + '<aside class="inc-tray ist-tray" id="incTray" aria-hidden="true">'
+      +   '<div class="inc-tray-head"><span>Incentive Settings</span><button class="inc-tray-x" id="incTrayClose" title="Close">✕</button></div>'
+      +   '<div class="ist-body">'
+
+      +   '<div class="ist-sect">Discount target</div>'
+      +   '<div class="ist-target">'
+      +     '<label class="ist-target-row"><b>Discretionary discount goal</b>'
+      +       '<input class="ist-target-inp" type="number" step="0.1" min="0.5" max="10" data-thr="b.discountMaxPct" value="' + gstr_(goal) + '"></label>'
+      +     '<div class="ist-target-sub">Budtenders earn the discount bonus at/under this. Leaderboard color: '
+      +       '<span class="ist-chip g">≤ <span id="istGreen">' + gstr_(goal) + '</span>% green</span> '
+      +       '<span class="ist-chip a">≤ <span id="istRed">' + gstr_(goal * 2) + '</span>% amber</span> '
+      +       '<span class="ist-chip r">&gt; <span id="istRed2">' + gstr_(goal * 2) + '</span>% red</span>. '
+      +       'Manager store-discount tiers follow this goal. Loyalty &amp; automatic promos never count.</div>'
+      +   '</div>'
+
+      +   '<div class="ist-sect">Bonus thresholds</div>'
+      +   '<div class="ist-legend"><span><span class="ist-sw t"></span>Trigger — earn it when</span><span><span class="ist-sw r"></span>Reward — payout</span></div>'
+
+      +   '<div class="ist-role">'
+      +     '<div class="ist-rhead"><span>Budtenders</span><span class="ist-qual">Qualify ≥ ' + tin('b.txnQualify', B.txnQualify, 44) + ' txns · low-vol ≥ ' + tin('b.txnQualifyLowVol', B.txnQualifyLowVol, 44) + '</span></div>'
+      +     '<div class="ist-grid">'
+      +       '<div class="ist-h earn">Earn it when</div><div class="ist-h rew">Reward</div>'
+      +       '<div class="ist-c m">AOV</div><div class="ist-c t"><span class="ist-op">≥ $</span>' + tin('b.aovTarget', B.aovTarget) + '</div><div class="ist-c r">$' + rin('b.aovBonus', B.aovBonus) + '</div>'
+      +       '<div class="ist-c m">Discount</div><div class="ist-c t"><span class="ist-op">≤</span><span class="ist-mut" id="istBudDisc">' + gstr_(goal) + '%</span><span class="ist-note">goal</span></div><div class="ist-c r">$' + rin('b.discountBonus', B.discountBonus) + '</div>'
+      +       '<div class="ist-c m">Attendance</div><div class="ist-c t"><span class="ist-mut">100%</span></div><div class="ist-c r">$' + rin('b.attendanceBonus', B.attendanceBonus) + '</div>'
+      +     '</div>'
+      +   '</div>'
+
+      +   '<div class="ist-role">'
+      +     '<div class="ist-rhead"><span>Store Managers</span></div>'
+      +     '<div class="ist-grid">'
+      +       '<div class="ist-h earn">Earn it when</div><div class="ist-h rew">Reward</div>'
+      +       '<div class="ist-c m">Sales vs goal</div>'
+      +       '<div class="ist-c t"><div class="ist-tier"><div class="ist-ln"><span class="ist-op">≥</span>' + tin('m.p0', M.salesTiers[0].pct) + '<span class="ist-u">%</span></div><div class="ist-ln"><span class="ist-op">≥</span>' + tin('m.p1', M.salesTiers[1].pct) + '<span class="ist-u">%</span></div><div class="ist-ln"><span class="ist-op">≥</span>' + tin('m.p2', M.salesTiers[2].pct) + '<span class="ist-u">%</span></div></div></div>'
+      +       '<div class="ist-c r"><div class="ist-tier"><div class="ist-ln">$' + rin('m.s0', M.salesTiers[0].bonus) + '</div><div class="ist-ln">$' + rin('m.s1', M.salesTiers[1].bonus) + '</div><div class="ist-ln">$' + rin('m.s2', M.salesTiers[2].bonus) + '</div></div></div>'
+      +       '<div class="ist-c m">Store discount</div>'
+      +       '<div class="ist-c t"><div class="ist-tier"><div class="ist-ln"><span class="ist-note">−33%</span><span class="ist-op">≤</span><span class="ist-mut" id="istMgrD0">' + gstr_(goal * 2 / 3) + '%</span></div><div class="ist-ln"><span class="ist-note">goal</span><span class="ist-op">≤</span><span class="ist-mut" id="istMgrD1">' + gstr_(goal) + '%</span></div></div></div>'
+      +       '<div class="ist-c r"><div class="ist-tier"><div class="ist-ln">$' + rin('m.d0', M.discountTiers[0].bonus) + '</div><div class="ist-ln">$' + rin('m.d1', M.discountTiers[1].bonus) + '</div></div></div>'
+      +       '<div class="ist-c m">AOV</div><div class="ist-c t"><span class="ist-op">≥ $</span>' + tin('m.aovTarget', M.aovTarget) + '</div><div class="ist-c r">$' + rin('m.aovBonus', M.aovBonus) + '</div>'
+      +       '<div class="ist-c m">Team att.</div><div class="ist-c t"><span class="ist-mut">per member · 100%</span></div><div class="ist-c r">$' + rin('m.teamAttendancePerHead', M.teamAttendancePerHead) + '</div>'
+      +     '</div>'
+      +   '</div>'
+
+      +   '<div class="ist-role">'
+      +     '<div class="ist-rhead"><span>Admin (Chain)</span><span class="ist-qual">Cap $' + tin('a.maxPerStore', A.maxPerStore, 44) + ' × stores</span></div>'
+      +     '<div class="ist-grid">'
+      +       '<div class="ist-h earn">Earn it when</div><div class="ist-h rew">Reward</div>'
+      +       '<div class="ist-c m">Chain sales</div>'
+      +       '<div class="ist-c t"><div class="ist-tier"><div class="ist-ln"><span class="ist-op">≥</span>' + tin('a.p0', A.tiers[0].pct) + '<span class="ist-u">%</span></div><div class="ist-ln"><span class="ist-op">≥</span>' + tin('a.p1', A.tiers[1].pct) + '<span class="ist-u">%</span></div><div class="ist-ln"><span class="ist-op">≥</span>' + tin('a.p2', A.tiers[2].pct) + '<span class="ist-u">%</span></div></div></div>'
+      +       '<div class="ist-c r"><div class="ist-tier"><div class="ist-ln">$' + rin('a.t0', A.tiers[0].bonus) + '</div><div class="ist-ln">$' + rin('a.t1', A.tiers[1].bonus) + '</div><div class="ist-ln">$' + rin('a.t2', A.tiers[2].bonus) + '</div></div></div>'
+      +     '</div>'
+      +   '</div>'
+
+      +   '<div class="ist-target ist-target-row"><b>Hours per period <span class="ist-mut" style="font-weight:400">(for $/hr)</span></b>' + tin('h.hoursPerPeriod', T.hoursPerPeriod, 68) + '</div>'
+
+      +   '<div class="ist-sect">Discount rules — what counts against staff</div>'
+      +   '<div class="ist-role" id="istDiscList"><div class="ist-msg">Loading discount list…</div></div>'
+
+      +   '<div class="ist-save-row"><button class="inc-btn primary" id="istSave">Save &amp; recalculate</button><span class="ist-savenote" id="istSaveNote"></span></div>'
+      +   '</div></aside>';
+  }
+  function updateGoalDerived_() {
+    var g = _T.budtender.discountMaxPct; if (isNaN(g)) return;
+    var set = function(id, txt) { var el = document.getElementById(id); if (el) el.textContent = txt; };
+    set('istGreen', gstr_(g)); set('istRed', gstr_(g * 2)); set('istRed2', gstr_(g * 2));
+    set('istBudDisc', gstr_(g) + '%'); set('istMgrD0', gstr_(g * 2 / 3) + '%'); set('istMgrD1', gstr_(g) + '%');
   }
   function toggleTray(open) {
     var tray = document.getElementById('incTray'), back = document.getElementById('incTrayBack');
     if (!tray || !back) return;
     tray.classList.toggle('open', open); back.classList.toggle('open', open);
     tray.setAttribute('aria-hidden', open ? 'false' : 'true');
+    if (open && !_discData) loadDiscList();
   }
   function applyThreshold(path, v) {
     if (isNaN(v)) return;
@@ -7950,108 +8055,85 @@ var incentive = (function() {
       'b.discountMaxPct': function() { T.budtender.discountMaxPct = v; },
       'b.discountBonus': function() { T.budtender.discountBonus = v; },
       'b.attendanceBonus': function() { T.budtender.attendanceBonus = v; },
+      'm.p0': function() { T.manager.salesTiers[0].pct = v; },
+      'm.p1': function() { T.manager.salesTiers[1].pct = v; },
+      'm.p2': function() { T.manager.salesTiers[2].pct = v; },
       'm.s0': function() { T.manager.salesTiers[0].bonus = v; },
       'm.s1': function() { T.manager.salesTiers[1].bonus = v; },
       'm.s2': function() { T.manager.salesTiers[2].bonus = v; },
       'm.d0': function() { T.manager.discountTiers[0].bonus = v; },
       'm.d1': function() { T.manager.discountTiers[1].bonus = v; },
+      'm.aovTarget': function() { T.manager.aovTarget = v; },
       'm.aovBonus': function() { T.manager.aovBonus = v; },
       'm.teamAttendancePerHead': function() { T.manager.teamAttendancePerHead = v; },
+      'a.p0': function() { T.admin.tiers[0].pct = v; },
+      'a.p1': function() { T.admin.tiers[1].pct = v; },
+      'a.p2': function() { T.admin.tiers[2].pct = v; },
+      'a.t0': function() { T.admin.tiers[0].bonus = v; },
+      'a.t1': function() { T.admin.tiers[1].bonus = v; },
+      'a.t2': function() { T.admin.tiers[2].bonus = v; },
       'a.maxPerStore': function() { T.admin.maxPerStore = v; },
       'h.hoursPerPeriod': function() { T.hoursPerPeriod = v || 80; },
     };
     if (map[path]) map[path]();
   }
 
-  // ── Discount rules (which discounts count against staff) ──
+  // ── Discount rules list (async) inside the settings tray ──
   var _discData = null;
-  function discountTrayHtml() {
-    return '<div class="inc-tray-back" id="incDiscBack"></div>'
-      + '<aside class="inc-tray inc-disc-tray" id="incDiscTray" aria-hidden="true">'
-      +   '<div class="inc-tray-head"><span>Discount Rules</span><button class="inc-tray-x" id="incDiscClose" title="Close">✕</button></div>'
-      +   '<div class="inc-disc-body" id="incDiscBody"><div class="inc-disc-msg">Loading…</div></div>'
-      + '</aside>';
-  }
-  function toggleDiscTray(open) {
-    var tray = document.getElementById('incDiscTray'), back = document.getElementById('incDiscBack');
-    if (!tray || !back) return;
-    tray.classList.toggle('open', open); back.classList.toggle('open', open);
-    tray.setAttribute('aria-hidden', open ? 'false' : 'true');
-    if (open && !_discData) loadDiscTray();
-  }
-  function loadDiscTray() {
-    var body = document.getElementById('incDiscBody'); if (!body) return;
-    body.innerHTML = '<div class="inc-disc-msg">Loading discount list…</div>';
+  function loadDiscList() {
+    var host = document.getElementById('istDiscList'); if (!host) return;
+    host.innerHTML = '<div class="ist-msg">Loading discount list…</div>';
     GC.api.fetchDiscountSettings().then(function(d) {
-      if (!d || d.ok === false) { body.innerHTML = '<div class="inc-disc-msg">' + e((d && d.error) || 'Failed to load') + '</div>'; return; }
-      _discData = d; renderDiscTray();
-    }).catch(function(err) { body.innerHTML = '<div class="inc-disc-msg">Error: ' + e(String(err)) + '</div>'; });
+      if (!d || d.ok === false) { host.innerHTML = '<div class="ist-msg">' + e((d && d.error) || 'Failed to load') + '</div>'; return; }
+      _discData = d; renderDiscList();
+    }).catch(function(err) { host.innerHTML = '<div class="ist-msg">Error: ' + e(String(err)) + '</div>'; });
   }
-  function renderDiscTray() {
-    var d = _discData, body = document.getElementById('incDiscBody'); if (!body) return;
+  function renderDiscList() {
+    var d = _discData, host = document.getElementById('istDiscList'); if (!host) return;
     var rows = d.discretionary.map(function(x) {
-      return '<label class="inc-disc-row">'
-        + '<input type="checkbox" class="inc-disc-tog" data-name="' + e(x.name) + '"' + (x.excluded ? '' : ' checked') + '>'
-        + '<span class="inc-disc-name">' + e(x.name) + (x.code ? ' <span class="inc-disc-code">' + e(x.code) + '</span>' : '') + '</span>'
-        + '<span class="inc-disc-state">' + (x.excluded ? 'Excluded' : 'Counted') + '</span>'
-        + '</label>';
+      return '<label class="ist-dr"><input type="checkbox" class="ist-tog" data-name="' + e(x.name) + '"' + (x.excluded ? '' : ' checked') + '>'
+        + '<span class="ist-dr-name">' + e(x.name) + '</span>'
+        + (x.code ? '<span class="ist-code">' + e(x.code) + '</span>' : '')
+        + '<span class="ist-dr-st ' + (x.excluded ? 'x' : 'c') + '">' + (x.excluded ? 'EXCLUDED' : 'COUNTED') + '</span></label>';
     }).join('');
-    var tgt    = (_T && _T.budtender && _T.budtender.discountMaxPct != null) ? _T.budtender.discountMaxPct : 1.5;
-    var tgtStr = (Math.round(tgt * 10) / 10).toString();
-    var redStr = (Math.round(tgt * 2 * 10) / 10).toString();
-    body.innerHTML =
-        '<div class="inc-disc-target">'
-      +   '<label class="inc-disc-target-row">Discount target %'
-      +     '<input type="number" step="0.1" min="0.5" max="10" id="incDiscTarget" value="' + tgtStr + '">'
-      +   '</label>'
-      +   '<div class="inc-disc-target-sub">Budtenders earn the bonus at/under target. Leaderboard color: green ≤ target · amber ≤ 2× · red &gt; 2× (red line <span id="incDiscRedLine">' + redStr + '</span>%). Current period forward; locked payout history untouched.</div>'
-      + '</div>'
-      + '<p class="inc-disc-note"><b>Checked = counted</b> against staff in the discount rate. '
-      + 'Loyalty redemptions and automatic promos are always excluded.</p>'
-      + '<div class="inc-disc-list">' + (rows || '<div class="inc-disc-msg">No discretionary discounts.</div>') + '</div>'
-      + '<div class="inc-disc-actions"><button class="inc-btn primary" id="incDiscSave">Save &amp; recalculate</button>'
-      +   '<span class="inc-disc-savenote" id="incDiscSaveNote"></span></div>'
-      + '<details class="inc-disc-locked"><summary>Always excluded (' + (d.counts.loyalty + d.counts.automatic) + ')</summary>'
-      +   '<div class="inc-disc-lockgrp"><b>Loyalty · ' + d.counts.loyalty + '</b><div class="inc-disc-locknames">' + (d.autoExcluded.loyalty.map(e).join(' · ') || '—') + '</div></div>'
-      +   '<div class="inc-disc-lockgrp"><b>Automatic promos · ' + d.counts.automatic + '</b><div class="inc-disc-locknames">' + (d.autoExcluded.automatic.map(e).join(' · ') || '—') + '</div></div>'
-      + '</details>'
-      + (d.builtAt ? '<div class="inc-disc-built">Discount list synced ' + e(new Date(d.builtAt).toLocaleString()) + '</div>' : '');
-    body.querySelectorAll('.inc-disc-tog').forEach(function(cb) {
+    host.innerHTML = '<div class="ist-dr-head">Checked = counted in the discount rate. Loyalty &amp; automatic promos always excluded.</div>'
+      + (rows || '<div class="ist-msg">No discretionary discounts.</div>')
+      + '<details class="ist-locked"><summary>Always excluded — Loyalty (' + d.counts.loyalty + ') · Automatic promos (' + d.counts.automatic + ')</summary>'
+      +   '<div class="ist-locknames"><b>Loyalty:</b> ' + (d.autoExcluded.loyalty.map(e).join(' · ') || '—') + '</div>'
+      +   '<div class="ist-locknames"><b>Automatic:</b> ' + (d.autoExcluded.automatic.map(e).join(' · ') || '—') + '</div></details>'
+      + (d.builtAt ? '<div class="ist-built">Discount list synced ' + e(new Date(d.builtAt).toLocaleString()) + '</div>' : '');
+    host.querySelectorAll('.ist-tog').forEach(function(cb) {
       cb.addEventListener('change', function() {
-        var st = cb.closest('.inc-disc-row').querySelector('.inc-disc-state');
-        if (st) st.textContent = cb.checked ? 'Counted' : 'Excluded';
+        var st = cb.closest('.ist-dr').querySelector('.ist-dr-st');
+        if (st) { st.textContent = cb.checked ? 'COUNTED' : 'EXCLUDED'; st.className = 'ist-dr-st ' + (cb.checked ? 'c' : 'x'); }
       });
     });
-    var tInput = document.getElementById('incDiscTarget');
-    if (tInput) tInput.addEventListener('input', function() {
-      var v  = parseFloat(tInput.value) || 0;
-      var rl = document.getElementById('incDiscRedLine');
-      if (rl) rl.textContent = (Math.round(v * 2 * 10) / 10).toString();
-    });
-    var sv = document.getElementById('incDiscSave');
-    if (sv) sv.addEventListener('click', saveDiscounts);
   }
-  function saveDiscounts() {
-    var note = document.getElementById('incDiscSaveNote');
+  // One Save for the whole tray: thresholds + target + discount toggles, then reload.
+  function saveSettingsTray() {
+    var note = document.getElementById('istSaveNote');
+    var goal = _T.budtender.discountMaxPct;
+    if (isNaN(goal) || goal < 0.5 || goal > 10) { if (note) note.textContent = 'Discount goal must be 0.5–10%'; return; }
     var overrides = {};
-    document.querySelectorAll('.inc-disc-tog').forEach(function(cb) {
-      overrides[cb.dataset.name] = !cb.checked;   // excluded = NOT counted
-    });
-    var tInput = document.getElementById('incDiscTarget');
-    var tv     = parseFloat(tInput && tInput.value);
-    if (tInput && (isNaN(tv) || tv < 0.5 || tv > 10)) { if (note) note.textContent = 'Target must be 0.5–10%'; return; }
-    var savers = [ GC.api.saveDiscountSettings(overrides) ];
-    if (!isNaN(tv)) savers.push(GC.api.gasCall('savesettings', { discountTarget: String(tv) }));
+    document.querySelectorAll('.ist-tog').forEach(function(cb) { overrides[cb.dataset.name] = !cb.checked; });
     if (note) note.textContent = 'Saving…';
-    Promise.all(savers).then(function(rs) {
-      if (!rs.every(function(r) { return r && r.ok !== false; })) { if (note) note.textContent = 'Save failed'; return; }
-      if (!isNaN(tv)) GC.DISCOUNT_TARGET = tv / 100;
-      _discData = null;                     // force reload next open
-      if (note) note.textContent = 'Saved ✓ recalculating…';
-      try { Object.keys(localStorage).forEach(function(k) { if (/director|dirall/i.test(k)) localStorage.removeItem(k); }); } catch (e) {}
-      toggleDiscTray(false);
-      start(_app, _d.payPeriod.start);      // re-fetch incentive with the new target + basis
-    }).catch(function() { if (note) note.textContent = 'Save failed'; });
+    // Sequential: thresholds first (persists discountMaxPct=goal), THEN savesettings
+    // (re-reads the fresh thresholds, so it doesn't clobber tier edits) which busts
+    // the director cache, THEN the discount toggles.
+    var ok = function(r) { return r && r.ok !== false; };
+    GC.api.saveIncentive({ ppStart: _d.payPeriod.start, inputs: JSON.stringify(_inp), thresholds: JSON.stringify(_T) })
+      .then(function(r1) { if (!ok(r1)) throw 0; return GC.api.gasCall('savesettings', { discountTarget: String(goal) }); })
+      .then(function(r2) { if (!ok(r2)) throw 0; return Object.keys(overrides).length ? GC.api.saveDiscountSettings(overrides) : { ok: true }; })
+      .then(function(r3) {
+        if (!ok(r3)) throw 0;
+        GC.DISCOUNT_TARGET = goal / 100;
+        _discData = null;
+        if (note) note.textContent = 'Saved ✓ recalculating…';
+        try { Object.keys(localStorage).forEach(function(k) { if (/director|dirall/i.test(k)) localStorage.removeItem(k); }); } catch (e) {}
+        toggleTray(false);
+        start(_app, _d.payPeriod.start);
+      })
+      .catch(function() { if (note) note.textContent = 'Save failed'; });
   }
 
   // ── Persist (debounced) ──
