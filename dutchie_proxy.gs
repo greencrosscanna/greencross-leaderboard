@@ -710,6 +710,26 @@ function doGet(e) {
       return jsonOut(handleBugReport_(params), params.callback);
     }
 
+    // Director-only. Surface the bug-pipeline steps that handleBugReport_ hides in
+    // try/catch (email + GX Core forward), plus mail quota. ?action=bugpipetest&token=…
+    if (params.action === 'bugpipetest') {
+      requireRole_(auth, ['owner','director']);
+      var _bp = {};
+      try { _bp.mailQuotaRemaining = MailApp.getRemainingDailyQuota(); } catch (e) { _bp.mailQuotaRemaining = 'ERR: ' + String(e).slice(0, 120); }
+      try {
+        MailApp.sendEmail({ to: 'sky@greencrosscanna.com', subject: '🔧 Leaderboard bug-pipeline test',
+          body: 'Diagnostic email from bugpipetest at ' + new Date().toISOString() });
+        _bp.mail = 'sent';
+      } catch (e) { _bp.mail = 'ERROR: ' + String(e).slice(0, 250); }
+      try {
+        GXCore.ingestBug('performance', 'pipeline-test', { title: '[pipeline test] ' + new Date().toISOString(),
+          desc: 'bugpipetest diagnostic', priority: 'low', store: '', appVer: 'v1.410' });
+        _bp.gxcore = 'sent';
+      } catch (e) { _bp.gxcore = 'ERROR: ' + String(e).slice(0, 300); }
+      _bp.gxcoreType = (typeof GXCore) + '/' + (typeof (GXCore && GXCore.ingestBug));
+      return jsonOut(_bp, params.callback);
+    }
+
     if (params.action === 'renew') {
       // Silently re-issue a fresh session token (used by the client heartbeat).
       if (!auth.ok) return jsonOut({ ok: false, error: auth.error || 'Auth required' }, params.callback);
