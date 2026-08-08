@@ -964,6 +964,15 @@ function handleBugReport_(b) {
     });
   } catch(mailErr) { /* non-fatal */ }
 
+  // Also forward to the shared GX Command Center (bug_reports in GX Core). Runs as
+  // Sky (USER_DEPLOYING, GX Core owner) so the write is authorized. Non-destructive:
+  // any GX Core issue is swallowed so it never affects the local sheet/email/user.
+  try {
+    GXCore.ingestBug('performance', b.reporter, {
+      title: b.title, desc: b.desc, priority: b.priority, store: b.appStore, appVer: b.appVer
+    });
+  } catch (e) {}
+
   return { ok: true };
 }
 
