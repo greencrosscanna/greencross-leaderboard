@@ -721,6 +721,12 @@ function doGet(e) {
           body: 'Diagnostic email from bugpipetest at ' + new Date().toISOString() });
         _bp.mail = 'sent';
       } catch (e) { _bp.mail = 'ERROR: ' + String(e).slice(0, 250); }
+      _bp.gxcoreType = (typeof GXCore) + '/' + (typeof (GXCore && GXCore.gxIngestBug));
+      try {
+        var _r = GXCore.gxIngestBug('performance', 'pipeline-test', { title: '[pipeline test] ' + new Date().toISOString(),
+          desc: 'bugpipetest diagnostic', priority: 'low', store: 'bend', appVer: 'v1.413' });
+        _bp.gxcore = _r;
+      } catch (e) { _bp.gxcore = 'ERROR: ' + String(e).slice(0, 300); }
       return jsonOut(_bp, params.callback);
     }
 
@@ -978,11 +984,33 @@ function handleBugReport_(b) {
     });
   } catch(mailErr) { /* non-fatal */ }
 
-  // (GX Core forward reverted — GXCore v12 doesn't expose ingestBug, and binding the
-  //  library forced a re-authorization that broke the bug email. Re-attempt once the
-  //  correct GX Core version/function is confirmed and Sky can re-authorize.)
+  // Also forward to the shared GX Command Center (bug_reports in GX Core). The real
+  // library fn is gxIngestBug (NOT ingestBug); it maps our keys (desc/priority/appStore/
+  // appVer) internally. Runs as Sky (GX Core owner) so the write is authorized.
+  // Non-destructive: any GX Core error is swallowed so it never affects the local flow.
+  try {
+    GXCore.gxIngestBug('performance', b.reporter, {
+      title: b.title, desc: b.desc, priority: b.priority, store: b.appStore, appVer: b.appVer
+    });
+  } catch (e) {}
 
   return { ok: true };
+}
+
+/**
+ * Run ONCE from the Apps Script editor (select reauthMail → Run) to re-grant the
+ * send-email scope after a manifest change. Zero args so it runs directly, and it
+ * calls MailApp — so running it triggers the "Authorization required" consent for
+ * script.send_mail. Approve it, and you'll receive the confirmation email. After
+ * that, bug-report emails work again (verify with ?action=bugpipetest).
+ */
+function reauthMail() {
+  MailApp.sendEmail(
+    'sky@greencrosscanna.com',
+    '✅ Leaderboard re-auth test',
+    'If you received this, the send-email scope is restored — bug-report emails will work again.'
+  );
+  return 'sent';
 }
 
 // ============================================================
