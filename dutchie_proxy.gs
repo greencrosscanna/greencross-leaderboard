@@ -721,12 +721,6 @@ function doGet(e) {
           body: 'Diagnostic email from bugpipetest at ' + new Date().toISOString() });
         _bp.mail = 'sent';
       } catch (e) { _bp.mail = 'ERROR: ' + String(e).slice(0, 250); }
-      try {
-        GXCore.ingestBug('performance', 'pipeline-test', { title: '[pipeline test] ' + new Date().toISOString(),
-          desc: 'bugpipetest diagnostic', priority: 'low', store: '', appVer: 'v1.410' });
-        _bp.gxcore = 'sent';
-      } catch (e) { _bp.gxcore = 'ERROR: ' + String(e).slice(0, 300); }
-      _bp.gxcoreType = (typeof GXCore) + '/' + (typeof (GXCore && GXCore.ingestBug));
       return jsonOut(_bp, params.callback);
     }
 
@@ -984,14 +978,9 @@ function handleBugReport_(b) {
     });
   } catch(mailErr) { /* non-fatal */ }
 
-  // Also forward to the shared GX Command Center (bug_reports in GX Core). Runs as
-  // Sky (USER_DEPLOYING, GX Core owner) so the write is authorized. Non-destructive:
-  // any GX Core issue is swallowed so it never affects the local sheet/email/user.
-  try {
-    GXCore.ingestBug('performance', b.reporter, {
-      title: b.title, desc: b.desc, priority: b.priority, store: b.appStore, appVer: b.appVer
-    });
-  } catch (e) {}
+  // (GX Core forward reverted — GXCore v12 doesn't expose ingestBug, and binding the
+  //  library forced a re-authorization that broke the bug email. Re-attempt once the
+  //  correct GX Core version/function is confirmed and Sky can re-authorize.)
 
   return { ok: true };
 }
