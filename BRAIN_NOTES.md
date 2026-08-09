@@ -9,6 +9,24 @@ deploy; the brain owns the shared GX Core seam.
 
 ## Pending
 
+### Bump the GXCore library pin v12 → v17 (greenlit by the brain)
+
+**Why:** the live GX Core library is at **v17**; this app is pinned to **v12**, so its `gxIngestBug`
+call runs the pre-refactor intake code (bug forwarding still works, verified — but stale). Bumping runs
+the current intake code, aligns with the other bug-forwarding app, and lets you send a `tab` later.
+
+**Safe:** this app only calls `gxIngestBug`, and the v13 refactor is backward-compatible (same fields
+accepted, plus more). Nothing you use was removed between v12–v17.
+
+**Do:** in `appsscript.json`, change the GXCore library dependency `"version": "12"` → `"version": "17"`,
+then redeploy. **Re-auth:** it *shouldn't* prompt — GX Core's OAuth scopes are unchanged across v12→v17
+(no new scope to grant; the mail-scope scare before was a scope actually changing, not a version number).
+If it does prompt anyway, just follow the Apps Script editor's auth flow.
+
+**When done:** move to ## Archive with the date + commit.
+
+---
+
 ### Centralize the changelog — read it from GX Core, delete the local copy
 
 **Why:** release notes must live in ONE place. GX Core is now the single source (authored in the
