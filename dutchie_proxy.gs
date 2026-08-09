@@ -965,6 +965,22 @@ function reauthMail() {
   return 'sent';
 }
 
+/**
+ * Run ONCE from the Apps Script editor (select deleteDeploySecretProp → Run) to remove the
+ * now-orphaned GC_DEPLOY_SECRET Script Property. It's dead data — deploy version-recording
+ * moved to GX Core's central endpoint, so nothing here reads it anymore. The editor's Script
+ * Properties panel is read-only once a project has >50 props, so this must be done in code.
+ * Check the execution log for confirmation. Safe to delete this function afterward.
+ */
+function deleteDeploySecretProp() {
+  const props = PropertiesService.getScriptProperties();
+  const had = props.getProperty('GC_DEPLOY_SECRET') != null;
+  props.deleteProperty('GC_DEPLOY_SECRET');
+  const msg = 'GC_DEPLOY_SECRET ' + (had ? 'deleted.' : 'was not set (nothing to delete).');
+  Logger.log(msg);
+  return msg;
+}
+
 // ============================================================
 // SETTINGS ENDPOINTS
 // ============================================================
