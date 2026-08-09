@@ -9,29 +9,7 @@ deploy; the brain owns the shared GX Core seam.
 
 ## Pending
 
-### Migrate to the central deploy-record endpoint — retire this app's own `recordversion` action
-The brain now hosts **one** secret-gated release-record endpoint in GX Core (`action=deploy_version`), so
-no app should carry its own copy of the secret-gate + record logic. You were the prototype; now fold your
-copy back into the shared one. (Sky is setting GX Core's `GC_DEPLOY_SECRET` to this app's **existing**
-secret value, so `.gx_deploy_secret` here needs no change.)
-
-1. In `deploy.sh`, replace the curl-to-your-own-`recordversion` block with a curl to GX Core:
-   ```
-   GXCORE="https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec"
-   curl -sL -G "$GXCORE" \
-     --data-urlencode "action=deploy_version" \
-     --data-urlencode "secret=$(cat .gx_deploy_secret)" \
-     --data-urlencode "app=performance" \
-     --data-urlencode "version=$VERSION" \
-     --data-urlencode "sha=$(git rev-parse --short HEAD)" \
-     --data-urlencode "notes=$GX_NOTES"
-   ```
-2. Delete the `recordversion` web action from `dutchie_proxy.gs` — it's now dead code (deploy no longer
-   calls your backend to record). Bug forwarding stays exactly as-is.
-3. You can also drop `GC_DEPLOY_SECRET` from THIS project's Script Properties — the central endpoint reads
-   GX Core's copy, not yours.
-4. Verify: `GX_NOTES=$'…' bash deploy.sh "msg"` → new version appears via
-   `…/exec?action=version_history&app=performance` with `deployed_by:"app"`. Then archive + commit.
+_(none — in sync)_
 
 ---
 
@@ -46,6 +24,18 @@ Inventory + Leaderboard share the `greencrosscanna.github.io` origin, so the bar
 ---
 
 ## Archive
+
+### 2026-08-08 — Migrate to GX Core's central `deploy_version` endpoint (retire local `recordversion`)
+Folded the prototype back into the shared endpoint. `deploy.sh` now curls GX Core
+`action=deploy_version&app=performance` (was this app's own `recordversion`). Deleted the `recordversion`
+web action + `handleRecordVersion_` from `dutchie_proxy.gs` (bug forwarding via `GXCore.gxIngestBug`
+untouched; GXCore pin stays v19 for that). My local `.gx_deploy_secret` already matches GX Core's
+`GC_DEPLOY_SECRET` (verified via an idempotent re-send of v1.428 → `ok:true`), so nothing else changed.
+**Verified:** plain `bash deploy.sh` → v1.432 recorded through the central endpoint (`deployed_by:'app'`,
+sha `145ad70`, empty notes → cockpit telemetry only); the old `recordversion` action now falls through to
+the auth gate (gone from the live backend). Deployed **v1.432**, commit `145ad70`.
+**Leftover (harmless, optional):** this project's Script Property `GC_DEPLOY_SECRET` is now orphaned
+(nothing reads it) — Sky can delete it in the editor (Project Settings → Script Properties) at leisure.
 
 ### 2026-08-08 — Auto-record deploys to GX Core (no more manual release-note step)
 Wired the deploy to publish release notes to the single source automatically. Bumped the GXCore pin
