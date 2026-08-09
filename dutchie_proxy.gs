@@ -221,6 +221,13 @@ function doGet(e) {
       return jsonOut(getGoalsForDashboard_(), params.callback);
     }
 
+    // ── Deploy hook: auto-record version + notes to GX Core (secret-gated, no session) ─
+    // Public because deploy.sh has no GX/app session; handleRecordVersion_ self-gates on a
+    // shared secret (TOFU). Must sit ABOVE the auth gate below.
+    if (params.action === 'recordversion') {
+      return jsonOut(handleRecordVersion_(params), params.callback);
+    }
+
     // ── Auth required from here ────────────────────────────
     const auth = requireAuth_(params);
     if (!auth.ok) return jsonOut(auth, params.callback);
@@ -708,11 +715,6 @@ function doGet(e) {
 
     if (params.action === 'bugreport') {
       return jsonOut(handleBugReport_(params), params.callback);
-    }
-
-    if (params.action === 'recordversion') {
-      // Deploy hook: auto-record this app's version (+ release notes) to GX Core.
-      return jsonOut(handleRecordVersion_(params), params.callback);
     }
 
     if (params.action === 'renew') {
