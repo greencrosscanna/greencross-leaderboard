@@ -3764,7 +3764,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.422';
+window.GC = window.GC || {}; GC.VERSION = 'v1.424';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -3810,7 +3810,7 @@ GC.showChangelog = function(entries, isWhatsNew) {
 GC.closeChangelog = function() {
   var overlay = document.getElementById('clOverlay');
   if (overlay) overlay.classList.remove('open');
-  if (GC._clIsWn) { try { localStorage.setItem('gc_wn_seen', (GC.CHANGELOG[0] || {}).v || ''); } catch (e) {} GC._clIsWn = false; }
+  if (GC._clIsWn) { try { localStorage.setItem('gc_wn_seen_performance', (GC.CHANGELOG[0] || {}).v || ''); } catch (e) {} GC._clIsWn = false; }
 };
 
 // Show unseen updates once per login — DIRECTORS ONLY.
@@ -3821,7 +3821,9 @@ GC.checkWhatsNew = function() {
   if (!GC.CHANGELOG || !GC.CHANGELOG.length) return;               // notes not loaded from GX Core yet — the fetch re-invokes us
   GC._wnChecked = true;
   var seen = '';
-  try { seen = localStorage.getItem('gc_wn_seen') || ''; } catch (e) {}
+  // App-scoped key: Inventory + Leaderboard share the greencrosscanna.github.io origin, so a bare
+  // 'gc_wn_seen' collides across apps (Inventory's version clobbers ours). Namespace by app key.
+  try { seen = localStorage.getItem('gc_wn_seen_performance') || ''; } catch (e) {}
   var unseen = GC.CHANGELOG.filter(function(c) { return GC._verGt(c.v, seen); });
   if (unseen.length) GC.showChangelog(unseen, true);
 };
