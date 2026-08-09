@@ -73,9 +73,29 @@ git commit -m "$MSG
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>" || echo "  Nothing new to commit."
 git push origin main
 
+PUSHED_SHA=$(git rev-parse HEAD)
+
+# 3. Auto-record this version (+ optional release notes) to GX Core — the SINGLE source
+#    for release notes (this app only reads them back for What's New / changelog). Gated by
+#    a local untracked secret file; if it's absent we skip (the deploy still succeeds).
+#    Pass multi-line notes via the GX_NOTES env var:  GX_NOTES=$'Line 1\nLine 2' bash deploy.sh "msg"
+SECRET_FILE="$(dirname "$0")/.gx_deploy_secret"
+if [ -f "$SECRET_FILE" ]; then
+  DEPLOY_SECRET=$(tr -d '\r\n' < "$SECRET_FILE")
+  EXEC_URL="https://script.google.com/macros/s/${DEPLOY_ID}/exec"
+  REC=$(curl -sL -G "$EXEC_URL" \
+    --data-urlencode "action=recordversion" \
+    --data-urlencode "secret=${DEPLOY_SECRET}" \
+    --data-urlencode "version=v1.${BUILD}" \
+    --data-urlencode "sha=${PUSHED_SHA}" \
+    --data-urlencode "notes=${GX_NOTES:-}" 2>/dev/null | head -c 300)
+  echo "▶ GX Core version record: ${REC}"
+else
+  echo "ℹ️  No .gx_deploy_secret — skipped GX Core version record (create it to enable auto-publish)."
+fi
+
 echo "✅ Done — GitHub Pages updated. GAS: see warnings above if version limit was hit."
 
 # Launch background watcher — notifies (desktop + Claude) when Pages is actually live.
-PUSHED_SHA=$(git rev-parse HEAD)
 bash "$(dirname "$0")/watch_deploy.sh" "$PUSHED_SHA" "v1.${BUILD}" &
 echo "👀 Watching Pages build for ${PUSHED_SHA:0:8} in background (PID $!)"

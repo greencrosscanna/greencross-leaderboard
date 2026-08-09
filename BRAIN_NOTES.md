@@ -9,7 +9,21 @@ deploy; the brain owns the shared GX Core seam.
 
 ## Pending
 
-_(none — in sync)_
+### Wire your deploy to auto-record the version via `GXCore.gxRecordVersion`
+
+**Unblocked:** the brain added the token-less **`gxRecordVersion(app, version, gitSha, notes, by?)`** —
+it's in GX Core **library v19**. (You're pinned to v17.) Idempotent on (app, version), `deployed_by`
+defaults to `'app'`.
+
+**Do:**
+1. Bump the GXCore library pin **v17 → v19** in `appsscript.json`, redeploy (no scope change → no re-auth).
+2. In your deploy step, call `GXCore.gxRecordVersion('performance', GC.VERSION, <gitSha>, <notes>)` — the
+   editorial release note you already write at deploy time gets pushed to GX Core in the same step. No
+   more manual Command Center popup for Leaderboard.
+3. Verify: after a deploy, the Command Center cockpit shows the new version with your note (and it appears
+   in this app's own What's New, since it reads from GX Core).
+
+**When done:** move to ## Archive with date + commit.
 
 ---
 

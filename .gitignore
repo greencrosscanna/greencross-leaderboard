@@ -11,3 +11,6 @@
 
 # Netlify generated
 .netlify/state.json
+
+# Local GX Core deploy secret — never commit (used by deploy.sh recordversion)
+.gx_deploy_secret

@@ -710,6 +710,11 @@ function doGet(e) {
       return jsonOut(handleBugReport_(params), params.callback);
     }
 
+    if (params.action === 'recordversion') {
+      // Deploy hook: auto-record this app's version (+ release notes) to GX Core.
+      return jsonOut(handleRecordVersion_(params), params.callback);
+    }
+
     if (params.action === 'renew') {
       // Silently re-issue a fresh session token (used by the client heartbeat).
       if (!auth.ok) return jsonOut({ ok: false, error: auth.error || 'Auth required' }, params.callback);
@@ -943,6 +948,34 @@ function handleBugReport_(b) {
   } catch(mailErr) { /* non-fatal */ }
 
   return { ok: true };
+}
+
+// ── Deploy hook: auto-record version + release notes to GX Core ───────────────
+// Called by deploy.sh after each deploy so release notes publish to the single
+// source (GX Core app_versions) with no manual Command Center step. GX Core is
+// the sole store; this app only READS it back (What's New / changelog). Idempotent
+// on (app, version) inside gxRecordVersion, so redeploys update-in-place.
+//
+// Gated by a shared secret (TOFU: the first call sets GC_DEPLOY_SECRET, later calls
+// must match) so the public exec URL can't be used to spam the shared version log.
+// The secret lives only in Script Properties + deploy.sh's untracked .gx_deploy_secret
+// — never in git or the pushed source.
+function handleRecordVersion_(p) {
+  const provided = String((p && p.secret) || '');
+  if (!provided) return { ok: false, error: 'secret required' };
+  const props = PropertiesService.getScriptProperties();
+  const stored = props.getProperty('GC_DEPLOY_SECRET');
+  if (!stored) { props.setProperty('GC_DEPLOY_SECRET', provided); }   // trust on first use
+  else if (stored !== provided) return { ok: false, error: 'unauthorized' };
+
+  const version = String((p && p.version) || '').trim();
+  if (!version) return { ok: false, error: 'version required' };
+  try {
+    const r = GXCore.gxRecordVersion('performance', version, (p.sha || ''), (p.notes || ''));
+    return { ok: !!(r && r.ok), version: version, gx: r };
+  } catch (e) {
+    return { ok: false, error: 'gxcore: ' + ((e && e.message) || e) };
+  }
 }
 
 /**
