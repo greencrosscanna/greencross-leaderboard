@@ -9,74 +9,26 @@ deploy; the brain owns the shared GX Core seam.
 
 ## Pending
 
-### Bump the GXCore library pin v12 → v17 (greenlit by the brain)
-
-**Why:** the live GX Core library is at **v17**; this app is pinned to **v12**, so its `gxIngestBug`
-call runs the pre-refactor intake code (bug forwarding still works, verified — but stale). Bumping runs
-the current intake code, aligns with the other bug-forwarding app, and lets you send a `tab` later.
-
-**Safe:** this app only calls `gxIngestBug`, and the v13 refactor is backward-compatible (same fields
-accepted, plus more). Nothing you use was removed between v12–v17.
-
-**Do:** in `appsscript.json`, change the GXCore library dependency `"version": "12"` → `"version": "17"`,
-then redeploy. **Re-auth:** it *shouldn't* prompt — GX Core's OAuth scopes are unchanged across v12→v17
-(no new scope to grant; the mail-scope scare before was a scope actually changing, not a version number).
-If it does prompt anyway, just follow the Apps Script editor's auth flow.
-
-**When done:** move to ## Archive with the date + commit.
-
----
-
-### Centralize the changelog — read it from GX Core, delete the local copy
-
-**Why:** release notes must live in ONE place. GX Core is now the single source (authored in the
-Command Center's version popup → "+ Add release note"). This app keeps its own `GC.CHANGELOG` copy of
-the same info — remove it and read from GX Core instead. (Leaderboard is the clean case: a single
-source, and `renderChangelog` already accepts an `entries` param.)
-
-**Source (public, no auth, no library binding needed):**
-```
-https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec?action=version_history&app=performance&callback=FN
-```
-Returns JSONP: `{ ok:true, app:"performance", history:[ {version, deployed_at, deployed_by, git_sha, notes}, ... ] }`
-(newest first). `notes` is a string of newline-separated bullets (split on `\n`).
-
-**Provenance (confirmed by the brain):** that URL is the official GX Core web app — the Command Center's
-Master Control deployment, the same one that serves the cockpit UI and this `version_history` route. It's
-**public, read-only, no auth**, and returns **only release notes** (no sensitive data), so the cross-origin
-fetch is safe. Making "What's New" depend on this fetch is intended, with the specified silent fallback if
-GX Core is momentarily down. → **You're cleared to proceed.**
-
-**The local copy to remove (index.html):** `GC.CHANGELOG = [ {v, date, items:[]} ... ]` (~line 3771).
-App key in GX Core is **`performance`**.
-
-**Steps:**
-1. On load, JSONP-fetch the route above (script-tag + `callback` pattern). Adapt each entry →
-   `GC.CHANGELOG` shape: `version`→`v`, `deployed_at`→a `Mon D, YYYY` date, `notes.split('\n')`→`items`.
-2. Assign the adapted array to `GC.CHANGELOG` **before** `GC.checkWhatsNew()` runs (it's called on
-   login ~line 5508; the render (`renderChangelog`, ~3849) and the `gc_wn_seen` logic (~3876/3886)
-   all read `GC.CHANGELOG`, so populating it from the fetch makes everything work unchanged). If the
-   fetch resolves after login, re-invoke `checkWhatsNew()` once it lands.
-3. **Delete** the hardcoded `GC.CHANGELOG` entries — that's the duplication.
-4. **Keep** `GC.VERSION` (~line 3767) — that's the running app version (used by the badge + bug
-   reports), not changelog data.
-5. **Graceful fallback:** if the fetch fails/returns empty, skip the What's New popup; don't block.
-6. **Verify in the running app** (director login): the What's New popup + changelog show the same
-   entries as the Command Center cockpit for Leaderboard (click its version pill there to compare).
-   Then deploy.
-
-**Going forward:** when you ship a version, bump `GC.VERSION` here, and add that version's note ONCE
-in the Command Center version popup. This app only reads notes now.
-
-**When done:** move this item to ## Archive with the date + commit hash.
+_(none — in sync)_
 
 ---
 
 ## Archive
 
-_(move completed items here with date + commit)_
+### 2026-08-08 — Centralize the changelog: read release notes from GX Core, delete local copy
+Done. `index.html` no longer hardcodes `GC.CHANGELOG`; on load it JSONP-fetches the GX Core
+`version_history` route (`…/exec?action=version_history&app=performance&callback=…`, public/read-only)
+and adapts each entry → `{v, date, items}` (`version`→`v`, `deployed_at`→`Mon D, YYYY` parsed **local**
+to avoid a TZ day-shift, `notes.split('\n')`→`items`). `checkWhatsNew` now sets its `_wnChecked` guard
+**after** the role + empty-changelog checks, and the fetch callback re-invokes it so the "What's New"
+popup still fires once notes land (any load order). Graceful fallback: unreachable → `GC.CHANGELOG=[]`,
+popup silently skipped, manual changelog shows a friendly "momentarily unavailable" line. `GC.VERSION`
+kept (badge + bug reports). **Verified** on live director login: 19 entries load from GX Core (v1.380 →
+v1.1), matching the cockpit; hardcoded copy gone. Deployed **v1.422**, commit `7e3102d`.
+**Going forward:** ship a version → bump `GC.VERSION` here + add that version's note ONCE in the
+Command Center version popup. This app only *reads* notes now.
 
-### 2026-08-08 — GX Core binding bumped v12 → v17 (app→brain report)
+### 2026-08-08 — GX Core binding bumped v12 → v17
 Leaderboard now binds **GX Core v17** (was v12), pinned in `appsscript.json`. Motivation: v12 ran the
 pre-refactor `gxIngestBug`; v13 refactored bug intake and v14–17 improved the cockpit bug/version panel.
 No scope change (5 oauthScopes already explicit) → **no re-auth needed**. Verified end-to-end: a live bug
