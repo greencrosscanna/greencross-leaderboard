@@ -3764,78 +3764,14 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.418';
+window.GC = window.GC || {}; GC.VERSION = 'v1.422';
 
-// ── Changelog + "What's New" popup (mirrors greencross-inventory) ──
-// Curated list — one entry per NOTABLE release, not per auto-stamped version.
-GC.CHANGELOG = [
-  { v: 'v1.380', date: 'Aug 5, 2026', items: [
-    'Much faster loads: once a day closes it’s cached and locked, so only today is pulled live. A "Hard refresh" in Settings re-pulls everything and re-locks — use it after a return is applied to an earlier date.',
-    'New Period Standings screen (all stores vs goal, pace-aware) — reachable from the header and each store view.',
-    'Pay Period is now the default across the Store Leaderboard, Top Performers, and the summary KPIs (its pill sits first; MTD is one click away).',
-    'Sign out moved into Settings.',
-  ] },
-  { v: 'v1.371', date: 'Aug 4, 2026', items: [
-    'Click the version number (top-right) anytime to open this changelog.',
-    'New updates now greet directors with a "What’s New" popup on login.',
-  ] },
-  { v: 'v1.370', date: 'Aug 4, 2026', items: [
-    'The 9 summary KPIs up top now follow the Store Leaderboard’s MTD / Pay Period toggle — switch the section and the pills (and their labels) switch with it.',
-    'Added a "Standings" shortcut button to the top bar.',
-  ] },
-  { v: 'v1.369', date: 'Aug 4, 2026', items: [
-    'Store Leaderboard and Top Performers now open on Pay Period by default (MTD is still one click away).',
-  ] },
-  { v: 'v1.367', date: 'Aug 4, 2026', items: [
-    'New Period Standings screen: all six stores ranked against the pay-period goal, pace-aware (day-of-week weighted, so a Monday isn’t judged like a Friday), refreshing live.',
-    'Reachable from the top bar and from each store view. Visible to store managers and directors — no bonus figures shown.',
-  ] },
-  { v: 'v1.363', date: 'Jul 28, 2026', items: [
-    'Incentive Dashboard: click any column header to sort (click again to flip, a third click clears).',
-    'Moved the bonus thresholds into a ⚙ settings tray.',
-  ] },
-  { v: 'v1.360', date: 'Jul 27, 2026', items: [
-    'New Incentive Dashboard: live bonus calculation for the pay period (managers, budtenders, admin) with editable attendance / SPIFF and thresholds, plus CSV / print export.',
-    'Reconciled against a full year of historical payout reports. Owner + Mike only.',
-  ] },
-  { v: 'v1.356', date: 'Jul 27, 2026', items: [
-    'Goal engine finalized: each store’s pay-period target is the higher of its 12-period rolling trend and its same-season-last-year floor, plus an owner-set stretch %.',
-  ] },
-  { v: 'v1.334', date: 'Jun 9, 2026', items: [
-    'New owner iPad wall (#/sky): every store’s live pace and the company aggregate on one screen, with a rolling sales ticker.',
-  ] },
-  { v: 'v1.302', date: 'May 29, 2026', items: [
-    'Added the 🐞 bug reporter — a floating button to log an issue (with priority) straight to a tracking sheet.',
-  ] },
-  { v: 'v1.243', date: 'May 27, 2026', items: [
-    'EOD snapshot system + historical view: pick any past date on the director dashboard to see that day’s numbers.',
-    'Added the director Slideshow that auto-cycles through every store kiosk.',
-  ] },
-  { v: 'v1.213', date: 'May 26, 2026', items: [
-    'Smarter goals: day-of-week-aware targets from the trailing pay periods, with a year-over-year floor and a stretch multiplier — the goal never moves backward.',
-  ] },
-  { v: 'v1.133', date: 'May 25, 2026', items: [
-    'Per-employee avatars on the leaderboard, with a picker.',
-  ] },
-  { v: 'v1.107', date: 'May 24, 2026', items: [
-    'Settings page: per-store targets, employee nicknames, and goal recalculation.',
-  ] },
-  { v: 'v1.99', date: 'May 24, 2026', items: [
-    'Director view gained aggregate daily-goal, pace, and hourly-sales widgets up top.',
-  ] },
-  { v: 'v1.40', date: 'May 22, 2026', items: [
-    'Kiosk store-floor redesign: leader cards with avatars + streaks, per-staff progress bars toward personal targets, and the goal-arc / pace-gauge treatment.',
-  ] },
-  { v: 'v1.14', date: 'May 20, 2026', items: [
-    'Rolling 6-month pay-period sales targets (replacing static goals), plus a live sales ticker.',
-  ] },
-  { v: 'v1.4', date: 'May 20, 2026', items: [
-    'Connected to live Dutchie data through the Google Apps Script backend.',
-  ] },
-  { v: 'v1.1', date: 'May 20, 2026', items: [
-    'First release: Director dashboard, store Kiosk floor display, and cross-store Leaderboard.',
-  ] },
-];
+// ── Changelog + "What's New" popup ──
+// Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
+// This app no longer hardcodes them — GC.CHANGELOG is populated by the GX Core fetch defined
+// below (see loadChangelogFromGXCore, after checkWhatsNew). Stays [] if GX Core is unreachable,
+// in which case the "What's New" popup simply doesn't show (graceful, non-blocking).
+GC.CHANGELOG = [];
 
 GC._verGt = function(a, b) {   // true when version a is newer than b ('v1.371' > 'v1.370')
   function parse(x) { return String(x || '').replace(/^v/, '').split('.').map(function(n) { return parseInt(n, 10) || 0; }); }
@@ -3849,10 +3785,11 @@ GC.showChangelog = function(entries, isWhatsNew) {
   var list = entries || GC.CHANGELOG;
   var latest = GC.VERSION || (GC.CHANGELOG[0] || {}).v;   // subtitle = running app version (matches the badge)
   var esc = GC.esc || function(s) { return String(s == null ? '' : s); };
-  var bodyHtml = list.map(function(e) {
+  var bodyHtml = list.length ? list.map(function(e) {
     return '<div class="cl-ver"><div class="cl-ver-head"><span class="cl-ver-num">' + esc(e.v) + '</span><span class="cl-ver-date">' + esc(e.date) + '</span></div>'
       + '<ul class="cl-items">' + (e.items || []).map(function(i) { return '<li>' + esc(i) + '</li>'; }).join('') + '</ul></div>';
-  }).join('');
+  }).join('')
+    : '<div class="cl-ver"><div class="cl-empty" style="color:var(--muted,#8a8f98);padding:8px 2px;">Release notes are momentarily unavailable — check back in a moment.</div></div>';
   var overlay = document.getElementById('clOverlay');
   if (!overlay) {
     overlay = document.createElement('div');
@@ -3878,14 +3815,54 @@ GC.closeChangelog = function() {
 
 // Show unseen updates once per login — DIRECTORS ONLY.
 GC.checkWhatsNew = function() {
-  if (GC._wnChecked) return; GC._wnChecked = true;
+  if (GC._wnChecked) return;
   var sess = (GC.auth && GC.auth.load && GC.auth.load()) || {};
-  if (sess.role !== 'director' && sess.role !== 'owner') return;
+  if (sess.role !== 'director' && sess.role !== 'owner') return;   // not a director yet — don't lock; login retries
+  if (!GC.CHANGELOG || !GC.CHANGELOG.length) return;               // notes not loaded from GX Core yet — the fetch re-invokes us
+  GC._wnChecked = true;
   var seen = '';
   try { seen = localStorage.getItem('gc_wn_seen') || ''; } catch (e) {}
   var unseen = GC.CHANGELOG.filter(function(c) { return GC._verGt(c.v, seen); });
   if (unseen.length) GC.showChangelog(unseen, true);
 };
+
+// ── Single source of truth for release notes: GX Core (Command Center). ──
+// Public, read-only JSONP route on the GX Core web app — no auth, no library binding.
+// Adapts { version, deployed_at, notes } → this app's { v, date, items } changelog shape,
+// then (re)runs checkWhatsNew so the popup shows once the notes land. Fails silently.
+(function loadChangelogFromGXCore() {
+  var CB = '__gcCl' + (GC.VERSION || '').replace(/\W/g, '') + '_' + (GC.CHANGELOG.length);
+  var GXCORE = 'https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec';
+  var url = GXCORE + '?action=version_history&app=performance&callback=' + CB;
+  var s = document.createElement('script');
+  var done = false;
+  function cleanup() { try { delete window[CB]; } catch (e) { window[CB] = undefined; } if (s && s.parentNode) s.parentNode.removeChild(s); }
+  function fmtDate(raw) {   // deployed_at → 'Mon D, YYYY'; parse Y-M-D as LOCAL to avoid a TZ day-shift
+    if (!raw) return '';
+    var str = String(raw).trim(), M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var m = str.match(/^(\d{4})-(\d{2})-(\d{2})/), d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(str);
+    return isNaN(d.getTime()) ? str : (M[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear());
+  }
+  window[CB] = function(resp) {
+    done = true;
+    try {
+      var hist = (resp && resp.ok && resp.history) || [];
+      GC.CHANGELOG = hist.map(function(e) {
+        return {
+          v: e.version,
+          date: fmtDate(e.deployed_at),
+          items: String(e.notes || '').split('\n').map(function(x) { return x.replace(/^[-••\s]+/, '').trim(); }).filter(Boolean)
+        };
+      }).filter(function(e) { return e.v && e.items.length; });
+    } catch (err) { GC.CHANGELOG = GC.CHANGELOG || []; }
+    cleanup();
+    GC._wnChecked = false;                             // allow a re-check now that the notes exist
+    try { GC.checkWhatsNew && GC.checkWhatsNew(); } catch (e) {}
+  };
+  s.onerror = function() { if (!done) { GC.CHANGELOG = GC.CHANGELOG || []; cleanup(); } };
+  s.src = url;
+  (document.head || document.documentElement).appendChild(s);
+})();
 
 // Clicking any version badge opens the full changelog.
 document.addEventListener('click', function(e) {
