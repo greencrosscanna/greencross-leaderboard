@@ -3764,7 +3764,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.427';
+window.GC = window.GC || {}; GC.VERSION = 'v1.428';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -3839,9 +3839,18 @@ GC.checkWhatsNew = function() {
   var s = document.createElement('script');
   var done = false;
   function cleanup() { try { delete window[CB]; } catch (e) { window[CB] = undefined; } if (s && s.parentNode) s.parentNode.removeChild(s); }
-  function fmtDate(raw) {   // deployed_at → 'Mon D, YYYY'; parse Y-M-D as LOCAL to avoid a TZ day-shift
+  function fmtDate(raw) {   // deployed_at → 'Mon D, YYYY' in Pacific time
     if (!raw) return '';
     var str = String(raw).trim(), M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    // Full ISO timestamp (has a time/zone, e.g. gxRecordVersion's UTC stamp) → render the PACIFIC
+    // calendar date, so an evening deploy that crossed midnight UTC doesn't show tomorrow's date.
+    if (/T/.test(str) || /[zZ]$/.test(str) || /[+\-]\d\d:?\d\d$/.test(str)) {
+      var dt = new Date(str);
+      if (!isNaN(dt.getTime())) {
+        try { return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', year: 'numeric', month: 'short', day: 'numeric' }).format(dt); } catch (e) {}
+      }
+    }
+    // Bare 'YYYY-MM-DD' (no time) → parse as LOCAL to avoid a TZ day-shift.
     var m = str.match(/^(\d{4})-(\d{2})-(\d{2})/), d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(str);
     return isNaN(d.getTime()) ? str : (M[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear());
   }
