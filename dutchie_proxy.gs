@@ -221,13 +221,6 @@ function doGet(e) {
       return jsonOut(getGoalsForDashboard_(), params.callback);
     }
 
-    // ── Deploy hook: auto-record version + notes to GX Core (secret-gated, no session) ─
-    // Public because deploy.sh has no GX/app session; handleRecordVersion_ self-gates on a
-    // shared secret (TOFU). Must sit ABOVE the auth gate below.
-    if (params.action === 'recordversion') {
-      return jsonOut(handleRecordVersion_(params), params.callback);
-    }
-
     // ── Auth required from here ────────────────────────────
     const auth = requireAuth_(params);
     if (!auth.ok) return jsonOut(auth, params.callback);
@@ -952,33 +945,9 @@ function handleBugReport_(b) {
   return { ok: true };
 }
 
-// ── Deploy hook: auto-record version + release notes to GX Core ───────────────
-// Called by deploy.sh after each deploy so release notes publish to the single
-// source (GX Core app_versions) with no manual Command Center step. GX Core is
-// the sole store; this app only READS it back (What's New / changelog). Idempotent
-// on (app, version) inside gxRecordVersion, so redeploys update-in-place.
-//
-// Gated by a shared secret (TOFU: the first call sets GC_DEPLOY_SECRET, later calls
-// must match) so the public exec URL can't be used to spam the shared version log.
-// The secret lives only in Script Properties + deploy.sh's untracked .gx_deploy_secret
-// — never in git or the pushed source.
-function handleRecordVersion_(p) {
-  const provided = String((p && p.secret) || '');
-  if (!provided) return { ok: false, error: 'secret required' };
-  const props = PropertiesService.getScriptProperties();
-  const stored = props.getProperty('GC_DEPLOY_SECRET');
-  if (!stored) { props.setProperty('GC_DEPLOY_SECRET', provided); }   // trust on first use
-  else if (stored !== provided) return { ok: false, error: 'unauthorized' };
-
-  const version = String((p && p.version) || '').trim();
-  if (!version) return { ok: false, error: 'version required' };
-  try {
-    const r = GXCore.gxRecordVersion('performance', version, (p.sha || ''), (p.notes || ''));
-    return { ok: !!(r && r.ok), version: version, gx: r };
-  } catch (e) {
-    return { ok: false, error: 'gxcore: ' + ((e && e.message) || e) };
-  }
-}
+// (Deploy version-recording moved to GX Core's central `action=deploy_version` endpoint —
+//  deploy.sh posts straight to it, so this app no longer needs a local record action. Bug
+//  forwarding via GXCore.gxIngestBug is unchanged.)
 
 /**
  * Run ONCE from the Apps Script editor (select reauthMail → Run) to re-grant the

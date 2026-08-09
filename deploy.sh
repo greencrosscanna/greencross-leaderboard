@@ -76,16 +76,18 @@ git push origin main
 PUSHED_SHA=$(git rev-parse HEAD)
 
 # 3. Auto-record this version (+ optional release notes) to GX Core — the SINGLE source
-#    for release notes (this app only reads them back for What's New / changelog). Gated by
-#    a local untracked secret file; if it's absent we skip (the deploy still succeeds).
+#    for release notes (this app only reads them back for What's New / changelog). Posts to the
+#    CENTRAL, shared deploy-record endpoint in GX Core (action=deploy_version); every GX app uses
+#    the same one. Gated by a local untracked secret file; if it's absent we skip (deploy still ok).
 #    Pass multi-line notes via the GX_NOTES env var:  GX_NOTES=$'Line 1\nLine 2' bash deploy.sh "msg"
 SECRET_FILE="$(dirname "$0")/.gx_deploy_secret"
 if [ -f "$SECRET_FILE" ]; then
   DEPLOY_SECRET=$(tr -d '\r\n' < "$SECRET_FILE")
-  EXEC_URL="https://script.google.com/macros/s/${DEPLOY_ID}/exec"
-  REC=$(curl -sL -G "$EXEC_URL" \
-    --data-urlencode "action=recordversion" \
+  GXCORE_URL="https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec"
+  REC=$(curl -sL -G "$GXCORE_URL" \
+    --data-urlencode "action=deploy_version" \
     --data-urlencode "secret=${DEPLOY_SECRET}" \
+    --data-urlencode "app=performance" \
     --data-urlencode "version=v1.${BUILD}" \
     --data-urlencode "sha=${PUSHED_SHA}" \
     --data-urlencode "notes=${GX_NOTES:-}" 2>/dev/null | head -c 300)
