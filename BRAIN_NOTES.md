@@ -9,55 +9,11 @@ deploy; the brain owns the shared GX Core seam.
 
 ## Pending
 
-### Wire your deploy to auto-record the version via `GXCore.gxRecordVersion`
-
-**Unblocked:** the brain added the token-less **`gxRecordVersion(app, version, gitSha, notes, by?)`** —
-it's in GX Core **library v19**. (You're pinned to v17.) Idempotent on (app, version), `deployed_by`
-defaults to `'app'`.
-
-**Do:**
-1. Bump the GXCore library pin **v17 → v19** in `appsscript.json`, redeploy (no scope change → no re-auth).
-2. In your deploy step, call `GXCore.gxRecordVersion('performance', GC.VERSION, <gitSha>, <notes>)` — the
-   editorial release note you already write at deploy time gets pushed to GX Core in the same step. No
-   more manual Command Center popup for Leaderboard.
-3. Verify: after a deploy, the Command Center cockpit shows the new version with your note (and it appears
-   in this app's own What's New, since it reads from GX Core).
-
-**When done:** move to ## Archive with date + commit.
+_(none — in sync)_
 
 ---
 
 ## Notes back to the brain
-
-### Add a token-less `gxRecordVersion` so apps can auto-record version + release note on deploy
-**Ask (Sky):** "shipping a version → its release note in GX Core should be automatic, not a manual
-Command Center popup step."
-
-**Problem:** the only version-write path is `recordVersion(token, app, version, gitSha, notes)`
-(`gx_core.gs:642`), which requires a **GX session token**. Apps deploy via clasp as `USER_DEPLOYING`
-with **no GX session**, so they can't call it. (`gxImportVersions_` is private/underscore → not callable
-via the library.) Result: every `app_versions` row is `deployed_by:"import"` — nothing auto-records.
-
-**Fix (brain, in `gx_core.gs`):** add a **token-less trusted** function mirroring `gxIngestBug`'s
-server-to-server pattern:
-```js
-// Trusted server-to-server: a bound app records its own deploy. Idempotent on (app, version).
-function gxRecordVersion(app, version, gitSha, notes) {
-  const a = gxSlug_(app); if (!a) return { ok:false, error:'app required' };
-  if (!version) return { ok:false, error:'version required' };
-  gxWrite_('app_versions', [{ app:a, version:String(version), git_sha:String(gitSha||''),
-    deployed_at: gxNowIso_(), deployed_by:'app', notes:String(notes||'') }], ['app','version']);
-  return { ok:true, app:a, version:String(version) };
-}
-```
-Same trust rationale as `gxIngestBug` (already token-less and in use by Leaderboard). Dedupe key
-`['app','version']` makes redeploys of the same version update-in-place (safe to call every deploy).
-
-**Then (this app):** Leaderboard wires its deploy to call
-`GXCore.gxRecordVersion('performance', GC.VERSION, gitSha, notes)` — the release note I already write at
-deploy time gets pushed in the same step, no manual popup. Notes stay editorial (whoever deploys writes
-them), but it becomes **one action**. Blocked until `gxRecordVersion` exists. Bump the GXCore pin if the
-function lands in a version > 17.
 
 ### Heads-up for the Inventory chat: namespace its `gc_wn_seen` localStorage key too
 Inventory + Leaderboard share the `greencrosscanna.github.io` origin, so the bare `gc_wn_seen` key
@@ -69,6 +25,21 @@ Inventory + Leaderboard share the `greencrosscanna.github.io` origin, so the bar
 
 ## Archive
 
+### 2026-08-08 — Auto-record deploys to GX Core (no more manual release-note step)
+Wired the deploy to publish release notes to the single source automatically. Bumped the GXCore pin
+**v17 → v19** (no re-auth), added a **secret-gated public** web action `recordversion` →
+`GXCore.gxRecordVersion('performance', version, sha, notes)` (in `dutchie_proxy.gs`, placed ABOVE the
+`requireAuth_` gate since the deploy has no session; gated by a shared secret with trust-on-first-use so
+the public exec URL can't spam the version log — secret lives only in Script Property `GC_DEPLOY_SECRET`
++ untracked `.gx_deploy_secret`, never in git/GAS source). `deploy.sh` now curls `recordversion` after
+every push with `version` + `sha` + optional `GX_NOTES`. Also fixed the changelog `fmtDate` to render
+`deployed_at` in **Pacific** (an evening deploy stamped `01:42Z` was showing tomorrow's date). **Verified**
+end-to-end: v1.427 + v1.428 auto-recorded (`deployed_by:'app'`, correct sha, notes), appear in the app's
+What's New with correct Aug 8 PT dates. Deployed **v1.427** (`33b04c7`, wiring) + **v1.428** (`fffc6f4`,
+PT date fix). **Going forward:** ship a version → `GX_NOTES=$'Line 1\nLine 2' bash deploy.sh "msg"` for a
+notable release (plain `deploy.sh` records version-only, filtered out of What's New). No Command Center
+popup needed — this app both writes (on deploy) and reads (What's New) through GX Core.
+
 ### 2026-08-08 — Fix What's New localStorage collision (namespace the seen-key per app)
 Inventory + Leaderboard share the GitHub Pages origin and both used a bare `gc_wn_seen`; Inventory's
 `v2.54` clobbered Leaderboard's marker, permanently suppressing its What's New popup. Namespaced both
@@ -79,19 +50,16 @@ popup now fires (reads our own key, ignores Inventory's `v2.54`); dismissing set
 ### 2026-08-08 — Centralize the changelog: read release notes from GX Core, delete local copy
 Done. `index.html` no longer hardcodes `GC.CHANGELOG`; on load it JSONP-fetches the GX Core
 `version_history` route (`…/exec?action=version_history&app=performance&callback=…`, public/read-only)
-and adapts each entry → `{v, date, items}` (`version`→`v`, `deployed_at`→`Mon D, YYYY` parsed **local**
-to avoid a TZ day-shift, `notes.split('\n')`→`items`). `checkWhatsNew` now sets its `_wnChecked` guard
-**after** the role + empty-changelog checks, and the fetch callback re-invokes it so the "What's New"
-popup still fires once notes land (any load order). Graceful fallback: unreachable → `GC.CHANGELOG=[]`,
-popup silently skipped, manual changelog shows a friendly "momentarily unavailable" line. `GC.VERSION`
-kept (badge + bug reports). **Verified** on live director login: 19 entries load from GX Core (v1.380 →
-v1.1), matching the cockpit; hardcoded copy gone. Deployed **v1.422**, commit `7e3102d`.
-**Going forward:** ship a version → bump `GC.VERSION` here + add that version's note ONCE in the
-Command Center version popup. This app only *reads* notes now.
+and adapts each entry → `{v, date, items}`. `checkWhatsNew` sets its `_wnChecked` guard **after** the
+role + empty-changelog checks, and the fetch callback re-invokes it so the "What's New" popup still fires
+once notes land (any load order). Graceful fallback: unreachable → `GC.CHANGELOG=[]`, popup skipped,
+manual changelog shows a "momentarily unavailable" line. `GC.VERSION` kept (badge + bug reports).
+**Verified** on live director login: 19 entries load from GX Core (v1.380 → v1.1), matching the cockpit;
+hardcoded copy gone. Deployed **v1.422**, commit `7e3102d`.
 
 ### 2026-08-08 — GX Core binding bumped v12 → v17
 Leaderboard now binds **GX Core v17** (was v12), pinned in `appsscript.json`. Motivation: v12 ran the
 pre-refactor `gxIngestBug`; v13 refactored bug intake and v14–17 improved the cockpit bug/version panel.
 No scope change (5 oauthScopes already explicit) → **no re-auth needed**. Verified end-to-end: a live bug
 submission returned `{ok:true}` and forwarded via `gxIngestBug('performance', …)`. Deployed **v1.418**,
-commit `89f35a2`.
+commit `89f35a2`. (Superseded by the v19 bump above.)
