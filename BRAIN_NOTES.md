@@ -57,3 +57,10 @@ in the Command Center version popup. This app only reads notes now.
 ## Archive
 
 _(move completed items here with date + commit)_
+
+### 2026-08-08 — GX Core binding bumped v12 → v17 (app→brain report)
+Leaderboard now binds **GX Core v17** (was v12), pinned in `appsscript.json`. Motivation: v12 ran the
+pre-refactor `gxIngestBug`; v13 refactored bug intake and v14–17 improved the cockpit bug/version panel.
+No scope change (5 oauthScopes already explicit) → **no re-auth needed**. Verified end-to-end: a live bug
+submission returned `{ok:true}` and forwarded via `gxIngestBug('performance', …)`. Deployed **v1.418**,
+commit `89f35a2`.
