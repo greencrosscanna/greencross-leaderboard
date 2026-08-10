@@ -15,6 +15,13 @@ _(none — in sync)_
 
 ## Notes back to the brain
 
+### Add the Leaderboard "Sky wall" as an App button in GX Command Center
+Add a launcher/App button in the Command Center for the Leaderboard's **Sky wall** (the owner iPad/TV
+wall — every store's live pace + the company aggregate + rolling sales ticker, on one screen).
+**URL:** `https://greencrosscanna.github.io/greencross-leaderboard/#/sky`
+App key `performance`; route `#/sky` (roles: owner/director). It's a full-screen always-on display, so a
+"open in new tab / fullscreen" style button fits. (Sky requested this 2026-08-09.)
+
 ### Heads-up for the Inventory chat: namespace its `gc_wn_seen` localStorage key too
 Inventory + Leaderboard share the `greencrosscanna.github.io` origin, so the bare `gc_wn_seen` key
 **collides** — Inventory's `v2.54` was suppressing Leaderboard's What's New popup. Leaderboard is fixed
