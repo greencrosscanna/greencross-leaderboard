@@ -58,13 +58,14 @@
   --gold-bright:  #ffe68c;
   --gold-line:    rgba(212, 168, 71, 0.6);
 
-  /* Store identity dots (canonical per store) */
-  --store-baseline:   #4ade80;
-  --store-center:     #60a5fa;
-  --store-century:    #f97316;
-  --store-commercial: #facc15;
-  --store-portland:   #a78bfa;
-  --store-river:      #ef4444;
+  /* Store identity dots (canonical per store — GX Core palette). These are the first-paint +
+     offline fallback; GC.loadStoreColors() overlays live GX Core values onto these vars on boot. */
+  --store-baseline:   #6366f1;
+  --store-center:     #3b82f6;
+  --store-century:    #22d3ee;
+  --store-commercial: #a855f7;
+  --store-portland:   #d946ef;
+  --store-river:      #ec4899;
 
   /* Typography */
   --font:         -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
@@ -3764,7 +3765,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.437';
+window.GC = window.GC || {}; GC.VERSION = 'v1.438';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -11468,19 +11469,24 @@ GC.loadStoreColors = function() {
   try {
     GC.api.gasCall('gxstores', {}).then(function(resp) {
       if (!resp || !resp.ok || !Array.isArray(resp.stores)) return;
-      var changed = false;
+      var jsChanged = false;
+      var root = document.documentElement;
       resp.stores.forEach(function(s) {
         var slug  = String(s.display_name || '').trim().toLowerCase();
         var color = String(s.color || '').trim();
         if (!slug || !color || !GC.STORES[slug]) return;
-        // Case-insensitive compare: GX Core stores hex uppercase, our fallback lowercase —
-        // don't treat a pure case difference as a change (that would re-render every load).
+        // CSS-var consumers (.store-dot.<slug> etc.) update instantly via setProperty — no re-render.
+        root.style.setProperty('--store-' + slug, color);
+        // JS consumers (canvas charts, kiosk) read GC.STORES[slug].color at render time. Case-
+        // insensitive compare: GX Core hex is uppercase, our fallback lowercase — a pure case
+        // difference isn't a real change (else we'd re-render every load).
         if (String(GC.STORES[slug].color || '').toLowerCase() !== color.toLowerCase()) {
           GC.STORES[slug].color = color;
-          changed = true;
+          jsChanged = true;
         }
       });
-      if (changed && GC.router && GC.router.currentRoute()) {
+      // Only a genuine color change needs a re-render (for canvas/JS-drawn store colors).
+      if (jsChanged && GC.router && GC.router.currentRoute()) {
         try { GC.router.navigate(window.location.hash); } catch (e) {}
       }
     }).catch(function() {});
