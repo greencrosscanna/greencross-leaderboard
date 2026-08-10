@@ -3764,7 +3764,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.434';
+window.GC = window.GC || {}; GC.VERSION = 'v1.436';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -3939,13 +3939,16 @@ GC.hardRefresh = function(btn) {
 window.GC = window.GC || {};
 
 // ── Store Registry ────────────────────────────────────────
+// Colors here are the current GX Core palette — used for first paint + as the offline fallback.
+// GC.loadStoreColors() (called on boot) overlays the live GX Core values so a Command Center
+// color edit propagates without a deploy. Keyed by slug = GX Core display_name lowercased.
 GC.STORES = {
-  baseline:   { name: 'Baseline',   slug: 'baseline',   color: '#4ade80', address: 'SW 5th' },
-  center:     { name: 'Center',     slug: 'center',     color: '#60a5fa', address: 'Downtown' },
-  century:    { name: 'Century',    slug: 'century',    color: '#f97316', address: 'SE Powell' },
-  commercial: { name: 'Commercial', slug: 'commercial', color: '#facc15', address: 'N Mississippi' },
-  portland:   { name: 'Portland',   slug: 'portland',   color: '#a78bfa', address: 'NW 23rd' },
-  river:      { name: 'River',      slug: 'river',      color: '#ef4444', address: 'SE 39th' },
+  baseline:   { name: 'Baseline',   slug: 'baseline',   color: '#6366f1', address: 'SW 5th' },
+  center:     { name: 'Center',     slug: 'center',     color: '#3b82f6', address: 'Downtown' },
+  century:    { name: 'Century',    slug: 'century',    color: '#22d3ee', address: 'SE Powell' },
+  commercial: { name: 'Commercial', slug: 'commercial', color: '#a855f7', address: 'N Mississippi' },
+  portland:   { name: 'Portland',   slug: 'portland',   color: '#d946ef', address: 'NW 23rd' },
+  river:      { name: 'River',      slug: 'river',      color: '#ec4899', address: 'SE 39th' },
 };
 
 GC.STORE_SLUGS = Object.keys(GC.STORES);
@@ -11457,8 +11460,33 @@ GC.views.renderLogin = function() {
 <script>
 // Kick off the router once the DOM is ready.
 // All GC.views.render* functions must be registered before this.
+// Refresh store colors from GX Core (the single source). The hardcoded GC.STORES colors are the
+// current-known fallback + first-paint values; this overlays any Command Center color edit without
+// requiring a deploy. Public call (no auth needed). If a color actually changed and a view is
+// already rendered, re-render it so the new color shows.
+GC.loadStoreColors = function() {
+  try {
+    GC.api.gasCall('gxstores', {}).then(function(resp) {
+      if (!resp || !resp.ok || !Array.isArray(resp.stores)) return;
+      var changed = false;
+      resp.stores.forEach(function(s) {
+        var slug  = String(s.display_name || '').trim().toLowerCase();
+        var color = String(s.color || '').trim();
+        if (slug && color && GC.STORES[slug] && GC.STORES[slug].color !== color) {
+          GC.STORES[slug].color = color;
+          changed = true;
+        }
+      });
+      if (changed && GC.router && GC.router.currentRoute()) {
+        try { GC.router.navigate(window.location.hash); } catch (e) {}
+      }
+    }).catch(function() {});
+  } catch (e) {}
+};
+
 document.addEventListener('DOMContentLoaded', function() {
   GC.router.init();
+  GC.loadStoreColors();   // overlay live GX Core store colors (single source)
 });
 </script>
 

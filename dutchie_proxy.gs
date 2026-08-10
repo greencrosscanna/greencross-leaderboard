@@ -200,6 +200,13 @@ function doGet(e) {
       return jsonOut(getDailyGoals_(), params.callback);
     }
 
+    // Public: store registry (incl. colors) from GX Core — single source. Colors aren't sensitive;
+    // the frontend overlays these onto its hardcoded fallback so a Command Center color edit
+    // propagates without an app deploy.
+    if (params.action === 'gxstores') {
+      return jsonOut(getGxStores_(), params.callback);
+    }
+
     // ── One-time API key bootstrap (only works if key not yet set) ─
     if (params.action === 'initapikey') {
       var props = PropertiesService.getScriptProperties();
@@ -948,6 +955,32 @@ function handleBugReport_(b) {
 // (Deploy version-recording moved to GX Core's central `action=deploy_version` endpoint —
 //  deploy.sh posts straight to it, so this app no longer needs a local record action. Bug
 //  forwarding via GXCore.gxIngestBug is unchanged.)
+
+// ── Store registry (incl. colors) from GX Core — the single source ───────────
+// Cached ~15 min (colors change rarely). The frontend applies these over its hardcoded
+// GC.STORES fallback, so a Command Center color edit propagates without an app deploy.
+function getGxStores_() {
+  try {
+    const cache = CacheService.getScriptCache();
+    const hit = cache.get('GC_GXSTORES_v1');
+    if (hit) return JSON.parse(hit);
+    const rows = GXCore.getStores() || [];
+    const stores = rows.map(function(s) {
+      return {
+        store_id:     String(s.store_id || ''),
+        display_name: String(s.display_name || ''),
+        dutchie_name: String(s.dutchie_name || ''),
+        color:        String(s.color || ''),
+        sort_order:   String(s.sort_order || ''),
+      };
+    });
+    const out = { ok: true, stores: stores };
+    cache.put('GC_GXSTORES_v1', JSON.stringify(out), 900);   // 15 min
+    return out;
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e), stores: [] };
+  }
+}
 
 /**
  * Run ONCE from the Apps Script editor (select reauthMail → Run) to re-grant the
