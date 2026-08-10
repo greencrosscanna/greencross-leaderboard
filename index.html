@@ -3764,7 +3764,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.436';
+window.GC = window.GC || {}; GC.VERSION = 'v1.437';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -11472,7 +11472,10 @@ GC.loadStoreColors = function() {
       resp.stores.forEach(function(s) {
         var slug  = String(s.display_name || '').trim().toLowerCase();
         var color = String(s.color || '').trim();
-        if (slug && color && GC.STORES[slug] && GC.STORES[slug].color !== color) {
+        if (!slug || !color || !GC.STORES[slug]) return;
+        // Case-insensitive compare: GX Core stores hex uppercase, our fallback lowercase —
+        // don't treat a pure case difference as a change (that would re-render every load).
+        if (String(GC.STORES[slug].color || '').toLowerCase() !== color.toLowerCase()) {
           GC.STORES[slug].color = color;
           changed = true;
         }
