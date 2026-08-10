@@ -25,6 +25,20 @@ Inventory + Leaderboard share the `greencrosscanna.github.io` origin, so the bar
 
 ## Archive
 
+### 2026-08-09 — Store colors now sourced from GX Core (single source)
+Leaderboard now reads store colors from the GX Core stores registry instead of hardcoding its own.
+Added a public backend action `gxstores` → `GXCore.getStores()` (cached 15 min) returning
+`{store_id, display_name, dutchie_name, color, sort_order}`. On boot, `GC.loadStoreColors()` overlays
+the live colors: sets the `--store-<slug>` CSS vars (instant, no re-render) AND `GC.STORES[slug].color`
+(re-renders the current view only on a genuine change — case-insensitive compare, since GX Core hex is
+uppercase / our fallback lowercase). **Gotcha found + fixed:** the app had TWO store-color sources — the
+JS `GC.STORES[*].color` AND CSS vars `--store-*` (lines ~62-67, used by `.store-dot.<slug>` on the Sky
+wall). Both were updated to the GX Core palette (Baseline #6366F1, Center #3B82F6, Century #22D3EE,
+Commercial #A855F7, Portland #D946EF, River #EC4899) as the first-paint/offline fallback. Join is by
+`display_name.toLowerCase()` == app slug. **Verified** on the live Sky wall: all six dots now match the
+Command Center palette. A future CC color edit propagates on next load (≤15 min cache) with no deploy.
+Deployed **v1.436→v1.438**, commit `9b27b6d`.
+
 ### 2026-08-08 — Migrate to GX Core's central `deploy_version` endpoint (retire local `recordversion`)
 Folded the prototype back into the shared endpoint. `deploy.sh` now curls GX Core
 `action=deploy_version&app=performance` (was this app's own `recordversion`). Deleted the `recordversion`
