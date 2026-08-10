@@ -975,7 +975,7 @@ function getGxStores_() {
       };
     });
     const out = { ok: true, stores: stores };
-    cache.put('GC_GXSTORES_v1', JSON.stringify(out), 900);   // 15 min
+    cache.put('GC_GXSTORES_v1', JSON.stringify(out), 300);   // 5 min — matches the Sky wall's color poll
     return out;
   } catch (e) {
     return { ok: false, error: String((e && e.message) || e), stores: [] };

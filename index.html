@@ -3765,7 +3765,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.438';
+window.GC = window.GC || {}; GC.VERSION = 'v1.441';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -7215,8 +7215,9 @@ GC.views.renderSky = function() {
 
 var sky = (function() {
   var POLL_MS = 30000, DRIP_MIN = 700, DRIP_MAX = 9000, MAX_DOM = 14;
+  var COLOR_MS = 5 * 60 * 1000;   // re-pull store colors from GX Core (the always-on wall never reloads)
 
-  var _wallTimer = null, _tickTimer = null, _clock = null, _dripTimer = null;
+  var _wallTimer = null, _tickTimer = null, _clock = null, _dripTimer = null, _colorTimer = null;
   var _cursor  = '';       // last seen txn timestamp across the merged feed
   var _queue   = [];       // pending NEW sales waiting to drip in (chronological)
   var _liveSold = null;    // aggregate sold today; climbs as sales drip in
@@ -7443,11 +7444,15 @@ var sky = (function() {
     seedTicker();
     clearInterval(_wallTimer); _wallTimer = setInterval(paintWall, POLL_MS);
     clearInterval(_tickTimer); _tickTimer = setInterval(pollNew, POLL_MS);
+    // Always-on wall never reloads → periodically re-pull store colors from GX Core (silent: no
+    // re-render; CSS-var dots update live and the next paintWall picks up GC.STORES).
+    clearInterval(_colorTimer);
+    _colorTimer = setInterval(function() { if (GC.loadStoreColors) GC.loadStoreColors({ reRender: false }); }, COLOR_MS);
     var bug = document.getElementById('bugBtn');
     if (bug) bug.style.display = 'none';
     GC.router.onLeave(function() {
-      clearInterval(_wallTimer); clearInterval(_tickTimer); clearInterval(_clock); clearTimeout(_dripTimer);
-      _wallTimer = _tickTimer = _clock = _dripTimer = null;
+      clearInterval(_wallTimer); clearInterval(_tickTimer); clearInterval(_clock); clearTimeout(_dripTimer); clearInterval(_colorTimer);
+      _wallTimer = _tickTimer = _clock = _dripTimer = _colorTimer = null;
       var b = document.getElementById('bugBtn');
       if (b) b.style.display = '';
     });
@@ -11465,7 +11470,8 @@ GC.views.renderLogin = function() {
 // current-known fallback + first-paint values; this overlays any Command Center color edit without
 // requiring a deploy. Public call (no auth needed). If a color actually changed and a view is
 // already rendered, re-render it so the new color shows.
-GC.loadStoreColors = function() {
+GC.loadStoreColors = function(opts) {
+  var reRender = !(opts && opts.reRender === false);   // wall passes {reRender:false} — it repaints itself
   try {
     GC.api.gasCall('gxstores', {}).then(function(resp) {
       if (!resp || !resp.ok || !Array.isArray(resp.stores)) return;
@@ -11485,8 +11491,9 @@ GC.loadStoreColors = function() {
           jsChanged = true;
         }
       });
-      // Only a genuine color change needs a re-render (for canvas/JS-drawn store colors).
-      if (jsChanged && GC.router && GC.router.currentRoute()) {
+      // Only a genuine color change needs a re-render (for canvas/JS-drawn store colors); the wall
+      // opts out (reRender:false) since it repaints on its own 30s cadence and its dots are CSS-var.
+      if (reRender && jsChanged && GC.router && GC.router.currentRoute()) {
         try { GC.router.navigate(window.location.hash); } catch (e) {}
       }
     }).catch(function() {});
