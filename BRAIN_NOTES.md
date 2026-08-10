@@ -15,6 +15,18 @@ _(none — in sync)_
 
 ## Notes back to the brain
 
+### Define the "GX Core — Sales Cache" contract before Leaderboard migrates (Phase 2)
+Sheet `1Lr9fCBTSGLC0plV3jpTV82m3P2VIjNLGwJQOHiTKSVI` ("GX Core — Sales Cache") is being written under
+GX Core (owner Sky, actively updated 2026-08-10). Leaderboard does **not** use it yet. Before migrating
+Sales & Performance onto it, the brain should define the shared contract: **schema** (per store/day:
+date TEXT PT, store_id, net sales, transactions, AOV, total discounts, ideally discretionary-discount
+basis; hourly + on-shift optional), **write side** (writer, cadence, Dutchie source, settlement +
+retroactive-return handling), **read side** (a `GXCore` library reader like `getSalesDaily`/`getSalesRange`
+or endpoint — NOT direct sheet reads), and **retention** cap. Then Leaderboard retires its own
+`/reporting/transactions` pulls + `GC_DAYAGG` CacheService aggregate + nightly `EOD_Snapshots` sheet and
+reads the shared cache. Full spec handed to Sky as a paste-in prompt for the Command Center chat
+(2026-08-10).
+
 ### Add the Leaderboard "Sky wall" as an App button in GX Command Center
 Add a launcher/App button in the Command Center for the Leaderboard's **Sky wall** (the owner iPad/TV
 wall — every store's live pace + the company aggregate + rolling sales ticker, on one screen).
