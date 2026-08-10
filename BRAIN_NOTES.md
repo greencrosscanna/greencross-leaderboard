@@ -43,8 +43,12 @@ JS `GC.STORES[*].color` AND CSS vars `--store-*` (lines ~62-67, used by `.store-
 wall). Both were updated to the GX Core palette (Baseline #6366F1, Center #3B82F6, Century #22D3EE,
 Commercial #A855F7, Portland #D946EF, River #EC4899) as the first-paint/offline fallback. Join is by
 `display_name.toLowerCase()` == app slug. **Verified** on the live Sky wall: all six dots now match the
-Command Center palette. A future CC color edit propagates on next load (≤15 min cache) with no deploy.
+Command Center palette. A future CC color edit propagates on next load with no deploy.
 Deployed **v1.436→v1.438**, commit `9b27b6d`.
+**Follow-up (v1.441, `9294222`):** the always-on Sky wall (`#/sky`) never reloads, so it now re-pulls
+store colors every **5 min** (silent: CSS-var dots update live, the wall's own 30s repaint picks up the
+rest — no disruptive re-render). Server `gxstores` cache lowered 15→**5 min** to match. So a CC color
+edit reaches the wall within ~5–10 min, no reload. Timer torn down in the wall's `onLeave`.
 
 ### 2026-08-08 — Migrate to GX Core's central `deploy_version` endpoint (retire local `recordversion`)
 Folded the prototype back into the shared endpoint. `deploy.sh` now curls GX Core
