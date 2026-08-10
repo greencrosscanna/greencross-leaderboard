@@ -1,9 +1,12 @@
-# Brain Notes — from the GX Command Center
+# Brain Notes — RETIRED (2026-08-09) → now the central GX Core inbox
 
-Coordination notes the **GX Command Center** (the "brain" — GX Core) chat left for this app's chat.
-Items under **Pending** surface automatically at session start (via the SessionStart hook). Handle
-one, then move it to **Archive** with the date + commit hash. This app owns the app-local UI/verify/
-deploy; the brain owns the shared GX Core seam.
+> ⚠️ **This per-repo file is retired.** Cross-app coordination moved to GX Core's central **brain_notes**
+> inbox. `/gxbrain` and the SessionStart hook now read notes addressed to `to_app=performance`, resolve them
+> there (`resolve_note`), and write note-backs to any app (`add_note`). The items that were under
+> "## Notes back to the brain" below were **migrated to the central inbox** (Sky-wall + gc_wn_seen +
+> Sales-Cache contract). Kept only as a local **archive** of past handoffs — nothing new goes here.
+
+This app owns the app-local UI/verify/deploy; the brain owns the shared GX Core seam.
 
 ---
 
