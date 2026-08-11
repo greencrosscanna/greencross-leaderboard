@@ -994,6 +994,20 @@ function getGxStores_() {
   }
 }
 
+// Map GX Core store_id → this app's slug (= display_name lowercased). The sales cache keys rows by
+// GX store_id (bend, hillsboro, …); the app uses display-name slugs (century, baseline, …).
+function gxStoreIdToAppSlug_() {
+  const map = {};
+  try {
+    const g = getGxStores_();
+    ((g && g.stores) || []).forEach(function(s) {
+      const slug = String(s.display_name || '').trim().toLowerCase();
+      if (s.store_id && slug) map[String(s.store_id)] = slug;
+    });
+  } catch (e) {}
+  return map;
+}
+
 /**
  * Run ONCE from the Apps Script editor (select reauthMail → Run) to re-grant the
  * send-email scope after a manifest change. Zero args so it runs directly, and it
