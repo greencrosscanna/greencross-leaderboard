@@ -195,6 +195,40 @@ function getHistoricalDirector_(dateStr) {
  * Uses the actual Dutchie UTC range for the given calendar date in PT,
  * so numbers reflect what really happened on that day — not today's live data.
  */
+// TEMP diagnostic (owner/director): compare the GX Core sales cache vs EOD_Snapshots, to confirm
+// net-vs-gross mapping + store-id join BEFORE flipping getStandings_. Removed after the migration.
+function salesDailyDiag_(fromStr, toStr) {
+  var res = { ok: true, from: fromStr, to: toStr };
+
+  // GX Core store registry: cache keys stores by GX store_id; the app uses display_name-lowercased slug.
+  try {
+    res.storeMap = (GXCore.getStores() || []).map(function(s) {
+      return { store_id: String(s.store_id || ''), appSlug: String(s.display_name || '').toLowerCase() };
+    });
+  } catch (e) { res.storeMapError = String((e && e.message) || e); }
+
+  // Raw cache rows for the range (store '' = all stores).
+  try {
+    res.cache = (GXCore.getSalesDaily('', fromStr, toStr) || []).map(function(r) {
+      return { date: String(r.date || ''), store: String(r.store || ''), net: Number(r.net), gross: Number(r.gross), orders: Number(r.orders) };
+    });
+  } catch (e) { res.cacheError = String((e && e.message) || e); }
+
+  // App settled numbers per date from EOD_Snapshots.
+  res.snap = {};
+  var curMs = ptDateToUtcMs_(fromStr), endMs = ptDateToUtcMs_(toStr), guard = 0;
+  while (curMs <= endMs && guard < 40) {
+    var ds = Utilities.formatDate(new Date(curMs + 12 * 3600000), STORE_TZ, 'yyyy-MM-dd');
+    var h = getHistoricalDirector_(ds);
+    if (h && h.ok) {
+      res.snap[ds] = {};
+      h.stores.forEach(function(s) { res.snap[ds][s.slug] = { revenue: s.revenue, txn: s.transactions }; });
+    }
+    curMs += 24 * 3600000; guard++;
+  }
+  return res;
+}
+
 function getStoreForDate_(store, dateStr) {
   // PT midnight → PT end-of-day in UTC (DST-correct via ptDateToUtcMs_)
   var fromMs  = ptDateToUtcMs_(dateStr);
