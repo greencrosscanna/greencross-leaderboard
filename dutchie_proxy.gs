@@ -238,11 +238,6 @@ function doGet(e) {
       return jsonOut(listUsers_(), params.callback);
     }
 
-    // TEMP (owner/director): verify GX Core sales cache vs EOD_Snapshots before the standings migration.
-    if (params.action === 'salesdailydiag') {
-      requireRole_(auth, ['owner','director']);
-      return jsonOut(salesDailyDiag_(params.from, params.to), params.callback);
-    }
 
     // ── Director endpoints ─────────────────────────────────
     if (params.action === 'directorall') {
