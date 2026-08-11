@@ -214,6 +214,16 @@ function salesDailyDiag_(fromStr, toStr) {
     });
   } catch (e) { res.cacheError = String((e && e.message) || e); }
 
+  // The REAL standings source: byStoreAggCached_ over the range (fresh Dutchie aggregate, net basis).
+  // This is what getStandings_ actually reads today — the number the migration must preserve.
+  try {
+    var rangeFrom = new Date(ptDateToUtcMs_(fromStr)).toISOString();
+    var rangeTo   = new Date(ptDateToUtcMs_(toStr) + 24 * 3600000 - 1).toISOString();
+    var agg = byStoreAggCached_({ fromUTC: rangeFrom, toUTC: rangeTo }, true);
+    res.agg = {};
+    STORES.forEach(function(s) { res.agg[s.slug] = { sales: (agg[s.slug] || {}).sales || 0, transactions: (agg[s.slug] || {}).transactions || 0 }; });
+  } catch (e) { res.aggError = String((e && e.message) || e); }
+
   // App settled numbers per date from EOD_Snapshots.
   res.snap = {};
   var curMs = ptDateToUtcMs_(fromStr), endMs = ptDateToUtcMs_(toStr), guard = 0;
