@@ -232,9 +232,9 @@ function doGet(e) {
     const auth = requireAuth_(params);
     if (!auth.ok) return jsonOut(auth, params.callback);
 
-    // Owner-only: current local user roster (no password hashes). Useful for the shared-login migration.
+    // Management-only: current local user roster (no password hashes). Useful for the shared-login migration.
     if (params.action === 'listusers') {
-      requireRole_(auth, ['owner']);
+      requireRole_(auth, ['owner','director']);
       return jsonOut(listUsers_(), params.callback);
     }
 
