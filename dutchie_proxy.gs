@@ -232,6 +232,12 @@ function doGet(e) {
     const auth = requireAuth_(params);
     if (!auth.ok) return jsonOut(auth, params.callback);
 
+    // Owner-only: current local user roster (no password hashes). Useful for the shared-login migration.
+    if (params.action === 'listusers') {
+      requireRole_(auth, ['owner']);
+      return jsonOut(listUsers_(), params.callback);
+    }
+
     // ── Director endpoints ─────────────────────────────────
     if (params.action === 'directorall') {
       requireRole_(auth, ['owner','director']);

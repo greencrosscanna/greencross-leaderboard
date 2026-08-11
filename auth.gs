@@ -71,6 +71,25 @@ function requireStore_(auth, slug) {
   return store;
 }
 
+// Owner-only roster of the local user store — no password hashes. Answers "what users do I have"
+// and lets us diff the local store against GX Core before the shared-login migration.
+function listUsers_() {
+  const props = PropertiesService.getScriptProperties();
+  const users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}');
+  const out = Object.keys(users).sort().map(function(k) {
+    const u = users[k] || {};
+    return {
+      user_id:     k,
+      displayName: u.displayName || '',
+      role:        u.role || '',
+      storeSlug:   u.storeSlug || '',
+      storeName:   u.storeName || '',
+      initials:    u.initials || '',
+    };
+  });
+  return { ok: true, count: out.length, users: out };
+}
+
 function loginUser(params) {
   if (!params.user || !params.pass) {
     return { ok: false, error: 'Missing credentials' };
