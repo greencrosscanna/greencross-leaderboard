@@ -72,6 +72,49 @@ function getManualPPGoals_() {
  * @param  {boolean} forceRecompute  True → ignore cache and recompute from Dutchie
  * @return {Object}  { storeSlug: { ppGoal, dowAvg, monthly, ppStart, ppEnd, computedAt } }
  */
+// Goal data-source version. Bumping this invalidates the persisted goal caches so the next
+// compute re-runs from the current source. v2 = GX Core sales cache (was: live Dutchie pulls).
+var GOALS_SRC_VER = 2;
+
+// Daily NET per store for a set of pay-period ranges, sourced from the GX Core sales cache in ONE
+// read (vs ~12–36 Dutchie /reporting/transactions batches). Returns an array parallel to `ranges`,
+// each entry { appSlug: { 'yyyy-mm-dd': net } } — the same shape the old aggregateByDay_(txns) fed,
+// so the goal math downstream is unchanged. The cache holds settled days only, which is exactly what
+// goal history needs (all these ranges are completed pay periods).
+function dailyNetForRanges_(ranges) {
+  if (!ranges || !ranges.length) return [];
+  var minMs = Infinity, maxMs = -Infinity;
+  ranges.forEach(function(r) {
+    var f = new Date(r.fromUTC).getTime(), t = new Date(r.toUTC).getTime();
+    if (f < minMs) minMs = f;
+    if (t > maxMs) maxMs = t;
+  });
+  var spanFrom = Utilities.formatDate(new Date(minMs), STORE_TZ, 'yyyy-MM-dd');
+  var spanTo   = Utilities.formatDate(new Date(maxMs), STORE_TZ, 'yyyy-MM-dd');
+
+  // One cache read (all stores); join GX store_id → app slug; build { slug: { day: net } }.
+  var id2slug = gxStoreIdToAppSlug_();
+  var netBySlug = {};
+  STORES.forEach(function(s) { netBySlug[s.slug] = {}; });
+  (GXCore.getSalesDaily('', spanFrom, spanTo) || []).forEach(function(row) {
+    var slug = id2slug[String(row.store)] || String(row.store);
+    if (netBySlug[slug]) netBySlug[slug][String(row.date)] = Number(row.net || 0);
+  });
+
+  // Bucket days into each range by PT date string (inclusive), preserving per-range structure.
+  return ranges.map(function(r) {
+    var fromStr = Utilities.formatDate(new Date(r.fromUTC), STORE_TZ, 'yyyy-MM-dd');
+    var toStr   = Utilities.formatDate(new Date(r.toUTC),   STORE_TZ, 'yyyy-MM-dd');
+    var perStore = {};
+    STORES.forEach(function(s) {
+      var days = netBySlug[s.slug] || {}, out = {};
+      Object.keys(days).forEach(function(day) { if (day >= fromStr && day <= toStr) out[day] = days[day]; });
+      perStore[s.slug] = out;
+    });
+    return perStore;
+  });
+}
+
 function getOrComputeGoals_(forceRecompute) {
   // Request-scope memo
   if (!forceRecompute && _goalsCache_) return _goalsCache_;
@@ -87,7 +130,7 @@ function getOrComputeGoals_(forceRecompute) {
   if (!forceRecompute) {
     let cached = {};
     try { cached = JSON.parse(props.getProperty(GC_GOALS_CACHE_KEY) || '{}'); } catch(e) {}
-    if (cached.ppStart === ppStartStr && cached.goals) {
+    if (cached.ppStart === ppStartStr && cached.ver === GOALS_SRC_VER && cached.goals) {
       _goalsCache_ = cached.goals;
       return _goalsCache_;
     }
@@ -107,9 +150,9 @@ function getOrComputeGoals_(forceRecompute) {
   var reportFromStr = Utilities.formatDate(new Date(ppStartMs - ROLLING_PP * PP_MS), STORE_TZ, 'yyyy-MM-dd');
   var reportToStr   = Utilities.formatDate(new Date(ppStartMs - 1), STORE_TZ, 'yyyy-MM-dd');
 
-  // 72 first-page requests (12 PP ranges × 6 stores), chunked inside the fetch engine
-  Logger.log('[goals] Firing ' + (ranges.length * STORES.length) + ' parallel requests…');
-  var fetched = fetchAllStoresTransactionsMulti_(ranges);
+  // Daily net for the 12 completed PPs from the GX Core sales cache (one read, was 72 Dutchie batches).
+  Logger.log('[goals] Reading ' + ranges.length + ' PP ranges from the GX Core sales cache…');
+  var fetched = dailyNetForRanges_(ranges);
 
   var goals = {};
   STORES.forEach(function(store) {
@@ -118,8 +161,7 @@ function getOrComputeGoals_(forceRecompute) {
     var ppTotals = [];
 
     fetched.forEach(function(byStore) {
-      var txns   = byStore[store.slug] || [];
-      var ppDay  = aggregateByDay_(txns);
+      var ppDay  = byStore[store.slug] || {};   // { 'yyyy-mm-dd': net } from the cache
       var ppSum  = 0;
       Object.keys(ppDay).forEach(function(day) {
         allByDay[day] = (allByDay[day] || 0) + ppDay[day];
@@ -175,6 +217,7 @@ function getOrComputeGoals_(forceRecompute) {
   // Persist to ScriptProperties
   props.setProperty(GC_GOALS_CACHE_KEY, JSON.stringify({
     ppStart:     ppStartStr,
+    ver:         GOALS_SRC_VER,
     computedAt:  new Date().toISOString(),
     reportFrom:  reportFromStr,
     reportTo:    reportToStr,
@@ -257,7 +300,7 @@ function getOrComputeYoYGoals_(forceRecompute) {
   if (!forceRecompute) {
     var cached = {};
     try { cached = JSON.parse(props.getProperty(GC_YOY_GOALS_KEY) || '{}'); } catch(e) {}
-    if (cached.ppStart === ppStartStr && cached.goals) {
+    if (cached.ppStart === ppStartStr && cached.ver === GOALS_SRC_VER && cached.goals) {
       _yoyGoalsCache_ = cached.goals;
       return _yoyGoalsCache_;
     }
@@ -280,7 +323,8 @@ function getOrComputeYoYGoals_(forceRecompute) {
   Logger.log('[yoy] Computing same-season floor for PP ' + ppStartStr + ' | window: ' + yoyFrom + ' – ' + yoyTo);
 
   // Y1 data (1 year ago) is historical within a PP — cache aggregated totals + DOW buckets.
-  var y1CacheKey = ranges.map(function(r) { return r.fromUTC.slice(0,10); }).join(',');
+  // 'net:' prefix = sourced from the GX Core sales cache; invalidates any old Dutchie-computed Y1 cache.
+  var y1CacheKey = 'net:' + ranges.map(function(r) { return r.fromUTC.slice(0,10); }).join(',');
   var y1Cache = null; // { ppTotals: { slug: avg }, dowByDay: { slug: { 'YYYY-MM-DD': sales } } }
   try {
     var y1Cached = JSON.parse(props.getProperty(GC_YOY1_CACHE_KEY) || '{}');
@@ -297,13 +341,12 @@ function getOrComputeYoYGoals_(forceRecompute) {
     ppTotalsY1ByStore = y1Cache.ppTotals;
     dowAvgByStore     = y1Cache.dowAvg;
   } else {
-    Logger.log('[yoy] Y1 cache miss — fetching 36 historical requests');
-    var fetchedY1 = fetchAllStoresTransactionsMulti_(ranges);
+    Logger.log('[yoy] Y1 cache miss — reading the same-season window from the GX Core sales cache');
+    var fetchedY1 = dailyNetForRanges_(ranges);
     STORES.forEach(function(store) {
       var allByDay = {}, ppTotals = [];
       fetchedY1.forEach(function(byStore) {
-        var txns  = byStore[store.slug] || [];
-        var ppDay = aggregateByDay_(txns);
+        var ppDay = byStore[store.slug] || {};   // { 'yyyy-mm-dd': net } from the cache
         var ppSum = 0;
         Object.keys(ppDay).forEach(function(day) { allByDay[day] = (allByDay[day] || 0) + ppDay[day]; ppSum += ppDay[day]; });
         ppTotals.push(ppSum);
@@ -364,6 +407,7 @@ function getOrComputeYoYGoals_(forceRecompute) {
 
   props.setProperty(GC_YOY_GOALS_KEY, JSON.stringify({
     ppStart:    ppStartStr,
+    ver:        GOALS_SRC_VER,
     computedAt: new Date().toISOString(),
     yoyFrom:    yoyFrom,
     yoyTo:      yoyTo,
@@ -385,51 +429,11 @@ function recalculateYoYGoals_() {
 }
 
 /** Prefetch + cache Y1 data only (36 requests). Called from frontend before recalculate. */
+// The same-season (Y1) window now comes from the GX Core sales cache inside getOrComputeYoYGoals_ —
+// one fast read, no 36-request Dutchie prefetch. This just warms that compute (and its Y1 sub-cache).
 function prefetchYoY1_() {
   try {
-    var props     = getProps_();
-    var { ppStartMs, PP_MS } = currentPPStart_(props);
-    var YEAR_MS   = 364 * 24 * 60 * 60 * 1000;
-    var yoyBaseMs = ppStartMs - YEAR_MS;
-
-    var ranges = [];
-    for (var i = -3; i <= 2; i++) {
-      var f = yoyBaseMs + i * PP_MS;
-      ranges.push({ fromUTC: new Date(f).toISOString(), toUTC: new Date(f + PP_MS - 1).toISOString() });
-    }
-
-    var y1CacheKey = ranges.map(function(r) { return r.fromUTC.slice(0,10); }).join(',');
-    var fetched = fetchAllStoresTransactionsMulti_(ranges);
-    var ppTotalsY1ByStore = {}, dowAvgByStore = {};
-    STORES.forEach(function(store) {
-      var allByDay = {}, ppTotals = [];
-      fetched.forEach(function(byStore) {
-        var txns  = byStore[store.slug] || [];
-        var ppDay = aggregateByDay_(txns);
-        var ppSum = 0;
-        Object.keys(ppDay).forEach(function(day) { allByDay[day] = (allByDay[day] || 0) + ppDay[day]; ppSum += ppDay[day]; });
-        ppTotals.push(ppSum);
-      });
-      var ppAvg = ppTotals.length > 0 ? ppTotals.reduce(function(a,b){return a+b;},0)/ppTotals.length : 0;
-      ppTotalsY1ByStore[store.slug] = ppAvg;
-      // Pre-compute DOW averages (7 numbers) instead of caching raw daily data (84+ entries)
-      var dowBuckets = {0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
-      Object.keys(allByDay).forEach(function(day) {
-        var d   = new Date(Date.UTC(Number(day.slice(0,4)), Number(day.slice(5,7))-1, Number(day.slice(8,10)), 12));
-        var dow = parseInt(Utilities.formatDate(d, STORE_TZ, 'u'), 10) % 7;
-        dowBuckets[dow].push(allByDay[day]);
-      });
-      var flatDaily = ppAvg > 0 ? ppAvg / PP_DAYS : 0;
-      var dowAvg = {};
-      for (var d = 0; d <= 6; d++) {
-        var vals = dowBuckets[d];
-        dowAvg[d] = vals.length > 0 ? Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length) : Math.round(flatDaily);
-      }
-      dowAvgByStore[store.slug] = dowAvg;
-    });
-    // ~1KB payload — well within 9KB script property limit
-    props.setProperty(GC_YOY1_CACHE_KEY, JSON.stringify({ key: y1CacheKey, ppTotals: ppTotalsY1ByStore, dowAvg: dowAvgByStore }));
-    Logger.log('[prefetchYoY1_] cached Y1 (ppTotals + dowAvg) for key: ' + y1CacheKey);
+    getOrComputeYoYGoals_(true);
     return { ok: true };
   } catch(e) {
     Logger.log('prefetchYoY1_ error: ' + e.message);
