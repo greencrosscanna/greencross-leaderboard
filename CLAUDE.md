@@ -18,3 +18,5 @@ writes note-backs to any app (`add_note`). The SessionStart hook surfaces the sa
 App-specific facts for the sync check: app key **`performance`** in GX Core; integrated via bug forwarding
 (`gxIngestBug` + `tab`), changelog read from `version_history`, and auto-record on deploy (central
 `deploy_version` endpoint + shared untracked `.gx_deploy_secret`); binds `GXCore` library **v19**.
+
+**What to build next — `/whatsnext`:** run `/whatsnext` in this chat to pull this app's next prioritized work — the Command Center's dependency-ordered build sequence, filtered to this app — so you can build here without switching to the CC. It reads the app key above automatically.
