@@ -238,14 +238,6 @@ function doGet(e) {
       return jsonOut(listUsers_(), params.callback);
     }
 
-    // Management-only: clear the cached hourly-distribution shapes (forces a cold recompute) — for
-    // verifying the hourly-chart load path. Harmless: the cache repopulates on the next director/kiosk load.
-    if (params.action === 'clearhourlydist') {
-      requireRole_(auth, ['owner','director']);
-      PropertiesService.getScriptProperties().deleteProperty(GC_HOURLY_DIST_KEY);
-      return jsonOut({ ok: true, cleared: 'GC_HOURLY_DIST_KEY' }, params.callback);
-    }
-
 
     // ── Director endpoints ─────────────────────────────────
     if (params.action === 'directorall') {
