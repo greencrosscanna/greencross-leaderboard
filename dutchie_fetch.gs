@@ -207,6 +207,82 @@ function getHourlyDist_(store) {
 }
 
 /**
+ * Prime the per-store hourly-distribution cache for MANY stores in ONE parallel fetchAll,
+ * instead of getHourlyDist_ being called per store back-to-back (6 sequential fetches ≈ 60–90s
+ * cold). Same math + cache as getHourlyDist_; only the fetch is batched. Stores already cached
+ * for today are skipped. Safe to call every director load — it's a no-op once warm.
+ */
+function primeHourlyDist_(stores) {
+  const props = PropertiesService.getScriptProperties();
+  let cache = {};
+  try { cache = JSON.parse(props.getProperty(GC_HOURLY_DIST_KEY) || '{}'); } catch(e) {}
+
+  const now     = ptNow_();
+  const todayMs = ptDateToUtcMs_(now.dateStr);
+  const dow     = new Date(todayMs).getDay();
+  const MS_DAY  = 24 * 60 * 60 * 1000;
+
+  // Build one flat request list across all not-yet-cached stores (4 same-DOW days each).
+  const slugForReq = [];   // parallel to httpReqs: which store each response belongs to
+  const httpReqs   = [];
+  (stores || []).forEach(function(store) {
+    if (cache[store.slug + ':' + dow + ':' + now.dateStr]) return;   // already primed today
+    const auth = Utilities.base64Encode(getDutchieStoreKey_(store.slug) + ':');
+    for (let w = 1; w <= 4; w++) {
+      const fromMs = todayMs - w * 7 * MS_DAY;
+      const toMs   = fromMs + MS_DAY - 1;
+      const qs = 'FromDateUTC=' + encodeURIComponent(new Date(fromMs).toISOString())
+        + '&ToDateUTC=' + encodeURIComponent(new Date(toMs).toISOString())
+        + '&IncludeDetail=true&Skip=0&Take=' + DUTCHIE_TAKE;
+      slugForReq.push(store.slug);
+      httpReqs.push({
+        url: DUTCHIE_BASE + '/reporting/transactions?' + qs,
+        muteHttpExceptions: true,
+        headers: { Authorization: 'Basic ' + auth, Accept: 'application/json' },
+      });
+    }
+  });
+  if (!httpReqs.length) return;   // everything already primed
+
+  let responses;
+  try { responses = UrlFetchApp.fetchAll(httpReqs); }
+  catch(e) { Logger.log('primeHourlyDist_ fetch error: ' + e); return; }
+
+  const sumsByStore = {};   // slug → { hour: sum }
+  responses.forEach(function(resp, idx) {
+    if (resp.getResponseCode() !== 200) return;
+    let data;
+    try { data = JSON.parse(resp.getContentText()); } catch(e) { return; }
+    const txns = (Array.isArray(data) ? data : (data.transactions || data.data || []))
+      .filter(function(tx) { return tx.transactionType === 'Retail'; });
+    const slug = slugForReq[idx];
+    txns.forEach(function(tx) {
+      const ts = tx.transactionDateLocalTime || tx.transactionDate || '';
+      if (!ts || ts.length < 14) return;
+      const h = parseInt(ts.substring(11, 13), 10);
+      if (h < STORE_OPEN_HOUR || h >= STORE_CLOSE_HOUR) return;
+      const amt = txTotal_(tx);
+      if (amt <= 0) return;
+      (sumsByStore[slug] = sumsByStore[slug] || {})[h] = (sumsByStore[slug][h] || 0) + amt;
+    });
+  });
+
+  (stores || []).forEach(function(store) {
+    const hourSums = sumsByStore[store.slug];
+    if (!hourSums) return;
+    let total = 0;
+    for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) total += (hourSums[h] || 0);
+    if (total === 0) return;
+    const dist = {};
+    for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) dist[h] = Math.round((hourSums[h] || 0) / total * 10000) / 10000;
+    cache[store.slug + ':' + dow + ':' + now.dateStr] = dist;
+  });
+  const keys = Object.keys(cache).sort();
+  while (keys.length > 60) { delete cache[keys.shift()]; }
+  try { props.setProperty(GC_HOURLY_DIST_KEY, JSON.stringify(cache)); } catch(e) {}
+}
+
+/**
  * Fetch transactions for ALL stores in parallel using UrlFetchApp.fetchAll().
  * Returns an object keyed by storeSlug: { baseline: [...], center: [...], ... }
  */

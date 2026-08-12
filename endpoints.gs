@@ -310,7 +310,11 @@ function getDirectorToday(byStoreToday) {
     });
   }
 
-  // Sum per-store hourly targets (reads from cache — free after kiosk views have primed it)
+  // Prime all stores' hourly distributions in ONE parallel fetch (was: 6 sequential per-store
+  // fetches = 60–90s cold). After this, getHourlyDist_ below is a cache hit for every store.
+  try { primeHourlyDist_(STORES); } catch(e) {}
+
+  // Sum per-store hourly targets (reads from cache — primed just above / by kiosk views)
   const hourlyTargetMap = {};
   STORES.forEach(function(store) {
     const dailyGoal = getDailyGoal_(store.slug);
