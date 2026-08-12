@@ -3,9 +3,7 @@
   "configurations": [
     {
       "name": "greencross-leaderboard",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["serve.py"],
-      "port": 8181
+      "url": "https://greencrosscanna.github.io/greencross-leaderboard/"
     }
   ]
 }

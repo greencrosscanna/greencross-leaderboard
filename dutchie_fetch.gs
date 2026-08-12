@@ -233,7 +233,7 @@ function primeHourlyDist_(stores) {
       const toMs   = fromMs + MS_DAY - 1;
       const qs = 'FromDateUTC=' + encodeURIComponent(new Date(fromMs).toISOString())
         + '&ToDateUTC=' + encodeURIComponent(new Date(toMs).toISOString())
-        + '&IncludeDetail=true&Skip=0&Take=' + DUTCHIE_TAKE;
+        + '&IncludeDetail=false&Skip=0&Take=' + DUTCHIE_TAKE;   // hourly shape needs only tx timestamp + total
       slugForReq.push(store.slug);
       httpReqs.push({
         url: DUTCHIE_BASE + '/reporting/transactions?' + qs,
