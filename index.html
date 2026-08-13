@@ -3765,7 +3765,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.472';
+window.GC = window.GC || {}; GC.VERSION = 'v1.473';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -4194,6 +4194,14 @@ GC.fmtCurrency = function(n) {
   if (abs >= 10_000)    return sign + '$' + (abs / 1_000).toFixed(1) + 'k';
   if (abs >= 1_000)     return sign + '$' + abs.toLocaleString('en-US', { maximumFractionDigits: 0 });
   return sign + '$' + abs.toFixed(2);
+};
+
+/** Full, un-abbreviated whole-dollar currency — e.g. $31,686 (never $31.7k). Use where the exact
+ *  figure matters more than compactness (e.g. the Store Leaderboard sales column). */
+GC.fmtCurrencyFull = function(n) {
+  if (n == null || isNaN(n)) return '—';
+  const sign = n < 0 ? '-' : '';
+  return sign + '$' + Math.round(Math.abs(n)).toLocaleString('en-US');
 };
 
 /** 0.061 → "6.1%" */
@@ -5653,7 +5661,7 @@ var director = (function() {
       : 'width:0%';
     return '<div class="sales-cell">'
       + '<div class="sales-row">'
-      +   '<span class="sales-amt num">' + e(GC.fmtCurrency(sales)) + '</span>'
+      +   '<span class="sales-amt num">' + e(GC.fmtCurrencyFull(sales)) + '</span>'
       +   (hasPlan ? '<span class="sales-pct' + (barOver ? ' over' : '') + '">' + pctLbl + '</span>' : '')
       + '</div>'
       + '<div class="emp-bar-wrap dir-bar' + (barOver ? ' bar-over' : '') + '">'
