@@ -3765,7 +3765,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.470';
+window.GC = window.GC || {}; GC.VERSION = 'v1.471';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -11547,7 +11547,10 @@ GC.bug = (function() {
   var _pri = 'medium';
 
   function _user() {
-    try { return (GC.auth.load() || {}).username || 'unknown'; } catch(e) { return 'unknown'; }
+    // Session stores the login key as `user` (see GC.auth.save ~4761), NOT `username` — reading the
+    // wrong key made every filed bug land in GX Core as reporter "unknown". `.user` matches GX Core
+    // user_ids, so the CC resolves the reporter's profile/email and notifies them on resolve.
+    try { return (GC.auth.load() || {}).user || 'unknown'; } catch(e) { return 'unknown'; }
   }
 
   function selectPri(p) {
