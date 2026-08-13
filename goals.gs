@@ -74,43 +74,19 @@ function getManualPPGoals_() {
  */
 // Goal data-source version. Bumping this invalidates the persisted goal caches so the next
 // compute re-runs from the current source. v2 = GX Core sales cache (was: live Dutchie pulls).
-var GOALS_SRC_VER = 2;
+var GOALS_SRC_VER = 3;   // 3 = back to Dutchie (v2's GX Core cache `net` drifted ~11% low — see core-admin note)
 
-// Daily NET per store for a set of pay-period ranges, sourced from the GX Core sales cache in ONE
-// read (vs ~12–36 Dutchie /reporting/transactions batches). Returns an array parallel to `ranges`,
-// each entry { appSlug: { 'yyyy-mm-dd': net } } — the same shape the old aggregateByDay_(txns) fed,
-// so the goal math downstream is unchanged. The cache holds settled days only, which is exactly what
-// goal history needs (all these ranges are completed pay periods).
+// Daily NET per store for a set of pay-period ranges. Returns an array parallel to `ranges`, each entry
+// { appSlug: { 'yyyy-mm-dd': net } } — the shape the goal math consumes. Sourced from Dutchie
+// /reporting/transactions (aggregateByDay_ = txNet_ sum), which matches the Dutchie EOD Net Sales to the
+// dollar. (Reverted 2026-08-12 off GXCore.getSalesDaily, whose net had drifted ~11% below Dutchie EOD;
+// re-migrate to the shared cache once core-admin corrects it.)
 function dailyNetForRanges_(ranges) {
   if (!ranges || !ranges.length) return [];
-  var minMs = Infinity, maxMs = -Infinity;
-  ranges.forEach(function(r) {
-    var f = new Date(r.fromUTC).getTime(), t = new Date(r.toUTC).getTime();
-    if (f < minMs) minMs = f;
-    if (t > maxMs) maxMs = t;
-  });
-  var spanFrom = Utilities.formatDate(new Date(minMs), STORE_TZ, 'yyyy-MM-dd');
-  var spanTo   = Utilities.formatDate(new Date(maxMs), STORE_TZ, 'yyyy-MM-dd');
-
-  // One cache read (all stores); join GX store_id → app slug; build { slug: { day: net } }.
-  var id2slug = gxStoreIdToAppSlug_();
-  var netBySlug = {};
-  STORES.forEach(function(s) { netBySlug[s.slug] = {}; });
-  (GXCore.getSalesDaily('', spanFrom, spanTo) || []).forEach(function(row) {
-    var slug = id2slug[String(row.store)] || String(row.store);
-    if (netBySlug[slug]) netBySlug[slug][String(row.date)] = Number(row.net || 0);
-  });
-
-  // Bucket days into each range by PT date string (inclusive), preserving per-range structure.
-  return ranges.map(function(r) {
-    var fromStr = Utilities.formatDate(new Date(r.fromUTC), STORE_TZ, 'yyyy-MM-dd');
-    var toStr   = Utilities.formatDate(new Date(r.toUTC),   STORE_TZ, 'yyyy-MM-dd');
+  var fetched = fetchAllStoresTransactionsMulti_(ranges);   // parallel array of { slug: txns[] }
+  return fetched.map(function(byStore) {
     var perStore = {};
-    STORES.forEach(function(s) {
-      var days = netBySlug[s.slug] || {}, out = {};
-      Object.keys(days).forEach(function(day) { if (day >= fromStr && day <= toStr) out[day] = days[day]; });
-      perStore[s.slug] = out;
-    });
+    STORES.forEach(function(s) { perStore[s.slug] = aggregateByDay_(byStore[s.slug] || []); });
     return perStore;
   });
 }
@@ -323,8 +299,8 @@ function getOrComputeYoYGoals_(forceRecompute) {
   Logger.log('[yoy] Computing same-season floor for PP ' + ppStartStr + ' | window: ' + yoyFrom + ' – ' + yoyTo);
 
   // Y1 data (1 year ago) is historical within a PP — cache aggregated totals + DOW buckets.
-  // 'net:' prefix = sourced from the GX Core sales cache; invalidates any old Dutchie-computed Y1 cache.
-  var y1CacheKey = 'net:' + ranges.map(function(r) { return r.fromUTC.slice(0,10); }).join(',');
+  // 'dut3:' prefix = Dutchie-sourced (reverted off the GX Core cache); invalidates the old 'net:' cache.
+  var y1CacheKey = 'dut3:' + ranges.map(function(r) { return r.fromUTC.slice(0,10); }).join(',');
   var y1Cache = null; // { ppTotals: { slug: avg }, dowByDay: { slug: { 'YYYY-MM-DD': sales } } }
   try {
     var y1Cached = JSON.parse(props.getProperty(GC_YOY1_CACHE_KEY) || '{}');

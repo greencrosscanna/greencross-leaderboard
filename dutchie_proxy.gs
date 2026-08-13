@@ -238,12 +238,6 @@ function doGet(e) {
       return jsonOut(listUsers_(), params.callback);
     }
 
-    // TEMP (owner/director): diagnose standings cache coverage vs the leaderboard.
-    if (params.action === 'standingsdiag') {
-      requireRole_(auth, ['owner','director']);
-      return jsonOut(standingsDiag_(), params.callback);
-    }
-
 
     // ── Director endpoints ─────────────────────────────────
     if (params.action === 'directorall') {

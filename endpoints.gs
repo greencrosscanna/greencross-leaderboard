@@ -1425,57 +1425,6 @@ function clearAvatarConfig_(params) {
 //  EOD_Snapshots sheet (one read), and only TODAY is pulled fresh from Dutchie.
 //  Pace/projection is computed client-side from elapsedFrac.
 // ─────────────────────────────────────────────────────────────────────────────
-// TEMP diagnostic (owner/director): does the GX Core cache cover through yesterday, and where is
-// the standings-vs-leaderboard gap + the slowness? Removed after the fix.
-function standingsDiag_() {
-  var props = getProps_();
-  var pp = currentPPStart_(props);
-  var ppStartMs = pp.ppStartMs, PP_MS = pp.PP_MS, nowMs = Date.now();
-  var ppStartStr   = Utilities.formatDate(new Date(ppStartMs), STORE_TZ, 'yyyy-MM-dd');
-  var todayStr     = Utilities.formatDate(new Date(nowMs),     STORE_TZ, 'yyyy-MM-dd');
-  var todayStartMs = ptDateToUtcMs_(todayStr);
-  var yestStr      = Utilities.formatDate(new Date(todayStartMs - 12 * 3600000), STORE_TZ, 'yyyy-MM-dd');
-  var id2slug = gxStoreIdToAppSlug_();
-
-  var t0 = Date.now();
-  var rows = GXCore.getSalesDaily('', ppStartStr, todayStr) || [];
-  var msCache = Date.now() - t0;
-
-  var byStore = {}, dates = {};
-  rows.forEach(function(r) {
-    var slug = id2slug[String(r.store)] || String(r.store);
-    (byStore[slug] = byStore[slug] || {})[String(r.date)] = Number(r.net || 0);
-    dates[String(r.date)] = true;
-  });
-  var cacheDates = Object.keys(dates).sort();
-
-  var t1 = Date.now();
-  var todayRange = { fromUTC: new Date(todayStartMs).toISOString(), toUTC: new Date(Math.min(nowMs, todayStartMs + DAY_MS_STD_() - 1)).toISOString() };
-  var todayAgg = {};
-  try { var ta = byStoreAggCached_(todayRange, true); STORES.forEach(function(s) { todayAgg[s.slug] = Math.round((ta[s.slug] || {}).sales || 0); }); } catch (e) {}
-  var msToday = Date.now() - t1;
-
-  // Apples-to-apples: byStoreAggCached_ (the LEADERBOARD basis) over the SAME settled days as the cache.
-  var t2 = Date.now();
-  var settledRange = { fromUTC: new Date(ppStartMs).toISOString(), toUTC: new Date(todayStartMs - 1).toISOString() };
-  var lbSettled = {};
-  try { var la = byStoreAggCached_(settledRange, true); STORES.forEach(function(s) { lbSettled[s.slug] = Math.round((la[s.slug] || {}).sales || 0); }); } catch (e) {}
-  var msLbSettled = Date.now() - t2;
-
-  var per = STORES.map(function(s) {
-    var days = byStore[s.slug] || {}, settled = 0, full = 0;
-    Object.keys(days).forEach(function(d) { full += days[d]; if (d <= yestStr) settled += days[d]; });
-    var cacheS = Math.round(settled), lbS = lbSettled[s.slug] || 0;
-    return { slug: s.slug, cacheSettled_net: cacheS, leaderboardSettled_sales: lbS, deltaLbMinusCache: lbS - cacheS,
-             todayLive: todayAgg[s.slug] || 0 };
-  });
-  return { ok: true, ppStartStr: ppStartStr, yestStr: yestStr, todayStr: todayStr,
-           cacheDates: cacheDates, cacheMaxDate: cacheDates[cacheDates.length - 1],
-           cacheHasYesterday: cacheDates.indexOf(yestStr) !== -1,
-           msCacheRead: msCache, msTodayLivePull: msToday, perStore: per };
-}
-function DAY_MS_STD_() { return 86400000; }
-
 function getStandings_(hardRefresh) {
   var cache  = CacheService.getScriptCache();
   if (!hardRefresh) {
@@ -1495,45 +1444,16 @@ function getStandings_(hardRefresh) {
   var daysTotal  = Math.round(PP_MS / DAY_MS);
   var dayNum     = Math.max(1, Math.min(daysTotal, Math.floor((nowMs - ppStartMs) / DAY_MS) + 1));
 
-  // Per-store PP sales. SETTLED days (ppStart..yesterday) come from GX Core's shared sales cache
-  // (penny-exact, net basis — verified identical to the old Dutchie aggregate). TODAY is not in the
-  // cache until it settles overnight, so pull only today live. Falls back to the old whole-settled-range
-  // Dutchie pull if the cache is momentarily unavailable, so standings never breaks.
-  var todayStartMs  = ptDateToUtcMs_(todayStr);
-  var yestStr       = Utilities.formatDate(new Date(todayStartMs - 12 * 3600000), STORE_TZ, 'yyyy-MM-dd');
-
+  // Per-store PP sales via the day-cache: settled closed days come from CacheService (Dutchie-derived,
+  // matches the Dutchie EOD Net Sales to the dollar), only today (+ pre-6am yesterday) pulled live.
+  // Same aggregateTransactions_ basis as the Store Leaderboard, so the two views match exactly.
+  // (Reverted off the GX Core sales cache 2026-08-12: its `net` had drifted ~11% below Dutchie EOD —
+  //  see note to core-admin. Re-migrate once the shared cache is corrected.)
+  var ppRange = { fromUTC: new Date(ppStartMs).toISOString(), toUTC: new Date(ppStartMs + PP_MS - 1).toISOString() };
+  var byStoreAgg = {};
+  try { byStoreAgg = byStoreAggCached_(ppRange, hardRefresh); } catch (e) {}
   var ppSales = {};
-  STORES.forEach(function(s) { ppSales[s.slug] = 0; });
-
-  // Settled portion — GX Core cache, with a Dutchie fallback.
-  if (ppStartStr <= yestStr) {
-    var usedCache = false;
-    try {
-      var id2slug = gxStoreIdToAppSlug_();
-      var rows = GXCore.getSalesDaily('', ppStartStr, yestStr) || [];
-      if (rows.length) {
-        rows.forEach(function(r) {
-          var slug = id2slug[String(r.store)] || String(r.store);
-          if (ppSales.hasOwnProperty(slug)) ppSales[slug] += Number(r.net || 0);
-        });
-        usedCache = true;
-      }
-    } catch (e) {}
-    if (!usedCache) {   // cache down → old behavior: settled days from Dutchie
-      try {
-        var settledRange = { fromUTC: new Date(ppStartMs).toISOString(), toUTC: new Date(todayStartMs - 1).toISOString() };
-        var settledAgg   = byStoreAggCached_(settledRange, hardRefresh);
-        STORES.forEach(function(s) { ppSales[s.slug] += (settledAgg[s.slug] || {}).sales || 0; });
-      } catch (e) {}
-    }
-  }
-
-  // Today (live) — the cache has no today row.
-  try {
-    var todayRange = { fromUTC: new Date(todayStartMs).toISOString(), toUTC: new Date(Math.min(nowMs, todayStartMs + DAY_MS - 1)).toISOString() };
-    var todayAgg   = byStoreAggCached_(todayRange, hardRefresh);
-    STORES.forEach(function(s) { ppSales[s.slug] += (todayAgg[s.slug] || {}).sales || 0; });
-  } catch (e) {}
+  STORES.forEach(function(s) { ppSales[s.slug] = (byStoreAgg[s.slug] || {}).sales || 0; });
 
   // Day-of-week weighted "expected by now" — a Monday is not a Friday. Uses each
   // store's dowAvg curve (0=Sun..6=Sat) rather than a flat goal/14, so the pace
