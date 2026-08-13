@@ -1193,6 +1193,7 @@ function getSettings_(params) {
 
 function saveSettings_(params) {
   var props = PropertiesService.getScriptProperties();
+  var bustDisplay = false;   // set when a change alters the rendered staff lists (disable/rename/re-role)
 
   // Save nicknames
   if (params.nicknames !== undefined) {
@@ -1200,6 +1201,7 @@ function saveSettings_(params) {
       var n = JSON.parse(params.nicknames);
       Object.keys(n).forEach(function(k) { if (!n[k]) delete n[k]; });
       props.setProperty(GC_NICKNAMES_KEY, JSON.stringify(n));
+      bustDisplay = true;
     } catch(e) {
       return { ok: false, error: 'Invalid nicknames JSON: ' + e.message };
     }
@@ -1211,6 +1213,7 @@ function saveSettings_(params) {
       var ex = JSON.parse(params.excluded);
       if (!Array.isArray(ex)) throw new Error('not an array');
       props.setProperty(GC_EXCLUDED_KEY, JSON.stringify(ex));
+      bustDisplay = true;
     } catch(e) {
       return { ok: false, error: 'Invalid excluded JSON: ' + e.message };
     }
@@ -1221,6 +1224,7 @@ function saveSettings_(params) {
     try {
       var ro = JSON.parse(params.roles);
       props.setProperty(GC_ROLES_KEY, JSON.stringify(ro));
+      bustDisplay = true;
     } catch(e) {
       return { ok: false, error: 'Invalid roles JSON: ' + e.message };
     }
@@ -1284,6 +1288,17 @@ function saveSettings_(params) {
       _c.remove('gc_dirall_v2_pp'); _c.remove('gc_dirall_v2_mtd');
     } catch (e) {}
     Logger.log('[discountTarget] saved: ' + newT + '%');
+  }
+
+  // Flush the caches that hold rendered staff lists so a disable/rename/re-role shows on the NEXT
+  // load, instead of lingering until the 55s kiosk / 6-min director cache TTLs expire.
+  if (bustDisplay) {
+    try {
+      var _cc  = CacheService.getScriptCache();
+      var keys = ['gc_dirall_v2_pp', 'gc_dirall_v2_mtd', 'gc_standings_v1', 'gc_aggticker_v1'];
+      STORES.forEach(function(s) { keys.push('storeToday:' + s.slug, 'storeLB:' + s.slug); });
+      _cc.removeAll(keys);
+    } catch (e) {}
   }
 
   return { ok: true };
