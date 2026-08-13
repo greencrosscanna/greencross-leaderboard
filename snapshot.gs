@@ -493,7 +493,9 @@ function installSnapshotTrigger() {
 // line, and re-arms for the next drift). Leaderboard reads its own Dutchie totals, so its own
 // numbers are unaffected — this guards every app that reads the shared cache, and confirms when
 // core-admin's fix lands.
-var EOD_GUARD_THRESHOLD = 0.005;   // 0.5% — the drift that trips an alert
+var EOD_GUARD_THRESHOLD = 0.005;   // 0.5% — a store-day must exceed this % gap to trip
+var EOD_GUARD_MIN_ABS   = 100;     // …AND this many $ gap — suppresses $15-20 returns-settling noise on
+                                   //    low-volume days (the real regression was thousands/store, not tens)
 var EOD_GUARD_DAYS      = 3;       // check the last N settled days
 var EOD_GUARD_MIN_NET   = 200;     // ignore near-zero days (closed/no-data), avoids false positives
 
@@ -531,8 +533,9 @@ function eodGuardCheck_(dryRun) {
       var app   = (appAgg[s.slug] || {}).sales || 0;
       var cache = cacheNet[s.slug];
       if (app >= EOD_GUARD_MIN_NET && cache != null) {
-        var drift = Math.abs(cache - app) / app;
-        if (drift > EOD_GUARD_THRESHOLD) {
+        var absDiff = Math.abs(cache - app);
+        var drift   = absDiff / app;
+        if (drift > EOD_GUARD_THRESHOLD && absDiff >= EOD_GUARD_MIN_ABS) {
           drifts.push({ date: dateStr, store: s.slug, app: Math.round(app), cache: Math.round(cache), pct: Math.round(drift * 1000) / 10 });
         }
       }
@@ -556,8 +559,8 @@ function eodGuardCheck_(dryRun) {
         drifts.map(function(x) {
           return '• ' + x.date + '  ' + x.store + ': cache $' + x.cache + ' vs Dutchie $' + x.app + '  (' + x.pct + '% off)';
         }).join('\n') +
-        '\n\nThreshold ' + (EOD_GUARD_THRESHOLD * 100) + '% over the last ' + EOD_GUARD_DAYS + ' settled days. ' +
-        'Auto-clears when the cache matches again.';
+        '\n\nTrips only when a store-day gap exceeds BOTH ' + (EOD_GUARD_THRESHOLD * 100) + '% and $' +
+        EOD_GUARD_MIN_ABS + ', over the last ' + EOD_GUARD_DAYS + ' settled days. Auto-clears when the cache matches again.';
       try {
         GXCore.gxIngestBug('performance', 'eod-guard', { title: title, desc: detail, priority: 'high', store: drifts[0].store });
         props.setProperty('GC_EOD_GUARD_SIG', sig);
