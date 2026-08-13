@@ -3765,7 +3765,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.474';
+window.GC = window.GC || {}; GC.VERSION = 'v1.475';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -6422,7 +6422,7 @@ var director = (function() {
           + '</div></div></td>'
         + '<td><div class="store-cell">' + storeDotHtml(s.storeSlug) + '<span>' + e(s.storeName) + '</span></div></td>'
         + '<td>' + e(s.roleLabel) + '</td>'
-        + '<td class="num">' + e(GC.fmtCurrency(s.sales)) + '</td>'
+        + '<td class="num">' + e(GC.fmtCurrencyFull(s.sales)) + '</td>'
         + '<td class="num">' + e(GC.fmtNum(s.transactions)) + '</td>'
         + '<td class="num' + aovClass(s.avgOrderValue, avgAov) + '">' + e(GC.fmtCurrency(s.avgOrderValue)) + '</td>'
         + '<td class="num' + (s.avgUPT >= 2.6 ? ' v-green' : '') + '">' + e(GC.fmtDecimal(s.avgUPT)) + '</td>'
@@ -6858,7 +6858,7 @@ var director = (function() {
           + '</div></div></td>'
         + '<td><div class="store-cell">' + storeDotHtml(s.storeSlug) + '<span>' + e(s.storeName) + '</span></div></td>'
         + '<td>' + e(s.roleLabel) + '</td>'
-        + '<td class="num">' + e(GC.fmtCurrency(s.sales)) + '</td>'
+        + '<td class="num">' + e(GC.fmtCurrencyFull(s.sales)) + '</td>'
         + '<td class="num">' + e(GC.fmtNum(s.transactions)) + '</td>'
         + '<td class="num' + aovClass(s.avgOrderValue, avgAov) + '">' + e(GC.fmtCurrency(s.avgOrderValue)) + '</td>'
         + '<td class="num' + (s.avgUPT >= 2.6 ? ' v-green' : '') + '">' + e(GC.fmtDecimal(s.avgUPT)) + '</td>'
