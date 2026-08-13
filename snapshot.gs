@@ -476,3 +476,118 @@ function installSnapshotTrigger() {
 
   Logger.log('[snapshot] Trigger installed — fires daily at UTC 6:xx (~11pm PDT / 10pm PST)');
 }
+
+// ============================================================
+//  Nightly EOD guardrail  (sales-cache tripwire)
+// ============================================================
+// The regression that eroded trust during the demo: GX Core's shared sales cache
+// (GXCore.getSalesDaily net) silently drifted ~11% below the truth, while the app's OWN
+// Dutchie /reporting/transactions totals (byStoreAggCached_) stayed correct — verified to
+// match Dutchie's EOD Net Sales export to ~0.03%. A manager caught it, not the system.
+//
+// This tripwire compares the two nightly, per store, over the last few settled days. If any
+// store's cache net drifts more than EOD_GUARD_THRESHOLD from the app's Dutchie total, it files
+// a HIGH-priority bug on the Master Control board (via GXCore.gxIngestBug) so the regression is
+// caught automatically — by the system, before a human. It's deduped (only re-alerts when the
+// set of drifting store-days CHANGES) and self-clears (posts nothing once the cache is back in
+// line, and re-arms for the next drift). Leaderboard reads its own Dutchie totals, so its own
+// numbers are unaffected — this guards every app that reads the shared cache, and confirms when
+// core-admin's fix lands.
+var EOD_GUARD_THRESHOLD = 0.005;   // 0.5% — the drift that trips an alert
+var EOD_GUARD_DAYS      = 3;       // check the last N settled days
+var EOD_GUARD_MIN_NET   = 200;     // ignore near-zero days (closed/no-data), avoids false positives
+
+/**
+ * Compare GX Core cache net vs the app's Dutchie totals per store over the last few settled days.
+ * @param {boolean} dryRun  true = compute + return drifts but DON'T file a bug (for on-demand testing)
+ * @return {{ok, days, threshold, drifts:Array, alerted:boolean}}
+ */
+function eodGuardCheck_(dryRun) {
+  var now     = ptNow_();
+  var todayMs = ptDateToUtcMs_(now.dateStr);
+  var id2slug = gxStoreIdToAppSlug_();
+  var drifts  = [];
+
+  for (var d = 1; d <= EOD_GUARD_DAYS; d++) {          // d=1 → yesterday, back N settled days
+    var dayMs   = todayMs - d * 86400000;
+    var dateStr = Utilities.formatDate(new Date(dayMs + 12 * 3600000), STORE_TZ, 'yyyy-MM-dd');
+
+    // GX Core shared cache net, keyed by store_id → app slug
+    var cacheNet = {};
+    try {
+      (GXCore.getSalesDaily('', dateStr, dateStr) || []).forEach(function(r) {
+        var slug = id2slug[String(r.store)] || String(r.store);
+        cacheNet[slug] = (cacheNet[slug] || 0) + Number(r.net || 0);
+      });
+    } catch (e) { Logger.log('[eodGuard] getSalesDaily ' + dateStr + ' failed: ' + e); }
+
+    // App's own Dutchie /reporting/transactions total for the same day (settled → served from cache)
+    var appAgg = {};
+    try {
+      appAgg = byStoreAggCached_({ fromUTC: new Date(dayMs).toISOString(), toUTC: new Date(dayMs + 86400000 - 1).toISOString() }, false);
+    } catch (e) { Logger.log('[eodGuard] byStoreAggCached_ ' + dateStr + ' failed: ' + e); }
+
+    STORES.forEach(function(s) {
+      var app   = (appAgg[s.slug] || {}).sales || 0;
+      var cache = cacheNet[s.slug];
+      if (app >= EOD_GUARD_MIN_NET && cache != null) {
+        var drift = Math.abs(cache - app) / app;
+        if (drift > EOD_GUARD_THRESHOLD) {
+          drifts.push({ date: dateStr, store: s.slug, app: Math.round(app), cache: Math.round(cache), pct: Math.round(drift * 1000) / 10 });
+        }
+      }
+    });
+  }
+
+  // Dedupe: only alert when the SET of drifting store-days changes; self-clear when it resolves.
+  var props   = getProps_();
+  var sig      = drifts.map(function(x) { return x.date + ':' + x.store; }).sort().join('|');
+  var lastSig  = props.getProperty('GC_EOD_GUARD_SIG') || '';
+  var alerted  = false;
+
+  if (drifts.length) {
+    if (!dryRun && sig !== lastSig) {
+      var title = '⚠️ EOD guard: GX Core sales cache off on ' + drifts.length +
+                  ' store-day(s) (>' + (EOD_GUARD_THRESHOLD * 100) + '% vs Dutchie)';
+      var detail = 'Automated tripwire: GXCore.getSalesDaily net drifted from the app’s Dutchie ' +
+        '/reporting/transactions totals (which match Dutchie’s EOD Net Sales export). Any app reading the ' +
+        'shared sales cache for revenue is affected; the Leaderboard reads its own Dutchie totals, so its ' +
+        'displayed numbers are correct.\n\nDrifting store-days:\n' +
+        drifts.map(function(x) {
+          return '• ' + x.date + '  ' + x.store + ': cache $' + x.cache + ' vs Dutchie $' + x.app + '  (' + x.pct + '% off)';
+        }).join('\n') +
+        '\n\nThreshold ' + (EOD_GUARD_THRESHOLD * 100) + '% over the last ' + EOD_GUARD_DAYS + ' settled days. ' +
+        'Auto-clears when the cache matches again.';
+      try {
+        GXCore.gxIngestBug('performance', 'eod-guard', { title: title, desc: detail, priority: 'high', store: drifts[0].store });
+        props.setProperty('GC_EOD_GUARD_SIG', sig);
+        alerted = true;
+        Logger.log('[eodGuard] filed bug — ' + drifts.length + ' store-day(s) drifting');
+      } catch (e) { Logger.log('[eodGuard] gxIngestBug failed: ' + e); }
+    }
+  } else if (lastSig) {
+    props.deleteProperty('GC_EOD_GUARD_SIG');           // cache back in line → re-arm for next drift
+    Logger.log('[eodGuard] drift cleared — re-armed');
+  }
+
+  return { ok: true, days: EOD_GUARD_DAYS, threshold: EOD_GUARD_THRESHOLD, drifts: drifts, alerted: alerted };
+}
+
+/**
+ * Run once from the GAS editor (or via ?action=installeodguard) to register the nightly guardrail.
+ * Fires daily at UTC 15:xx — ~8am PDT / 7am PST, well after GX Core's ~3am cache recompute and the
+ * app's ~6am settle, so it compares fully-settled numbers on both sides.
+ */
+function installEodGuardTrigger() {
+  ScriptApp.getProjectTriggers()
+    .filter(function(t) { return t.getHandlerFunction() === 'eodGuardCheck_'; })
+    .forEach(function(t) { ScriptApp.deleteTrigger(t); });
+
+  ScriptApp.newTrigger('eodGuardCheck_')
+    .timeBased()
+    .atHour(15)
+    .everyDays(1)
+    .create();
+
+  Logger.log('[eodGuard] Trigger installed — fires daily at UTC 15:xx (~8am PDT / 7am PST)');
+}
