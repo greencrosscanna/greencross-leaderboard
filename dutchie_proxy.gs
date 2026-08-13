@@ -241,12 +241,12 @@ function doGet(e) {
     // ── EOD guardrail (sales-cache tripwire) ───────────────
     // Dry-run on demand: compute cache-vs-Dutchie drift and return it WITHOUT filing a bug.
     if (params.action === 'eodguard') {
-      requireRole_(auth, ['owner']);
+      requireRole_(auth, ['owner','director']);
       return jsonOut(eodGuardCheck_(true), params.callback);
     }
     // Install the nightly trigger (idempotent) without opening the GAS editor.
     if (params.action === 'installeodguard') {
-      requireRole_(auth, ['owner']);
+      requireRole_(auth, ['owner','director']);
       installEodGuardTrigger();
       return jsonOut({ ok: true, installed: 'eodGuardCheck_ daily @ UTC 15:xx' }, params.callback);
     }
