@@ -1455,11 +1455,19 @@ function standingsDiag_() {
   try { var ta = byStoreAggCached_(todayRange, true); STORES.forEach(function(s) { todayAgg[s.slug] = Math.round((ta[s.slug] || {}).sales || 0); }); } catch (e) {}
   var msToday = Date.now() - t1;
 
+  // Apples-to-apples: byStoreAggCached_ (the LEADERBOARD basis) over the SAME settled days as the cache.
+  var t2 = Date.now();
+  var settledRange = { fromUTC: new Date(ppStartMs).toISOString(), toUTC: new Date(todayStartMs - 1).toISOString() };
+  var lbSettled = {};
+  try { var la = byStoreAggCached_(settledRange, true); STORES.forEach(function(s) { lbSettled[s.slug] = Math.round((la[s.slug] || {}).sales || 0); }); } catch (e) {}
+  var msLbSettled = Date.now() - t2;
+
   var per = STORES.map(function(s) {
     var days = byStore[s.slug] || {}, settled = 0, full = 0;
     Object.keys(days).forEach(function(d) { full += days[d]; if (d <= yestStr) settled += days[d]; });
-    return { slug: s.slug, cacheSettled_le_yest: Math.round(settled), cacheFull_all: Math.round(full),
-             todayLive: todayAgg[s.slug] || 0, standingsTotal: Math.round(settled) + (todayAgg[s.slug] || 0) };
+    var cacheS = Math.round(settled), lbS = lbSettled[s.slug] || 0;
+    return { slug: s.slug, cacheSettled_net: cacheS, leaderboardSettled_sales: lbS, deltaLbMinusCache: lbS - cacheS,
+             todayLive: todayAgg[s.slug] || 0 };
   });
   return { ok: true, ppStartStr: ppStartStr, yestStr: yestStr, todayStr: todayStr,
            cacheDates: cacheDates, cacheMaxDate: cacheDates[cacheDates.length - 1],
