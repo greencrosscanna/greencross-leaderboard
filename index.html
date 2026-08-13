@@ -3765,7 +3765,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.473';
+window.GC = window.GC || {}; GC.VERSION = 'v1.474';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -4350,7 +4350,7 @@ GC.renderKpiBlock = function(summary, periodLabel) {
   }
 
   var bigRow = '<div class="kpi-row large">'
-    + bigKpi('Total Sales · ' + periodLabel, GC.fmtCurrency(summary.totalSales),   GC.fmtDeltaPct(d.totalSalesPct))
+    + bigKpi('Total Sales · ' + periodLabel, GC.fmtCurrencyFull(summary.totalSales),   GC.fmtDeltaPct(d.totalSalesPct))
     + bigKpi('Transactions',         GC.fmtNum(summary.transactions),       GC.fmtDeltaNum(d.transactions, '') + ' ' + priorLabel)
     + bigKpi('Avg Order Value',      GC.fmtCurrency(summary.avgOrderValue), GC.fmtDeltaCurrency(d.avgOrderValue), 'v-green')
     + '</div>';
@@ -4364,7 +4364,7 @@ GC.renderKpiBlock = function(summary, periodLabel) {
 
   var smallRow = '<div class="kpi-row small">'
     + smallKpi('Avg UPT',         GC.fmtDecimal(summary.avgUPT),         '▲ +' + GC.fmtDecimal(d.avgUPT))
-    + smallKpi('Total Discounts', GC.fmtCurrency(summary.totalDiscounts), '▲ +' + GC.fmtCurrency(d.totalDiscounts), 'v-amber')
+    + smallKpi('Total Discounts', GC.fmtCurrencyFull(summary.totalDiscounts), '▲ +' + GC.fmtCurrency(d.totalDiscounts), 'v-amber')
     + smallKpi('Discount Rate',   GC.fmtPct(summary.discountRate),        discDelta, 'v-amber')
     + smallKpi('Flagged Staff',   String(summary.flaggedStaff),            flagSub, 'v-red')
     + smallKpi('Active Staff',    String(summary.activeStaff),             'across ' + summary.storeCount + ' stores')
@@ -6045,7 +6045,7 @@ var director = (function() {
           + '<span>' + e(s.storeName) + '</span>'
           + '</div></td>'
         + '<td>' + e(s.roleLabel) + '</td>'
-        + '<td class="num">' + e(GC.fmtCurrency(s.sales)) + '</td>'
+        + '<td class="num">' + e(GC.fmtCurrencyFull(s.sales)) + '</td>'
         + '<td class="num">' + e(GC.fmtNum(s.transactions)) + '</td>'
         + '<td class="num' + aovClass(s.avgOrderValue, avgAov) + '">'
           + e(GC.fmtCurrency(s.avgOrderValue)) + '</td>'
