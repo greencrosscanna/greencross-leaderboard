@@ -1425,6 +1425,49 @@ function clearAvatarConfig_(params) {
 //  EOD_Snapshots sheet (one read), and only TODAY is pulled fresh from Dutchie.
 //  Pace/projection is computed client-side from elapsedFrac.
 // ─────────────────────────────────────────────────────────────────────────────
+// TEMP diagnostic (owner/director): does the GX Core cache cover through yesterday, and where is
+// the standings-vs-leaderboard gap + the slowness? Removed after the fix.
+function standingsDiag_() {
+  var props = getProps_();
+  var pp = currentPPStart_(props);
+  var ppStartMs = pp.ppStartMs, PP_MS = pp.PP_MS, nowMs = Date.now();
+  var ppStartStr   = Utilities.formatDate(new Date(ppStartMs), STORE_TZ, 'yyyy-MM-dd');
+  var todayStr     = Utilities.formatDate(new Date(nowMs),     STORE_TZ, 'yyyy-MM-dd');
+  var todayStartMs = ptDateToUtcMs_(todayStr);
+  var yestStr      = Utilities.formatDate(new Date(todayStartMs - 12 * 3600000), STORE_TZ, 'yyyy-MM-dd');
+  var id2slug = gxStoreIdToAppSlug_();
+
+  var t0 = Date.now();
+  var rows = GXCore.getSalesDaily('', ppStartStr, todayStr) || [];
+  var msCache = Date.now() - t0;
+
+  var byStore = {}, dates = {};
+  rows.forEach(function(r) {
+    var slug = id2slug[String(r.store)] || String(r.store);
+    (byStore[slug] = byStore[slug] || {})[String(r.date)] = Number(r.net || 0);
+    dates[String(r.date)] = true;
+  });
+  var cacheDates = Object.keys(dates).sort();
+
+  var t1 = Date.now();
+  var todayRange = { fromUTC: new Date(todayStartMs).toISOString(), toUTC: new Date(Math.min(nowMs, todayStartMs + DAY_MS_STD_() - 1)).toISOString() };
+  var todayAgg = {};
+  try { var ta = byStoreAggCached_(todayRange, true); STORES.forEach(function(s) { todayAgg[s.slug] = Math.round((ta[s.slug] || {}).sales || 0); }); } catch (e) {}
+  var msToday = Date.now() - t1;
+
+  var per = STORES.map(function(s) {
+    var days = byStore[s.slug] || {}, settled = 0, full = 0;
+    Object.keys(days).forEach(function(d) { full += days[d]; if (d <= yestStr) settled += days[d]; });
+    return { slug: s.slug, cacheSettled_le_yest: Math.round(settled), cacheFull_all: Math.round(full),
+             todayLive: todayAgg[s.slug] || 0, standingsTotal: Math.round(settled) + (todayAgg[s.slug] || 0) };
+  });
+  return { ok: true, ppStartStr: ppStartStr, yestStr: yestStr, todayStr: todayStr,
+           cacheDates: cacheDates, cacheMaxDate: cacheDates[cacheDates.length - 1],
+           cacheHasYesterday: cacheDates.indexOf(yestStr) !== -1,
+           msCacheRead: msCache, msTodayLivePull: msToday, perStore: per };
+}
+function DAY_MS_STD_() { return 86400000; }
+
 function getStandings_(hardRefresh) {
   var cache  = CacheService.getScriptCache();
   if (!hardRefresh) {
