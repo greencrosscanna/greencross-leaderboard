@@ -376,13 +376,15 @@ function initials_(name) {
 }
 
 // Safely extract numeric fields from a transaction.
-// Net sales = post-discount, pre-tax  (matches greencross-dashboard convention)
-//   Dutchie field: totalBeforeTax → subtotal → total (fallback)
-// Gross sales = net + discounts (pre-discount, pre-tax)
-function txNet_(tx)      { return Number(tx.totalBeforeTax || tx.subtotal || tx.total || 0); }
+// Net sales = post-discount, pre-tax. LOCKED canonical definition — mirrors GXCore.txNet
+// (totalBeforeTax ?? subtotal ?? total). Uses nullish precedence (?? via != null), NOT truthy `||`, so a
+// legitimate $0 totalBeforeTax does not fall through to subtotal/total. See the Command Center's
+// GX_CONSOLIDATION_MAP.md 🔒 section. Kept inline (not a per-tx GXCore call) so the live-day aggregation
+// stays fast; the settled/reconciliation path already reads GXCore.getSalesDaily. Keep in sync with GXCore.
+function txNet_(tx)      { var v = tx.totalBeforeTax != null ? tx.totalBeforeTax : (tx.subtotal != null ? tx.subtotal : tx.total); var n = Number(v); return isNaN(n) ? 0 : n; }
 function txTotal_(tx)    { return txNet_(tx); }   // alias — all revenue uses net
 function txSubtotal_(tx) { return txNet_(tx) + txDiscount_(tx); }  // gross = net + discounts
-function txDiscount_(tx) { return Number(tx.totalDiscount  || tx.discountTotal || 0); }
+function txDiscount_(tx) { var v = tx.totalDiscount != null ? tx.totalDiscount : tx.discountTotal; var n = Number(v); return isNaN(n) ? 0 : n; }  // mirrors GXCore.txDiscount
 
 /**
  * Returns only the portion of the discount that counts against a budtender —
