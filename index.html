@@ -3765,7 +3765,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.463';
+window.GC = window.GC || {}; GC.VERSION = 'v1.464';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -5362,6 +5362,9 @@ GC.router = (function() {
     if (matched.roles !== null) {
       // Route requires auth
       if (!GC.auth.isAuthenticated()) {
+        // Remember where they were headed so login lands them there (e.g. a manager sent the
+        // dedicated #/standings link). The login-success handler reads gc_return_to.
+        try { sessionStorage.setItem('gc_return_to', path); } catch (e) {}
         navigate('#/login');
         return;
       }
@@ -8406,16 +8409,13 @@ var kiosk = (function() {
   function renderHeader(store) {
     var sess = GC.auth.load() || {};
     var isDirector = sess.role === 'director' || sess.role === 'owner';
-    var canStandings = ['owner','director','store_manager','asst_manager'].indexOf(sess.role) !== -1;
     var backBtn = isDirector
       ? '<button class="kiosk-back-btn" onclick="GC.router.navigate(\'#/director\')">← Back</button>'
       : '';
-    var standingsBtn = canStandings
-      ? '<button class="kiosk-back-btn" onclick="GC.router.navigate(\'#/standings\')" title="Period standings — all stores vs goal">📊 Standings</button>'
-      : '';
+    // Standings is intentionally NOT linked from the kiosk — managers reach it via its dedicated
+    // URL (#/standings). See the router's post-login return-to so that link lands on Standings.
     return '<header class="kiosk-header">'
       + backBtn
-      + standingsBtn
       + '<img class="gc-logo-img" src="' + GC.LOGO_PNG + '" alt="Green Cross" height="28">'
       + '<span class="store-live-badge">' + e(store.name) + '</span>'
       + '<span class="ver-badge">' + (window.GC && GC.VERSION ? GC.VERSION : '') + '</span>'
@@ -11434,10 +11434,14 @@ GC.views.renderLogin = function() {
           loginBtn.textContent = 'Sign in';
           return;
         }
-        // Save session and route home
+        // Save session, then route to where they were headed (dedicated deep link, e.g. #/standings)
+        // or their role's home. The router re-checks role on that route, so an unauthorized
+        // return-to safely falls back home.
         GC.auth.save(result);
         GC.auth.startHeartbeat();
-        GC.router.navigate(GC.auth.homeRoute());
+        var rt = null;
+        try { rt = sessionStorage.getItem('gc_return_to'); sessionStorage.removeItem('gc_return_to'); } catch (e) {}
+        GC.router.navigate(rt ? ('#' + rt) : GC.auth.homeRoute());
       })
       .catch(function(err) {
         showError('Sign-in failed. Please try again.');
