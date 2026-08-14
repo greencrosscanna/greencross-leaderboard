@@ -3801,7 +3801,7 @@ GC.showChangelog = function(entries, isWhatsNew) {
     document.body.appendChild(overlay);
   }
   overlay.innerHTML = '<div class="cl-modal">'
-    + '<div class="cl-header"><div class="cl-icon">🌿</div><div><div class="cl-title">' + (isWhatsNew ? "What’s New" : 'Changelog') + '</div>'
+    + '<div class="cl-header"><div class="cl-icon"><img src="https://greencrosscanna.github.io/greencross-gx-theme/gc-icon.png" alt="GC" style="width:26px;height:26px;object-fit:contain;display:block;" onerror="this.replaceWith(this.ownerDocument.createTextNode(String.fromCodePoint(127807)))"></div><div><div class="cl-title">' + (isWhatsNew ? "What’s New" : 'Changelog') + '</div>'
     +   '<div class="cl-sub">Green Cross Leaderboard · ' + esc(latest) + '</div></div>'
     +   '<button class="cl-x" onclick="GC.closeChangelog()" title="Close">✕</button></div>'
     + '<div class="cl-body">' + bodyHtml + '</div>'
@@ -3854,7 +3854,9 @@ GC.checkWhatsNew = function() {
   }
   function apply(resp) {
     try {
-      var hist = (resp && resp.ok && resp.history) || [];
+      // Prefer GX Core's consolidated `releases` feed (meaningful upgrades only, per the shared What's New
+      // standard); fall back to the full raw `history` if an older GX Core doesn't send releases yet.
+      var hist = (resp && resp.ok && (resp.releases || resp.history)) || [];
       GC.CHANGELOG = hist.map(function(e) {
         return {
           v: e.version,
