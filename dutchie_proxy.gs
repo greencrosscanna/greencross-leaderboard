@@ -250,6 +250,13 @@ function doGet(e) {
       installEodGuardTrigger();
       return jsonOut({ ok: true, installed: 'eodGuardCheck_ daily @ UTC 15:xx' }, params.callback);
     }
+    // Goal ledger (as-of goals): run the producer capture/lock now and return the current frozen shape.
+    if (params.action === 'goalledger') {
+      requireRole_(auth, ['owner','director']);
+      var _lg = refreshGoalLedger_();
+      _lg.currentShape = getFrozenPeriodGoal_(_lg.current);
+      return jsonOut(_lg, params.callback);
+    }
 
 
     // ── Director endpoints ─────────────────────────────────

@@ -760,7 +760,101 @@ function refreshTargetsAll() {
   });
 
   props.setProperty(GC_TARGET_CACHE_KEY, JSON.stringify(cache));
+  try { refreshGoalLedger_(); } catch (e) { Logger.log('[goalLedger] refresh failed: ' + e); }
   return { ok: true, lookbackDays, targets: report };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Per-period goal ledger (as-of goals) — PRODUCER side
+//  Freezes each pay period's effective goal shape so a past period/day is always scored
+//  against the goal that was IN EFFECT THEN, not whatever the goal has since drifted to.
+//  Fixes the pay-period rollover drift (Sales note_msxk1v0i; Incentive dashboard re-scoring
+//  frozen actuals against the current goal). Sky ruling 2026-08-17: a period's goal is kept
+//  fresh while the period is OPEN, then LOCKED the moment it closes — manual edits after close
+//  never touch a locked period (closed = frozen; edits only affect the open/future period).
+//
+//  Local Script-Property ledger for now (one immutable entry per periodStart). When core-admin
+//  ships GXCore.gxUpsertPeriodGoals / getPeriodGoals (the shared `period_goals` table proposed in
+//  note_msxk1v0i), the writer/reader below AUTO-forward to it — feature-detected, no code change.
+// ═══════════════════════════════════════════════════════════════════════════════
+var GC_GOAL_LEDGER_PREFIX = 'GC_GOAL_LEDGER_';   // + 'yyyy-mm-dd' periodStart → frozen goal shape
+
+/** Normalize a dowAvg (object or array keyed 0=Sun..6=Sat) to a plain 7-element number array. */
+function normDow_(dowAvg) {
+  if (!dowAvg) return null;
+  var out = [];
+  for (var d = 0; d <= 6; d++) out.push(Number(dowAvg[d] || 0));
+  return out;
+}
+
+/** Effective goal shape for the CURRENT (open) period, per store, from resolveGoal_. */
+function currentPeriodGoalShape_(props) {
+  var cur = currentPPStart_(props);
+  var stores = {};
+  STORES.forEach(function (s) {
+    var res = null;
+    try { res = resolveGoal_(s.slug); } catch (e) {}
+    if (!res) return;
+    stores[s.slug] = {
+      periodTotal: Math.round(res.effectivePP || 0),   // the target consumers show (pre-stretch)
+      dowAvg:      normDow_(res.g && res.g.dowAvg),      // day-of-week shape → per-day pace
+      source:      res.useManual ? 'manual' : 'auto',
+      stretch:     res.stretch || 0
+    };
+  });
+  return {
+    periodStart: Utilities.formatDate(new Date(cur.ppStartMs), STORE_TZ, 'yyyy-MM-dd'),
+    periodEnd:   Utilities.formatDate(new Date(cur.ppStartMs + cur.PP_MS - 1), STORE_TZ, 'yyyy-MM-dd'),
+    stores:      stores,
+    computedAt:  new Date().toISOString()
+  };
+}
+
+/**
+ * Persist a ledger entry (local Script Property, keyed by periodStart) and mirror it to GX Core's
+ * shared period_goals table if the central writer is live. `locked` marks a closed period immutable.
+ */
+function writeGoalLedger_(props, entry, locked) {
+  entry.locked = !!locked;
+  if (locked && !entry.lockedAt) entry.lockedAt = new Date().toISOString();
+  props.setProperty(GC_GOAL_LEDGER_PREFIX + entry.periodStart, JSON.stringify(entry));
+  try {
+    if (typeof GXCore.gxUpsertPeriodGoals === 'function') {
+      GXCore.gxUpsertPeriodGoals({ app: 'performance', entry: entry });   // auto-activates when shipped
+    }
+  } catch (e) { Logger.log('[goalLedger] central upsert skipped: ' + e); }
+}
+
+/** Read a period's frozen goal shape (local first, then GX Core if present). Null if none. */
+function getFrozenPeriodGoal_(periodStart) {
+  var props = getProps_();
+  try { var raw = props.getProperty(GC_GOAL_LEDGER_PREFIX + periodStart); if (raw) return JSON.parse(raw); } catch (e) {}
+  try {
+    if (typeof GXCore.getPeriodGoals === 'function') { var r = GXCore.getPeriodGoals('', periodStart); if (r) return r; }
+  } catch (e) {}
+  return null;
+}
+
+/**
+ * Producer entry point — called from the 3am refreshTargetsAll trigger (and safe to call
+ * opportunistically). (1) refresh the CURRENT open period; (2) lock the last couple of now-closed
+ * periods so their as-of goal is frozen. A period captured while open is simply locked in place; a
+ * period never captured (pre-deploy) is skipped, not fabricated.
+ */
+function refreshGoalLedger_() {
+  var props = getProps_();
+  var shape = currentPeriodGoalShape_(props);
+  var existingCur = getFrozenPeriodGoal_(shape.periodStart);
+  if (!existingCur || !existingCur.locked) writeGoalLedger_(props, shape, false);   // keep current fresh
+
+  var cur = currentPPStart_(props);
+  var locked = [];
+  for (var k = 1; k <= 2; k++) {
+    var startStr = Utilities.formatDate(new Date(cur.ppStartMs - k * cur.PP_MS), STORE_TZ, 'yyyy-MM-dd');
+    var e = getFrozenPeriodGoal_(startStr);
+    if (e && !e.locked) { writeGoalLedger_(props, e, true); locked.push(startStr); }
+  }
+  return { ok: true, current: shape.periodStart, lockedNow: locked };
 }
 
 /**
