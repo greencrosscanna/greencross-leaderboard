@@ -1645,8 +1645,10 @@ function getIncentiveData_(ppStartParam, forceRefresh) {
   STORES.forEach(function(store) {
     var slug = store.slug;
     var st = perf.stores[slug] || { sales: 0, discount: 0, aov: 0, mgrName: '', mgrKey: '' };
+    // As-of target: a COMPLETED period reads its frozen goal (the one that paid people); only the
+    // current open period resolves live. Fixes past-period re-scoring at rollover (Sales note_msxk1v0i).
     var goal = 0;
-    try { goal = resolveGoal_(slug).effectivePP || 0; } catch(e) {}
+    try { goal = asOfPeriodGoal_(slug, ppStartStr, isCurrent); } catch(e) {}
     managers.push({
       name: st.mgrName, nameKey: st.mgrKey || nameToKey_(st.mgrName),
       storeSlug: slug, storeName: store.name,

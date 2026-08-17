@@ -959,6 +959,43 @@ function backfillPeriodGoal_(periodStart) {
   return { ok: true, periodStart: periodStart, entry: entry };
 }
 
+// ── As-of goal READERS (consumers) — resolve a date/period to the goal in effect THEN ──────────────
+// The fix for the rollover drift: a closed period reads its frozen ledger goal; only the open period
+// resolves live. Falls back to the live goal if a closed period has no ledger entry (pre-backfill),
+// so nothing ever breaks — it just isn't as-of for those.
+
+/** Which pay-period START (yyyy-mm-dd, PT) a given PT date falls in. */
+function periodStartForDate_(dateStr) {
+  var cur = currentPPStart_(getProps_());
+  var k   = Math.ceil((cur.ppStartMs - ptDateToUtcMs_(dateStr)) / cur.PP_MS);
+  if (k < 0) k = 0;
+  return Utilities.formatDate(new Date(cur.ppStartMs - k * cur.PP_MS), STORE_TZ, 'yyyy-MM-dd');
+}
+
+/** As-of PP target for a store: frozen ledger for a CLOSED period, live resolveGoal_ for the open one. */
+function asOfPeriodGoal_(slug, periodStart, isCurrent) {
+  if (!isCurrent) {
+    var fz = getFrozenPeriodGoal_(periodStart);
+    if (fz && fz.stores && fz.stores[slug] && fz.stores[slug].periodTotal != null) return fz.stores[slug].periodTotal;
+  }
+  try { return resolveGoal_(slug).effectivePP || 0; } catch (e) { return 0; }
+}
+
+/** As-of daily goal for a store on a PT date: uses that period's frozen DOW shape for closed periods. */
+function asOfDailyGoal_(slug, dateStr) {
+  var d   = new Date(Date.UTC(Number(dateStr.slice(0, 4)), Number(dateStr.slice(5, 7)) - 1, Number(dateStr.slice(8, 10)), 12));
+  var dow = parseInt(Utilities.formatDate(d, STORE_TZ, 'u'), 10) % 7;   // Mon=1…Sun=0
+  var curStart    = Utilities.formatDate(new Date(currentPPStart_(getProps_()).ppStartMs), STORE_TZ, 'yyyy-MM-dd');
+  var periodStart = periodStartForDate_(dateStr);
+  if (periodStart < curStart) {
+    var fz = getFrozenPeriodGoal_(periodStart);
+    if (fz && fz.stores && fz.stores[slug] && fz.stores[slug].dowAvg) {
+      return Math.round(fz.stores[slug].dowAvg[dow] || 0);
+    }
+  }
+  return getDailyGoalForDow_(slug, dow);   // open period, or no frozen entry → live
+}
+
 /**
  * Install a daily 3 AM trigger for target refresh.
  * Run once from Script Editor — do NOT call via HTTP.

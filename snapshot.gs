@@ -206,10 +206,9 @@ function getStoreForDate_(store, dateStr) {
   var agg     = aggregateTransactions_(txns);
   var hourMap = aggregateByHour_(txns);
 
-  // Daily goal for the day-of-week on that past date (DST-safe noon probe)
-  var d   = new Date(Date.UTC(Number(dateStr.slice(0,4)), Number(dateStr.slice(5,7))-1, Number(dateStr.slice(8,10)), 12));
-  var dow = parseInt(Utilities.formatDate(d, STORE_TZ, 'u'), 10) % 7;  // Mon=1…Sun=0
-  var goal = getDailyGoalForDow_(store.slug, dow);
+  // Daily goal for that past date — AS OF the period the date falls in (frozen goal ledger), NOT the
+  // current goal. Stops past-day pace from drifting when the pay period rolls (Sales note_msxk1v0i).
+  var goal = asOfDailyGoal_(store.slug, dateStr);
 
   var pctToGoal = goal > 0 ? r3_(agg.sales / goal) : 0;
 
