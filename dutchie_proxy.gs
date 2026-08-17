@@ -259,7 +259,7 @@ function doGet(e) {
     }
     // Backfill a closed period's frozen goal (reconstructed as-of), locked. ?pp=yyyy-mm-dd (period start).
     if (params.action === 'goalbackfill') {
-      requireRole_(auth, ['owner']);
+      requireRole_(auth, ['owner','director']);
       if (!params.pp) return jsonOut({ ok: false, error: 'need pp=yyyy-mm-dd (period start)' }, params.callback);
       return jsonOut(backfillPeriodGoal_(params.pp), params.callback);
     }
