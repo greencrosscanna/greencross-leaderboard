@@ -550,12 +550,23 @@ function getProratedMonthGoalToDate_(slug) {
  * Returns { g (goals object with dowAvg), effectivePP, useManual, stretch }
  */
 function resolveGoal_(slug) {
-  var stretch = getStretchMultiplier_();
-  var manuals = getManualPPGoals_();
-  var rGoals  = getOrComputeGoals_();
-  var yGoals  = getOrComputeYoYGoals_();
-  var gr = (rGoals && rGoals[slug]) || {};
-  var gy = (yGoals && yGoals[slug]) || {};
+  return resolveEffectiveGoal_(
+    slug,
+    (getOrComputeGoals_()    || {})[slug],
+    (getOrComputeYoYGoals_() || {})[slug],
+    getStretchMultiplier_(),
+    getManualPPGoals_()
+  );
+}
+
+/**
+ * Pure effective-goal resolution: given a store's rolling goal (gr) and YoY floor (gy) objects plus the
+ * stretch multiplier and manual overrides, return { g, effectivePP, useManual, stretch }. Extracted from
+ * resolveGoal_ so the SAME logic resolves goals for ANY period — the current one (resolveGoal_) and a past
+ * one being backfilled into the ledger (backfillPeriodGoal_). No I/O; caller supplies the inputs.
+ */
+function resolveEffectiveGoal_(slug, gr, gy, stretch, manuals) {
+  gr = gr || {}; gy = gy || {};
   var rPP = gr.ppGoal || 0;
   var yPP = gy.ppGoal || 0;
   var g   = (yPP > rPP) ? gy : gr; // use the higher source for DOW shape
@@ -855,6 +866,97 @@ function refreshGoalLedger_() {
     if (e && !e.locked) { writeGoalLedger_(props, e, true); locked.push(startStr); }
   }
   return { ok: true, current: shape.periodStart, lockedNow: locked };
+}
+
+// ── As-of goal reconstruction (for backfilling periods that closed before the ledger existed) ──────
+// Recomputes a past period's goal shape from the sales cache, exactly as the live path would have at
+// that time — rolling window ending the day before the period, same-season YoY floor 52 weeks back.
+// PURE: no cache writes (unlike getOrCompute*Goals_), so a backfill never disturbs the current period.
+
+/** Aggregate dailyNetForRanges_ output into { slug: { ppGoal(avg of the ranges), dowAvg{0..6} } }. */
+function aggregateRangesToGoal_(fetched) {
+  var out = {};
+  STORES.forEach(function (store) {
+    var allByDay = {}, ppTotals = [];
+    fetched.forEach(function (byStore) {
+      var ppDay = byStore[store.slug] || {}, ppSum = 0;
+      Object.keys(ppDay).forEach(function (day) { allByDay[day] = (allByDay[day] || 0) + ppDay[day]; ppSum += ppDay[day]; });
+      ppTotals.push(ppSum);
+    });
+    var ppGoal = ppTotals.length ? Math.round(ppTotals.reduce(function (a, b) { return a + b; }, 0) / ppTotals.length) : 0;
+    var dowBuckets = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+    Object.keys(allByDay).forEach(function (day) {
+      var d = new Date(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10)), 12));
+      dowBuckets[parseInt(Utilities.formatDate(d, STORE_TZ, 'u'), 10) % 7].push(allByDay[day]);
+    });
+    var flatDaily = ppGoal > 0 ? Math.round(ppGoal / PP_DAYS) : 0;
+    var dowAvg = {};
+    for (var d = 0; d <= 6; d++) {
+      var vals = dowBuckets[d];
+      dowAvg[d] = vals.length ? Math.round(vals.reduce(function (a, b) { return a + b; }, 0) / vals.length) : flatDaily;
+    }
+    out[store.slug] = { ppGoal: ppGoal, dowAvg: dowAvg };
+  });
+  return out;
+}
+
+/** Rolling 12-PP goal shape AS OF a period starting ppStartMs (mirrors getOrComputeGoals_, cache-free). */
+function rollingGoalShapeAsOf_(ppStartMs, PP_MS) {
+  var ranges = [];
+  for (var i = 12; i >= 1; i--) {
+    var fromMs = ppStartMs - i * PP_MS;
+    ranges.push({ fromUTC: new Date(fromMs).toISOString(), toUTC: new Date(fromMs + PP_MS - 1).toISOString() });
+  }
+  return aggregateRangesToGoal_(dailyNetForRanges_(ranges));
+}
+
+/** Same-season YoY floor shape AS OF a period starting ppStartMs (mirrors getOrComputeYoYGoals_, cache-free). */
+function yoyGoalShapeAsOf_(ppStartMs, PP_MS) {
+  var yoyBaseMs = ppStartMs - 364 * 24 * 60 * 60 * 1000;   // 52 weeks back, DOW-aligned
+  var ranges = [];
+  for (var i = -3; i <= 2; i++) {
+    var f1 = yoyBaseMs + i * PP_MS;
+    ranges.push({ fromUTC: new Date(f1).toISOString(), toUTC: new Date(f1 + PP_MS - 1).toISOString() });
+  }
+  return aggregateRangesToGoal_(dailyNetForRanges_(ranges));
+}
+
+/**
+ * Backfill one closed period's frozen goal into the ledger, reconstructed as-of. Writes LOCKED (it's a
+ * closed period). Skips if already present + locked. Manual overrides + stretch are STANDING values, so
+ * the current ones are used (a period that just closed almost certainly had the same override in effect).
+ */
+function backfillPeriodGoal_(periodStart) {
+  var props = getProps_();
+  var existing = getFrozenPeriodGoal_(periodStart);
+  if (existing && existing.locked) return { ok: true, skipped: 'already locked', periodStart: periodStart };
+
+  var PP_MS     = currentPPStart_(props).PP_MS;
+  var ppStartMs = ptDateToUtcMs_(periodStart);
+  var gr = rollingGoalShapeAsOf_(ppStartMs, PP_MS);
+  var gy = yoyGoalShapeAsOf_(ppStartMs, PP_MS);
+  var stretch = getStretchMultiplier_();
+  var manuals = getManualPPGoals_();
+
+  var stores = {};
+  STORES.forEach(function (s) {
+    var res = resolveEffectiveGoal_(s.slug, gr[s.slug], gy[s.slug], stretch, manuals);
+    stores[s.slug] = {
+      periodTotal: Math.round(res.effectivePP || 0),
+      dowAvg:      normDow_(res.g && res.g.dowAvg),
+      source:      res.useManual ? 'manual' : 'auto',
+      stretch:     res.stretch || 0
+    };
+  });
+  var entry = {
+    periodStart: periodStart,
+    periodEnd:   Utilities.formatDate(new Date(ppStartMs + PP_MS - 1), STORE_TZ, 'yyyy-MM-dd'),
+    stores:      stores,
+    computedAt:  new Date().toISOString(),
+    backfilled:  true
+  };
+  writeGoalLedger_(props, entry, true);
+  return { ok: true, periodStart: periodStart, entry: entry };
 }
 
 /**

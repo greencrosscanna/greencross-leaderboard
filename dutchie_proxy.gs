@@ -257,6 +257,12 @@ function doGet(e) {
       _lg.currentShape = getFrozenPeriodGoal_(_lg.current);
       return jsonOut(_lg, params.callback);
     }
+    // Backfill a closed period's frozen goal (reconstructed as-of), locked. ?pp=yyyy-mm-dd (period start).
+    if (params.action === 'goalbackfill') {
+      requireRole_(auth, ['owner']);
+      if (!params.pp) return jsonOut({ ok: false, error: 'need pp=yyyy-mm-dd (period start)' }, params.callback);
+      return jsonOut(backfillPeriodGoal_(params.pp), params.callback);
+    }
 
 
     // ── Director endpoints ─────────────────────────────────
