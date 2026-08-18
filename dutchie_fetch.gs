@@ -129,6 +129,18 @@ function fetchStoreTransactions_(storeSlug, fromUTC, toUTC) {
 // average gives a stable, natural curve. Still normalizes to sum 1.0.
 var HOURLY_DIST_WEEKS = 8;
 
+/** Cache-ONLY read of today's same-DOW hourly-target shape (NO Dutchie fetch). Returns the cached dist or
+ *  null. The KIOSK uses this so it never blocks on the cold multi-fetch — the warmer (primeHourlyDist_ via
+ *  refreshDirectorCache) populates the cache proactively, so the shape is known going into the day. */
+function getHourlyDistCached_(store) {
+  try {
+    const cache = JSON.parse(PropertiesService.getScriptProperties().getProperty(GC_HOURLY_DIST_KEY) || '{}');
+    const now   = ptNow_();
+    const dow   = new Date(ptDateToUtcMs_(now.dateStr)).getDay();
+    return cache[store.slug + ':' + dow + ':' + now.dateStr] || null;
+  } catch (e) { return null; }
+}
+
 /** 3-point weighted moving average over the open hours (center weight 2, neighbors 1) to de-noise the
  *  hourly shape without flattening the real peak. Returns a new { hour: value } map. */
 function smoothHourly_(sums) {

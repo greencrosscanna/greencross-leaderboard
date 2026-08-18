@@ -936,16 +936,17 @@ function getStoreToday(store, params) {
     });
   }
 
-  // Per-hour targets: scale daily goal by same-DOW historical hourly weights.
-  // Falls back to flat (dailyGoal / numHours) if no historical data available.
+  // Per-hour targets: scale daily goal by the same-DOW historical shape. Cache-ONLY read so the kiosk
+  // NEVER pays the cold multi-fetch (that was the 60s+ load) — the warmer primes the shape going into the
+  // day. If the shape isn't warm yet (e.g. right after a deploy), fall back to FLAT targets so the line is
+  // never missing and the load stays instant; it fills in with the real curve on the next warm.
   let hourlyTargets = null;
   try {
-    const dist = getHourlyDist_(store);
-    if (dist) {
-      hourlyTargets = [];
-      for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
-        hourlyTargets.push(Math.round(dailyGoal * (dist[h] || 0)));
-      }
+    const dist = getHourlyDistCached_(store);
+    const _nH  = STORE_CLOSE_HOUR - STORE_OPEN_HOUR;
+    hourlyTargets = [];
+    for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
+      hourlyTargets.push(dist ? Math.round(dailyGoal * (dist[h] || 0)) : Math.round(dailyGoal / _nH));
     }
   } catch(e) {
     Logger.log('hourlyTargets error: ' + e);

@@ -106,6 +106,14 @@ function buildDirectorAll_(period, hardRefresh) {
  */
 function refreshDirectorCache() {
   const cache = CacheService.getScriptCache();
+
+  // Precompute the per-store hourly-target SHAPE for today so the kiosk "by hour" chart never waits on
+  // it (it's pure same-DOW history — known going into the day). primeHourlyDist_ batches all stores in ONE
+  // fetchAll and no-ops once warm, so this warms the new day within minutes of midnight and re-warms fast
+  // after a deploy/cache-clear. Without it, the FIRST kiosk load of a store each morning paid the cold
+  // multi-fetch cost (60s+). Cheap here (background trigger); saves the staff-facing wait.
+  try { primeHourlyDist_(STORES); } catch (e) { Logger.log('refreshDirectorCache: primeHourlyDist_ error: ' + e.message); }
+
   const periods = ['mtd', 'pp'];
   // Uncomment to also pre-warm the PP cache:
   // periods.push('pp');
