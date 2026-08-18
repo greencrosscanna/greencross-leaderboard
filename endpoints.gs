@@ -436,17 +436,20 @@ function getDirectorStores(params, pre) {
     const periodGoal = getPeriodGoal_(store.slug, period, range);
     const vsplan     = periodGoal > 0 ? r3_((agg.sales - periodGoal) / periodGoal) : 0;
 
-    // Pace for today: (revenue / goal) at current time fraction (PT, DST-aware)
+    // Pace for today: (revenue / goal) at DOW-weighted expected-so-far (matches the store's real
+    // hourly curve, kiosk, and Standings — NOT linear clock time, so a slow morning doesn't read as
+    // behind). Falls back to linear dayFrac if the hourly curve isn't warm yet.
     const { hour: nowLocalHour, minute: nowLocalMinute } = ptHourNow_();
     const elapsed      = Math.max(0, Math.min(nowLocalHour + nowLocalMinute / 60 - STORE_OPEN_HOUR, STORE_HOURS));
     const dayFrac      = elapsed / STORE_HOURS;
-    const paceGoal     = dailyGoal * dayFrac;
+    const expectedFrac = expectedSalesFrac_(store, nowLocalHour, nowLocalMinute, dayFrac);
+    const paceGoal     = dailyGoal * expectedFrac;
     const todayPace    = paceGoal > 0.5 ? r3_((aggToday.sales - paceGoal) / paceGoal) : 0;
 
-    // Projected EOD: extrapolate current run rate; requires 2+ hours of data
+    // Projected EOD: extrapolate along the DOW-weighted curve; requires 2+ hours of data
     const MIN_PROJ_HOURS = 2;
-    const projectedRevenue = (elapsed >= MIN_PROJ_HOURS && dayFrac > 0)
-      ? Math.round(aggToday.sales / dayFrac) : 0;
+    const projectedRevenue = (elapsed >= MIN_PROJ_HOURS && expectedFrac > 0.02)
+      ? Math.round(aggToday.sales / expectedFrac) : 0;
     const projectedPace    = (projectedRevenue > 0 && dailyGoal > 0)
       ? r3_((projectedRevenue - dailyGoal) / dailyGoal) : null;
 
