@@ -90,7 +90,7 @@ function buildDirectorAll_(period, hardRefresh) {
 
   const summary       = getDirectorSummary(params, { byStoreAgg, prevByStoreAgg });
   const stores        = getDirectorStores(params,  { byStoreAgg, byStoreToday, byStore30d, storeTrends });
-  const staff         = getDirectorStaff(params,   { byStoreAgg, byStore30d });
+  const staff         = getDirectorStaff(params,   { byStoreAgg, byStore30d, byStoreToday });
   const alerts        = getDirectorAlerts(         { byStoreAgg: byStoreMTDAgg });
   const today         = getDirectorToday(byStoreToday);
   const avatarConfigs = getAvatarConfigs_();

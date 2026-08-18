@@ -575,6 +575,25 @@ function getDirectorStaff(params, pre) {
     });
   });
 
+  // Per-employee TODAY aggregation (for the Top Performers "Today" tab) — from byStoreToday,
+  // keyed the same way as the period aggregation so it lines up per employee. Period-independent,
+  // so it rides along in every directorall payload (MTD + PP) and the tab needs no extra fetch.
+  const byStoreToday = pre.byStoreToday || {};
+  const todayByEmp = {};
+  STORES.forEach(function(store) {
+    const aggT = aggregateTransactions_(byStoreToday[store.slug] || []);
+    Object.values(aggT.byEmployee).forEach(function(emp) {
+      const key = emp.name.toLowerCase().replace(/\s+/g, '_');
+      if (_dirExcluded.has(nameToKey_(emp.name))) return;
+      if (!todayByEmp[key]) todayByEmp[key] = { sales: 0, transactions: 0, items: 0, discountsBdt: 0, subtotal: 0 };
+      todayByEmp[key].sales        += emp.sales;
+      todayByEmp[key].transactions += emp.transactions;
+      todayByEmp[key].items        += emp.items;
+      todayByEmp[key].discountsBdt += emp.discountsBdt;
+      todayByEmp[key].subtotal     += emp.subtotal;
+    });
+  });
+
   // Re-derive metrics and apply tags
   const _roles = getRoles_();
   const staffList = Object.values(globalEmps).map(function(emp) {
@@ -583,6 +602,7 @@ function getDirectorStaff(params, pre) {
     const disc   = emp.subtotal     > 0 ? r3_(emp.discountsBdt / emp.subtotal) : 0;  // discretionary basis (excl. loyalty/promos)
     const empKey = emp.name.toLowerCase().replace(/\s+/g, '_');
     const trend  = trendFromByDay_(empDailyBuckets[empKey] || {}, { useAverage: true });
+    const _t     = todayByEmp[empKey] || { sales: 0, transactions: 0, items: 0, discountsBdt: 0, subtotal: 0 };
 
     const tags = [];
     const staffTagTooltips = [];
@@ -608,6 +628,13 @@ function getDirectorStaff(params, pre) {
       trend30d:      trend.trend30d,
       tags:          tags,
       tagTooltips:   staffTagTooltips,
+      today: {
+        sales:         _t.sales,
+        transactions:  _t.transactions,
+        avgOrderValue: _t.transactions > 0 ? r2_(_t.sales / _t.transactions) : 0,
+        avgUPT:        _t.transactions > 0 ? r1_(_t.items / _t.transactions)  : 0,
+        discountRate:  _t.subtotal     > 0 ? r3_(_t.discountsBdt / _t.subtotal) : 0,
+      },
     };
   });
 

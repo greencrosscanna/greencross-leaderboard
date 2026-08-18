@@ -3767,7 +3767,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 <!-- Resilient GX Core client (retries the Drive-HTML two-hop failure). Same-origin (org Pages). -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-client.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.499';
+window.GC = window.GC || {}; GC.VERSION = 'v1.500';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -5573,9 +5573,14 @@ var director = (function() {
   var _staffSortDir  = GC.state.get('dir.staffSortDir',  -1);
   var _staffPeriod   = GC.state.get('dir.staffPeriod',   'pp');   // default to Pay Period
   var _staffPpData   = null;   // lazy-loaded, never persisted
+  var _staffMtdData  = null;   // MTD staff kept for Today-tab mapping, never persisted
   var _staffPpRange  = null;   // derived from data, never persisted
   var _staffPpLoading = false; // in-flight guard (init may fire twice on cache-warm)
   var _storePeriod   = GC.state.get('dir.storePeriod',   'pp');   // default to Pay Period
+  // Today is a click-to-glance view, never the landing state: a persisted 'today' resets to Pay
+  // Period on load, so both tables always DEFAULT to Pay Period (Today survives in-session refreshes only).
+  if (_staffPeriod === 'today') _staffPeriod = 'pp';
+  if (_storePeriod === 'today') _storePeriod = 'pp';
   var _storeSortKey  = GC.state.get('dir.storeSortKey',  'vsplan');
   var _storeSortDir  = GC.state.get('dir.storeSortDir',  -1);
   var _storePpRange  = null;   // derived from data, never persisted
@@ -6039,6 +6044,8 @@ var director = (function() {
         btn.textContent = 'MTD';
       } else if (period === 'pp') {
         btn.textContent = _staffPpRange ? 'Pay Period · ' + _staffPpRange : 'Pay Period';
+      } else if (period === 'today') {
+        btn.textContent = 'Today';
       }
     });
   }
@@ -6060,6 +6067,7 @@ var director = (function() {
   }
 
   function renderStaffTable(staff, range) {
+    if (_staffPeriod === 'today') staff = buildTodayStaff(staff);
     var filtered = applyStaffFilters(staff);
     var maxSales = filtered.length ? filtered[0].sales : 1;
     var total    = staff.length;  // rank pill relative to full list
@@ -6094,14 +6102,14 @@ var director = (function() {
         + '</tr>';
     }).join('');
 
-    var mtdActive = _staffPeriod === 'mtd';
     return '<div class="section-head">'
       + '<h2>Top Performers · All Stores</h2>'
       + '<span class="sh-sep">/</span>'
       + '<span class="sh-meta">Across ' + total + ' active staff</span>'
       + '<span class="staff-period-tabs">'
-      +   '<button class="staff-period-tab' + (!mtdActive ? ' active' : '') + '" data-staff-period="pp">' + (_staffPpRange ? 'Pay Period · ' + e(_staffPpRange) : 'Pay Period') + '</button>'
-      +   '<button class="staff-period-tab' + (mtdActive  ? ' active' : '') + '" data-staff-period="mtd">MTD</button>'
+      +   '<button class="staff-period-tab' + (_staffPeriod === 'today' ? ' active' : '') + '" data-staff-period="today">Today</button>'
+      +   '<button class="staff-period-tab' + (_staffPeriod === 'pp' ? ' active' : '') + '" data-staff-period="pp">' + (_staffPpRange ? 'Pay Period · ' + e(_staffPpRange) : 'Pay Period') + '</button>'
+      +   '<button class="staff-period-tab' + (_staffPeriod === 'mtd' ? ' active' : '') + '" data-staff-period="mtd">MTD</button>'
       + '</span>'
       + '</div>'
       + '<table class="gc-table" id="staffTable">'
@@ -6364,6 +6372,7 @@ var director = (function() {
 
     var stores = (data.stores && data.stores.stores) || [];
     var staff  = (data.staff && data.staff.staff) || [];
+    _staffMtdData = staff;   // MTD staff — base for the Today-tab remap
     var sum    = data.summary;
     var alerts = data.alerts;
     var today  = data.today || {};
@@ -6426,12 +6435,36 @@ var director = (function() {
   }
 
   // ── Re-render just the staff table body ───────────────
+  // Map the staff payload onto each employee's `today` sub-object so Top Performers can show TODAY's
+  // sold / txns / AOV / UPT / discount with no second fetch — today data rides along in directorall.
+  function buildTodayStaff(base) {
+    base = base || _staffMtdData || (_data && _data.staff && _data.staff.staff) || [];
+    var mapped = base.map(function(s) {
+      var t = s.today || {};
+      return Object.assign({}, s, {
+        sales:         t.sales || 0,
+        transactions:  t.transactions || 0,
+        avgOrderValue: t.avgOrderValue || 0,
+        avgUPT:        t.avgUPT || 0,
+        discountRate:  t.discountRate || 0,
+        tags:          (s.tags || []).filter(function(x) { return x !== 'top'; }),   // re-badge for today below
+        rank:          0
+      });
+    });
+    // Rank by today's sales; badge only today's top-3 who actually sold.
+    mapped.sort(function(a, b) { return (b.sales || 0) - (a.sales || 0); });
+    mapped.forEach(function(s, i) { s.rank = i + 1; if (i < 3 && s.transactions > 0) s.tags.push('top'); });
+    return mapped;
+  }
+
   function refreshStaffTable() {
     if (!_data) return;
     var tbody = document.getElementById('staffTableBody');
     if (!tbody) return;
 
-    var staff    = (_data.staff && _data.staff.staff) || [];
+    var staff    = _staffPeriod === 'today' ? buildTodayStaff()
+                 : _staffPeriod === 'mtd'   ? (_staffMtdData || (_data.staff && _data.staff.staff) || [])
+                 :                            (_staffPpData  || (_data.staff && _data.staff.staff) || []);
     var filtered = applyStaffFilters(staff);
 
     filtered.forEach(function(s, i) {
@@ -6762,7 +6795,10 @@ var director = (function() {
           _staffPeriod = newPeriod;
           GC.state.set('dir.staffPeriod', _staffPeriod);
           syncPeriodTabs();
-          if (newPeriod === 'mtd') {
+          if (newPeriod === 'today') {
+            // Today rides along in the payload — remap + render instantly, no fetch
+            refreshStaffTable();
+          } else if (newPeriod === 'mtd') {
             // Restore MTD — data already in _data; reset staff to original MTD set
             if (_data.staff && _data.staff.staff) {
               var tbody = document.getElementById('staffTableBody');
