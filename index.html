@@ -3767,7 +3767,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 <!-- Resilient GX Core client (retries the Drive-HTML two-hop failure). Same-origin (org Pages). -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-client.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.489';
+window.GC = window.GC || {}; GC.VERSION = 'v1.490';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -10730,20 +10730,27 @@ var settings = (function() {
     var saveGoalsBtn = document.getElementById('saveGoalsBtn');
     if (saveGoalsBtn) {
       saveGoalsBtn.addEventListener('click', function() {
+        var stretch = parseFloat(stretchSelect ? stretchSelect.value : 0) || 0;
+        var mult    = 1 + stretch;
         var inputs  = document.querySelectorAll('.settings-pp-override');
         var payload = {};
         inputs.forEach(function(inp) {
           var slug = inp.getAttribute('data-slug');
-          var raw  = inp.value.replace(/[^0-9.]/g, '');
-          var val  = parseFloat(raw);
-          if (slug) payload[slug] = (val > 0) ? val : 0;
+          if (!slug) return;
+          var val          = parseFloat(inp.value.replace(/[^0-9.]/g, ''));
+          var baseComputed = parseFloat(inp.getAttribute('data-base-computed-pp')) || 0;
+          var computedPP   = Math.round(baseComputed * mult);
+          // Persist ONLY a TRUE override: a positive value that DIFFERS from this store's computed goal (at
+          // the current stretch). A value equal to computed = the user didn't override it → send 0 (clear).
+          // Without this, "Save Goal Overrides" turned every store's pre-filled computed value into a phantom
+          // manual override — which later un-masked as the goal drifted (the River gold-border bug, 2026-08-18).
+          payload[slug] = (val > 0 && Math.abs(val - computedPP) > 1) ? val : 0;
         });
 
         saveGoalsBtn.disabled = true;
         saveGoalsBtn.textContent = 'Saving…';
         if (recalcStatus) { recalcStatus.textContent = ''; recalcStatus.className = 'settings-save-status'; }
 
-        var stretch = parseFloat(stretchSelect ? stretchSelect.value : 0) || 0;
         // Save stretch first, then manual goals — both committed together on one button press
         GC.api.gasCall('savesettings', { stretch: stretch }).catch(function() {});
         GC.api.gasCall('savemanualgoals', { goals: JSON.stringify(payload) })

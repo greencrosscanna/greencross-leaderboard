@@ -274,6 +274,18 @@ function doGet(e) {
       try { return jsonOut({ ok: true, central: GXCore.getPeriodGoals(params.store || '', params.pp || '') }, params.callback); }
       catch (e) { return jsonOut({ ok: false, error: String(e) }, params.callback); }
     }
+    // Inspect/clear stored PP goal overrides. No slug → returns the current map (read-only). ?slug=river →
+    // removes that store's override (fixes a phantom override that the settings UI saved by mistake).
+    if (params.action === 'clearmanualgoal') {
+      requireRole_(auth, ['owner','director']);
+      var _mp = getProps_();
+      var _m = {}; try { _m = JSON.parse(_mp.getProperty(GC_MANUAL_PP_KEY) || '{}'); } catch (e) {}
+      if (!params.slug) return jsonOut({ ok: true, current: _m }, params.callback);
+      var _had = _m.hasOwnProperty(params.slug);
+      delete _m[params.slug];
+      _mp.setProperty(GC_MANUAL_PP_KEY, JSON.stringify(_m));
+      return jsonOut({ ok: true, cleared: params.slug, had: _had, remaining: _m }, params.callback);
+    }
 
 
     // ── Director endpoints ─────────────────────────────────
