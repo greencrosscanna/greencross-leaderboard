@@ -147,6 +147,15 @@ function getHourlyDistCached_(store) {
  * so a slow morning isn't read as "behind." Falls back to the linear dayFrac when the curve isn't warm.
  */
 function expectedSalesFrac_(store, nowHour, nowMinute, dayFrac) {
+  // Primary: GX Core shared pacing engine (cache-only, linear fallback when cold — verified to match our
+  // local values to the decimal). One source of truth across Leaderboard + Sales.
+  try {
+    if (typeof GXCore !== 'undefined' && typeof GXCore.expectedSalesFrac === 'function') {
+      const f = GXCore.expectedSalesFrac(store.slug, nowHour, nowMinute, dayFrac);
+      if (typeof f === 'number' && isFinite(f) && f > 0) return f;
+    }
+  } catch (e) { Logger.log('expectedSalesFrac_: Core call failed, using local — ' + e); }
+  // Local fallback (cache-only; reads the Core-mirrored local cache): linear dayFrac when cold.
   const dist = getHourlyDistCached_(store);
   if (!dist) return dayFrac;
   let ef = 0;
@@ -170,12 +179,27 @@ function smoothHourly_(sums) {
 }
 
 /**
- * Returns hourly revenue weights for a store based on the last several same-DOW days (HOURLY_DIST_WEEKS).
+ * Same-DOW hourly shape { 9: 0.045, … } summing to 1.0. Primary: GX Core shared pacing engine
+ * (getHourlyShape — ported verbatim from this file, values verified identical). Falls back to the
+ * local Dutchie compute below if Core is unavailable. Consolidates the shape source across apps.
+ */
+function getHourlyDist_(store) {
+  try {
+    if (typeof GXCore !== 'undefined' && typeof GXCore.getHourlyShape === 'function') {
+      const shape = GXCore.getHourlyShape(store.slug);
+      if (shape && Object.keys(shape).length) return shape;
+    }
+  } catch (e) { Logger.log('getHourlyDist_: Core getHourlyShape failed, using local — ' + e); }
+  return getHourlyDistLocal_(store);
+}
+
+/**
+ * LOCAL fallback: hourly revenue weights from the last several same-DOW days (HOURLY_DIST_WEEKS).
  * Result: { 9: 0.045, 10: 0.082, ... 22: 0.031 } — fractions that sum to 1.0.
  * Cached per store+DOW per calendar day; the first call of each day fires the
  * parallel Dutchie requests, subsequent calls are instant reads from cache.
  */
-function getHourlyDist_(store) {
+function getHourlyDistLocal_(store) {
   const props = PropertiesService.getScriptProperties();
   let cache = {};
   try { cache = JSON.parse(props.getProperty(GC_HOURLY_DIST_KEY) || '{}'); } catch(e) {}
@@ -261,6 +285,38 @@ function getHourlyDist_(store) {
  * for today are skipped. Safe to call every director load — it's a no-op once warm.
  */
 function primeHourlyDist_(stores) {
+  // Warm the GX Core shared shape engine (getHourlyShape fetches + caches per store:dow:date in Core) AND
+  // mirror each shape into our LOCAL cache so the kiosk's cache-only reader (getHourlyDistCached_) stays
+  // instant. One fetch path — Core's — so we no longer pull the same-DOW history from Dutchie ourselves.
+  try {
+    if (typeof GXCore !== 'undefined' && typeof GXCore.getHourlyShape === 'function') {
+      const props = PropertiesService.getScriptProperties();
+      let cache = {};
+      try { cache = JSON.parse(props.getProperty(GC_HOURLY_DIST_KEY) || '{}'); } catch (e) {}
+      const now = ptNow_();
+      const dow = new Date(ptDateToUtcMs_(now.dateStr)).getDay();
+      let wrote = false;
+      (stores || []).forEach(function(store) {
+        const ck = store.slug + ':' + dow + ':' + now.dateStr;
+        if (cache[ck]) return;   // already mirrored today
+        try {
+          const shape = GXCore.getHourlyShape(store.slug);
+          if (shape && Object.keys(shape).length) { cache[ck] = shape; wrote = true; }
+        } catch (e) {}
+      });
+      if (wrote) {
+        const keys = Object.keys(cache).sort();
+        while (keys.length > 60) delete cache[keys.shift()];
+        try { props.setProperty(GC_HOURLY_DIST_KEY, JSON.stringify(cache)); } catch (e) {}
+      }
+      return;
+    }
+  } catch (e) { Logger.log('primeHourlyDist_: Core warm failed, using local — ' + e); }
+  primeHourlyDistLocal_(stores);
+}
+
+/** LOCAL fallback batch warmer: pulls the same-DOW history from Dutchie directly in one fetchAll. */
+function primeHourlyDistLocal_(stores) {
   const props = PropertiesService.getScriptProperties();
   let cache = {};
   try { cache = JSON.parse(props.getProperty(GC_HOURLY_DIST_KEY) || '{}'); } catch(e) {}

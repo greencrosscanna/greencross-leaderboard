@@ -299,21 +299,6 @@ function doGet(e) {
       PropertiesService.getScriptProperties().deleteProperty(GC_HOURLY_DIST_KEY);
       return jsonOut({ ok: true, busted: 'GC_HOURLY_DIST_KEY' }, params.callback);
     }
-    // TEMP: probe the GX Core shared pacing engine (v128) before migrating — confirms the arg
-    // shape (slug vs store object) and that Core's shape/frac match our local values. ?slug=commercial
-    if (params.action === 'pacecoretest') {
-      requireRole_(auth, ['owner','director']);
-      var _pslug  = params.slug || 'commercial';
-      var _pstore = STORES.filter(function(s){ return s.slug === _pslug; })[0] || { slug: _pslug };
-      var _o = { slug: _pslug, typeShape: (typeof GXCore.getHourlyShape), typeFrac: (typeof GXCore.expectedSalesFrac) };
-      try { _o.shape_slug = GXCore.getHourlyShape(_pslug); }               catch (e) { _o.shape_slug_err = String(e); }
-      try { _o.shape_obj  = GXCore.getHourlyShape(_pstore); }              catch (e) { _o.shape_obj_err  = String(e); }
-      try { _o.frac_slug  = GXCore.expectedSalesFrac(_pslug, 15, 0, 0.5); }  catch (e) { _o.frac_slug_err = String(e); }
-      try { _o.frac_obj   = GXCore.expectedSalesFrac(_pstore, 15, 0, 0.5); } catch (e) { _o.frac_obj_err  = String(e); }
-      try { _o.local_shape = getHourlyDist_(_pstore); }                     catch (e) { _o.local_shape_err = String(e); }
-      try { _o.local_frac  = expectedSalesFrac_(_pstore, 15, 0, 0.5); }     catch (e) { _o.local_frac_err  = String(e); }
-      return jsonOut({ ok: true, test: _o }, params.callback);
-    }
     // Inspect/clear stored PP goal overrides. No slug → returns the current map (read-only). ?slug=river →
     // removes that store's override (fixes a phantom override that the settings UI saved by mistake).
     if (params.action === 'clearmanualgoal') {
