@@ -262,8 +262,9 @@ function getDirectorToday(byStoreToday) {
     : _remH + ':' + String(_remM).padStart(2, '0');
 
   // Aggregate revenue + goals across all stores
-  let totalRevenue = 0;
-  let totalGoal    = 0;
+  let totalRevenue  = 0;
+  let totalGoal     = 0;
+  let totalPaceGoal = 0;   // DOW-weighted expected-so-far, summed per store (NOT linear clock time)
   const combinedHourMap = {};  // hour → { revenue, count }
 
   STORES.forEach(function(store) {
@@ -271,8 +272,9 @@ function getDirectorToday(byStoreToday) {
     const agg      = aggregateTransactions_(txns);
     const dailyGoal = getDailyGoal_(store.slug);
 
-    totalRevenue += agg.sales;
-    totalGoal    += dailyGoal;
+    totalRevenue  += agg.sales;
+    totalGoal     += dailyGoal;
+    totalPaceGoal += dailyGoal * expectedSalesFrac_(store, nowHour, nowMinute, dayFrac);
 
     // Merge hourly buckets
     const hm = aggregateByHour_(txns);
@@ -284,15 +286,18 @@ function getDirectorToday(byStoreToday) {
   });
 
   const pctToGoal  = totalGoal > 0 ? r3_(totalRevenue / totalGoal) : 0;
-  const paceGoal   = totalGoal * dayFrac;
+  // DOW-weighted chain pace (matches each store's hourly curve + Standings) — not linear clock time, so a
+  // slow morning doesn't read as behind. Fraction of the day expected so far = totalPaceGoal / totalGoal.
+  const paceGoal   = totalPaceGoal > 0 ? totalPaceGoal : totalGoal * dayFrac;
+  const _expFrac   = totalGoal > 0 ? paceGoal / totalGoal : dayFrac;
   const pace       = paceGoal > 0.5 ? r3_((totalRevenue - paceGoal) / paceGoal) : 0;
   const paceGap    = paceGoal > 0.5 ? r2_(totalRevenue - paceGoal) : 0;  // + ahead, − behind
   const toGo       = Math.max(0, totalGoal - totalRevenue);
   const MIN_PROJ_HOURS = 2;
   const projectedRevenue = storeClosed
     ? totalRevenue
-    : elapsedHours >= MIN_PROJ_HOURS
-      ? Math.round(totalRevenue / dayFrac)
+    : (elapsedHours >= MIN_PROJ_HOURS && _expFrac > 0.02)
+      ? Math.round(totalRevenue / _expFrac)
       : 0;
 
   // Build hourly array (same shape as getStoreToday hourly)
@@ -885,10 +890,15 @@ function getStoreToday(store, params) {
     ? getDailyGoalForDow_(store.slug, yesterdayDow)
     : getDailyGoal_(store.slug);
 
-  // Pace & projection
+  // Pace & projection — DOW-WEIGHTED so a slow morning doesn't read as "behind." Expected-so-far follows
+  // the store's historical hourly sales curve (same shape as the by-hour target notches + Standings pace),
+  // NOT linear clock time. Mornings are slow and afternoons busy, so linear time over-expects early and
+  // makes a team feel grossly behind when they're actually on track — which demotivates. Falls back to
+  // linear time if the hourly curve isn't warm yet.
   const elapsedHours = Math.max(0, Math.min(nowHour + nowMinute / 60 - STORE_OPEN_HOUR, STORE_HOURS));
   const dayFrac      = STORE_HOURS > 0 ? elapsedHours / STORE_HOURS : 0;
-  const paceGoal     = dailyGoal * dayFrac;
+  const expectedFrac = isPreOpen ? dayFrac : expectedSalesFrac_(store, nowHour, nowMinute, dayFrac);
+  const paceGoal     = dailyGoal * expectedFrac;
   // Pre-open: pace = how far above/below yesterday's goal the final result was
   const pace = isPreOpen
     ? (dailyGoal > 0 ? r3_((agg.sales - dailyGoal) / dailyGoal) : 0)
@@ -905,12 +915,14 @@ function getStoreToday(store, params) {
     : storeClosed                       ? 'Closed'
     : _remFmt;
 
-  // Project EOD revenue
+  // Project EOD revenue on the DOW-weighted curve (sales ÷ expected-fraction-by-now) so a slow morning
+  // projects to the real finish, not a linear under-shoot that makes the goal look out of reach. Guard a
+  // tiny expectedFrac early in the day (paired with the ≥2h gate) to avoid a wild projection.
   const MIN_PROJ_HOURS = 2;
   const projectedRevenue = (isPreOpen || storeClosed)
     ? agg.sales
-    : elapsedHours >= MIN_PROJ_HOURS
-      ? Math.round(agg.sales / dayFrac)
+    : (elapsedHours >= MIN_PROJ_HOURS && expectedFrac > 0.02)
+      ? Math.round(agg.sales / expectedFrac)
       : 0;
 
   // Hourly bar chart. FREEZE completed hours so a past hour's bar never changes after it ends

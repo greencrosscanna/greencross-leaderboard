@@ -141,6 +141,22 @@ function getHourlyDistCached_(store) {
   } catch (e) { return null; }
 }
 
+/**
+ * DOW-weighted fraction of the day's sales expected by now (nowHour:nowMinute), from the store's historical
+ * hourly curve — completed hours in full + a partial current hour. This is what pace + projection should use
+ * so a slow morning isn't read as "behind." Falls back to the linear dayFrac when the curve isn't warm.
+ */
+function expectedSalesFrac_(store, nowHour, nowMinute, dayFrac) {
+  const dist = getHourlyDistCached_(store);
+  if (!dist) return dayFrac;
+  let ef = 0;
+  for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
+    if (h < nowHour)        ef += (dist[h] || 0);
+    else if (h === nowHour) ef += (dist[h] || 0) * (nowMinute / 60);
+  }
+  return ef > 0 ? ef : dayFrac;
+}
+
 /** 3-point weighted moving average over the open hours (center weight 2, neighbors 1) to de-noise the
  *  hourly shape without flattening the real peak. Returns a new { hour: value } map. */
 function smoothHourly_(sums) {
