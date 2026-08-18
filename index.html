@@ -3767,7 +3767,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 <!-- Resilient GX Core client (retries the Drive-HTML two-hop failure). Same-origin (org Pages). -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-client.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.493';
+window.GC = window.GC || {}; GC.VERSION = 'v1.494';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -8342,6 +8342,10 @@ GC.views.renderKiosk = function(slug) {
       var data = kiosk.normalize(rawData);
       app.innerHTML = kiosk.render(data, slug);
       kiosk.init(data, slug);
+      // Fast-path the by-hour chart: if the (possibly stale-cached) initial render came up without hour
+      // targets, a standalone storetoday (~4s, cache-warm) fills them in so the bars don't sit "maxed"
+      // until the 60s poll. No-op when the first paint already had targets.
+      GC.api.fetchStoreToday(slug).then(function(td) { kiosk.refreshHourly(td); }).catch(function() {});
     })
     .catch(function(err) {
       console.error('[kiosk] fetch failed:', err);
@@ -10101,11 +10105,34 @@ var kiosk = (function() {
   }
 
   // Public API (exposed for onclick handlers)
+  // Refresh JUST the by-hour chart from a standalone storetoday (fast), so the bars get their real
+  // targets + scale right away instead of waiting for the ~60s poll. Only re-renders when targets were
+  // MISSING at first paint (a stale/target-less cache renders bars scaled to peak = the "maxed" look);
+  // if the first render already had targets this is a no-op, so there's no redundant re-animation.
+  function refreshHourly(td) {
+    if (!td) return;
+    var hadTargets = !!(_hourlyTargets && _hourlyTargets.length);
+    if (td.hourlyTargets && td.hourlyTargets.length) _hourlyTargets = td.hourlyTargets;
+    var g = (td.today && td.today.goal) || td.goal;
+    if (g) _goal = g;
+    if (hadTargets || !(_hourlyTargets && _hourlyTargets.length)) return;   // nothing new to apply
+    if (!(td.hourly && td.hourly.length)) return;
+    var heatCard = document.querySelector('.heatmap-card');
+    if (!heatCard) return;
+    var peak = td.hourly.reduce(function(best, h) {
+      if (!h.projected && (h.revenue || 0) > (best ? best.revenue : 0)) return h;
+      return best;
+    }, null);
+    heatCard.outerHTML = renderHeatmap(td.hourly, peak ? peak.hour : null, peak ? peak.revenue : 0, _goal, _hourlyTargets);
+    animateHeatmap();
+  }
+
   return {
     render:        render,
     renderLoading: renderLoading,
     init:          init,
     normalize:     normalizeKioskData_,
+    refreshHourly: refreshHourly,
     _hideRareDrop: _hideRareDrop,
   };
 
