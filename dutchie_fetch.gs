@@ -130,25 +130,22 @@ function fetchStoreTransactions_(storeSlug, fromUTC, toUTC) {
 var HOURLY_DIST_WEEKS = 8;
 
 /**
- * Map a Leaderboard store to GX Core's store_id — the key Core's getHourlyShape/expectedSalesFrac expect.
- * Our local slugs are historical (center/commercial happen to match Core's store_id, but baseline→hillsboro,
- * century→bend, portland→portland-rd, river→river-rd differ). Core's display_name equals our store `name`,
- * so we bridge display_name → store_id. Falls back to the local slug if the registry is unavailable.
+ * Map a Leaderboard app slug → GX Core store_id, the key Core's getHourlyShape/expectedSalesFrac expect.
+ * Uses the SAME centralized registry mapping as everything else (goals/snapshot/sales-join) — just the
+ * inverse of gxStoreIdToAppSlug_() — so there is one store-mapping source, not a parallel one. Falls back
+ * to the slug if the registry is cold (matches for center/commercial regardless).
  */
 var _CORE_ID_MAP = null;
 function coreStoreId_(store) {
   if (!_CORE_ID_MAP) {
     _CORE_ID_MAP = {};
     try {
-      const g = getGxStores_();
-      ((g && g.stores) || []).forEach(function(s) {
-        const dn = String(s.display_name || '').trim().toLowerCase();
-        if (dn && s.store_id) _CORE_ID_MAP[dn] = String(s.store_id);
-      });
+      const id2slug = gxStoreIdToAppSlug_();   // centralized: store_id → app slug (from Core's registry)
+      Object.keys(id2slug).forEach(function(id) { _CORE_ID_MAP[id2slug[id]] = id; });
     } catch (e) {}
   }
-  const key = String((store && (store.name || store.slug)) || '').trim().toLowerCase();
-  return (_CORE_ID_MAP && _CORE_ID_MAP[key]) || (store && store.slug) || key;
+  const slug = String((store && store.slug) || '').trim().toLowerCase();
+  return (_CORE_ID_MAP && _CORE_ID_MAP[slug]) || slug;
 }
 
 /** Cache-ONLY read of today's same-DOW hourly-target shape (NO Dutchie fetch). Returns the cached dist or
