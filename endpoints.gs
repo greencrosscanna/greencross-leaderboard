@@ -892,16 +892,45 @@ function getStoreToday(store, params) {
       ? Math.round(agg.sales / dayFrac)
       : 0;
 
-  // Hourly bar chart — when pre-open, all bars are "final" (no current/projected)
-  const maxRevenue = Math.max(1, ...Object.values(hourMap).map(h => h.revenue));
+  // Hourly bar chart. FREEZE completed hours so a past hour's bar never changes after it ends
+  // (bug: "today by hour totals changing after the period passed" — re-aggregating live let late-settling
+  // txns / in-place return adjustments shift a finished hour). The first pull after an hour completes
+  // snapshots it; later pulls read the snapshot. Only the CURRENT hour stays live; the daily total
+  // (agg.sales) still nets returns. Snapshot is per-store-per-day; yesterday's key is pruned on write.
+  const _today    = ptNow_().dateStr;
+  const _freezeK  = 'GC_HOURFREEZE_' + store.slug + '_' + _today;
+  const _props    = getProps_();
+  let _frozen = {};
+  try { _frozen = JSON.parse(_props.getProperty(_freezeK) || '{}'); } catch (e) {}
+  let _freezeDirty = false;
+
+  const dispRev = {};
+  for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
+    const liveRev = Math.round((hourMap[h] || { revenue: 0 }).revenue);
+    if (!isPreOpen && h < nowHour) {           // completed hour → serve/lock the frozen value
+      if (_frozen[h] == null) { _frozen[h] = liveRev; _freezeDirty = true; }
+      dispRev[h] = _frozen[h];
+    } else {
+      dispRev[h] = liveRev;                    // current/future/pre-open → live
+    }
+  }
+  if (_freezeDirty) {
+    try {
+      _props.setProperty(_freezeK, JSON.stringify(_frozen));
+      const _y = Utilities.formatDate(new Date(ptDateToUtcMs_(_today) - 12 * 3600000), STORE_TZ, 'yyyy-MM-dd');
+      _props.deleteProperty('GC_HOURFREEZE_' + store.slug + '_' + _y);   // prune prior day
+    } catch (e) {}
+  }
+
+  // When pre-open, all bars are "final" (no current/projected)
+  const maxRevenue = Math.max(1, ...Object.keys(dispRev).map(h => dispRev[h]));
   const hourly = [];
   for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
-    const d   = hourMap[h] || { revenue: 0, count: 0 };
     const lbl = h === 12 ? '12p' : h < 12 ? h + 'a' : (h - 12) + 'p';
     hourly.push({
       hour:      lbl,
-      revenue:   Math.round(d.revenue),
-      pct:       r1_((d.revenue / maxRevenue) * 100),
+      revenue:   dispRev[h] || 0,
+      pct:       r1_(((dispRev[h] || 0) / maxRevenue) * 100),
       current:   !isPreOpen && h === nowHour,
       projected: !isPreOpen && h > nowHour,
     });

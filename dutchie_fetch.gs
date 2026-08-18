@@ -123,10 +123,28 @@ function fetchStoreTransactions_(storeSlug, fromUTC, toUTC) {
   return filterRetailSorted_(byKey[storeSlug]);
 }
 
+// Hourly-target distribution: how many same-DOW weeks feed the shape, and a gentle smoother so the
+// per-hour target line isn't jagged. 4 weeks was too small a sample (a single odd day put a dip at,
+// e.g., 5pm below both 4pm and 6pm — the "Targets by hour" bug). 8 weeks + a 3-point weighted moving
+// average gives a stable, natural curve. Still normalizes to sum 1.0.
+var HOURLY_DIST_WEEKS = 8;
+
+/** 3-point weighted moving average over the open hours (center weight 2, neighbors 1) to de-noise the
+ *  hourly shape without flattening the real peak. Returns a new { hour: value } map. */
+function smoothHourly_(sums) {
+  var out = {};
+  for (var h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
+    var wPrev = (h > STORE_OPEN_HOUR) ? 1 : 0;
+    var wNext = (h < STORE_CLOSE_HOUR - 1) ? 1 : 0;
+    out[h] = (wPrev * (sums[h - 1] || 0) + 2 * (sums[h] || 0) + wNext * (sums[h + 1] || 0)) / (wPrev + 2 + wNext);
+  }
+  return out;
+}
+
 /**
- * Returns hourly revenue weights for a store based on the last 4 same-DOW days.
+ * Returns hourly revenue weights for a store based on the last several same-DOW days (HOURLY_DIST_WEEKS).
  * Result: { 9: 0.045, 10: 0.082, ... 22: 0.031 } — fractions that sum to 1.0.
- * Cached per store+DOW per calendar day; the first call of each day fires 4
+ * Cached per store+DOW per calendar day; the first call of each day fires the
  * parallel Dutchie requests, subsequent calls are instant reads from cache.
  */
 function getHourlyDist_(store) {
@@ -147,7 +165,7 @@ function getHourlyDist_(store) {
   const auth     = Utilities.base64Encode(storeKey + ':');
 
   const requests = [];
-  for (let w = 1; w <= 4; w++) {
+  for (let w = 1; w <= HOURLY_DIST_WEEKS; w++) {
     const fromMs = todayMs - w * 7 * MS_DAY;
     const toMs   = fromMs + MS_DAY - 1;
     const qs = 'FromDateUTC=' + encodeURIComponent(new Date(fromMs).toISOString())
@@ -189,12 +207,14 @@ function getHourlyDist_(store) {
 
   if (!hasData) return null;
 
-  const total = Object.values(hourSums).reduce((s, v) => s + v, 0);
+  const _smoothed = smoothHourly_(hourSums);
+  let total = 0;
+  for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) total += _smoothed[h];
   if (total === 0) return null;
 
   const dist = {};
   for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
-    dist[h] = Math.round((hourSums[h] || 0) / total * 10000) / 10000; // 4 dp
+    dist[h] = Math.round(_smoothed[h] / total * 10000) / 10000; // 4 dp, smoothed
   }
 
   // Cache — purge stale keys (keep ≤ 60 entries: 6 stores × 7 DOWs × ~1.4 safety)
@@ -228,7 +248,7 @@ function primeHourlyDist_(stores) {
   (stores || []).forEach(function(store) {
     if (cache[store.slug + ':' + dow + ':' + now.dateStr]) return;   // already primed today
     const auth = Utilities.base64Encode(getDutchieStoreKey_(store.slug) + ':');
-    for (let w = 1; w <= 4; w++) {
+    for (let w = 1; w <= HOURLY_DIST_WEEKS; w++) {
       const fromMs = todayMs - w * 7 * MS_DAY;
       const toMs   = fromMs + MS_DAY - 1;
       const qs = 'FromDateUTC=' + encodeURIComponent(new Date(fromMs).toISOString())
@@ -270,11 +290,12 @@ function primeHourlyDist_(stores) {
   (stores || []).forEach(function(store) {
     const hourSums = sumsByStore[store.slug];
     if (!hourSums) return;
+    const _sm = smoothHourly_(hourSums);
     let total = 0;
-    for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) total += (hourSums[h] || 0);
+    for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) total += _sm[h];
     if (total === 0) return;
     const dist = {};
-    for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) dist[h] = Math.round((hourSums[h] || 0) / total * 10000) / 10000;
+    for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) dist[h] = Math.round(_sm[h] / total * 10000) / 10000;
     cache[store.slug + ':' + dow + ':' + now.dateStr] = dist;
   });
   const keys = Object.keys(cache).sort();

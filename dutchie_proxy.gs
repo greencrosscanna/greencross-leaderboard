@@ -274,6 +274,13 @@ function doGet(e) {
       try { return jsonOut({ ok: true, central: GXCore.getPeriodGoals(params.store || '', params.pp || '') }, params.callback); }
       catch (e) { return jsonOut({ ok: false, error: String(e) }, params.callback); }
     }
+    // Bust the cached hourly-target distribution so it recomputes (e.g., after widening the sample /
+    // adding smoothing). Next storetoday/director load re-fetches the same-DOW shape.
+    if (params.action === 'bustdist') {
+      requireRole_(auth, ['owner','director']);
+      PropertiesService.getScriptProperties().deleteProperty(GC_HOURLY_DIST_KEY);
+      return jsonOut({ ok: true, busted: 'GC_HOURLY_DIST_KEY' }, params.callback);
+    }
     // Inspect/clear stored PP goal overrides. No slug → returns the current map (read-only). ?slug=river →
     // removes that store's override (fixes a phantom override that the settings UI saved by mistake).
     if (params.action === 'clearmanualgoal') {
