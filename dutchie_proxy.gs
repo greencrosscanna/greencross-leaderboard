@@ -263,6 +263,17 @@ function doGet(e) {
       if (!params.pp) return jsonOut({ ok: false, error: 'need pp=yyyy-mm-dd (period start)' }, params.callback);
       return jsonOut(backfillPeriodGoal_(params.pp), params.callback);
     }
+    // Push the local goal ledger into GX Core's shared period_goals table (one-time backfill; idempotent).
+    if (params.action === 'goalpush') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(pushLocalLedgerToCentral_(), params.callback);
+    }
+    // Verify a central period_goals read. ?pp=yyyy-mm-dd (or any date in the period); ?store=slug for one row.
+    if (params.action === 'goalpeek') {
+      requireRole_(auth, ['owner','director']);
+      try { return jsonOut({ ok: true, central: GXCore.getPeriodGoals(params.store || '', params.pp || '') }, params.callback); }
+      catch (e) { return jsonOut({ ok: false, error: String(e) }, params.callback); }
+    }
 
 
     // ── Director endpoints ─────────────────────────────────

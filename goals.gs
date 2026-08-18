@@ -821,29 +821,83 @@ function currentPeriodGoalShape_(props) {
   };
 }
 
+/** Flatten a nested ledger entry into GX Core period_goals rows (one per store) — the gxUpsertPeriodGoals
+ *  schema (note_msxyco3a): { store, period_start, period_end, period_total, dow_targets[7], source, stretch,
+ *  computed_at, locked }. Key = (store, period_start). */
+function ledgerEntryToRows_(entry) {
+  var rows = [];
+  Object.keys(entry.stores || {}).forEach(function (slug) {
+    var s = entry.stores[slug];
+    rows.push({
+      store:        slug,
+      period_start: entry.periodStart,
+      period_end:   entry.periodEnd,
+      period_total: s.periodTotal,
+      dow_targets:  normDow_(s.dowAvg) || [],
+      source:       s.source,
+      stretch:      s.stretch,
+      computed_at:  entry.computedAt,
+      locked:       !!entry.locked
+    });
+  });
+  return rows;
+}
+
+/** Reshape GX Core period_goals rows[] back into the nested local ledger shape consumers use. */
+function rowsToLedgerEntry_(rows, periodStart) {
+  if (!rows || !rows.length) return null;
+  var stores = {}, periodEnd = null, locked = false, computedAt = null;
+  rows.forEach(function (r) {
+    if (!r.store) return;   // skip a company-wide "" row if present
+    stores[r.store] = { periodTotal: r.period_total, dowAvg: r.dow_targets, source: r.source, stretch: r.stretch };
+    periodEnd = r.period_end; if (r.locked) locked = true; computedAt = r.computed_at;
+  });
+  return { periodStart: periodStart, periodEnd: periodEnd, stores: stores, locked: locked, computedAt: computedAt };
+}
+
 /**
- * Persist a ledger entry (local Script Property, keyed by periodStart) and mirror it to GX Core's
- * shared period_goals table if the central writer is live. `locked` marks a closed period immutable.
+ * Persist a ledger entry: local Script Property (fast, our source of truth) + mirror to GX Core's shared
+ * period_goals so Sales + Crew read the same as-of goals. `locked` marks a closed period immutable — GX Core
+ * refuses to overwrite an already-locked row (skippedLocked), enforcing option-(a) on the shared side too.
  */
 function writeGoalLedger_(props, entry, locked) {
   entry.locked = !!locked;
   if (locked && !entry.lockedAt) entry.lockedAt = new Date().toISOString();
   props.setProperty(GC_GOAL_LEDGER_PREFIX + entry.periodStart, JSON.stringify(entry));
   try {
-    if (typeof GXCore.gxUpsertPeriodGoals === 'function') {
-      GXCore.gxUpsertPeriodGoals({ app: 'performance', entry: entry });   // auto-activates when shipped
-    }
+    if (typeof GXCore.gxUpsertPeriodGoals === 'function') GXCore.gxUpsertPeriodGoals(ledgerEntryToRows_(entry));
   } catch (e) { Logger.log('[goalLedger] central upsert skipped: ' + e); }
 }
 
-/** Read a period's frozen goal shape (local first, then GX Core if present). Null if none. */
+/** Read a period's frozen goal shape: local first (fast), then GX Core's shared table (reshaped). Null if none.
+ *  NOTE: getPeriodGoals('', periodStart) returns { ok, rows:[...] } (store ""), NOT a single entry. */
 function getFrozenPeriodGoal_(periodStart) {
   var props = getProps_();
   try { var raw = props.getProperty(GC_GOAL_LEDGER_PREFIX + periodStart); if (raw) return JSON.parse(raw); } catch (e) {}
   try {
-    if (typeof GXCore.getPeriodGoals === 'function') { var r = GXCore.getPeriodGoals('', periodStart); if (r) return r; }
+    if (typeof GXCore.getPeriodGoals === 'function') {
+      var r = GXCore.getPeriodGoals('', periodStart);
+      if (r && r.ok && r.rows && r.rows.length) return rowsToLedgerEntry_(r.rows, periodStart);
+    }
   } catch (e) {}
   return null;
+}
+
+/** One-time (idempotent) backfill: push every local ledger entry into GX Core's shared period_goals. */
+function pushLocalLedgerToCentral_() {
+  var all = getProps_().getProperties();
+  var pushed = [], failed = [];
+  Object.keys(all).forEach(function (k) {
+    if (k.indexOf(GC_GOAL_LEDGER_PREFIX) !== 0) return;
+    try {
+      var entry = JSON.parse(all[k]);
+      var res = (typeof GXCore.gxUpsertPeriodGoals === 'function')
+        ? GXCore.gxUpsertPeriodGoals(ledgerEntryToRows_(entry))
+        : { skipped: 'GXCore.gxUpsertPeriodGoals not bound' };
+      pushed.push({ period: entry.periodStart, locked: !!entry.locked, res: res });
+    } catch (e) { failed.push({ key: k, err: String(e) }); }
+  });
+  return { ok: true, pushed: pushed, failed: failed };
 }
 
 /**
