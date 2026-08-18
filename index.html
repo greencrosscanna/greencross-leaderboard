@@ -3767,7 +3767,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 <!-- Resilient GX Core client (retries the Drive-HTML two-hop failure). Same-origin (org Pages). -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-client.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.495';
+window.GC = window.GC || {}; GC.VERSION = 'v1.496';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -10111,18 +10111,15 @@ var kiosk = (function() {
   }
 
   // Public API (exposed for onclick handlers)
-  // Refresh JUST the by-hour chart from a standalone storetoday (fast), so the bars get their real
-  // targets + scale right away instead of waiting for the ~60s poll. Only re-renders when targets were
-  // MISSING at first paint (a stale/target-less cache renders bars scaled to peak = the "maxed" look);
-  // if the first render already had targets this is a no-op, so there's no redundant re-animation.
+  // Refresh JUST the by-hour chart from a standalone storetoday (~4s, fresher than the up-to-3-min cached
+  // boot bundle), so the bars settle to live targets + scale right away instead of at the ~60s poll. Fired
+  // once after boot; the chart re-renders in place with the fresh data (one quick settle, then the polls
+  // keep it live). The first paint already carries targets (see render()), so this is just the freshen.
   function refreshHourly(td) {
-    if (!td) return;
-    var hadTargets = !!(_hourlyTargets && _hourlyTargets.length);
+    if (!td || !(td.hourly && td.hourly.length)) return;
     if (td.hourlyTargets && td.hourlyTargets.length) _hourlyTargets = td.hourlyTargets;
     var g = (td.today && td.today.goal) || td.goal;
     if (g) _goal = g;
-    if (hadTargets || !(_hourlyTargets && _hourlyTargets.length)) return;   // nothing new to apply
-    if (!(td.hourly && td.hourly.length)) return;
     var heatCard = document.querySelector('.heatmap-card');
     if (!heatCard) return;
     var peak = td.hourly.reduce(function(best, h) {

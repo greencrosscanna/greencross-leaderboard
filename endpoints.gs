@@ -545,6 +545,27 @@ function getDirectorStaff(params, pre) {
     });
   });
 
+  // Include the FULL active roster — employees with no sales in the selected period appear with $0, so
+  // Top Performers lists all active staff (not only those who rang a sale this period). Sellers keep
+  // their real stats; roster-only names get zeroed metrics and their role from the settings roster.
+  STORES.forEach(function(store) {
+    (getEmployeeRoster_()[store.slug] || []).forEach(function(p) {
+      const key = p.name.toLowerCase().replace(/\s+/g, '_');
+      if (_dirExcluded.has(nameToKey_(p.name))) return;
+      if (globalEmps[key]) return;   // already present from transactions — keep real stats
+      globalEmps[key] = {
+        initials:     p.initials,
+        name:         p.name,
+        role:         p.role || '',
+        roleLabel:    p.roleLabel || '',
+        storeSlug:    store.slug,
+        storeName:    store.name,
+        sales: 0, transactions: 0, items: 0, discounts: 0, discountsBdt: 0, subtotal: 0,
+        tags: [],
+      };
+    });
+  });
+
   // Re-derive metrics and apply tags
   const _roles = getRoles_();
   const staffList = Object.values(globalEmps).map(function(emp) {
