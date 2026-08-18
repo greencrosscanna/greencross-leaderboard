@@ -299,21 +299,6 @@ function doGet(e) {
       PropertiesService.getScriptProperties().deleteProperty(GC_HOURLY_DIST_KEY);
       return jsonOut({ ok: true, busted: 'GC_HOURLY_DIST_KEY' }, params.callback);
     }
-    // TEMP: which key does Core's getHourlyShape want per store? Dump Core's registry + test candidates.
-    if (params.action === 'gxstoredump') {
-      requireRole_(auth, ['owner','director']);
-      var _gx = getGxStores_();
-      var _rows = STORES.map(function(st) {
-        var cands = { slug: st.slug, loc: String(st.locationName||'').toLowerCase(), dutch: String(st.dutchieName||'').toLowerCase(), name: String(st.name||'').toLowerCase() };
-        var hit = null, hitKey = null;
-        ['slug','loc','dutch','name'].forEach(function(k) {
-          if (hit) return;
-          try { var s = GXCore.getHourlyShape(cands[k]); if (s && Object.keys(s).length) { hit = Object.keys(s).length; hitKey = k + '=' + cands[k]; } } catch (e) {}
-        });
-        return { slug: st.slug, worksWith: hitKey, shapeHours: hit };
-      });
-      return jsonOut({ ok: true, coreStores: (_gx && _gx.stores) || _gx, probe: _rows }, params.callback);
-    }
     // Inspect/clear stored PP goal overrides. No slug → returns the current map (read-only). ?slug=river →
     // removes that store's override (fixes a phantom override that the settings UI saved by mistake).
     if (params.action === 'clearmanualgoal') {

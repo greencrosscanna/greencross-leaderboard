@@ -129,6 +129,28 @@ function fetchStoreTransactions_(storeSlug, fromUTC, toUTC) {
 // average gives a stable, natural curve. Still normalizes to sum 1.0.
 var HOURLY_DIST_WEEKS = 8;
 
+/**
+ * Map a Leaderboard store to GX Core's store_id — the key Core's getHourlyShape/expectedSalesFrac expect.
+ * Our local slugs are historical (center/commercial happen to match Core's store_id, but baseline→hillsboro,
+ * century→bend, portland→portland-rd, river→river-rd differ). Core's display_name equals our store `name`,
+ * so we bridge display_name → store_id. Falls back to the local slug if the registry is unavailable.
+ */
+var _CORE_ID_MAP = null;
+function coreStoreId_(store) {
+  if (!_CORE_ID_MAP) {
+    _CORE_ID_MAP = {};
+    try {
+      const g = getGxStores_();
+      ((g && g.stores) || []).forEach(function(s) {
+        const dn = String(s.display_name || '').trim().toLowerCase();
+        if (dn && s.store_id) _CORE_ID_MAP[dn] = String(s.store_id);
+      });
+    } catch (e) {}
+  }
+  const key = String((store && (store.name || store.slug)) || '').trim().toLowerCase();
+  return (_CORE_ID_MAP && _CORE_ID_MAP[key]) || (store && store.slug) || key;
+}
+
 /** Cache-ONLY read of today's same-DOW hourly-target shape (NO Dutchie fetch). Returns the cached dist or
  *  null. The KIOSK uses this so it never blocks on the cold multi-fetch — the warmer (primeHourlyDist_ via
  *  refreshDirectorCache) populates the cache proactively, so the shape is known going into the day. */
@@ -151,7 +173,7 @@ function expectedSalesFrac_(store, nowHour, nowMinute, dayFrac) {
   // local values to the decimal). One source of truth across Leaderboard + Sales.
   try {
     if (typeof GXCore !== 'undefined' && typeof GXCore.expectedSalesFrac === 'function') {
-      const f = GXCore.expectedSalesFrac(store.slug, nowHour, nowMinute, dayFrac);
+      const f = GXCore.expectedSalesFrac(coreStoreId_(store), nowHour, nowMinute, dayFrac);
       if (typeof f === 'number' && isFinite(f) && f > 0) return f;
     }
   } catch (e) { Logger.log('expectedSalesFrac_: Core call failed, using local — ' + e); }
@@ -186,7 +208,7 @@ function smoothHourly_(sums) {
 function getHourlyDist_(store) {
   try {
     if (typeof GXCore !== 'undefined' && typeof GXCore.getHourlyShape === 'function') {
-      const shape = GXCore.getHourlyShape(store.slug);
+      const shape = GXCore.getHourlyShape(coreStoreId_(store));
       if (shape && Object.keys(shape).length) return shape;
     }
   } catch (e) { Logger.log('getHourlyDist_: Core getHourlyShape failed, using local — ' + e); }
@@ -300,7 +322,7 @@ function primeHourlyDist_(stores) {
         const ck = store.slug + ':' + dow + ':' + now.dateStr;
         if (cache[ck]) return;   // already mirrored today
         try {
-          const shape = GXCore.getHourlyShape(store.slug);
+          const shape = GXCore.getHourlyShape(coreStoreId_(store));
           if (shape && Object.keys(shape).length) { cache[ck] = shape; wrote = true; }
         } catch (e) {}
       });
