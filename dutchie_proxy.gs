@@ -268,6 +268,24 @@ function doGet(e) {
       requireRole_(auth, ['owner','director']);
       return jsonOut(pushLocalLedgerToCentral_(), params.callback);
     }
+    // Bulk backfill the last N closed periods (reconstructed as-of), locked + pushed to central. Idempotent
+    // (skips already-locked periods) and time-budgeted (~4.5 min) so it stays under the 6-min GAS limit —
+    // re-call to continue walking back. ?n=<periods> (default 12, max 40). For unblocking Sales' getPeriodGoals.
+    if (params.action === 'goalbackfillbulk') {
+      requireRole_(auth, ['owner','director']);
+      var _bn = Math.min(Math.max(parseInt(params.n || '12', 10) || 12, 1), 40);
+      var _bt0 = Date.now();
+      var _bcur = currentPPStart_(getProps_());
+      var _bdone = [], _bskip = [];
+      for (var _bk = 1; _bk <= _bn; _bk++) {
+        if (Date.now() - _bt0 > 270000) break;   // ~4.5 min budget
+        var _bStart = Utilities.formatDate(new Date(_bcur.ppStartMs - _bk * _bcur.PP_MS), STORE_TZ, 'yyyy-MM-dd');
+        var _bex = getFrozenPeriodGoal_(_bStart);
+        if (_bex && _bex.locked) { _bskip.push(_bStart); continue; }
+        try { backfillPeriodGoal_(_bStart); _bdone.push(_bStart); } catch (e) {}
+      }
+      return jsonOut({ ok: true, backfilled: _bdone, alreadyLocked: _bskip, earliest: _bdone.concat(_bskip).sort()[0] || null }, params.callback);
+    }
     // Verify a central period_goals read. ?pp=yyyy-mm-dd (or any date in the period); ?store=slug for one row.
     if (params.action === 'goalpeek') {
       requireRole_(auth, ['owner','director']);
