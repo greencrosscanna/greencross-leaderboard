@@ -601,6 +601,14 @@ function resolveEffectiveGoal_(slug, gr, gy, stretch, manuals) {
  * Manual PP override (if set) bypasses computed goals entirely; stretch not applied on top.
  */
 function getDailyGoal_(slug) {
+  // Option A: today's DISPLAYED daily goal comes from the stored ledger (stable within the day + identical
+  // to what Sales reads), falling back to the live compute if there's no ledger row yet.
+  return asOfDailyGoal_(slug, ptNow_().dateStr);
+}
+
+/** LIVE daily goal for today from resolveGoal_ — the producer input + the fallback when no ledger row
+ *  exists. NOT ledger-backed (that would recurse); this is the deterministic terminal computation. */
+function getDailyGoalLive_(slug) {
   try {
     var res = resolveGoal_(slug);
     var g   = res.g;
@@ -609,7 +617,7 @@ function getDailyGoal_(slug) {
       var base = g.dowAvg[dow] || Math.round((g.ppGoal || 0) / PP_DAYS);
       return Math.round(base * (1 + res.stretch));
     }
-  } catch(e) { Logger.log('getDailyGoal_ error: ' + e.message); }
+  } catch(e) { Logger.log('getDailyGoalLive_ error: ' + e.message); }
   var stretch = getStretchMultiplier_();
   var plan = (getStorePlans_())[slug] || {};
   if (plan.daily)   return Math.round(plan.daily   * (1 + stretch));
@@ -644,21 +652,26 @@ function getDailyGoals_() {
   var pt       = ptNow_();
   var MONTHS   = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   var result   = {};
+  // Option A: prefer the STORED ledger goal for the current period so this (the Sales-facing budget
+  // endpoint) can never drift from getPeriodGoals / the kiosk daily target. Live compute is the fallback.
+  var curStart = Utilities.formatDate(new Date(currentPPStart_(getProps_()).ppStartMs), STORE_TZ, 'yyyy-MM-dd');
+  var fz       = getFrozenPeriodGoal_(curStart);
   STORES.forEach(function(s) {
-    var res     = resolveGoal_(s.slug);
-    var g       = res.g;
-    var stretch = res.stretch;
-    var dow     = [];
-    for (var d = 0; d <= 6; d++) {
-      if (g && g.dowAvg) {
-        var base = g.dowAvg[d] || Math.round((g.ppGoal || 0) / PP_DAYS);
-        dow.push(Math.round(base * (1 + stretch)));
-      } else {
-        var plan  = (getStorePlans_())[s.slug] || {};
-        var daily = plan.daily   ? Math.round(plan.daily   * (1 + stretch))
-                  : plan.monthly ? Math.round(plan.monthly / 30.4 * (1 + stretch))
-                  : 0;
-        dow.push(daily);
+    var dow = [];
+    var led = fz && fz.stores && fz.stores[s.slug];
+    if (led && led.dowAvg) {
+      for (var d = 0; d <= 6; d++) dow.push(Math.round((led.dowAvg[d] || 0) * (1 + (led.stretch || 0))));
+    } else {
+      var res = resolveGoal_(s.slug), g = res.g, stretch = res.stretch;
+      for (var d2 = 0; d2 <= 6; d2++) {
+        if (g && g.dowAvg) {
+          var base = g.dowAvg[d2] || Math.round((g.ppGoal || 0) / PP_DAYS);
+          dow.push(Math.round(base * (1 + stretch)));
+        } else {
+          var plan = (getStorePlans_())[s.slug] || {};
+          dow.push(plan.daily ? Math.round(plan.daily * (1 + stretch))
+                 : plan.monthly ? Math.round(plan.monthly / 30.4 * (1 + stretch)) : 0);
+        }
       }
     }
     result[s.locationName] = { monthly: getMonthlyGoal_(s.slug), dow: dow };
@@ -679,7 +692,7 @@ function getDailyGoalForDow_(slug, dow) {
       return Math.round(base * (1 + res.stretch));
     }
   } catch(e) { Logger.log('getDailyGoalForDow_ error: ' + e.message); }
-  return getDailyGoal_(slug);
+  return getDailyGoalLive_(slug);
 }
 
 /** PP revenue target — manual override if set, otherwise max(rolling, yoy) + stretch. */
@@ -1039,15 +1052,16 @@ function asOfPeriodGoal_(slug, periodStart, isCurrent) {
 function asOfDailyGoal_(slug, dateStr) {
   var d   = new Date(Date.UTC(Number(dateStr.slice(0, 4)), Number(dateStr.slice(5, 7)) - 1, Number(dateStr.slice(8, 10)), 12));
   var dow = parseInt(Utilities.formatDate(d, STORE_TZ, 'u'), 10) % 7;   // Mon=1…Sun=0
-  var curStart    = Utilities.formatDate(new Date(currentPPStart_(getProps_()).ppStartMs), STORE_TZ, 'yyyy-MM-dd');
-  var periodStart = periodStartForDate_(dateStr);
-  if (periodStart < curStart) {
-    var fz = getFrozenPeriodGoal_(periodStart);
-    if (fz && fz.stores && fz.stores[slug] && fz.stores[slug].dowAvg) {
-      return Math.round(fz.stores[slug].dowAvg[dow] || 0);
-    }
+  // Option A (2026-08-18): read the STORED goal ledger for the period this date falls in — for BOTH open
+  // and closed periods — so Leaderboard shows the exact daily target Sales reads (getPeriodGoals), with no
+  // per-request drift from a borderline manual-override reclassification. Same formula the live path uses:
+  // round(dowAvg × (1 + stretch)). Live fallback only when no ledger row exists.
+  var fz = getFrozenPeriodGoal_(periodStartForDate_(dateStr));
+  if (fz && fz.stores && fz.stores[slug] && fz.stores[slug].dowAvg) {
+    var s = fz.stores[slug];
+    return Math.round((s.dowAvg[dow] || 0) * (1 + (s.stretch || 0)));
   }
-  return getDailyGoalForDow_(slug, dow);   // open period, or no frozen entry → live
+  return getDailyGoalForDow_(slug, dow);
 }
 
 /**
