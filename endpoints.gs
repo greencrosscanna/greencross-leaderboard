@@ -485,7 +485,8 @@ function getDirectorStores(params, pre) {
            : trendFromByDay_(byStore30d ? aggregateByDay_(byStore30d[store.slug] || []) : {})),
       tags:          tags,
       tagTooltips:   tagTooltips,
-      today:         { revenue: aggToday.sales, goal: dailyGoal, pace: todayPace, pctToGoal: dailyGoal > 0 ? r3_(aggToday.sales / dailyGoal) : 0, projected: projectedRevenue, projectedPace: projectedPace, dayFrac: r3_(dayFrac) },
+      today:         { revenue: aggToday.sales, goal: dailyGoal, pace: todayPace, pctToGoal: dailyGoal > 0 ? r3_(aggToday.sales / dailyGoal) : 0, projected: projectedRevenue, projectedPace: projectedPace, dayFrac: r3_(dayFrac),
+                       transactions: aggToday.transactions, avgOrderValue: aggToday.avgOrderValue, avgUPT: aggToday.avgUPT, discountRate: aggToday.discountRate },
       flagCount:     flaggedEmps.length,
     };
   });

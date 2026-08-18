@@ -3767,7 +3767,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 <!-- Resilient GX Core client (retries the Drive-HTML two-hop failure). Same-origin (org Pages). -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-client.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.498';
+window.GC = window.GC || {}; GC.VERSION = 'v1.499';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -5915,6 +5915,8 @@ var director = (function() {
         btn.textContent = 'MTD';
       } else if (period === 'pp') {
         btn.textContent = _storePpRange ? 'Pay Period · ' + _storePpRange : 'Pay Period';
+      } else if (period === 'today') {
+        btn.textContent = 'Today';
       }
     });
     syncStoreHeading();
@@ -5923,15 +5925,19 @@ var director = (function() {
   function syncStoreHeading() {
     var h2 = document.getElementById('storeLeaderboardH2');
     if (!h2) return;
-    var label = _storePeriod === 'pp'
-      ? ('Pay Period' + (_storePpRange ? ' · ' + _storePpRange : ''))
-      : 'MTD';
+    var label = _storePeriod === 'today'
+      ? 'Today'
+      : _storePeriod === 'pp'
+        ? ('Pay Period' + (_storePpRange ? ' · ' + _storePpRange : ''))
+        : 'MTD';
     h2.textContent = 'Store Leaderboard · ' + label;
   }
 
   function refreshStoreTable() {
     if (!_data || !_data.stores) return;
-    var stores = _data.stores.stores;
+    var stores = _storePeriod === 'today' ? buildTodayStores()
+               : _storePeriod === 'pp'    ? (_storePpStores || _data.stores.stores)
+               :                            (_storeMtdData  || _data.stores.stores);
     var tbody = document.getElementById('storeTableBody');
     var thead = document.getElementById('storeTableHead');
     if (tbody) tbody.innerHTML = storeTableRows(stores);
@@ -5962,29 +5968,62 @@ var director = (function() {
     });
   }
 
+  // Map the MTD store payload onto each store's `today` sub-object so the store table
+  // can show TODAY's sold / vs-plan (DOW-weighted pace) / txns / AOV / UPT / discount
+  // with NO second fetch — the today data already rides along inside directorall.
+  function buildTodayStores(base) {
+    base = base || _storeMtdData || (_data && _data.stores && _data.stores.stores) || [];
+    var mapped = base.map(function(s) {
+      var t = s.today || {};
+      return {
+        slug: s.slug, name: s.name, staffCount: s.staffCount, manager: s.manager,
+        sales:         t.revenue || 0,
+        goal:          t.goal || 0,
+        vsplan:        (typeof t.pace === 'number') ? t.pace : 0,   // DOW-weighted pace = "vs plan" for today
+        transactions:  t.transactions || 0,
+        avgOrderValue: t.avgOrderValue || 0,
+        avgUPT:        t.avgUPT || 0,
+        discountRate:  t.discountRate || 0,
+        trend30d:      s.trend30d, trendPct: s.trendPct,   // 30d trend is period-agnostic — keep it
+        tags:          s.tags, tagLabels: s.tagLabels, tagTooltips: s.tagTooltips,
+        today:         s.today, projected: t.projected || 0,
+        rank:          0
+      };
+    });
+    // Rank by today's pace (ahead-of-plan first), mirroring how MTD ranks by vs-plan.
+    mapped.slice().sort(function(a, b) { return (b.vsplan || 0) - (a.vsplan || 0); })
+          .forEach(function(s, i) { s.rank = i + 1; });
+    return mapped;
+  }
+
   function renderStoreTable(stores, range) {
-    // Preserve MTD data for tab switching
+    // Preserve MTD data for tab switching (the incoming payload is always MTD)
     if (_storePeriod === 'mtd') _storeMtdData = stores;
 
-    var periodLabel = _storePeriod === 'pp'
-      ? ('Pay Period' + (_storePpRange ? ' · ' + _storePpRange : ''))
-      : ('MTD' + (range ? ' · ' + e(range) : ''));
-    var mtdActive = _storePeriod === 'mtd';
+    var displayStores = _storePeriod === 'today' ? buildTodayStores(stores)
+                      : (_storePeriod === 'pp' && _storePpStores) ? _storePpStores
+                      : stores;
+
+    var periodLabel = _storePeriod === 'today' ? 'Today'
+      : _storePeriod === 'pp'
+        ? ('Pay Period' + (_storePpRange ? ' · ' + _storePpRange : ''))
+        : ('MTD' + (range ? ' · ' + e(range) : ''));
 
     return '<div class="section-head">'
       + '<h2 id="storeLeaderboardH2">Store Leaderboard · ' + periodLabel + '</h2>'
       + '<span class="sh-sep">/</span>'
       + '<span class="sh-meta">Click any store to drill down</span>'
       + '<span class="staff-period-tabs">'
-      +   '<button class="store-period-tab' + (!mtdActive ? ' active' : '') + '" data-store-period="pp">'
+      +   '<button class="store-period-tab' + (_storePeriod === 'today' ? ' active' : '') + '" data-store-period="today">Today</button>'
+      +   '<button class="store-period-tab' + (_storePeriod === 'pp' ? ' active' : '') + '" data-store-period="pp">'
       +     (_storePpRange ? 'Pay Period · ' + e(_storePpRange) : 'Pay Period')
       +   '</button>'
-      +   '<button class="store-period-tab' + (mtdActive  ? ' active' : '') + '" data-store-period="mtd">MTD</button>'
+      +   '<button class="store-period-tab' + (_storePeriod === 'mtd' ? ' active' : '') + '" data-store-period="mtd">MTD</button>'
       + '</span>'
       + '</div>'
       + '<table class="gc-table" id="storeTable">'
       + '<thead id="storeTableHead">' + storeTableHead() + '</thead>'
-      + '<tbody id="storeTableBody">' + storeTableRows(stores) + '</tbody>'
+      + '<tbody id="storeTableBody">' + storeTableRows(displayStores) + '</tbody>'
       + '</table>';
   }
 
@@ -6778,7 +6817,10 @@ var director = (function() {
           _storePeriod = newStorePeriod;
           GC.state.set('dir.storePeriod', _storePeriod);
           syncStorePeriodTabs(); // updates tabs + h2 immediately
-          if (newStorePeriod === 'mtd') {
+          if (newStorePeriod === 'today') {
+            // Today rides along in the MTD payload — remap + render instantly, no fetch
+            refreshStoreTable();
+          } else if (newStorePeriod === 'mtd') {
             // Restore cached MTD data
             if (_storeMtdData && _data.stores) {
               _data.stores.stores = _storeMtdData;
