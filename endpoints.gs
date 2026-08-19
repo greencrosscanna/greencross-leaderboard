@@ -1060,12 +1060,28 @@ function getStoreToday(store, params) {
     const emp = txEmployee_(tx);
     const displayName = applyNickname_(emp.name, _tickerNicks);
     return {
-      who:   disambiguateTicker_(displayName),
-      qty:   txItems_(tx),   // distinct SKUs — see txItems_ for cannabis UPT rationale
-      price: txTotal_(tx),
-      ts:    tx.transactionDateLocalTime || tx.transactionDate || '',
+      who:    disambiguateTicker_(displayName),
+      // Stable key so the kiosk can tie a sale to that person's card without name guessing
+      whoKey: nameToKey_(emp.name),
+      qty:    txItems_(tx),   // distinct SKUs — see txItems_ for cannabis UPT rationale
+      price:  txTotal_(tx),
+      ts:     tx.transactionDateLocalTime || tx.transactionDate || '',
     };
   }
+
+  // Biggest single transaction of the day. The kiosk shows this as a standing "Biggest Sale"
+  // trophy, so it has to be the real day's best — the 10-item ticker seed can't tell you that,
+  // and a kiosk restarted at 5pm would otherwise crown an afternoon sale.
+  function topSaleToday_() {
+    let best = null;
+    for (let i = 0; i < txns.length; i++) {
+      const tx = txns[i];
+      if (_excluded.has(nameToKey_(txEmployee_(tx).name))) continue;
+      if (!best || txTotal_(tx) > best.price) best = makeTicker_(tx);
+    }
+    return best;
+  }
+  const topSale = isPreOpen ? null : topSaleToday_();
 
   // Latest transaction timestamp — used as cursor for incremental polls
   const latestTxnTs = txns.length > 0
@@ -1098,6 +1114,7 @@ function getStoreToday(store, params) {
       latestTxnTs:       latestTxnTs,
       newTicker:         newTxns.map(makeTicker_),
       hourly:            hourly,
+      topSale:           topSale,
     };
   }
 
@@ -1128,6 +1145,7 @@ function getStoreToday(store, params) {
     hourly:             hourly,
     hourlyTargets:      hourlyTargets,
     ticker:             ticker,
+    topSale:            topSale,
     latestTxnTs:        latestTxnTs,
     lastUpdated:        new Date().toISOString(),
   };

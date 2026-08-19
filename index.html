@@ -2430,6 +2430,67 @@ body.kiosk-bg {
 .badge-item.b-close  .badge-icon { background: rgba(249,115,22,0.10);  border: 1px solid rgba(249,115,22,0.4); }
 .badge-item.b-streak .badge-icon { background: rgba(250,204,21,0.10);  border: 1px solid rgba(250,204,21,0.4); }
 .badge-item.b-txn    .badge-icon { background: rgba(239,68,68,0.10);   border: 1px solid rgba(239,68,68,0.4); }
+/* Biggest sale of the day — a standing trophy, not a moment. Gold so it reads as the
+   top prize next to the weekly badges, and it holds its place until someone beats it. */
+.badge-item.b-topsale {
+  border-color: rgba(250,204,21,0.55);
+  background: linear-gradient(180deg, rgba(250,204,21,0.10), var(--surface-2) 70%);
+}
+.badge-item.b-topsale .badge-icon { background: rgba(250,204,21,0.14); border: 1px solid rgba(250,204,21,0.5); }
+.badge-item.b-topsale .badge-title { color: rgba(250,204,21,0.9); }
+.badge-item.b-topsale .badge-stat-value { color: #facc15; }
+/* Freshly beaten record gets a short pulse so a passer-by notices it changed */
+@keyframes topsale-set {
+  0%   { box-shadow: 0 0 0 0 rgba(250,204,21,0.55); }
+  100% { box-shadow: 0 0 0 16px rgba(250,204,21,0); }
+}
+.badge-item.b-topsale.just-set { animation: topsale-set 1.5s ease-out 3; }
+
+/* Big-sale banner — the reward that outlives the confetti. Sits under the header for
+   BIG_SALE_HOLD_MS so someone walking past minutes later still sees who did it. */
+/* Sits ON the "Today · Team" strip rather than in the flow — a board that jumps down for
+   twelve minutes and back up again is worse than no banner at all. */
+#kioskBigSale {
+  display: none;
+  position: absolute;
+  inset: -7px -8px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 6px 16px;
+  border: 1px solid rgba(249,115,22,0.55);
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(249,115,22,0.20), rgba(250,204,21,0.12)), var(--bg);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  color: var(--text);
+  z-index: 5;
+}
+.lb-head { position: relative; }
+#kioskBigSale.show { display: flex; animation: bigsale-in 0.45s cubic-bezier(0.2,0.8,0.2,1); }
+#kioskBigSale.fading { opacity: 0; transition: opacity 1.2s ease; }
+@keyframes bigsale-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+#kioskBigSale .bs-flame { font-size: 18px; }
+#kioskBigSale .bs-label { color: #f97316; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+#kioskBigSale .bs-amt   { color: #facc15; }
+#kioskBigSale .bs-when  { color: var(--text-mute); font-size: 12px; font-weight: 600; }
+
+/* The seller's own card carries the reward too, for BIG_SALE_HOLD_MS */
+.emp-card.hot {
+  border-color: rgba(249,115,22,0.7);
+  box-shadow: 0 0 18px rgba(249,115,22,0.28);
+}
+/* Bottom-right — top-right is already the rank number and the EoM badge */
+.emp-card.hot::after {
+  content: '🔥';
+  position: absolute;
+  bottom: 8px; right: 10px;
+  font-size: 15px;
+  animation: hot-flicker 1.8s ease-in-out infinite;
+}
+@keyframes hot-flicker { 0%,100% { opacity: 0.75; transform: scale(1); } 50% { opacity: 1; transform: scale(1.12); } }
+
 .badge-info   { min-width: 0; flex: 1; }
 .badge-title  { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; white-space: nowrap; color: var(--text-dim); }
 /* Per-type accent colors for the badge category label */
@@ -2464,7 +2525,8 @@ body.kiosk-bg {
   border-radius: 1px;
   pointer-events: none;
   z-index: 3;
-  transition: bottom 0.3s ease;
+  /* Also carries the intro: each notch rises from the baseline to its hour's goal */
+  transition: bottom 0.42s cubic-bezier(0.4, 0, 0.2, 1);
 }
 /* Miss indicator: bar is below target — notch floats above, tinted orange */
 .hm-notch--miss {
@@ -2508,6 +2570,20 @@ body.kiosk-bg {
               background 0.55s ease;
 }
 .hm-col:hover .hm-bar { filter: brightness(1.15); }
+/* Placeholder bars — hold the card's shape while today's real hours land.
+   Own gradient rather than .loading-shimmer: that one is built from --surface tones,
+   which are near-black on the kiosk card and left the placeholder invisible. */
+.hm-bar.hm-skel {
+  background: linear-gradient(90deg,
+              rgba(74,222,128,0.07) 25%,
+              rgba(74,222,128,0.20) 50%,
+              rgba(74,222,128,0.07) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  cursor: default;
+}
+.hm-col:hover .hm-bar.hm-skel { filter: none; }
+.hm-skel-legend { color: var(--text-mute); font-size: 11px; }
 .hm-bar.now {
   border-color: var(--green);
   box-shadow: 0 0 10px rgba(74,222,128,0.3);
@@ -3765,9 +3841,10 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <!-- Resilient GX Core client (retries the Drive-HTML two-hop failure). Same-origin (org Pages). -->
+<script src="gx-dev.js"></script>
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-client.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.505';
+window.GC = window.GC || {}; GC.VERSION = 'v1.506';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -4869,6 +4946,18 @@ GC.api = (function() {
 
   var USE_FIXTURES = false;
 
+  // Non-mutating actions. Anything NOT listed here is blocked when served from localhost until you
+  // arm writes (banner button / ?arm=1 / GXDev.arm()). Add new READS here; leave writes off the list.
+  if (window.GXDev) window.GXDev.declareReads([
+    'aggticker', 'directoralerts', 'directorall', 'directorstaff', 'directorstores',
+    'directorsummary', 'discountsettings', 'getavatardata', 'getsettings', 'gxstores',
+    'historicaldir', 'incentive', 'leaderboardstaff', 'login', 'renew', 'standings',
+    'storebadges', 'storeleaderboard', 'storetoday', 'vetflags'
+  ]);
+  // Guarded writes: bugreport, clearavatar, recalculategoals, saveavatar, savediscountsettings,
+  //                 saveeom, saveincentive, savemanualgoals, savesettings
+
+
   // Deployed GAS web app URL.
   var GAS_URL = 'https://script.google.com/macros/s/AKfycbxXqtL-rKjuzFQkyADWnHGEoM2ZSYp9g4t1J6vhyDTgHcfkEuQocYrN9DXV7_84Masuqg/exec';
 
@@ -4980,6 +5069,9 @@ GC.api = (function() {
 
   // ── Auth-aware GAS call ────────────────────────────────
   function gasCall(action, extra) {
+    // Dev guard: on localhost, block anything not declared a read until writes are armed.
+    // Inert in production. Optional by design — a missing gx-dev.js must not break the app.
+    if (window.GXDev) window.GXDev.check(action);
     var session = GC.auth.load();
     var params = Object.assign({ action: action }, extra || {});
     if (session && session.token) params.token = session.token;
@@ -8446,6 +8538,15 @@ var kiosk = (function() {
   var _pollTimer    = null;
   var _lbTimer      = null;
   var _clockTimer   = null;
+  var _topSale      = null;  // { who, whoKey, price, ts } — biggest single sale today
+  var _bigSale      = null;  // { who, price, ts } currently on the banner, null when idle
+  var _bigSaleTimer = null;  // hides the big-sale banner
+  var _hotTimers    = {};    // whoKey → timer clearing that card's flame
+  var _rareDropTimer = null; // auto-dismiss for the rare-drop overlay
+  var _rareDropCount = 0;    // enforces THRESHOLDS.rareDropMaxPerShift
+  var _hmDrawn      = false; // by-hour chart has been drawn (and animated) once
+  var _hmHoldTimer  = null;  // cap on how long the placeholder waits for fresh hours
+  var _hmBoot       = null;  // boot payload's hours — fallback if the freshen never lands
   var _lastTxnTs    = '';    // cursor for incremental ticker polling
   var _seenTxnKeys  = {};    // dedup set: "ts|who|price" → true, prevents re-injection on repeat polls
   var _confettiParticles  = [];
@@ -9043,7 +9144,8 @@ var kiosk = (function() {
         : '';
       // When EoM, the in-flow rank is hidden via CSS (.emp-card.eom > .emp-rank { display:none })
       // and re-rendered inside the corner stack above.
-      return '<div class="emp-card' + (isLeading ? ' leading' : '') + (isOffShift ? ' off-shift' : '') + (isRecent ? ' ghost-recent' : '') + (isEom ? ' eom' : '') + '">'
+      return '<div class="emp-card' + (isLeading ? ' leading' : '') + (isOffShift ? ' off-shift' : '') + (isRecent ? ' ghost-recent' : '') + (isEom ? ' eom' : '') + '"'
+        + ' data-emp-key="' + e(GC.nameToKey(s.name || '')) + '" data-emp-name="' + e(s.name || '') + '">'
         + (isEom ? '' : '<span class="emp-rank">#' + e(s.rank) + '</span>')
         + eomCorner
         + '<div class="emp-head">'
@@ -9109,6 +9211,7 @@ var kiosk = (function() {
       + '  <h2>Today · ' + e(storeName || '') + ' Team</h2>'
       + '  <span class="lb-sep">/</span>'
       + '  <span class="lb-meta">Live · refreshes every 30 seconds</span>'
+      + '  <div id="kioskBigSale"></div>'
       + '</div>'
       + '<div class="lb-grid">' + cards + ghostCards + '</div>'
       + '</section>';
@@ -9162,12 +9265,15 @@ var kiosk = (function() {
 
     return '<div class="kiosk-card badges-card">'
       + '<div class="kcard-label">This Week\'s Trophies</div>'
-      + '<div class="badges-grid">' + items + '</div>'
+      + '<div class="badges-grid">' + renderTopSaleTile(_topSale) + items + '</div>'
       + '</div>';
   }
 
   // ── Render: Hourly heatmap ─────────────────────────────
-  function renderHeatmap(hourly, peakHour, peakRevenue, goal, hourlyTargets) {
+  // Shared model: everything both the initial HTML render and the in-place refresh need.
+  // Keeping this in one place lets updateHeatmap() settle the existing bars instead of
+  // rebuilding the card (which restarted the grow-from-zero animation on every poll).
+  function heatmapModel_(hourly, peakHour, peakRevenue, hourlyTargets) {
     // Color interpolation: 0% → #1a2c21, 100% → #4ade80
     function pctColor(pct, projected) {
       if (projected) return '#232a27';
@@ -9189,7 +9295,7 @@ var kiosk = (function() {
     var maxTarget    = targets ? Math.max.apply(null, targets) : 0;
     var effectiveMax = Math.max(peakRevenue || 0, maxTarget) || 1;
 
-    var bars = (hourly || []).map(function(h, i) {
+    var cols = (hourly || []).map(function(h, i) {
       var cls = '';
       if (h.current)   cls = ' now';
       if (h.projected) cls = ' projected';
@@ -9198,40 +9304,81 @@ var kiosk = (function() {
                     : h.amount  != null ? h.amount
                     : Math.round((h.pct || 0) * (peakRevenue || 0) / 100);
       var scaledPct = Math.min(100, (amt / effectiveMax) * 100);
-      var color     = pctColor(scaledPct, h.projected);
 
+      var hasNotch = !!(targets && targets[i] > 0);
+      return {
+        cls:      cls,
+        height:   scaledPct.toFixed(1) + '%',
+        color:    pctColor(scaledPct, h.projected),
+        hasNotch: hasNotch,
+        // Notch is % of chart height, so it stays chart-relative even on 0-height projected bars
+        notchPct: hasNotch ? Math.min(100, (targets[i] / effectiveMax) * 100).toFixed(1) + '%' : null,
+        miss:     hasNotch && amt < targets[i],
+        amtText:  '$' + amt.toLocaleString() + (h.projected ? ' est.' : ''),
+        goalText: hasNotch ? 'goal $' + Math.round(targets[i]).toLocaleString('en-US') : '',
+        hour:     h.hour,
+      };
+    });
+
+    return {
+      cols:       cols,
+      hasTargets: !!targets,
+      peakStr:    peakHour ? 'Peak · ' + peakHour + ' · ' + fmtDollars(peakRevenue || 0) : '',
+    };
+  }
+
+  // Placeholder chart shown from first paint until today's fresh hours land (see drawHeatmap).
+  // The cached boot payload can be up to 3 minutes stale and may predate the hour targets, so
+  // drawing it and then correcting looked like the chart loading twice. A shimmer for a beat
+  // reads as "still loading" — which is the truth — and the chart then draws exactly once.
+  function renderHeatmapSkeleton(hourly) {
+    var n = (hourly && hourly.length) || 13;
+    // Fixed silhouette, no data implied — just enough shape to read as a chart
+    var shape = [26, 38, 52, 64, 76, 88, 80, 68, 56, 44, 32, 24, 18];
+    var bars = '';
+    for (var i = 0; i < n; i++) {
+      var h = shape[i % shape.length];
+      bars += '<div class="hm-col">'
+        + '<div class="hm-bar hm-skel" style="height:' + h + '%"></div>'
+        + '</div>';
+    }
+    return '<div class="kiosk-card heatmap-card hm-loading">'
+      + '<div class="kcard-label">Today by Hour</div>'
+      + '<div class="heatmap">' + bars + '</div>'
+      + '<div class="hm-legend">'
+      + '  <span>Open</span>'
+      + '  <span class="hm-skel-legend">reading today\u2019s hours\u2026</span>'
+      + '  <span>Close</span>'
+      + '</div>'
+      + '</div>';
+  }
+
+  function renderHeatmap(hourly, peakHour, peakRevenue, goal, hourlyTargets) {
+    var model = heatmapModel_(hourly, peakHour, peakRevenue, hourlyTargets);
+
+    var bars = model.cols.map(function(c) {
       // Per-bar target notch — placed in column wrapper so it's always chart-relative.
-      // This works even for projected bars that have 0 revenue (height ≈ 0).
-      var notchHtml = '';
-      if (targets && targets[i] > 0) {
-        var tgt         = targets[i];
-        var tgtChartPct = Math.min(100, (tgt / effectiveMax) * 100); // % of chart height
-        var miss        = amt < tgt;
-        notchHtml = '<div class="hm-notch' + (miss ? ' hm-notch--miss' : '') + '"'
-          + ' style="bottom:' + tgtChartPct.toFixed(1) + '%"></div>';
-      }
-
-      var tipGoal = (targets && targets[i] > 0)
-        ? '<span class="hm-tip-goal">goal $' + e(Math.round(targets[i]).toLocaleString('en-US')) + '</span>'
+      // Starts flat on the baseline and rises to the hour's goal via data-bottom + animateHeatmap()
+      var notchHtml = c.hasNotch
+        ? '<div class="hm-notch' + (c.miss ? ' hm-notch--miss' : '') + '"'
+          + ' style="bottom:0%" data-bottom="' + c.notchPct + '"></div>'
         : '';
+      var tipGoal = c.goalText ? '<span class="hm-tip-goal">' + e(c.goalText) + '</span>' : '';
 
-      // Bars start at height:0 and animate up via data-final + animateHeatmap().
+      // Bars start at height:0 and animate up via data-final + animateHeatmap() — first paint only.
       // Notch lives in .hm-col (chart-relative), bar + tooltip live in .hm-bar
       return '<div class="hm-col">'
         + notchHtml
-        + '<div class="hm-bar' + cls + '" style="height:0%;background:' + color + '"'
-        + ' data-final="' + scaledPct.toFixed(1) + '%">'
-        + '<div class="hm-tooltip"><span class="hm-tip-amt">$' + e(amt.toLocaleString()) + (h.projected ? ' est.' : '') + '</span>' + tipGoal + '</div>'
-        + '<span class="hm-hour">' + e(h.hour) + '</span>'
+        + '<div class="hm-bar' + c.cls + '" style="height:0%;background:' + c.color + '"'
+        + ' data-final="' + c.height + '">'
+        + '<div class="hm-tooltip"><span class="hm-tip-amt">' + e(c.amtText) + '</span>' + tipGoal + '</div>'
+        + '<span class="hm-hour">' + e(c.hour) + '</span>'
         + '</div>'
         + '</div>';
     }).join('');
 
-    var peakStr = peakHour
-      ? 'Peak · ' + e(peakHour) + ' · ' + e(fmtDollars(peakRevenue || 0))
-      : '';
     // When targets haven't loaded yet, show a subtle hint in the legend
-    var targetStatus = !targets
+    var targetStatus = !model.hasTargets
       ? '<span class="hm-targets-loading">· targets loading…</span>'
       : '';
 
@@ -9240,10 +9387,92 @@ var kiosk = (function() {
       + '<div class="heatmap">' + bars + '</div>'
       + '<div class="hm-legend">'
       + '  <span>Open</span>'
-      + '  <span class="hm-peak">' + e(peakStr) + targetStatus + '</span>'
+      + '  <span class="hm-peak">' + e(model.peakStr) + targetStatus + '</span>'
       + '  <span>Close</span>'
       + '</div>'
       + '</div>';
+  }
+
+  // Write a style change with the element's CSS transition suppressed for that frame, so the
+  // new value takes effect with no motion. Restoring the inline value afterwards leaves the
+  // stylesheet transition intact for anything that DOES want to animate.
+  function silentStyle_(el, apply) {
+    var prev = el.style.transition;
+    el.style.transition = 'none';
+    apply();
+    void el.offsetHeight;               // commit before the transition comes back
+    el.style.transition = prev || '';
+  }
+
+  // Refresh the chart WITHOUT any motion. Bars are mutated in place and their transitions are
+  // suppressed for the write, so a poll (or the post-boot freshen, which can rescale every bar at
+  // once when hour targets arrive) lands as a silent correction. Only the first paint animates —
+  // on a kiosk, any later movement read as the app glitching.
+  // Returns false if the DOM doesn't match the data (hour count changed), so the caller can
+  // fall back to a full re-render.
+  function updateHeatmap(hourly, peakHour, peakRevenue, goal, hourlyTargets) {
+    var card = document.querySelector('.heatmap-card');
+    if (!card) return false;
+    if (card.classList.contains('hm-loading')) return false;  // still the placeholder — needs a real draw
+    var cols = card.querySelectorAll('.hm-col');
+    var model = heatmapModel_(hourly, peakHour, peakRevenue, hourlyTargets);
+    if (!cols.length || cols.length !== model.cols.length) return false;
+
+    model.cols.forEach(function(c, i) {
+      var col = cols[i];
+      var bar = col.querySelector('.hm-bar');
+      if (!bar) return;
+
+      bar.className = 'hm-bar' + c.cls;
+      silentStyle_(bar, function() {
+        bar.style.background = c.color;
+        bar.style.height     = c.height;
+      });
+      bar.setAttribute('data-final', c.height);
+
+      var notch = col.querySelector('.hm-notch');
+      if (c.hasNotch) {
+        if (!notch) {
+          notch = document.createElement('div');
+          col.insertBefore(notch, col.firstChild);
+        }
+        notch.className = 'hm-notch' + (c.miss ? ' hm-notch--miss' : '');
+        notch.setAttribute('data-bottom', c.notchPct);
+        silentStyle_(notch, function() { notch.style.bottom = c.notchPct; });
+      } else if (notch) {
+        col.removeChild(notch);
+      }
+
+      var amtEl = bar.querySelector('.hm-tip-amt');
+      if (amtEl) amtEl.textContent = c.amtText;
+      var tip = bar.querySelector('.hm-tooltip');
+      var goalEl = bar.querySelector('.hm-tip-goal');
+      if (c.goalText) {
+        if (!goalEl && tip) {
+          goalEl = document.createElement('span');
+          goalEl.className = 'hm-tip-goal';
+          tip.appendChild(goalEl);
+        }
+        if (goalEl) goalEl.textContent = c.goalText;
+      } else if (goalEl && tip) {
+        tip.removeChild(goalEl);
+      }
+
+      var hourEl = bar.querySelector('.hm-hour');
+      if (hourEl) hourEl.textContent = c.hour;
+    });
+
+    var peakEl = card.querySelector('.hm-peak');
+    if (peakEl) {
+      peakEl.textContent = model.peakStr;
+      if (!model.hasTargets) {
+        var hint = document.createElement('span');
+        hint.className = 'hm-targets-loading';
+        hint.textContent = '· targets loading…';
+        peakEl.appendChild(hint);
+      }
+    }
+    return true;
   }
 
   // ── Render: Live ticker ────────────────────────────────
@@ -9373,6 +9602,11 @@ var kiosk = (function() {
     if (storeData.hourlyTargets && storeData.hourlyTargets.length) _hourlyTargets = storeData.hourlyTargets;
     _goal = (today && today.goal) || storeData.goal || _goal;
 
+    // renderBadges below prints the Biggest Sale trophy, so today's record has to exist first.
+    // _slug is normally set in init(), which runs after render() — set it early for the store key.
+    _slug = slug || _slug;
+    seedTopSale_(storeData);
+
     return [
       '<canvas id="kioskConfetti"></canvas>',
       '<div id="kioskGoalBanner">🎯 DAILY GOAL HIT! · ' + e(store.name.toUpperCase()) + ' TEAM!</div>',
@@ -9387,7 +9621,7 @@ var kiosk = (function() {
         renderClosingBanner(),
         '<div class="lower-grid">',
           renderBadges(badges),
-          renderHeatmap(hourly, peakHour, peakRevenue, _goal, _hourlyTargets),
+          renderHeatmapSkeleton(hourly),
           renderTicker(ticker),
         '</div>',
       '</div>',
@@ -9400,16 +9634,78 @@ var kiosk = (function() {
   // Force a synchronous layout read first so the browser commits height:0% before
   // we set the final value — without this, microtask-resolved cache hits let both
   // rAFs fire before any paint, and the browser skips the transition entirely.
+  // Two-phase intro, both sweeping left to right across the day:
+  //   1. the hour goals rise off the baseline to their target height
+  //   2. the bars grow up to meet them
+  // The phases overlap slightly on purpose — a clean break reads as a stall.
+  var HM_NOTCH_STAGGER_MS = 40;   // gap between one goal starting its rise and the next
+  var HM_BAR_LEAD_MS      = 520;  // bars hold until the goals are well on their way up
+  var HM_BAR_STAGGER_MS   = 45;   // gap between one bar starting and the next
+
   function animateHeatmap() {
-    var bars = document.querySelectorAll('.hm-bar[data-final]');
-    // Reading offsetHeight forces the browser to flush pending style/layout,
-    // committing the height:0% state so the subsequent style change triggers a transition.
+    var bars    = document.querySelectorAll('.hm-bar[data-final]');
+    var notches = document.querySelectorAll('.hm-notch[data-bottom]');
+    // Reading offsetHeight forces the browser to flush pending style/layout, committing the
+    // baseline state so the subsequent style change triggers a transition.
+    notches.forEach(function(n) { void n.offsetHeight; });
     bars.forEach(function(bar) { void bar.offsetHeight; });
     requestAnimationFrame(function() {
-      bars.forEach(function(bar) {
+      notches.forEach(function(n, i) {
+        n.style.transitionDelay = (i * HM_NOTCH_STAGGER_MS) + 'ms';
+        n.style.bottom = n.getAttribute('data-bottom');
+      });
+      bars.forEach(function(bar, i) {
+        bar.style.transitionDelay = (HM_BAR_LEAD_MS + i * HM_BAR_STAGGER_MS) + 'ms';
         bar.style.height = bar.getAttribute('data-final');
       });
     });
+    // Clear the delays once the run is over so nothing later inherits them
+    var runMs = HM_BAR_LEAD_MS + bars.length * HM_BAR_STAGGER_MS + 900;
+    setTimeout(function() {
+      notches.forEach(function(n) { n.style.transitionDelay = ''; });
+      bars.forEach(function(bar) { bar.style.transitionDelay = ''; });
+    }, runMs);
+  }
+
+  // Same end state, no motion — used when a refresh had to rebuild the card outright
+  // (hour count changed), so the bars appear at their real height instead of re-growing.
+  function paintHeatmap() {
+    document.querySelectorAll('.hm-notch[data-bottom]').forEach(function(n) {
+      silentStyle_(n, function() { n.style.bottom = n.getAttribute('data-bottom'); });
+    });
+    document.querySelectorAll('.hm-bar[data-final]').forEach(function(bar) {
+      silentStyle_(bar, function() { bar.style.height = bar.getAttribute('data-final'); });
+    });
+  }
+
+  // The card holds a shimmering placeholder until today's fresh hours arrive (~3-5s), then draws
+  // the real chart once and animates it. The alternative — drawing the cached boot payload right
+  // away — meant animating one scale and then shifting to another when the freshen landed, which
+  // read as the chart loading twice. The cap is the backstop: if the freshen is slow or fails we
+  // draw the boot payload rather than shimmering forever.
+  var HM_HOLD_MS = 6000;
+
+  function holdHeatmap(hourly, peakHour, peakRevenue) {
+    _hmDrawn = false;
+    _hmBoot  = { hourly: hourly, peakHour: peakHour, peakRevenue: peakRevenue };
+    clearTimeout(_hmHoldTimer);
+    _hmHoldTimer = setTimeout(function() {
+      drawHeatmap(_hmBoot.hourly, _hmBoot.peakHour, _hmBoot.peakRevenue);
+    }, HM_HOLD_MS);
+  }
+
+  // Swap the placeholder for the real chart and play its one intro animation.
+  // No-op once the chart has been drawn — nothing after this animates.
+  function drawHeatmap(hourly, peakHour, peakRevenue) {
+    if (_hmDrawn) return false;
+    clearTimeout(_hmHoldTimer);
+    _hmHoldTimer = null;
+    var card = document.querySelector('.heatmap-card');
+    if (!card) return false;
+    card.outerHTML = renderHeatmap(hourly, peakHour, peakRevenue, _goal, _hourlyTargets);
+    _hmDrawn = true;
+    animateHeatmap();
+    return true;
   }
 
   function init(data, slug) {
@@ -9440,7 +9736,7 @@ var kiosk = (function() {
     animateGoalArc(data.today.today.pctToGoal);
     animatePaceNeedle(data.today.today.pace);
     animateBars();
-    animateHeatmap();
+    holdHeatmap(data.today.hourly, data.today.peakHour, data.today.peakRevenue);
     updateClosingBanner(data.today.today);
     initConfetti();
     startPolling(slug);
@@ -9452,6 +9748,11 @@ var kiosk = (function() {
       clearInterval(_pollTimer);  _pollTimer  = null;
       clearInterval(_lbTimer);    _lbTimer    = null;
       clearInterval(_clockTimer); _clockTimer = null;
+      clearTimeout(_hmHoldTimer); _hmHoldTimer = null;
+      clearTimeout(_bigSaleTimer); _bigSaleTimer = null;
+      clearTimeout(_rareDropTimer); _rareDropTimer = null;
+      Object.keys(_hotTimers).forEach(function(k) { clearTimeout(_hotTimers[k]); });
+      _hotTimers = {};
       _confettiRunning = false;
       if (_confettiResize) { window.removeEventListener('resize', _confettiResize); _confettiResize = null; }
       document.body.classList.remove('kiosk-bg');
@@ -9629,12 +9930,18 @@ var kiosk = (function() {
       feed.insertBefore(el, feed.firstChild);
       setTimeout(function() { el.classList.remove('fresh'); }, 1800);
 
-      // Trigger celebration overlays for high-value transactions
+      // Every sale is considered for the standing trophy, quietly, whatever its size
       var txnPrice = t.price || 0;
+      var isBig    = txnPrice >= GC.THRESHOLDS.bigTransactionMin;
+      if (!isBig) considerTopSale_(t, true);
+
+      // Big ones get the moment (confetti / overlay) AND the lasting reward
       if (txnPrice >= GC.THRESHOLDS.rareDropMinTransaction) {
         showRareDrop(t.who || '', t.item || '', txnPrice);
-      } else if (txnPrice >= GC.THRESHOLDS.bigTransactionMin) {
+        rewardBigSale(t);
+      } else if (isBig) {
         fireBigTxnCelebration(t.who || '', txnPrice);
+        rewardBigSale(t);
       }
     });
 
@@ -9974,6 +10281,16 @@ var kiosk = (function() {
       if (drWrap) drWrap.className = 'kpi-cell' + (dr > 0.20 ? ' warn' : '');
     }
 
+    // Standing trophy — the backend recomputes today's best on every poll. Pre-open means a new
+    // day has started, so clear yesterday's record on a kiosk that was never restarted.
+    if (td.isPreOpen) {
+      _topSale = null;
+      var oldTile = document.getElementById('kioskTopSale');
+      if (oldTile) oldTile.remove();
+    } else if (td.topSale) {
+      considerTopSale_(td.topSale, true);
+    }
+
     // Hourly heatmap — re-render in place when fresh hourly data arrives
     if (td.hourly && td.hourly.length) {
       var heatCard = document.querySelector('.heatmap-card');
@@ -9985,8 +10302,14 @@ var kiosk = (function() {
         }, null);
         var newPeakHour    = peak ? peak.hour    : null;
         var newPeakRevenue = peak ? peak.revenue : 0;
-        heatCard.outerHTML = renderHeatmap(td.hourly, newPeakHour, newPeakRevenue, _goal, _hourlyTargets);
-        animateHeatmap();
+        // Settle the existing bars in place — a poll never animates. If the chart somehow
+        // hasn't been drawn yet, this poll draws it (and gets the one intro animation).
+        if (!_hmDrawn) {
+          drawHeatmap(td.hourly, newPeakHour, newPeakRevenue);
+        } else if (!updateHeatmap(td.hourly, newPeakHour, newPeakRevenue, _goal, _hourlyTargets)) {
+          heatCard.outerHTML = renderHeatmap(td.hourly, newPeakHour, newPeakRevenue, _goal, _hourlyTargets);
+          paintHeatmap();
+        }
       }
     }
 
@@ -10049,7 +10372,17 @@ var kiosk = (function() {
 
           var section = document.querySelector('.lb-section');
           if (section) {
+            // Remember which cards were lit before the grid is replaced
+            var wasHot = [];
+            document.querySelectorAll('.emp-card.hot[data-emp-key]').forEach(function(c) {
+              wasHot.push(c.getAttribute('data-emp-key'));
+            });
             section.outerHTML = renderStaffGrid(staff, _storeName, _onShift, _badges, _eomKey);
+            wasHot.forEach(function(k) {
+              var c = document.querySelector('.emp-card[data-emp-key="' + k + '"]');
+              if (c) c.classList.add('hot');
+            });
+            paintBigSale_();   // the banner lives on the strip that was just replaced
             animateBars();
             // Animate employee amounts
             staff.forEach(function(s) {
@@ -10102,18 +10435,171 @@ var kiosk = (function() {
     GC.toast(label, 'success', 3200);
   }
 
+  // ── Lasting rewards for a big sale ─────────────────────
+  // Confetti is the moment; these are what's still there when someone looks up two minutes
+  // later. Three surfaces, all fed from the same sale: a banner under the header, a flame on
+  // the seller's card, and the standing "Biggest Sale" trophy.
+  var BIG_SALE_HOLD_MS = 12 * 60 * 1000;   // banner + card flame linger this long
+
+  function topSaleKey_() {
+    // Per-store, per-day, and app-scoped — every GX app shares the github.io origin
+    var d = new Date();
+    var day = d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);
+    return 'gcperf_topsale_' + (_slug || 'store') + '_' + day;
+  }
+
+  function loadTopSale_() {
+    try {
+      var raw = localStorage.getItem(topSaleKey_());
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+
+  function saveTopSale_(sale) {
+    try { localStorage.setItem(topSaleKey_(), JSON.stringify(sale)); } catch (e) {}
+  }
+
+  // Adopt a sale as today's best if it beats what we're holding. Returns true when it's a
+  // new record (so the caller can pulse the tile).
+  function considerTopSale_(sale, pulse) {
+    if (!sale || !(sale.price > 0)) return false;
+    if (_topSale && _topSale.price >= sale.price) return false;
+    _topSale = { who: sale.who || '', whoKey: sale.whoKey || '', price: sale.price, ts: sale.ts || '' };
+    saveTopSale_(_topSale);
+    paintTopSaleTile_(!!pulse);
+    return true;
+  }
+
+  // Rebuild today's record on mount: the backend's exact answer if this deploy has it, else
+  // what this kiosk saw earlier today (localStorage), else the best in the ticker seed.
+  // Reset first so switching stores never carries another store's record across.
+  function seedTopSale_(storeData) {
+    _topSale = null;
+    var stored = loadTopSale_();
+    if (stored && stored.price > 0) _topSale = stored;
+    if (storeData && storeData.topSale) considerTopSale_(storeData.topSale, false);
+    ((storeData && storeData.ticker) || []).forEach(function(t) { considerTopSale_(t, false); });
+  }
+
+  function renderTopSaleTile(sale) {
+    if (!sale) return '';
+    var when = fmtTxnTime(sale.ts);
+    return '<div class="badge-item b-topsale" id="kioskTopSale">'
+      + '<div class="badge-icon">🏆</div>'
+      + '<div class="badge-info">'
+      + '  <div class="badge-title">Biggest Sale</div>'
+      + '  <div class="badge-holder">' + e(sale.who || '—') + '</div>'
+      + '</div>'
+      + '<div class="badge-stat">'
+      + '  <div class="badge-stat-value">' + e(fmtDollars(sale.price || 0)) + '</div>'
+      + (when ? '<div class="badge-stat-label">' + e(when) + '</div>' : '')
+      + '</div>'
+      + '</div>';
+  }
+
+  // Swap the tile in place — the trophies card itself is only rebuilt on a leaderboard refresh
+  function paintTopSaleTile_(pulse) {
+    var grid = document.querySelector('.badges-card .badges-grid');
+    if (!grid || !_topSale) return;
+    var existing = document.getElementById('kioskTopSale');
+    var html = renderTopSaleTile(_topSale);
+    if (existing) {
+      existing.outerHTML = html;
+    } else {
+      grid.insertAdjacentHTML('afterbegin', html);
+    }
+    if (pulse) {
+      var el = document.getElementById('kioskTopSale');
+      if (el) {
+        el.classList.add('just-set');
+        setTimeout(function() { el.classList.remove('just-set'); }, 5000);
+      }
+    }
+  }
+
+  // Banner naming who did it, held for BIG_SALE_HOLD_MS. Kept in module state because the
+  // staff grid it lives on is rebuilt every 5 minutes by the leaderboard refresh.
+  function paintBigSale_() {
+    var el = document.getElementById('kioskBigSale');
+    if (!el) return;
+    if (!_bigSale) { el.classList.remove('show', 'fading'); return; }
+    el.innerHTML = '<span class="bs-flame">🔥</span>'
+      + '<span class="bs-label">Big sale</span>'
+      + '<span>' + e(_bigSale.who || '') + '</span>'
+      + '<span class="bs-amt">' + e(fmtDollars(_bigSale.price || 0)) + '</span>'
+      + '<span class="bs-when">' + e(fmtTxnTime(_bigSale.ts)) + '</span>';
+    el.classList.remove('fading');
+    el.classList.add('show');
+  }
+
+  function showBigSaleBanner(who, price, ts) {
+    _bigSale = { who: who || '', price: price || 0, ts: ts || '' };
+    paintBigSale_();
+    clearTimeout(_bigSaleTimer);
+    _bigSaleTimer = setTimeout(function() {
+      var el = document.getElementById('kioskBigSale');
+      _bigSale = null;
+      if (!el) return;
+      el.classList.add('fading');
+      setTimeout(function() { el.classList.remove('show', 'fading'); }, 1300);
+    }, BIG_SALE_HOLD_MS);
+  }
+
+  // Flame on the seller's own card for the same window
+  function markSellerHot(whoKey, who) {
+    var card = null;
+    if (whoKey) card = document.querySelector('.emp-card[data-emp-key="' + whoKey + '"]');
+    if (!card && who) {
+      // No key (older payload): match on first name, and on last initial when the ticker
+      // disambiguated it — "Lina P." only matches a Lina whose surname starts with P.
+      var parts = who.trim().toLowerCase().replace(/\.$/, '').split(/\s+/);
+      var cards = document.querySelectorAll('.emp-card[data-emp-name]');
+      for (var i = 0; i < cards.length; i++) {
+        var fp = (cards[i].getAttribute('data-emp-name') || '').trim().toLowerCase().split(/\s+/);
+        if (fp[0] !== parts[0]) continue;
+        if (parts.length > 1 && !(fp.length > 1 && fp[fp.length-1][0] === parts[parts.length-1][0])) continue;
+        card = cards[i];
+        break;
+      }
+    }
+    if (!card) return;
+    var key = card.getAttribute('data-emp-key') || who || 'x';
+    card.classList.add('hot');
+    clearTimeout(_hotTimers[key]);
+    _hotTimers[key] = setTimeout(function() { card.classList.remove('hot'); }, BIG_SALE_HOLD_MS);
+  }
+
+  // One entry point — every big sale lights all three surfaces
+  function rewardBigSale(sale) {
+    if (!sale) return;
+    showBigSaleBanner(sale.who, sale.price, sale.ts);
+    markSellerHot(sale.whoKey, sale.who);
+    considerTopSale_(sale, true);
+  }
+
   // ── Rare drop ──────────────────────────────────────────
+  // The overlay covers the whole board, and nobody taps a kiosk — so it dismisses itself.
+  // The per-shift cap (THRESHOLDS.rareDropMaxPerShift) was declared but never enforced;
+  // beyond it a rare drop still rewards through the banner + trophy, just without the takeover.
+  var RARE_DROP_HOLD_MS = 20000;
+
   function showRareDrop(who, item, price) {
     var el = document.getElementById('kioskRareDrop');
     if (!el) return;
+    if (_rareDropCount >= GC.THRESHOLDS.rareDropMaxPerShift) { fireConfetti(); return; }
+    _rareDropCount++;
     document.getElementById('rdWho').textContent   = who  || '';
     document.getElementById('rdItem').textContent  = item || '';
     document.getElementById('rdPrice').textContent = fmtDollars(price || 0);
     el.classList.add('show');
     fireConfetti();
+    clearTimeout(_rareDropTimer);
+    _rareDropTimer = setTimeout(_hideRareDrop, RARE_DROP_HOLD_MS);
   }
 
   function _hideRareDrop(evt) {
+    clearTimeout(_rareDropTimer);
+    _rareDropTimer = null;
     var el = document.getElementById('kioskRareDrop');
     if (el) el.classList.remove('show');
   }
@@ -10191,8 +10677,8 @@ var kiosk = (function() {
   // Public API (exposed for onclick handlers)
   // Refresh JUST the by-hour chart from a standalone storetoday (~4s, fresher than the up-to-3-min cached
   // boot bundle), so the bars settle to live targets + scale right away instead of at the ~60s poll. Fired
-  // once after boot; the chart re-renders in place with the fresh data (one quick settle, then the polls
-  // keep it live). The first paint already carries targets (see render()), so this is just the freshen.
+  // once after boot; the existing bars ease to the fresh values in place — no replay of the intro
+  // animation. The first paint already carries targets (see render()), so this is just the freshen.
   function refreshHourly(td) {
     if (!td || !(td.hourly && td.hourly.length)) return;
     if (td.hourlyTargets && td.hourlyTargets.length) _hourlyTargets = td.hourlyTargets;
@@ -10204,8 +10690,16 @@ var kiosk = (function() {
       if (!h.projected && (h.revenue || 0) > (best ? best.revenue : 0)) return h;
       return best;
     }, null);
-    heatCard.outerHTML = renderHeatmap(td.hourly, peak ? peak.hour : null, peak ? peak.revenue : 0, _goal, _hourlyTargets);
-    animateHeatmap();
+    // The placeholder is waiting on exactly this — draw the chart for the first time and animate it
+    if (!_hmDrawn) {
+      drawHeatmap(td.hourly, peak ? peak.hour : null, peak ? peak.revenue : 0);
+      return;
+    }
+    // Already drawn — settle the existing bars in place, with no motion
+    if (!updateHeatmap(td.hourly, peak ? peak.hour : null, peak ? peak.revenue : 0, _goal, _hourlyTargets)) {
+      heatCard.outerHTML = renderHeatmap(td.hourly, peak ? peak.hour : null, peak ? peak.revenue : 0, _goal, _hourlyTargets);
+      paintHeatmap();
+    }
   }
 
   return {
