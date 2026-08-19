@@ -3841,7 +3841,31 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 
 </script>
 <!-- Resilient GX Core client (retries the Drive-HTML two-hop failure). Same-origin (org Pages). -->
-<script src="gx-dev.js"></script>
+<!-- GX dev-guard bootstrap. Canonical source: greencross-gx-theme/gx-dev-boot.html.
+     Paste this ONCE in <head>, before the app's own scripts. It replaces the old
+     <script src="gx-dev.js"></script> tag, which had two problems in production:
+
+       1. It requested a file on EVERY page load, including kiosks. If the file was not committed in
+          that repo it 404ed every time (this is what happened in Leaderboard v1.506); if it was, the
+          kiosk downloaded a dev-only script it can never use.
+       2. A RELATIVE src cannot resolve on a GAS-served page -- HtmlService sandboxes the document to a
+          different origin -- so on that path the guard was silently ABSENT rather than inert. Nothing
+          signalled it, which is worse than the 404.
+
+     Loading it only on localhost fixes both: production never makes the request at all, and the URL is
+     absolute so it resolves from any origin, GAS included. Nothing to commit per repo, which also
+     removes the "referenced a file I never tracked" failure entirely. -->
+<script>
+(function () {
+  var h = location.hostname;
+  if (!(h === 'localhost' || h === '127.0.0.1' || h === '::1' ||
+        /^192\.168\./.test(h) || /^10\./.test(h))) return;   // production: do nothing at all
+  var s = document.createElement('script');
+  s.src = 'https://greencrosscanna.github.io/greencross-gx-theme/gx-dev.js';
+  s.async = false;   // keep execution order relative to other injected scripts
+  document.head.appendChild(s);
+})();
+</script>
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-client.js"></script>
 <script>
 window.GC = window.GC || {}; GC.VERSION = 'v1.509';
@@ -4948,12 +4972,12 @@ GC.api = (function() {
 
   // Non-mutating actions. Anything NOT listed here is blocked when served from localhost until you
   // arm writes (banner button / ?arm=1 / GXDev.arm()). Add new READS here; leave writes off the list.
-  if (window.GXDev) window.GXDev.declareReads([
+  window.GX_DEV_READS = [
     'aggticker', 'directoralerts', 'directorall', 'directorstaff', 'directorstores',
     'directorsummary', 'discountsettings', 'getavatardata', 'getsettings', 'gxstores',
     'historicaldir', 'incentive', 'leaderboardstaff', 'login', 'renew', 'standings',
     'storebadges', 'storeleaderboard', 'storetoday', 'vetflags'
-  ]);
+  ];
   // Guarded writes: bugreport, clearavatar, recalculategoals, saveavatar, savediscountsettings,
   //                 saveeom, saveincentive, savemanualgoals, savesettings
 
