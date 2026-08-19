@@ -3844,7 +3844,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 <script src="gx-dev.js"></script>
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-client.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.506';
+window.GC = window.GC || {}; GC.VERSION = 'v1.509';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -5217,6 +5217,9 @@ GC.api = (function() {
     if (USE_FIXTURES) return fetchFixture('store-today-' + storeSlug);
     var extra = { store: storeSlug };
     if (opts.sinceTs) extra.sinceTs = opts.sinceTs;
+    // Ride the kiosk's big-sale threshold along so the server can return the sales still inside
+    // the reward window — the kiosk paints that treatment from each sale's timestamp.
+    if (GC.THRESHOLDS && GC.THRESHOLDS.bigTransactionMin) extra.bigMin = GC.THRESHOLDS.bigTransactionMin;
     return gasCall('storetoday', extra);
   }
 
@@ -8539,9 +8542,9 @@ var kiosk = (function() {
   var _lbTimer      = null;
   var _clockTimer   = null;
   var _topSale      = null;  // { who, whoKey, price, ts } — biggest single sale today
-  var _bigSale      = null;  // { who, price, ts } currently on the banner, null when idle
-  var _bigSaleTimer = null;  // hides the big-sale banner
-  var _hotTimers    = {};    // whoKey → timer clearing that card's flame
+  var _bigSale      = null;  // the sale currently on the banner, null when idle
+  var _bigSaleTimer = null;  // next recompute of the big-sale treatment
+  var _bigSales     = [];    // recent big sales, newest first — the treatment is derived from these
   var _rareDropTimer = null; // auto-dismiss for the rare-drop overlay
   var _rareDropCount = 0;    // enforces THRESHOLDS.rareDropMaxPerShift
   var _hmDrawn      = false; // by-hour chart has been drawn (and animated) once
@@ -9606,6 +9609,7 @@ var kiosk = (function() {
     // _slug is normally set in init(), which runs after render() — set it early for the store key.
     _slug = slug || _slug;
     seedTopSale_(storeData);
+    seedBigSales_(storeData);
 
     return [
       '<canvas id="kioskConfetti"></canvas>',
@@ -9736,6 +9740,7 @@ var kiosk = (function() {
     animateGoalArc(data.today.today.pctToGoal);
     animatePaceNeedle(data.today.today.pace);
     animateBars();
+    applyBigSaleTreatment_();   // a sale from before this mount still gets its remaining time
     holdHeatmap(data.today.hourly, data.today.peakHour, data.today.peakRevenue);
     updateClosingBanner(data.today.today);
     initConfetti();
@@ -9751,8 +9756,6 @@ var kiosk = (function() {
       clearTimeout(_hmHoldTimer); _hmHoldTimer = null;
       clearTimeout(_bigSaleTimer); _bigSaleTimer = null;
       clearTimeout(_rareDropTimer); _rareDropTimer = null;
-      Object.keys(_hotTimers).forEach(function(k) { clearTimeout(_hotTimers[k]); });
-      _hotTimers = {};
       _confettiRunning = false;
       if (_confettiResize) { window.removeEventListener('resize', _confettiResize); _confettiResize = null; }
       document.body.classList.remove('kiosk-bg');
@@ -10281,6 +10284,13 @@ var kiosk = (function() {
       if (drWrap) drWrap.className = 'kpi-cell' + (dr > 0.20 ? ' warn' : '');
     }
 
+    // Big-sale treatment — the server's window list is authoritative; re-derive from timestamps
+    if (td.bigSales) {
+      _bigSales = [];
+      td.bigSales.forEach(noteBigSale_);
+    }
+    applyBigSaleTreatment_();
+
     // Standing trophy — the backend recomputes today's best on every poll. Pre-open means a new
     // day has started, so clear yesterday's record on a kiosk that was never restarted.
     if (td.isPreOpen) {
@@ -10372,17 +10382,10 @@ var kiosk = (function() {
 
           var section = document.querySelector('.lb-section');
           if (section) {
-            // Remember which cards were lit before the grid is replaced
-            var wasHot = [];
-            document.querySelectorAll('.emp-card.hot[data-emp-key]').forEach(function(c) {
-              wasHot.push(c.getAttribute('data-emp-key'));
-            });
             section.outerHTML = renderStaffGrid(staff, _storeName, _onShift, _badges, _eomKey);
-            wasHot.forEach(function(k) {
-              var c = document.querySelector('.emp-card[data-emp-key="' + k + '"]');
-              if (c) c.classList.add('hot');
-            });
-            paintBigSale_();   // the banner lives on the strip that was just replaced
+            // The banner and the flames live on the markup just replaced — re-derive both
+            paintBigSale_();
+            applyBigSaleTreatment_();
             animateBars();
             // Animate employee amounts
             staff.forEach(function(s) {
@@ -10473,6 +10476,21 @@ var kiosk = (function() {
   // Rebuild today's record on mount: the backend's exact answer if this deploy has it, else
   // what this kiosk saw earlier today (localStorage), else the best in the ticker seed.
   // Reset first so switching stores never carries another store's record across.
+  // Rebuild what we know about recent big sales, so the treatment can be re-derived on a fresh
+  // mount. Prefer the server's window list; fall back to the ticker seed when it isn't there.
+  function seedBigSales_(storeData) {
+    _bigSales = [];
+    _bigSale  = null;
+    var fromServer = (storeData && storeData.bigSales) || null;
+    if (fromServer && fromServer.length) {
+      fromServer.forEach(noteBigSale_);
+    } else {
+      ((storeData && storeData.ticker) || []).forEach(function(t) {
+        if ((t.price || 0) >= GC.THRESHOLDS.bigTransactionMin) noteBigSale_(t);
+      });
+    }
+  }
+
   function seedTopSale_(storeData) {
     _topSale = null;
     var stored = loadTopSale_();
@@ -10522,7 +10540,13 @@ var kiosk = (function() {
   function paintBigSale_() {
     var el = document.getElementById('kioskBigSale');
     if (!el) return;
-    if (!_bigSale) { el.classList.remove('show', 'fading'); return; }
+    if (!_bigSale) {
+      if (el.classList.contains('show')) {
+        el.classList.add('fading');
+        setTimeout(function() { el.classList.remove('show', 'fading'); }, 1300);
+      }
+      return;
+    }
     el.innerHTML = '<span class="bs-flame">🔥</span>'
       + '<span class="bs-label">Big sale</span>'
       + '<span>' + e(_bigSale.who || '') + '</span>'
@@ -10532,21 +10556,82 @@ var kiosk = (function() {
     el.classList.add('show');
   }
 
-  function showBigSaleBanner(who, price, ts) {
-    _bigSale = { who: who || '', price: price || 0, ts: ts || '' };
-    paintBigSale_();
-    clearTimeout(_bigSaleTimer);
-    _bigSaleTimer = setTimeout(function() {
-      var el = document.getElementById('kioskBigSale');
-      _bigSale = null;
-      if (!el) return;
-      el.classList.add('fading');
-      setTimeout(function() { el.classList.remove('show', 'fading'); }, 1300);
-    }, BIG_SALE_HOLD_MS);
+  // Transaction stamps are local wall-clock strings with no zone (same assumption fmtTxnTime
+  // makes), so read the parts out rather than letting Date guess at a timezone.
+  function parseLocalTs_(ts) {
+    if (!ts || ts.length < 16) return null;
+    var d = new Date(+ts.slice(0,4), +ts.slice(5,7) - 1, +ts.slice(8,10),
+                     +ts.slice(11,13), +ts.slice(14,16), +(ts.slice(17,19) || 0));
+    var ms = d.getTime();
+    return isNaN(ms) ? null : ms;
   }
 
-  // Flame on the seller's own card for the same window
-  function markSellerHot(whoKey, who) {
+  function bigSaleRemainingMs_(sale) {
+    var t = parseLocalTs_(sale && sale.ts);
+    if (t == null) return 0;
+    return Math.max(0, BIG_SALE_HOLD_MS - (Date.now() - t));
+  }
+
+  // Remember a sale so the treatment can be re-derived later (reload, slideshow rotation)
+  function noteBigSale_(sale) {
+    if (!sale || !sale.ts) return;
+    var key = sale.ts + '|' + (sale.whoKey || sale.who || '') + '|' + (sale.price || 0);
+    for (var i = 0; i < _bigSales.length; i++) {
+      var s = _bigSales[i];
+      if (s.ts + '|' + (s.whoKey || s.who || '') + '|' + (s.price || 0) === key) return;
+    }
+    _bigSales.push(sale);
+    _bigSales.sort(function(a, b) { return (b.ts || '').localeCompare(a.ts || ''); });
+    if (_bigSales.length > 20) _bigSales.length = 20;
+  }
+
+  // THE treatment: a pure function of the sales we know about and the clock. Called on mount,
+  // on every poll, and when a sale lands — so a kiosk that reloads (or a slideshow coming back
+  // to this store) shows the banner and the flame with the time that's actually left on them,
+  // instead of only ever reacting to a sale that happened while you were watching.
+  function applyBigSaleTreatment_() {
+    clearTimeout(_bigSaleTimer);
+    _bigSaleTimer = null;
+
+    var live = _bigSales.filter(function(s) {
+      return (s.price || 0) >= GC.THRESHOLDS.bigTransactionMin && bigSaleRemainingMs_(s) > 0;
+    });
+
+    // Banner shows the most recent sale still inside its window
+    var next = live.length ? live[0] : null;
+    if ((next && next.ts) !== (_bigSale && _bigSale.ts)) {
+      _bigSale = next;
+      paintBigSale_();
+    }
+
+    // Flames: exactly the sellers who'd be lit had this kiosk been running the whole time
+    var wanted = {};
+    live.forEach(function(s) {
+      var card = sellerCard_(s.whoKey, s.who);
+      if (card) {
+        wanted[card.getAttribute('data-emp-key') || ''] = true;
+        card.classList.add('hot');
+      }
+    });
+    document.querySelectorAll('.emp-card.hot').forEach(function(c) {
+      if (!wanted[c.getAttribute('data-emp-key') || '']) c.classList.remove('hot');
+    });
+
+    // Come back when the soonest one runs out
+    if (live.length) {
+      var soonest = live.reduce(function(m, s) { return Math.min(m, bigSaleRemainingMs_(s)); }, Infinity);
+      _bigSaleTimer = setTimeout(applyBigSaleTreatment_, Math.max(1000, soonest + 250));
+    }
+  }
+
+  function showBigSaleBanner(sale) {
+    noteBigSale_(sale);
+    applyBigSaleTreatment_();
+  }
+
+  // Find the seller's card. Returns null when they're not on the board (off-shift, or a name
+  // the roster doesn't carry) — the caller just skips the flame in that case.
+  function sellerCard_(whoKey, who) {
     var card = null;
     if (whoKey) card = document.querySelector('.emp-card[data-emp-key="' + whoKey + '"]');
     if (!card && who) {
@@ -10562,18 +10647,13 @@ var kiosk = (function() {
         break;
       }
     }
-    if (!card) return;
-    var key = card.getAttribute('data-emp-key') || who || 'x';
-    card.classList.add('hot');
-    clearTimeout(_hotTimers[key]);
-    _hotTimers[key] = setTimeout(function() { card.classList.remove('hot'); }, BIG_SALE_HOLD_MS);
+    return card;
   }
 
   // One entry point — every big sale lights all three surfaces
   function rewardBigSale(sale) {
     if (!sale) return;
-    showBigSaleBanner(sale.who, sale.price, sale.ts);
-    markSellerHot(sale.whoKey, sale.who);
+    showBigSaleBanner(sale);
     considerTopSale_(sale, true);
   }
 

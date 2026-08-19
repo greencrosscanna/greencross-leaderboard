@@ -1083,6 +1083,32 @@ function getStoreToday(store, params) {
   }
   const topSale = isPreOpen ? null : topSaleToday_();
 
+  // Big sales still inside the kiosk's reward window. The kiosk paints its big-sale treatment
+  // from the SALE'S timestamp rather than from when the event happened to arrive, so a reload —
+  // or a slideshow rotation coming back around — restores the banner and the seller's flame with
+  // the right time left on them. The threshold rides in from the client
+  // (GC.THRESHOLDS.bigTransactionMin) so there is one source for it; the default only matters to
+  // a caller that doesn't send one.
+  const BIG_SALE_WINDOW_MIN = 15;
+  const bigMin = Number(params && params.bigMin) > 0 ? Number(params.bigMin) : 100;
+  function recentBigSales_() {
+    // Transaction stamps are local-time strings, so build the cutoff as the same kind of string
+    // and compare lexicographically — the same trick the sinceTs cursor uses.
+    const cutMs = Utilities.formatDate(
+      new Date(Date.now() - BIG_SALE_WINDOW_MIN * 60 * 1000), STORE_TZ, "yyyy-MM-dd'T'HH:mm:ss");
+    const out = [];
+    for (let i = txns.length - 1; i >= 0 && out.length < 10; i--) {
+      const tx = txns[i];
+      const ts = tx.transactionDateLocalTime || tx.transactionDate || '';
+      if (ts < cutMs) break;                       // txns are chronological — nothing older qualifies
+      if (txTotal_(tx) < bigMin) continue;
+      if (_excluded.has(nameToKey_(txEmployee_(tx).name))) continue;
+      out.push(makeTicker_(tx));
+    }
+    return out;                                    // newest first
+  }
+  const bigSales = isPreOpen ? [] : recentBigSales_();
+
   // Latest transaction timestamp — used as cursor for incremental polls
   const latestTxnTs = txns.length > 0
     ? (txns[txns.length - 1].transactionDateLocalTime || txns[txns.length - 1].transactionDate || '')
@@ -1115,6 +1141,7 @@ function getStoreToday(store, params) {
       newTicker:         newTxns.map(makeTicker_),
       hourly:            hourly,
       topSale:           topSale,
+      bigSales:          bigSales,
     };
   }
 
@@ -1146,6 +1173,7 @@ function getStoreToday(store, params) {
     hourlyTargets:      hourlyTargets,
     ticker:             ticker,
     topSale:            topSale,
+    bigSales:           bigSales,
     latestTxnTs:        latestTxnTs,
     lastUpdated:        new Date().toISOString(),
   };
