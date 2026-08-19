@@ -78,7 +78,16 @@ missing = []
 for page in [f for f in os.listdir('.') if f.endswith('.html')]:
     if page not in tracked:            # only judge pages we actually ship
         continue
-    html = open(page, encoding='utf-8', errors='ignore').read()
+    # Read the COMMITTED page, not the working tree. A pre-push hook must judge what is being PUSHED:
+    # the working tree was correct the whole time this rule passed while a half-landed change shipped
+    # -- index.html fixed on disk, the fix never committed, and the file it referenced already deleted.
+    # Every app 404ed in production with a green preflight.
+    try:
+        html = subprocess.run(['git','show','HEAD:'+page], capture_output=True, text=True).stdout
+    except Exception:
+        html = open(page, encoding='utf-8', errors='ignore').read()
+    if not html:
+        continue
     # Strip HTML comments first. A comment that documents markup is not a shipped reference, and
     # counting it produced a false positive on this very rule -- the bootstrap comment names the tag
     # it replaces, and the scanner read that as a live reference.
