@@ -336,6 +336,51 @@ function gxParseJson_(v) {
 }
 
 /**
+ * The same question gxBoardEligibility() answers, as counts with no names, so it can be asked over
+ * HTTP instead of from the Apps Script editor (action=rosterhealth).
+ *
+ * WHY IT EXISTS. The gates below all fail open on purpose, which means the way they break is by
+ * quietly doing nothing — exactly the failure core-admin warns about with library pins: a GXCore.x()
+ * call runs the snapshot of the version THIS app pins, so reading Core's current source and
+ * concluding you are covered proves nothing. libVersion() reports what we are ACTUALLY running and
+ * withHomeStore reports whether the column the trophy gate needs is really arriving. If home_store
+ * is 0, the crew gate is inert and the pin is the first thing to look at.
+ *
+ * Counts only — no names, nothing the kiosk does not already show the whole shop.
+ */
+function gxRosterHealth_() {
+  const r = gxRoster_();
+  let libVersion = null;
+  try { if (typeof GXCore.libVersion === 'function') libVersion = GXCore.libVersion(); } catch (e) {}
+
+  const perStore = {};
+  const roster = getEmployeeRoster_();
+  STORES.forEach(function (store) {
+    let crew = 0, visiting = 0, gone = 0;
+    (roster[store.slug] || []).forEach(function (e) {
+      if (gxIsExcluded_(e)) gone++;
+      else if (!gxBelongsToStore_(e, store)) visiting++;
+      else crew++;
+    });
+    perStore[store.slug] = { crew: crew, visiting: visiting, gone: gone };
+  });
+
+  return {
+    ok:             !!(r.stats && r.stats.ok),
+    libVersion:     libVersion,
+    coreRows:       (r.stats && r.stats.rows) || 0,
+    withHomeStore:  r.withHomeStore || 0,
+    crewGateActive: (r.withHomeStore || 0) > 0,
+    excludedKeys:   Object.keys(r.excludedKeys || {}).length,
+    matchedById:    (r.stats && r.stats.matchedById) || 0,
+    matchedByName:  (r.stats && r.stats.matchedByName) || 0,
+    unmatched:      (r.stats && r.stats.unmatched) || 0,
+    perStore:       perStore,
+    builtAt:        (r.stats && r.stats.builtAt) || null,
+  };
+}
+
+/**
  * Diagnostic: who is on each store's board, and who did the two gates take off it?
  *
  * The unit test for this logic runs against a stubbed roster; this is the same question asked of the

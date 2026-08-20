@@ -194,6 +194,12 @@ function doGet(e) {
     if (params.action === 'ping') {
       return jsonOut({ ok: true, ts: new Date().toISOString() }, params.callback);
     }
+    // Public: board-eligibility health — counts only, no names. Reports the GXCore version we are
+    // ACTUALLY running and whether home_store is arriving, because the eligibility gates fail open
+    // and so break by quietly doing nothing. See gxRosterHealth_.
+    if (params.action === 'rosterhealth') {
+      return jsonOut(gxRosterHealth_(), params.callback);
+    }
     // Public: computed daily + monthly goals for all stores, keyed by Sales Dashboard names.
     // No auth required — consumed by greencross-dashboard for the current pay period.
     if (params.action === 'getdailygoals') {
