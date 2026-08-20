@@ -10,6 +10,7 @@
                           vibrant square reads there where a dark one would disappear.
        The old per-app touch icons were 1254x1254 / ~2.8MB -- roughly 7x more resolution than iOS
        ever uses, downloaded on every page load. -->
+  <link rel="stylesheet" href="https://greencrosscanna.github.io/greencross-gx-theme/gx-theme.css">
   <link rel="icon" type="image/png" href="https://greencrosscanna.github.io/greencross-gx-theme/gc-icon.png">
   <link rel="apple-touch-icon" sizes="180x180" href="https://greencrosscanna.github.io/greencross-gx-theme/gc-touch-icon.png">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
@@ -100,6 +101,42 @@
   --z-overlay:  100;
   --z-modal:    200;
   --z-toast:    300;
+
+    /* ── Shared-theme aliases ───────────────────────────────────────────────────────────────
+       These local names now SOURCE from gx-theme instead of holding their own copy. Their values
+       were already byte-identical -- gx-theme was derived from this app -- so nothing changes
+       visually today; what changes is that a refinement to the shared theme now reaches all 607
+       references here instead of stopping at a private duplicate.
+       DELIBERATELY NOT ALIASED, because their values genuinely differ or are this app's own:
+         --red-soft   .08 here vs .10 shared -- aliasing would alter every red wash
+         --gold-*     the kiosk gold treatment is Leaderboard's character, not the suite's
+         --z-*, --card-pad*, --blue-soft, --purple-soft  no shared twin
+       Each falls back to its original literal if the shared sheet fails to load. */
+    --bg:            var(--gx-bg, #0a0e0d);
+    --surface:       var(--gx-surface, #121715);
+    --surface-2:     var(--gx-surface-2, #161c1a);
+    --surface-3:     var(--gx-surface-3, #1a221f);
+    --border:        var(--gx-border, #232a27);
+    --border-strong: var(--gx-border-strong, #2e3733);
+    --text:          var(--gx-text, #e6ece9);
+    --text-dim:      var(--gx-text-dim, #8a958f);
+    --text-mute:     var(--gx-text-mute, #5e6864);
+    --green:         var(--gx-green, #4ade80);
+    --green-dim:     var(--gx-green-dim, #2f8a52);
+    --red:           var(--gx-red, #ef4444);
+    --orange:        var(--gx-orange, #f97316);
+    --amber:         var(--gx-amber, #eab308);
+    --yellow:        var(--gx-yellow, #facc15);
+    --blue:          var(--gx-blue, #60a5fa);
+    --purple:        var(--gx-purple, #a78bfa);
+    --pink:          var(--gx-pink, #f472b6);
+    --gold:          var(--gx-gold, #d4a847);
+    --font:          var(--gx-font, -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif);
+    --radius-sm:     var(--gx-radius-sm, 4px);
+    --radius:        var(--gx-radius, 6px);
+    --radius-md:     var(--gx-radius-md, 8px);
+    --radius-lg:     var(--gx-radius-lg, 10px);
+    --radius-pill:   var(--gx-radius-pill, 999px);
 }
 
 </style>
@@ -119,6 +156,10 @@
 *, *::before, *::after { box-sizing: border-box; }
 
 html, body {
+  /* Declare the surface dark so NATIVE control chrome follows -- autofill background, scrollbars,
+     caret, select arrows. Without it Chrome renders those in its light scheme over our dark CSS,
+     which is what turned autofilled login inputs white in another app in this suite. */
+  color-scheme: dark;
   margin: 0;
   padding: 0;
   background: var(--bg);
@@ -772,13 +813,7 @@ html, body {
 }
 
 /* ── Clock (mini, header right) ──────────────────────────── */
-.clock-mini {
-  text-align: right;
-  line-height: 1.2;
-  margin-right: 4px;
-}
-.clock-mini .cm-time { font-weight: 700; font-size: 14px; }
-.clock-mini .cm-date { color: var(--text-mute); font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase; }
+/* Clock styles come from .gx-clock in the shared theme -- they were identical to these. */
 
 /* ── Filter row ──────────────────────────────────────────── */
 .filter-row {
@@ -895,106 +930,14 @@ html, body {
   to   { transform: translateY(0);   opacity: 1; }
 }
 
-/* ── Login Screen ────────────────────────────────────────── */
-.login-screen {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background:
-    radial-gradient(900px 500px at 60% 20%, rgba(74,222,128,0.04), transparent 60%),
-    radial-gradient(600px 400px at 0% 80%, rgba(96,165,250,0.03), transparent 60%),
-    var(--bg);
-}
-.login-card {
-  width: 360px;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 14px;
-  padding: 32px;
-  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
-}
-.login-logo {
-  text-align: center;
-  margin-bottom: 6px;
-}
-.login-tagline {
-  text-align: center;
-  font-size: 11px;
-  color: var(--text-mute);
-  text-transform: uppercase;
-  letter-spacing: 1.4px;
-  margin-bottom: 28px;
-}
-.login-label {
-  display: block;
-  font-size: 11px;
-  color: var(--text-mute);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  margin-bottom: 6px;
-  margin-top: 16px;
-}
-.login-input {
-  width: 100%;
-  background: var(--surface-2);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  color: var(--text);
-  padding: 10px 14px;
-  font-size: 14px;
-  font-family: var(--font);
-  transition: border-color 0.15s;
-}
-.login-input:focus {
-  outline: none;
-  border-color: var(--green);
-}
-.login-input::placeholder { color: var(--text-mute); }
-.login-submit {
-  width: 100%;
-  margin-top: 22px;
-  background: var(--green);
-  color: #0a0e0d;
-  border: none;
-  border-radius: var(--radius);
-  padding: 11px;
-  font-size: 14px;
-  font-weight: 700;
-  font-family: var(--font);
-  cursor: pointer;
-  transition: opacity 0.15s, transform 0.1s;
-  letter-spacing: 0.3px;
-}
-.login-submit:hover  { opacity: 0.9; }
-.login-submit:active { transform: scale(0.98); }
-.login-submit:disabled { opacity: 0.5; cursor: not-allowed; }
-.login-error {
-  margin-top: 12px;
-  padding: 10px 12px;
-  background: rgba(239,68,68,0.08);
-  border: 1px solid rgba(239,68,68,0.3);
-  border-radius: var(--radius);
-  color: var(--red);
-  font-size: 12px;
-  text-align: center;
-  display: none;
-}
-.login-error.visible { display: block; }
-.login-hint {
-  margin-top: 18px;
-  font-size: 11px;
-  color: var(--text-mute);
-  text-align: center;
-  line-height: 1.5;
-}
-.login-hint code {
-  font-size: 11px;
-  color: var(--text-dim);
-  background: var(--surface-3);
-  padding: 1px 5px;
-  border-radius: 3px;
-}
+/* ── Login Screen ────────────────────────────────── */
+/* The sign-in card now comes from the shared theme (.gx-login / .gx-login-card / .gx-input /
+   .gx-btn-green). The ~101 lines of private .login-* rules that used to live here were the
+   ORIGINAL of that shared card -- gx-theme was derived from this app -- so deleting them
+   changes nothing except where the styling is authored. Refinements to the sign-in screen
+   now reach this app automatically instead of being re-applied by hand.
+   Removed: .login-screen .login-card .login-logo .login-tagline .login-label .login-input
+            .login-submit .login-error .login-hint  (no markup or JS referenced them) */
 
 </style>
 
@@ -1005,44 +948,10 @@ html, body {
    ============================================================ */
 
 /* ── Header ──────────────────────────────────────────────── */
-.director-header {
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--border);
-}
-.director-header .breadcrumb {
-  color: var(--text-mute);
-  font-size: 12px;
-}
-.director-header .breadcrumb b {
-  color: var(--text);
-  font-weight: 600;
-}
-.director-header .header-right {
-  margin-left: auto;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
+/* The director chrome is .gx-topnav from the shared theme now. The rules that used to live
+   here (.director-header, .breadcrumb, .header-right) had no markup left pointing at them. */
 
-/* ── Settings gear button ────────────────────────────────── */
-.dir-settings-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 6px;
-  color: var(--text-mute);
-  transition: color 0.15s, background 0.15s;
-}
-.dir-settings-btn:hover {
-  color: var(--text);
-  background: var(--surface-2);
-}
+/* The settings gear is a row in the shared user tray now, so its button styles are gone. */
 
 /* ── Store Status Strip ───────────────────────────────────── */
 .status-strip {
@@ -1571,6 +1480,8 @@ body.kiosk-bg {
   display: none;
 }
 .hist-date-input.visible { display: block; }
+.hist-bar-label { font-size: 10px; letter-spacing: 1.1px; text-transform: uppercase;
+  color: var(--text-mute); font-weight: 700; }
 /* ── Historical banner ──────────────────────────────────── */
 .hist-banner {
   display: flex; align-items: center; gap: 12px;
@@ -3434,26 +3345,6 @@ body.kiosk-bg {
 /* ── Status (exclude) toggle ─────────────────────────────── */
 .settings-emp-excl { width: 88px; text-align: center; }
 
-.excl-toggle {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 20px;
-  border: 1px solid var(--green, #4ade80);
-  background: transparent;
-  color: var(--green, #4ade80);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-  white-space: nowrap;
-}
-.excl-toggle:hover { background: rgba(74,222,128,0.10); }
-
-.excl-toggle.excluded {
-  border-color: var(--text-dim, #5a6860);
-  color: var(--text-dim, #5a6860);
-}
-.excl-toggle.excluded:hover { background: rgba(255,255,255,0.05); }
 
 /* Mute entire row when excluded */
 .emp-row-excluded td { opacity: 0.45; }
@@ -3874,6 +3765,11 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 })();
 </script>
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-client.js"></script>
+<!-- Shared chrome: GXAvatar builds the avatar (DiceBear + the _gchat overlay, ported from this
+     app) and GXTopNav builds the user chip + menu, so no app hand-writes that markup and the
+     menus cannot drift apart between apps. -->
+<script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-avatar.js"></script>
+<script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-topnav.js"></script>
 <script>
 window.GC = window.GC || {}; GC.VERSION = 'v1.509';
 
@@ -3987,6 +3883,42 @@ GC.checkWhatsNew = function() {
 document.addEventListener('click', function(e) {
   var b = e.target && e.target.closest ? e.target.closest('.ver-badge') : null;
   if (b) { e.preventDefault(); GC.showChangelog(); }
+});
+
+// Shared user tray (.gx-user-menu, built by GXTopNav) -- Settings, Version and Sign out. GXTopNav
+// emits gx-topnav:action with the item's action; what each action MEANS stays here, in the app.
+// This one delegated listener replaced three separate copies of the settings-gear wiring, which is
+// exactly the drift the shared tray exists to stop: the gear was wired in the live view, the
+// historical view and the error view, and each copy had to be remembered independently.
+// Director nav links (Dashboard / History / Standings). Delegated, so it survives every re-render
+// of the header without re-wiring. History has no route of its own -- it renders in place, the way
+// it always has -- so it loads the newest browsable day and reveals the picker to change it.
+document.addEventListener('click', function(e) {
+  var t = e.target && e.target.closest ? e.target.closest('[data-dir-tab]') : null;
+  if (!t) return;
+  var tab = t.getAttribute('data-dir-tab');
+  if (tab === 'dashboard') {
+    GC.router.navigate('#/director');
+  } else if (tab === 'standings') {
+    GC.router.navigate('#/standings');
+  } else if (tab === 'history') {
+    GC.views.renderDirectorHistorical(director.histMaxDate());
+  }
+});
+
+document.addEventListener('gx-topnav:action', function(e) {
+  var action = e.detail && e.detail.action;
+  if (action === 'settings') {
+    GC.router.navigate('#/settings');
+  } else if (action === 'version') {
+    GC.showChangelog();                 // same behaviour the .ver-badge click had
+  } else if (action === 'logout') {
+    if (confirm('Sign out?')) {
+      GC.auth.clear();
+      GC.state.reset();
+      GC.router.navigate('#/login');
+    }
+  }
 });
 
 // Hard refresh — re-pull every day live from Dutchie and re-lock closed days
@@ -4983,10 +4915,14 @@ GC.api = (function() {
     'aggticker', 'directoralerts', 'directorall', 'directorstaff', 'directorstores',
     'directorsummary', 'discountsettings', 'getavatardata', 'getsettings', 'gxstores',
     'historicaldir', 'incentive', 'leaderboardstaff', 'login', 'renew', 'standings',
-    'storebadges', 'storeleaderboard', 'storetoday', 'vetflags'
+    'storebadges', 'storeleaderboard', 'storetoday',
+    // version_history feeds the What's New / changelog modal. It is a READ, and it was missing:
+    // opening the changelog on localhost threw an uncaught GXDev block. Found by opening the
+    // changelog from the new user tray -- the guard was right, the declaration was incomplete.
+    'version_history', 'vetflags'
   ];
   // Guarded writes: bugreport, clearavatar, recalculategoals, saveavatar, savediscountsettings,
-  //                 saveeom, saveincentive, savemanualgoals, savesettings
+  //                 saveincentive, savemanualgoals, savesettings
 
 
   // Deployed GAS web app URL.
@@ -5662,7 +5598,7 @@ GC.views.renderDirectorHistorical = function(dateStr) {
   var app = document.getElementById('app');
   if (!app) return;
 
-  app.innerHTML = director.renderLoading();
+  app.innerHTML = director.renderLoading('history');
   director.startClock();
 
   GC.api.fetchHistoricalDirector(dateStr)
@@ -5670,18 +5606,16 @@ GC.views.renderDirectorHistorical = function(dateStr) {
       if (!data.ok) {
         app.innerHTML = director.renderError(
           'No snapshot for ' + dateStr + '. '
-          + (data.error || 'The nightly trigger runs at ~11pm PT.')
+          + (data.error || 'The nightly trigger runs at ~11pm PT.'),
+          'history', dateStr
         );
-        // Wire back-to-live from error state
-        var btnSettings2 = document.getElementById('btnSettings');
-        if (btnSettings2) btnSettings2.addEventListener('click', function() { GC.router.navigate('#/settings'); });
         return;
       }
       app.innerHTML = director.renderHistorical(data, dateStr);
       director.initHistorical(data, dateStr);
     })
     .catch(function(err) {
-      app.innerHTML = director.renderError('Could not load snapshot for ' + dateStr + ': ' + err.message);
+      app.innerHTML = director.renderError('Could not load snapshot for ' + dateStr + ': ' + err.message, 'history', dateStr);
     });
 };
 
@@ -5841,9 +5775,15 @@ var director = (function() {
   }
 
   // ── Render: Loading ────────────────────────────────────
-  function renderLoading() {
-    return '<div class="app-page">'
-      + renderHeader(null)
+  function renderLoading(activeTab) {
+    // The nav is FULL-BLEED: it sits outside .app-page, which is a centred, max-width, padded
+    // content wrapper. Rendered inside it the bar was inset by 24px and pushed down 14px, so
+    // Dashboard and History did not line up with Standings or butt against the top of the page.
+    return renderHeader(null, activeTab || 'dashboard')
+      // Render the History sub-row while loading too, so the content below does not jump down when
+      // the row appears a moment later.
+      + (activeTab === 'history' ? renderHistoryBar(null) : '')
+      + '<div class="app-page">'
       + '<div class="status-strip" style="height:54px"></div>'
       + '<div class="kpi-row large">'
       + '<div class="kpi loading-shimmer" style="height:80px"></div>'.repeat(3)
@@ -5863,11 +5803,21 @@ var director = (function() {
     banner.className = 'stale-banner';
     banner.textContent = '⚠ ' + msg;
     document.body.insertBefore(banner, document.body.firstChild);
+    // The banner is position:fixed, so it occupies no space in the flow. That was survivable while
+    // the nav lived inside .app-page and carried 14px of padding above it; now the nav is flush with
+    // the top of the page, so an unreserved fixed banner sits directly ON the logo and tabs.
+    // Reserve its height on <body> -- not <html>, which the localhost dev guard already offsets.
+    document.body.style.paddingTop = banner.offsetHeight + 'px';
   }
 
   // ── Render: Error ──────────────────────────────────────
-  function renderError(msg) {
-    return '<div class="app-page"><div class="empty-state" style="padding:80px 20px">'
+  function renderError(msg, activeTab, dateStr) {
+    // Keep the nav on screen. Without it a failed load is a dead end -- no tabs, no user menu, only
+    // the browser back button. On History, keep the picker too, so another date is one click away
+    // rather than requiring a trip back to the dashboard.
+    return renderHeader(null, activeTab || 'dashboard')
+      + (activeTab === 'history' ? renderHistoryBar(dateStr) : '')
+      + '<div class="app-page"><div class="empty-state" style="padding:80px 20px">'
       + '<div style="font-size:32px;margin-bottom:12px">⚠️</div>'
       + '<div style="color:var(--text-dim);margin-bottom:8px">Could not load dashboard data</div>'
       + '<div style="color:var(--text-mute);font-size:11px">' + e(msg || 'Unknown error') + '</div>'
@@ -5875,50 +5825,99 @@ var director = (function() {
   }
 
   // ── Render: Header ─────────────────────────────────────
-  function renderHeader(data) {
+  // Last payload seen by renderHeader, so the user tray can find the avatar config when it paints.
+  var _lastHeaderData = null;
+
+  // Yesterday in PACIFIC. Today's numbers are captured at ~11pm, so the newest browsable day is
+  // yesterday. Computed the same way in the date picker's max -- a naive toISOString() returns the
+  // UTC date, which is already TOMORROW after ~5pm PT and would offer a day with no snapshot.
+  function histMaxDate() {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles',
+             year: 'numeric', month: '2-digit', day: '2-digit' })
+           .format(new Date(Date.now() - 24 * 60 * 60 * 1000));
+  }
+
+  // activeTab: 'dashboard' | 'history' | 'standings' -- which nav link reads as current.
+  function renderHeader(data, activeTab) {
+    // Only REPLACE the cache when this render actually carries data. History and Standings pass
+    // null, and blanking it there would drop the avatar back to initials on those tabs alone.
+    if (data) _lastHeaderData = data;
+    // The chip + menu are painted by GXTopNav AFTER this string lands in the DOM. renderHeader is
+    // called from several places (live, historical, standings), each of which concatenates it into
+    // a larger string and then assigns innerHTML synchronously -- so a task-boundary callback covers
+    // every one of them without each call site remembering to paint.
+    setTimeout(function() { paintUserTray(); tickClock(); }, 0);
     var session = GC.auth.load();
-    return '<header class="director-header">'
-      + '<img class="gc-logo-img" src="' + GC.LOGO_PNG + '" alt="Green Cross" height="28">'
-      + '<div class="header-right">'
-      + '<div class="clock-mini">'
-      + '<div class="cm-time" id="directorClock">—</div>'
-      + '<div class="cm-date" id="directorDate">—</div>'
+    var tab = activeTab || 'dashboard';
+    function navTab(id, label) {
+      return '<button class="gx-topnav-tab' + (tab === id ? ' is-active' : '') + '" data-dir-tab="' + id + '">'
+        + label + '</button>';
+    }
+    return '<header class="gx-topnav">'
+      + '<div class="gx-topnav-brand">'
+      +   '<img class="gx-topnav-logo" src="' + GC.LOGO_PNG + '" alt="Green Cross">'
+      +   '<span class="gx-topnav-sub">Sales Performance</span>'
       + '</div>'
+      // History and Standings are NAV LINKS now, not buttons in the action cluster -- they load
+      // their view under this same header instead of replacing the chrome with their own.
+      + '<div class="gx-topnav-tabs">'
+      +   navTab('dashboard', 'Dashboard')
+      +   navTab('history',   'History')
+      +   navTab('standings', 'Standings')
+      + '</div>'
+      + '<div class="gx-topnav-right">'
+      // Incentive stays a BUTTON, to the left of Slideshow, until incentives move to Crew.
+      + (function() {
+          return (session && ['sky','mike'].indexOf(String(session.user || '').toLowerCase()) !== -1)
+            ? '<button class="btn-history" onclick="GC.router.navigate(\'#/incentive\')" title="Incentive Dashboard — bonus calculation">Incentive</button>'
+            : '';
+        })()
       + '<button class="btn-slideshow" id="btnSlideshow" title="Slideshow — cycles through all store kiosks">'
       +   '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'
       +   'Slideshow'
       + '</button>'
-      + '<button class="btn-history" id="btnHistory" title="Browse historical dates">'
-      +   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'
-      +   'History'
-      + '</button>'
-      + '<input type="date" id="histDateInput" class="hist-date-input">'
-      + '<button class="btn-history" onclick="GC.router.navigate(\'#/standings\')" title="Period Standings — all stores vs goal">'
-      +   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>'
-      +   'Standings'
-      + '</button>'
-      + (session && ['sky','mike'].indexOf(String(session.user || '').toLowerCase()) !== -1
-          ? '<button class="btn-history" onclick="GC.router.navigate(\'#/incentive\')" title="Incentive Dashboard — bonus calculation">Incentive</button>'
-          : '')
-      + '<button class="btn-icon dir-settings-btn" id="btnSettings" title="Settings">'
-      +   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
-      +     '<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>'
-      +     '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'
-      +   '</svg>'
-      + '</button>'
-      + '<span class="ver-badge">' + (window.GC && GC.VERSION ? GC.VERSION : '') + '</span>'
-      + (session
-          ? (function() {
-              var nameKey = GC.nameToKey(session.displayName || session.user || '');
-              var cfg     = data && data.avatarConfigs ? findDirAvatarCfg_(nameKey) : null;
-              var avatarInner = GC.ucAvatarHtml(cfg, nameKey, session.initials || '??');
-              return '<span class="user-chip" id="userChip">'
-                + avatarInner
-                + e(session.displayName || session.user || '') + '</span>';
-            })()
-          : '')
+      + '<div class="gx-clock">'
+      + '<div class="gx-clock-time" id="directorClock">—</div>'
+      + '<div class="gx-clock-date" id="directorDate">—</div>'
+      + '</div>'
+      // Settings, Version and Sign out live in the shared user tray -- the canonical order.
+      + '<span id="dirUserSlot"></span>'
       + '</div>'
       + '</header>';
+  }
+
+  // History controls live in a .gx-subnav row UNDER the nav, not inside it. Two reasons: the picker
+  // belongs to the History VIEW rather than to the chrome, and putting it in the nav over-constrained
+  // that flex line -- the tabs were the only shrinkable item, so "Standings" was silently clipped.
+  function renderHistoryBar(dateStr) {
+    return '<div class="gx-subnav">'
+      + '<span class="hist-bar-label">Showing</span>'
+      + '<input type="date" id="histDateInput" class="hist-date-input visible" max="' + histMaxDate() + '"'
+      +   (dateStr ? ' value="' + GC.esc(dateStr) + '"' : '') + '>'
+      + '</div>';
+  }
+
+  // Paint the shared user chip + menu into the header slot. Idempotent: safe to call after any
+  // render, and a no-op if the shared script has not loaded (the app must not break without it).
+  function paintUserTray() {
+    var slot = document.getElementById('dirUserSlot');
+    if (!slot || !window.GXTopNav) return;
+    var session = GC.auth.load();
+    if (!session) { slot.innerHTML = ''; return; }
+    var name    = session.displayName || session.user || '';
+    var nameKey = GC.nameToKey(name);
+    var cfg     = (_lastHeaderData && _lastHeaderData.avatarConfigs) ? findDirAvatarCfg_(nameKey) : null;
+    GXTopNav.renderUser(slot, {
+      name:   name,
+      role:   String(session.role || '').replace(/_/g, ' '),
+      // Seeded on nameKey, matching what this app has always used, so faces do not change.
+      avatar: window.GXAvatar ? GXAvatar.chip(cfg, name, nameKey) : (session.initials || '??'),
+      items: [
+        { action: 'settings', label: 'Settings' },
+        { action: 'version',  label: 'Version', value: (window.GC && GC.VERSION) ? GC.VERSION : '' },
+        { action: 'logout',   label: 'Sign out', danger: true }
+      ]
+    });
   }
 
   // ── Render: Store Status Strip ─────────────────────────
@@ -6505,8 +6504,11 @@ var director = (function() {
     var range  = sum && sum.dateRange
       ? GC.fmtDateRange(sum.dateRange.from, sum.dateRange.to) : '';
 
-    return '<div class="app-page">'
-      + renderHeader(data)
+    // The nav is FULL-BLEED: it sits outside .app-page, which is a centred, max-width, padded
+    // content wrapper. Rendered inside it the bar was inset by 24px and pushed down 14px, so
+    // Dashboard and History did not line up with Standings or butt against the top of the page.
+    return renderHeader(data, 'dashboard')
+      + '<div class="app-page">'
       + renderEomPrompt()
       + renderStatusStrip(stores)
       + (today.goal
@@ -6630,18 +6632,23 @@ var director = (function() {
   }
 
   // ── Clock ──────────────────────────────────────────────
-  function startClock() {
-    function tick() {
-      var now = new Date();
-      var ct  = document.getElementById('directorClock');
-      var cd  = document.getElementById('directorDate');
-      if (ct) ct.textContent = GC.fmtTime(now);
-      if (cd) cd.textContent = GC.fmtDateShort(now);
-    }
-    tick();
-    if (_clockTimer) clearInterval(_clockTimer);
-    _clockTimer = setInterval(tick, 1000);
+  // Hoisted so a header re-render can repaint the clock immediately. Every render replaces the
+  // clock elements, and waiting for the next interval left an em-dash on screen for up to a second
+  // on every tab switch.
+  function tickClock() {
+    var now = new Date();
+    var ct  = document.getElementById('directorClock');
+    var cd  = document.getElementById('directorDate');
+    if (ct) ct.textContent = GC.fmtTime(now);
+    if (cd) cd.textContent = GC.fmtDateShort(now);
   }
+  function startClock() {
+    tickClock();
+    if (_clockTimer) clearInterval(_clockTimer);
+    _clockTimer = setInterval(tickClock, 1000);
+  }
+  // Any view that renders this header can drive its clock; whoever starts it must stop it.
+  function stopClock() { if (_clockTimer) { clearInterval(_clockTimer); _clockTimer = null; } }
 
   // ── Auto-refresh ───────────────────────────────────────
   var _refreshTimer = null;
@@ -6831,21 +6838,8 @@ var director = (function() {
     var eomDismiss = document.getElementById('eomPromptDismiss');
     if (eomDismiss) eomDismiss.addEventListener('click', dismissEomPrompt);
 
-    // Settings gear
-    var btnSettings = document.getElementById('btnSettings');
-    if (btnSettings) btnSettings.addEventListener('click', function() {
-      GC.router.navigate('#/settings');
-    });
-
-    // User chip → logout
-    var chip = document.getElementById('userChip');
-    if (chip) chip.addEventListener('click', function() {
-      if (confirm('Sign out?')) {
-        GC.auth.clear();
-        GC.state.reset();
-        GC.router.navigate('#/login');
-      }
-    });
+    // Settings + Sign out now live in the shared user tray, wired once by the
+    // gx-topnav:action listener near GC.showChangelog rather than re-wired per view.
 
     // Store filter pills
     var filterRow = document.getElementById('filterRow');
@@ -7202,8 +7196,12 @@ var director = (function() {
     var storeList   = buildHistStores(histStores);
     var displayDate = fmtHistDate(dateStr);
 
-    return '<div class="app-page">'
-      + renderHeader(null)
+    // The nav is FULL-BLEED: it sits outside .app-page, which is a centred, max-width, padded
+    // content wrapper. Rendered inside it the bar was inset by 24px and pushed down 14px, so
+    // Dashboard and History did not line up with Standings or butt against the top of the page.
+    return renderHeader(null, 'history')
+      + renderHistoryBar(dateStr)
+      + '<div class="app-page">'
       + '<div class="hist-banner" id="histBanner">'
       +   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'
       +   'Viewing <strong>' + e(displayDate) + '</strong> — End of Day Snapshot'
@@ -7233,17 +7231,10 @@ var director = (function() {
       GC.views.renderDirector();
     });
 
-    // Settings gear still works
-    var btnSettings = document.getElementById('btnSettings');
-    if (btnSettings) btnSettings.addEventListener('click', function() {
-      GC.router.navigate('#/settings');
-    });
 
-    // History button toggles date picker (so user can pick another date)
+    // Wire the picker that changes which historical day is shown. The History NAV LINK carries the
+    // active state now (renderHeader(..., 'history')), so there is no button to mark.
     wireHistoryControls();
-    // Mark the history button as active while in historical mode
-    var btnHistory = document.getElementById('btnHistory');
-    if (btnHistory) btnHistory.classList.add('active');
     // Pre-fill date picker with current historical date
     var dateInput = document.getElementById('histDateInput');
     if (dateInput) dateInput.value = dateStr;
@@ -7254,27 +7245,16 @@ var director = (function() {
 
   // ── History controls (shared between live init + historical init) ──
   function wireHistoryControls() {
-    var btnHistory = document.getElementById('btnHistory');
-    var dateInput  = document.getElementById('histDateInput');
-    if (!btnHistory || !dateInput) return;
-
-    // Set max to yesterday (today's data captured at 11pm, not yet available). Compute in PACIFIC — a naive
-    // toISOString() returns the UTC date, which is TOMORROW after ~5pm PT, wrongly letting the picker select today.
-    var yStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' })
-                 .format(new Date(Date.now() - 24 * 60 * 60 * 1000));
-    dateInput.max = yStr;
-
-    btnHistory.addEventListener('click', function() {
-      dateInput.classList.toggle('visible');
-      if (dateInput.classList.contains('visible')) {
-        dateInput.showPicker ? dateInput.showPicker() : dateInput.focus();
-      }
-    });
-
+    var dateInput = document.getElementById('histDateInput');
+    if (!dateInput) return;
+    // There is no History BUTTON any more -- History is a nav link, and the nav handler loads the
+    // newest day. This only wires the picker that changes which day is shown. `max` is set in the
+    // markup by histMaxDate(), so the picker cannot offer a day with no snapshot yet.
+    if (dateInput.dataset.wired) return;      // header re-renders; do not stack listeners
+    dateInput.dataset.wired = '1';
     dateInput.addEventListener('change', function() {
       var ds = this.value;
       if (!ds) return;
-      dateInput.classList.remove('visible');
       GC.views.renderDirectorHistorical(ds);
     });
   }
@@ -7284,9 +7264,15 @@ var director = (function() {
     renderLoading:       renderLoading,
     renderError:         renderError,
     renderHistorical:    renderHistorical,
+    // Exported so Standings renders under this same nav instead of its own chrome.
+    renderHeader:        renderHeader,
+    paintUserTray:       paintUserTray,
+    histMaxDate:         histMaxDate,
+    renderHistoryBar:    renderHistoryBar,
     init:                init,
     initHistorical:      initHistorical,
     startClock:          startClock,
+    stopClock:           stopClock,
     updateStaffTable:    updateStaffTable,
     wireHistoryControls: wireHistoryControls,
     _showStaleBanner:    _showStaleBanner,
@@ -8470,13 +8456,13 @@ var standingsView = (function() {
 
     var chainFill = Math.max(1, Math.min(100, c.chain.pctGoal * 100));
 
-    _app.innerHTML = '<div class="stn-wrap">'
+    _app.innerHTML = chrome_() + '<div class="stn-wrap">'
       + '<div class="stn-top">'
       +   '<div><div class="stn-title">Period Standings</div>'
       +     '<div class="stn-sub">Pay Period · ' + e(pp.start) + ' → ' + e(pp.end) + ' · <b>Day ' + pp.dayNum + ' of ' + pp.daysTotal + '</b></div></div>'
       +   '<div style="display:flex;gap:10px;align-items:center">'
       +     '<span class="stn-live"><span class="stn-dot"></span> Live</span>'
-      +     '<a class="stn-back" href="' + e(GC.auth.homeRoute()) + '">← Back</a>'
+      +     (isDirector_() ? '' : '<a class="stn-back" href="' + e(GC.auth.homeRoute()) + '">← Back</a>')
       +   '</div>'
       + '</div>'
 
@@ -8497,18 +8483,36 @@ var standingsView = (function() {
 
   function load() {
     GC.api.fetchStandings().then(function(d) {
-      if (!d || d.ok === false) { _app.innerHTML = '<div class="stn-wrap"><div class="stn-denied">' + e((d && d.error) || 'Failed to load standings') + '</div></div>'; return; }
+      if (!d || d.ok === false) { _app.innerHTML = chrome_() + '<div class="stn-wrap"><div class="stn-denied">' + e((d && d.error) || 'Failed to load standings') + '</div></div>'; return; }
       render(d);
-    }).catch(function(err) { _app.innerHTML = '<div class="stn-wrap"><div class="stn-denied">Error: ' + e(String(err)) + '</div></div>'; });
+    }).catch(function(err) { _app.innerHTML = chrome_() + '<div class="stn-wrap"><div class="stn-denied">Error: ' + e(String(err)) + '</div></div>'; });
+  }
+
+  // Directors reach Standings from the nav, so it renders UNDER that nav rather than replacing the
+  // chrome with its own page. Managers reach it by its dedicated #/standings link from a kiosk, and
+  // the director nav (Slideshow, Incentive, History) is neither available nor meaningful to them --
+  // they keep the standalone page with its own back link. isDirector_ decides which.
+  function isDirector_() {
+    var r = (GC.auth.load() || {}).role;
+    return r === 'director' || r === 'owner';
+  }
+  function chrome_() {
+    return isDirector_() ? director.renderHeader(null, 'standings') : '';
   }
 
   function start(app) {
     _app = app;
-    app.innerHTML = '<div class="stn-wrap"><div class="stn-denied">Loading standings…</div></div>';
+    app.innerHTML = chrome_() + '<div class="stn-wrap"><div class="stn-denied">Loading standings…</div></div>';
+    // The shared header carries a clock. Standings renders that header now, so it has to drive the
+    // clock too -- otherwise the time sits at the em-dash placeholder on this tab.
+    if (isDirector_()) director.startClock();
     load();
     clearInterval(_timer);
     _timer = setInterval(load, REFRESH_MS);
-    GC.router.onLeave(function() { clearInterval(_timer); _timer = null; });
+    GC.router.onLeave(function() {
+      clearInterval(_timer); _timer = null;
+      if (isDirector_()) director.stopClock();
+    });
   }
 
   return { start: start };
@@ -11085,108 +11089,13 @@ var settings = (function() {
   }
 
   // ── Shared: build a table row for one employee ────────────
-  function empRow(emp, nicknames, avatarConfigs, showNick, excludedSet, currentEomKey, roles) {
-    var empRole = (roles || {})[emp.key] || 'budtender';   // new/unassigned staff default to Budtender
-    var nick   = (nicknames || {})[emp.key] || '';
-    var config = (avatarConfigs || {})[emp.key] || null;
-    if (!config) {
-      var _segs = emp.key.split('_');
-      for (var _si = 0; _si < _segs.length; _si++) {
-        if ((avatarConfigs || {})[_segs[_si]]) { config = (avatarConfigs || {})[_segs[_si]]; break; }
-      }
-    }
-    var nameParts   = (emp.name || '').split(' ');
-    var initials    = (nameParts[0] || '').slice(0, 1)
-                    + (nameParts.length > 1 ? nameParts[nameParts.length - 1].slice(0, 1) : '');
-    var displayName = nick || emp.name;
-    var puck        = GC.lbAvaPuck(emp.key, config, GC.nickInitials(displayName, emp.key, emp.initials || initials || '??'), true);
-    var encKey    = e(emp.key);
-    var isExcluded = excludedSet && excludedSet[emp.key];
-    var isEom      = currentEomKey && emp.key === currentEomKey;
-    var rowCls    = isExcluded ? ' class="emp-row-excluded"' : '';
-    return '<tr' + rowCls + '>'
-      + '<td class="settings-emp-ava" title="Click to edit avatar">' + puck + '</td>'
-      + '<td class="settings-emp-name">' + e(emp.name) + '</td>'
-      + (showNick
-          ? '<td><input class="settings-input settings-nick-input"'
-            +   ' type="text" data-key="' + encKey + '"'
-            +   ' value="' + e(nick) + '" placeholder="Nickname"></td>'
-            + '<td class="settings-emp-store">' + e(emp.store || '') + '</td>'
-            + '<td class="settings-emp-eom-col" style="text-align:center">'
-            +   '<input type="radio" name="eomPick" value="' + encKey + '"'
-            +     (isEom ? ' checked' : '') + ' title="Set as Employee of the Month">'
-            + '</td>'
-            + '<td>'
-            +   '<select class="settings-input settings-role-select" data-key="' + encKey + '">'
-            +     '<option value="budtender"' + (empRole === 'budtender' ? ' selected' : '') + '>Budtender</option>'
-            +     '<option value="asst_manager"' + (empRole === 'asst_manager' ? ' selected' : '') + '>Asst. Manager</option>'
-            +     '<option value="store_manager"' + (empRole === 'store_manager' ? ' selected' : '') + '>Store Manager</option>'
-            +   '</select>'
-            + '</td>'
-            + '<td class="settings-emp-excl">'
-            +   '<button class="excl-toggle' + (isExcluded ? ' excluded' : '') + '"'
-            +           ' data-key="' + encKey + '"'
-            +           ' title="' + (isExcluded ? 'Re-activate employee' : 'Exclude from dashboard') + '">'
-            +     (isExcluded ? 'Excluded' : 'Active')
-            +   '</button>'
-            + '</td>'
-          : '<td class="settings-emp-store" style="color:var(--text-dim);font-size:12px">' + e(emp.roleLabel || 'Admin') + '</td>'
-            + '<td class="settings-emp-store" style="font-size:12px">' + e(emp.jobTitle || '') + '</td>'
-        )
-      + '</tr>';
-  }
+  // empRow() removed with the Management and Employees cards it built — nicknames,
+  // avatars, job titles and the excluded flag are all edited in Crew now.
 
-  // ── Management card ────────────────────────────────────────
-  function renderManagement(employees, avatarConfigs) {
-    var mgmt = (employees || []).filter(function(e) { return e.section === 'management'; });
-    if (!mgmt.length) return '';
-    var rows = mgmt.map(function(emp) { return empRow(emp, {}, avatarConfigs, false); }).join('');
-    return '<div class="settings-card" id="mgmtCard">'
-      + '<div class="settings-card-head">'
-      +   '<div>'
-      +     '<div class="settings-card-title">Management</div>'
-      +     '<div class="settings-card-sub">Directors — click an avatar to customize.</div>'
-      +   '</div>'
-      + '</div>'
-      + '<table class="settings-table settings-emp-table">'
-      + '<thead><tr><th></th><th>Name</th><th>Role</th><th>Job Title</th></tr></thead>'
-      + '<tbody>' + rows + '</tbody>'
-      + '</table>'
-      + '</div>';
-  }
-
-  // ── Employees card (nicknames + avatars combined) ─────────
-  function renderEmployees(employees, nicknames, avatarConfigs, excluded, eom, roles) {
-    nicknames     = nicknames     || {};
-    avatarConfigs = avatarConfigs || {};
-    roles         = roles         || {};
-    // excluded is an array of keys from GAS — convert to a set-like object for fast lookup
-    var excludedSet = {};
-    (excluded || []).forEach(function(k) { excludedSet[k] = true; });
-    var currentEomKey = (eom && eom.employeeKey) ? eom.employeeKey : null;
-    var staff = (employees || []).filter(function(emp) { return emp.section !== 'management'; });
-    var rows  = staff.map(function(emp) { return empRow(emp, nicknames, avatarConfigs, true, excludedSet, currentEomKey, roles); }).join('');
-
-    return '<div class="settings-card" id="nickCard">'
-      + '<div class="settings-card-head">'
-      +   '<div>'
-      +     '<div class="settings-card-title">Employees</div>'
-      +     '<div class="settings-card-sub">Set a nickname and build an avatar. ★ = Employee of the Month. Toggle <strong>Active/Excluded</strong> to show or hide on the dashboard.</div>'
-      +   '</div>'
-      + '</div>'
-      + '<table class="settings-table settings-emp-table" id="nickTable">'
-      + '<thead><tr>'
-      +   '<th></th><th>Dutchie Name</th><th>Nickname</th><th>Store</th><th title="Employee of the Month">★ EoM</th><th>Role</th><th>Status</th>'
-      + '</tr></thead>'
-      + '<tbody>' + rows + '</tbody>'
-      + '</table>'
-      + '<div class="settings-card-foot">'
-      +   '<div class="settings-save-status" id="nickStatus"></div>'
-      +   '<button class="btn-ghost" id="clearEomBtn" style="font-size:12px;padding:6px 12px">Clear EoM</button>'
-      +   '<button class="btn-primary" id="saveNicksBtn">Save</button>'
-      + '</div>'
-      + '</div>';
-  }
+  // Employee of the Month moved to Crew, where it belongs: it is an HR call, and this app only
+  // RENDERS the badge on the kiosk. Crew writes it to GX Core as cfg.eom keyed on employee_id
+  // (getEomCurrent_ in endpoints.gs reads it), which also fixed the old bug where the star was
+  // keyed on a name and a rename silently dropped it.
 
   // ── Full page render ──────────────────────────────────────
   // ── Data / maintenance ────────────────────────────────────
@@ -11207,8 +11116,6 @@ var settings = (function() {
       + renderHeader()
       + '<div class="settings-body">'
       +   renderGoalsSection(data)
-      +   renderManagement(data.employees, data.avatarConfigs)
-      +   renderEmployees(data.employees, data.nicknames, data.avatarConfigs, data.excluded, data.eom, data.roles)
       +   renderDataCard()
       + '</div>'
       + '</div>';
@@ -11486,112 +11393,10 @@ var settings = (function() {
     }
 
     // Exclude toggle — live toggle, saved with the Save button
-    var nickTable = document.getElementById('nickTable');
-    if (nickTable) {
-      nickTable.addEventListener('click', function(evt) {
-        var btn = evt.target.closest('.excl-toggle');
-        if (!btn) return;
-        var isExcluded = btn.classList.toggle('excluded');
-        btn.textContent = isExcluded ? 'Excluded' : 'Active';
-        btn.title       = isExcluded ? 'Re-activate employee' : 'Exclude from dashboard';
-        var row = btn.closest('tr');
-        if (row) row.classList.toggle('emp-row-excluded', isExcluded);
-      });
-    }
-
-    // Save nicknames + excluded state
-    var saveNicksBtn = document.getElementById('saveNicksBtn');
-    var nickStatus   = document.getElementById('nickStatus');
-    if (saveNicksBtn) {
-      saveNicksBtn.addEventListener('click', function() {
-        var inputs    = document.querySelectorAll('#nickTable input[data-key]');
-        var nicknames = {};
-        inputs.forEach(function(inp) {
-          var val = inp.value.trim();
-          if (val) nicknames[inp.dataset.key] = val;
-        });
-
-        var excluded = [];
-        document.querySelectorAll('#nickTable .excl-toggle.excluded').forEach(function(btn) {
-          excluded.push(btn.dataset.key);
-        });
-
-        var roles = {};
-        document.querySelectorAll('#nickTable select.settings-role-select').forEach(function(sel) {
-          if (sel.value) roles[sel.dataset.key] = sel.value;
-        });
-
-        saveNicksBtn.disabled = true;
-        saveNicksBtn.textContent = 'Saving…';
-        nickStatus.textContent = '';
-        nickStatus.className = 'settings-save-status';
-
-        GC.api.saveSettings(null, nicknames, excluded, roles)
-          .then(function(res) {
-            saveNicksBtn.disabled = false;
-            saveNicksBtn.textContent = 'Save';
-            if (res.ok) {
-              GC.api.clearAvatarCaches(); // bust director cache so roles/nicknames show immediately
-              nickStatus.textContent = '✓ Saved';
-              nickStatus.className = 'settings-save-status ok';
-            } else {
-              nickStatus.textContent = '✗ ' + (res.error || 'Save failed');
-              nickStatus.className = 'settings-save-status err';
-            }
-          })
-          .catch(function(err) {
-            saveNicksBtn.disabled = false;
-            saveNicksBtn.textContent = 'Save';
-            nickStatus.textContent = '✗ ' + err.message;
-            nickStatus.className = 'settings-save-status err';
-          });
-      });
-    }
-
-    // EoM radio — auto-save on selection change
-    if (nickTable) {
-      nickTable.addEventListener('change', function(evt) {
-        var radio = evt.target;
-        if (radio.type !== 'radio' || radio.name !== 'eomPick') return;
-        nickStatus.textContent = 'Saving EoM…';
-        nickStatus.className   = 'settings-save-status';
-        GC.api.gasCall('saveeom', { key: radio.value })
-          .then(function(r) {
-            nickStatus.textContent = r.ok ? '✓ EoM saved' : '✗ ' + (r.error || 'Save failed');
-            nickStatus.className   = 'settings-save-status ' + (r.ok ? 'ok' : 'err');
-          })
-          .catch(function(err) {
-            nickStatus.textContent = '✗ ' + err.message;
-            nickStatus.className   = 'settings-save-status err';
-          });
-      });
-    }
-
-    // Clear EoM button
-    var clearEomBtn = document.getElementById('clearEomBtn');
-    if (clearEomBtn) {
-      clearEomBtn.addEventListener('click', function() {
-        if (!confirm('Clear Employee of the Month?')) return;
-        clearEomBtn.disabled = true;
-        GC.api.gasCall('saveeom', {})
-          .then(function(r) {
-            clearEomBtn.disabled = false;
-            if (r.ok) {
-              document.querySelectorAll('input[name="eomPick"]').forEach(function(inp) { inp.checked = false; });
-              nickStatus.textContent = '✓ EoM cleared';
-              nickStatus.className   = 'settings-save-status ok';
-            } else {
-              nickStatus.textContent = '✗ ' + (r.error || 'Clear failed');
-              nickStatus.className   = 'settings-save-status err';
-            }
-          })
-          .catch(function(err) {
-            clearEomBtn.disabled = false;
-            nickStatus.textContent = '✗ ' + err.message;
-            nickStatus.className   = 'settings-save-status err';
-          });
-      });
-    }
+    // The excluded-toggle and save-nicknames handlers lived here. Both are gone with the
+    // Employees table: nicknames, avatars and job titles are edited in Crew, and 'excluded'
+    // is superseded by Crew's employment status (see getExcluded_ in endpoints.gs).
+    // The EoM picker and its handlers lived here. Employee of the Month is set in Crew now.
 
     // Apply override scaling once on load so saved overrides are reflected immediately
     applyStretchDisplay();
@@ -12114,18 +11919,25 @@ GC.views.renderLogin = function() {
   if (!app) return;
 
   app.innerHTML = [
-    '<div class="login-screen">',
-    '  <div class="login-card">',
-    '    <div class="login-logo">',
-    '      <img src="' + GC.LOGO_PNG + '" alt="Green Cross" style="height:36px;width:auto;display:block;margin:0 auto">',
+    // Shared sign-in card -- the same .gx-login-* markup every GX app uses, so a refinement to the
+    // login lands here too instead of only in the apps that were rebuilt by hand. The IDs
+    // (loginUser / loginPass / loginBtn / loginError) are UNCHANGED, so all the wiring below binds
+    // exactly as before. The button is type="button" and the form returns false, which keeps the
+    // existing click + Enter handling rather than introducing a native submit.
+    '<div class="gx-login">',
+    '  <div class="gx-login-card">',
+    '    <div class="gx-login-head">',
+    '      <img class="gx-login-mark" src="' + GC.LOGO_PNG + '" alt="Green Cross">',
+    '      <div class="gx-login-sub">Sales Performance</div>',
     '    </div>',
-    '    <div class="login-tagline">Sales Performance</div>',
-    '    <label class="login-label" for="loginUser">Username</label>',
-    '    <input class="login-input" type="text" id="loginUser" placeholder="your username" autocomplete="username" autocapitalize="none">',
-    '    <label class="login-label" for="loginPass">Password</label>',
-    '    <input class="login-input" type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password">',
-    '    <button class="login-submit" id="loginBtn">Sign in</button>',
-    '    <div class="login-error" id="loginError"></div>',
+    '    <form class="gx-login-form" onsubmit="return false">',
+    '      <label class="gx-login-field" for="loginUser"><span>Username</span>',
+    '        <input class="gx-input" type="text" id="loginUser" placeholder="your username" autocomplete="username" autocapitalize="none"></label>',
+    '      <label class="gx-login-field" for="loginPass"><span>Password</span>',
+    '        <input class="gx-input" type="password" id="loginPass" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" autocomplete="current-password"></label>',
+    '      <button class="gx-btn gx-btn-green gx-login-submit" type="button" id="loginBtn">Sign in</button>',
+    '      <div class="gx-login-err" id="loginError"></div>',
+    '    </form>',
     '  </div>',
     '</div>',
   ].join('\n');
@@ -12141,6 +11953,9 @@ GC.views.renderLogin = function() {
     errorEl.classList.add('visible');
   }
   function clearError() {
+    // Clear the TEXT, not just the class. Under the old .login-error rule the class alone hid the
+    // message; .gx-login-err is always in flow, so a stale error would stay visible.
+    errorEl.textContent = '';
     errorEl.classList.remove('visible');
   }
 
