@@ -2,11 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <!-- Favicon: the shared GC mark from gx-theme, absolute so every app shows the SAME icon and
-       there is nothing to copy per repo. Replaces per-app apple-touch-icon.png files, which had
-       already drifted (Inventory and Sales differed) and were ~2.8MB each on every page load. -->
+  <!-- Icons: shared from gx-theme, absolute, so every app is identical and nothing is copied per
+       repo. Two DIFFERENT images on purpose:
+         favicon          dark mark, sized for a browser tab strip
+         apple-touch-icon green mark at 180x180, the size iOS actually uses for an iPhone home
+                          screen. iOS strips transparency and composites on the wallpaper, so the
+                          vibrant square reads there where a dark one would disappear.
+       The old per-app touch icons were 1254x1254 / ~2.8MB -- roughly 7x more resolution than iOS
+       ever uses, downloaded on every page load. -->
   <link rel="icon" type="image/png" href="https://greencrosscanna.github.io/greencross-gx-theme/gc-icon.png">
-  <link rel="apple-touch-icon" href="https://greencrosscanna.github.io/greencross-gx-theme/gc-icon.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://greencrosscanna.github.io/greencross-gx-theme/gc-touch-icon.png">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Green Cross — Performance</title>
 
