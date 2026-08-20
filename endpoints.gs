@@ -136,41 +136,33 @@ function saveStoreTrendCache_(byStore30d) {
 }
 
 /**
- * Returns a Set of employee nameKeys to keep OFF the board.
+ * Employee nameKeys to keep OFF the board — anyone Crew has marked retired/merged/deleted.
  *
- * Two sources, unioned:
- *   1. GX Core status — anyone Crew has marked retired/merged/deleted. This is the real answer, and
- *      it keeps working for people Crew retires in future without anyone touching Leaderboard.
- *   2. GC_EXCLUDED_JSON — the old hand-maintained list, kept only so the switch has no gap.
+ * The old hand-maintained GC_EXCLUDED_JSON list is no longer consulted. Sky confirmed it held only
+ * retired people, which employment status now covers, and status keeps working for anyone Crew
+ * retires in future without a soul touching Leaderboard.
  *
- * The union is deliberate: it is the reason this change lands everywhere at once. Five call sites in
- * this file already filter through getExcluded_(), so teaching it about status retires staff from
- * the kiosk, the leaderboard, the director view and standings without editing any of them. When
- * gxRosterCoverage() shows the status source covers everyone on the old list, source 2 can be
- * emptied and then deleted, and nothing else has to change.
+ * Five call sites in this file filter through here, which is why teaching this one function about
+ * status retired staff from the kiosk, leaderboard, director view and standings all at once.
  */
 function getExcluded_() {
-  const out = new Set();
-  try { (gxRoster_().retiredKeys || []).forEach(function (k) { out.add(k); }); } catch (e) { gxRosterWarn_(e); }
-  const raw = getProps_().getProperty(GC_EXCLUDED_KEY);
-  try { (raw ? JSON.parse(raw) : []).forEach(function (k) { out.add(k); }); } catch (e) {}
+  var out = new Set();
+  try { (gxRoster_().retiredKeys || []).forEach(function (k) { out.add(k); }); }
+  catch (e) { gxRosterWarn_(e); }
   return out;
 }
 
 /**
- * Job titles, keyed by nameKey. GX Core (Crew) wins; the old local map fills gaps only.
- * Crew's role_title is free text, so it is normalised to the three values this app switches on.
+ * Job titles, keyed by nameKey. GX Core only; Crew is the only editor.
+ * role_title is free text there, so it is normalised to the three values this app switches on.
+ * Anything that does not map (Director, Intake Manager) is left out, and the caller defaults it.
  */
 function getRoles_() {
-  var local = {};
-  var raw = getProps_().getProperty(GC_ROLES_KEY);
-  if (raw) { try { local = JSON.parse(raw) || {}; } catch(e) { local = {}; } }
   var out = {};
-  Object.keys(local).forEach(function (k) { out[k] = local[k]; });
   try {
-    var byKey = gxRoster_().byKey || {};
-    Object.keys(byKey).forEach(function (k) {
-      var role = gxNormaliseRole_(byKey[k].roleTitle);
+    var recs = gxAllRecs_();
+    Object.keys(recs).forEach(function (k) {
+      var role = gxNormaliseRole_(recs[k].roleTitle);
       if (role) out[k] = role;
     });
   } catch (e) { gxRosterWarn_(e); }
@@ -1594,20 +1586,22 @@ function resolveAvatarConfigs_(employees, rawConfigs) {
 
 /** Returns the full avatar config map { nameKey: configObject }. */
 /**
- * Avatar configs, keyed by nameKey. GX Core (Crew) wins; the old local map fills gaps only.
- * Crew stamps a `seed` INTO avatar_config, pinned to employee_number, precisely so a rename cannot
- * regenerate a different face. Pass the whole config through untouched so that seed is honoured.
+ * Avatar configs, keyed by nameKey. GX Core only — Crew and #/avatar both write there.
+ *
+ * The local GC_AVATAR_CONFIGS_JSON fallback is gone. It made the migration lossless, but a value
+ * that lived only here could not be removed from Crew: clearing it there just let the local copy
+ * resurface, because "Core has nothing" and "Core has not been told" looked identical. The two
+ * local-only avatars (Zachary Rodriguez, Tyson Farris) were backfilled into Core first.
+ *
+ * Crew stamps a `seed` INTO avatar_config, pinned to employee_number, so a rename cannot regenerate
+ * a different face. Pass the config through untouched so that seed is honoured.
  */
 function getAvatarConfigs_() {
-  var local = {};
-  var raw = PropertiesService.getScriptProperties().getProperty(GC_AVATAR_CONFIGS_KEY);
-  if (raw) { try { local = JSON.parse(raw) || {}; } catch(e) { local = {}; } }
   var out = {};
-  Object.keys(local).forEach(function (k) { out[k] = local[k]; });
   try {
-    var byKey = gxRoster_().byKey || {};
-    Object.keys(byKey).forEach(function (k) {
-      if (byKey[k].avatarConfig) out[k] = byKey[k].avatarConfig;
+    var recs = gxAllRecs_();
+    Object.keys(recs).forEach(function (k) {
+      if (recs[k].avatarConfig) out[k] = recs[k].avatarConfig;
     });
   } catch (e) { gxRosterWarn_(e); }
   return out;
@@ -1621,15 +1615,13 @@ function saveAvatarConfig_(params) {
   if (!params.nameKey) return { ok: false, error: 'nameKey required' };
   var configStr = params.config;
   if (!configStr) return { ok: false, error: 'config required' };
-  var config;
-  try { config = JSON.parse(configStr); } catch(e) {
+  try { JSON.parse(configStr); } catch(e) {
     return { ok: false, error: 'Invalid config JSON: ' + e.message };
   }
-  var configs = getAvatarConfigs_();
-  configs[params.nameKey] = config;
-  PropertiesService.getScriptProperties().setProperty(GC_AVATAR_CONFIGS_KEY, JSON.stringify(configs));
-  Logger.log('[avatar] saved config for ' + params.nameKey);
-  return { ok: true, nameKey: params.nameKey };
+  // Writes to GX CORE, not to a local copy. #/avatar is a second EDITOR (staff build their own
+  // face; Crew can also set one) but there must only be one STORE. Writing locally is what let an
+  // avatar exist here and not in Crew, where it then could not be changed or removed.
+  return gxWriteAvatarToCore_(params.nameKey, configStr);
 }
 
 /**
@@ -1639,16 +1631,47 @@ function saveAvatarConfig_(params) {
  */
 function clearAvatarConfig_(params) {
   if (!params.nameKey) return { ok: false, error: 'nameKey required' };
-  var configs = getAvatarConfigs_();
-  var segments = params.nameKey.split('_');
-  // Delete exact key and any single-segment variant (e.g. "sunshine" from "maria_sunshine")
-  var deleted = [];
-  [params.nameKey].concat(segments).forEach(function(k) {
-    if (configs[k]) { delete configs[k]; deleted.push(k); }
-  });
-  PropertiesService.getScriptProperties().setProperty(GC_AVATAR_CONFIGS_KEY, JSON.stringify(configs));
-  Logger.log('[avatar] cleared config for ' + params.nameKey + ' (keys removed: ' + deleted.join(', ') + ')');
-  return { ok: true, nameKey: params.nameKey, deleted: deleted };
+  // The old version also deleted single-segment variants ("sunshine" from "maria_sunshine") because
+  // the local map had accumulated duplicate keys for one person. Keying on employee_id removes the
+  // whole problem: there is exactly one row to clear.
+  return gxWriteAvatarToCore_(params.nameKey, '');
+}
+
+/**
+ * Write (or clear) one employee's avatar in GX Core, resolved from this app's nameKey.
+ *
+ * Clearing cannot go through gxUpsertEmployee: it treats an empty value as "leave this column
+ * alone", so a blank would be silently ignored. Clearing therefore rewrites the COMPLETE live row
+ * with avatar_config emptied -- gxWrite_ replaces whole rows, so a partial object would blank every
+ * other column. That is the mechanism that destroyed two employee records once already.
+ */
+function gxWriteAvatarToCore_(nameKey, configStr) {
+  var rec = (gxRoster_().byKey || {})[nameKey];
+  if (!rec || !rec.employeeId) {
+    return { ok: false, error: 'No GX Core employee matches "' + nameKey + '". Avatars are stored ' +
+             'on the employee record now; ask Crew to add this person to the roster.' };
+  }
+  try {
+    if (configStr) {
+      var r = GXCore.gxUpsertEmployee({ employee_id: rec.employeeId, avatar_config: configStr });
+      if (r && r.ok === false) return { ok: false, error: r.error || 'GX Core rejected the write' };
+    } else {
+      var live = GXCore.getEmployees().filter(function (e) {
+        return String(e.employee_id || '').trim() === rec.employeeId;
+      })[0];
+      if (!live) return { ok: false, error: 'employee_id ' + rec.employeeId + ' vanished from GX Core' };
+      var row = Object.assign({}, live);      // COMPLETE row, then blank the one column
+      row.avatar_config = '';
+      GXCore.gxUpsertEmployees([row]);
+    }
+  } catch (e) {
+    return { ok: false, error: 'GX Core write failed: ' + (e && e.message || e) };
+  }
+  gxRosterBust_();          // the roster cache, so the next read sees the new value
+  gxBustDisplayCaches_();   // and the rendered staff lists, so the face changes on the next load
+  Logger.log('[avatar] ' + (configStr ? 'saved' : 'cleared') + ' in GX Core for ' +
+             rec.fullName + ' (' + rec.employeeId + ')');
+  return { ok: true, nameKey: nameKey, employee_id: rec.employeeId };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

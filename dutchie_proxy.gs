@@ -1261,44 +1261,33 @@ function getSettings_(params) {
   };
 }
 
+/**
+ * Flush the caches holding rendered staff lists, so a rename / new avatar / retirement shows on the
+ * NEXT load instead of lingering for the 55s kiosk and 6-minute director TTLs.
+ *
+ * This used to be inline in saveSettings_, reached only when that route wrote nicknames or roles.
+ * Those writes moved to Crew, so it is a named function now and the avatar write calls it too --
+ * otherwise somebody rebuilds their face in #/avatar, sees nothing change, and does it again.
+ */
+function gxBustDisplayCaches_() {
+  try {
+    var _cc  = CacheService.getScriptCache();
+    var keys = ['gc_dirall_v2_pp', 'gc_dirall_v2_mtd', 'gc_standings_v1', 'gc_aggticker_v1'];
+    STORES.forEach(function (s) { keys.push('storeToday:' + s.slug, 'storeLB:' + s.slug); });
+    _cc.removeAll(keys);
+  } catch (e) {}
+}
+
 function saveSettings_(params) {
   var props = PropertiesService.getScriptProperties();
-  var bustDisplay = false;   // set when a change alters the rendered staff lists (disable/rename/re-role)
+  var bustDisplay = false;   // still set by the settings this app owns; people data moved to Crew
 
-  // Save nicknames
-  if (params.nicknames !== undefined) {
-    try {
-      var n = JSON.parse(params.nicknames);
-      Object.keys(n).forEach(function(k) { if (!n[k]) delete n[k]; });
-      props.setProperty(GC_NICKNAMES_KEY, JSON.stringify(n));
-      bustDisplay = true;
-    } catch(e) {
-      return { ok: false, error: 'Invalid nicknames JSON: ' + e.message };
-    }
-  }
-
-  // Save excluded employees
-  if (params.excluded !== undefined) {
-    try {
-      var ex = JSON.parse(params.excluded);
-      if (!Array.isArray(ex)) throw new Error('not an array');
-      props.setProperty(GC_EXCLUDED_KEY, JSON.stringify(ex));
-      bustDisplay = true;
-    } catch(e) {
-      return { ok: false, error: 'Invalid excluded JSON: ' + e.message };
-    }
-  }
-
-  // Save employee roles
-  if (params.roles !== undefined) {
-    try {
-      var ro = JSON.parse(params.roles);
-      props.setProperty(GC_ROLES_KEY, JSON.stringify(ro));
-      bustDisplay = true;
-    } catch(e) {
-      return { ok: false, error: 'Invalid roles JSON: ' + e.message };
-    }
-  }
+  // The nicknames / excluded / roles branches are gone. Crew owns all three, and this app reads
+  // them from GX Core. The Settings UI that posted them was removed with the Employees table, but
+  // leaving the WRITE route live is how a second source of truth grows back -- a stray call would
+  // have quietly repopulated local copies that the read path prefers over Crew for anyone Core does
+  // not cover. savesettings still handles the settings this app genuinely owns (stretch,
+  // discountTarget, goals), which is why the route itself stays.
 
   // Save stretch multiplier (0–0.05)
   if (params.stretch !== undefined) {
@@ -1360,16 +1349,7 @@ function saveSettings_(params) {
     Logger.log('[discountTarget] saved: ' + newT + '%');
   }
 
-  // Flush the caches that hold rendered staff lists so a disable/rename/re-role shows on the NEXT
-  // load, instead of lingering until the 55s kiosk / 6-min director cache TTLs expire.
-  if (bustDisplay) {
-    try {
-      var _cc  = CacheService.getScriptCache();
-      var keys = ['gc_dirall_v2_pp', 'gc_dirall_v2_mtd', 'gc_standings_v1', 'gc_aggticker_v1'];
-      STORES.forEach(function(s) { keys.push('storeToday:' + s.slug, 'storeLB:' + s.slug); });
-      _cc.removeAll(keys);
-    } catch (e) {}
-  }
+  if (bustDisplay) gxBustDisplayCaches_();
 
   return { ok: true };
 }

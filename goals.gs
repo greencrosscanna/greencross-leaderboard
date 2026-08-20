@@ -16,32 +16,26 @@ function getStorePlans_() {
 
 /** Returns the nickname map { nameKey: displayName }, with keys normalised (no periods). */
 /**
- * Nicknames, keyed by nameKey. GX Core (Crew) wins; the old local map fills gaps only.
+ * Nicknames, keyed by nameKey. GX Core only — Crew owns them.
  *
- * Crew's preferred_name is the nickname alone ("Nate"); this map has always held exactly that, and
- * applyNickname_ pairs it with the surname where a full display name is wanted. Reading it from GX
- * Core is the fix for a nickname typed in Crew appearing to revert on the board — there is only one
- * copy now, and Crew owns it.
+ * The local GC_NICKNAMES_JSON fallback is gone: gxRosterDelta() reported 0 local-only nicknames and
+ * 0 disagreements, so it was carrying nobody. This is the fix for a nickname typed in Crew appearing
+ * to revert on the board — there is exactly one copy now.
+ *
+ * preferred_name is the nickname alone ("Nate"); applyNickname_ pairs it with the surname where a
+ * full display name is wanted.
  */
 function getNicknames_() {
-  var stored = {};
-  const raw = getProps_().getProperty(GC_NICKNAMES_KEY);
-  if (raw) { try { stored = JSON.parse(raw) || {}; } catch (e) { stored = {}; } }
   var out = {};
-  // Normalise stored keys: strip periods so "zachary_b." and "zachary_b" both work. Kept from the
-  // original — the local map has entries in both forms and the lookups use the period-free one.
-  Object.keys(stored).forEach(function (k) {
-    const clean = k.replace(/\./g, '').trim();
-    if (stored[k] && clean) out[clean] = stored[k];
-  });
   try {
-    var byKey = gxRoster_().byKey || {};
-    Object.keys(byKey).forEach(function (k) {
-      if (byKey[k].preferredName) out[k] = byKey[k].preferredName;
+    var recs = gxAllRecs_();
+    Object.keys(recs).forEach(function (k) {
+      if (recs[k].preferredName) out[k] = recs[k].preferredName;
     });
   } catch (e) { gxRosterWarn_(e); }
   return out;
 }
+
 
 /**
  * Returns which goal set is active for a store: whichever of rolling vs. YoY
