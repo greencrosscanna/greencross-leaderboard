@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Period Standings — mock</title>
+<style>
+  :root{
+    --bg:#0a0e0d; --surface:#121715; --surface-2:#161c1a; --surface-3:#1a221f;
+    --border:#232a27; --text:#e8eee9; --text-dim:#9aa8a0; --text-mute:#6b776f;
+    --green:#4ade80; --green-deep:#265939; --amber:#fbbf24; --red:#f87171;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1100px;margin:0 auto;padding:22px 24px 60px;}
+  .num{font-variant-numeric:tabular-nums;}
+
+  /* header */
+  .top{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:20px;}
+  .title{font-size:24px;font-weight:800;letter-spacing:-.4px;}
+  .sub{color:var(--text-dim);font-size:13px;margin-top:4px;}
+  .live{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--green);}
+  .live .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(74,222,128,.6);animation:pulse 2s infinite;}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(74,222,128,.5)}70%{box-shadow:0 0 0 7px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
+
+  /* chain hero */
+  .hero{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:12px;}
+  .hero-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;}
+  .hstat .l{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-mute);margin-bottom:6px;}
+  .hstat .v{font-size:26px;font-weight:800;}
+  .hstat .v.green{color:var(--green);}
+  .hstat .foot{font-size:11.5px;color:var(--text-dim);margin-top:3px;}
+  .chain-bar{margin-top:16px;height:10px;border-radius:6px;background:var(--surface-3);position:relative;overflow:hidden;}
+  .chain-fill{position:absolute;left:0;top:0;bottom:0;border-radius:6px;background:linear-gradient(90deg,var(--green-deep),var(--green));}
+  .chain-mark{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--text-dim);}
+  .chain-legend{display:flex;justify-content:space-between;font-size:11px;color:var(--text-mute);margin-top:7px;}
+
+  /* standings */
+  h3.sec{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-mute);margin:22px 2px 10px;}
+  .row{display:grid;grid-template-columns:34px 1.6fr 1fr 1fr 1.1fr 118px;align-items:center;gap:14px;
+       background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 16px;margin-bottom:9px;}
+  .rank{font-size:18px;font-weight:800;color:var(--text-mute);text-align:center;}
+  .row.lead .rank{color:var(--green);}
+  .store{font-weight:700;font-size:15px;}
+  .mgr{color:var(--text-dim);font-size:12px;margin-top:1px;}
+  .cell-l{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-mute);margin-bottom:3px;}
+  .cell-v{font-size:15px;font-weight:700;}
+  .cell-v.dim{color:var(--text-dim);font-weight:600;}
+  .delta{font-size:12px;margin-top:2px;}
+  .delta.up{color:var(--green);} .delta.down{color:var(--red);} .delta.flat{color:var(--amber);}
+  .pill{font-size:11px;font-weight:700;padding:5px 10px;border-radius:999px;text-align:center;white-space:nowrap;}
+  .pill.on{background:rgba(74,222,128,.14);color:var(--green);}
+  .pill.slight{background:rgba(251,191,36,.14);color:var(--amber);}
+  .pill.behind{background:rgba(248,113,113,.14);color:var(--red);}
+
+  /* progress bar with pace marker (spans full row under the grid) */
+  .barwrap{grid-column:1/-1;margin-top:11px;height:7px;border-radius:5px;background:var(--surface-3);position:relative;overflow:visible;}
+  .bar{position:absolute;left:0;top:0;bottom:0;border-radius:5px;}
+  .bar.green{background:linear-gradient(90deg,var(--green-deep),var(--green));}
+  .bar.amber{background:linear-gradient(90deg,#7a5a12,var(--amber));}
+  .bar.red{background:linear-gradient(90deg,#7a2c2c,var(--red));}
+  .mark{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--text-dim);}
+  .mark::after{content:"pace";position:absolute;top:-14px;left:50%;transform:translateX(-50%);font-size:8.5px;color:var(--text-mute);letter-spacing:.04em;white-space:nowrap;}
+
+  .note{margin-top:22px;padding:14px 16px;background:var(--surface-2);border:1px solid var(--border);border-left:3px solid var(--green);border-radius:10px;color:var(--text-dim);font-size:13px;line-height:1.5;}
+  .note b{color:var(--text);}
+  .foothint{margin-top:14px;color:var(--text-mute);font-size:11.5px;text-align:center;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div>
+      <div class="title">Period Standings</div>
+      <div class="sub">Pay Period · Jul 27 – Aug 9 · <b style="color:var(--text)">Day 8 of 14</b></div>
+    </div>
+    <div class="live"><span class="dot"></span> Live</div>
+  </div>
+
+  <!-- CHAIN SUMMARY -->
+  <div class="hero">
+    <div class="hero-grid">
+      <div class="hstat"><div class="l">Total Target</div><div class="v num">$319,800</div><div class="foot">full period</div></div>
+      <div class="hstat"><div class="l">Sales to Date</div><div class="v num">$179,000</div><div class="foot">56.0% of goal · day 8/14</div></div>
+      <div class="hstat"><div class="l">Chain Pace</div><div class="v num green">98.0%</div><div class="foot">projected $313,485</div></div>
+      <div class="hstat"><div class="l">On Pace</div><div class="v num">3 <span style="color:var(--text-mute);font-size:18px">of 6</span></div><div class="foot">stores tracking to hit</div></div>
+    </div>
+    <div class="chain-bar">
+      <div class="chain-fill" style="width:56%"></div>
+      <div class="chain-mark" style="left:57.1%"></div>
+    </div>
+    <div class="chain-legend"><span>$179k sold</span><span>pace line · 57% of period elapsed</span><span>$319.8k goal</span></div>
+  </div>
+
+  <h3 class="sec">Store Standings — ranked by pace</h3>
+
+  <!-- rows: rank, store/mgr, target, sold(%goal), projected(+/-), pill ; bar below -->
+
+  <div class="row lead">
+    <div class="rank">1</div>
+    <div><div class="store">Bend</div><div class="mgr">Chris Carney</div></div>
+    <div><div class="cell-l">Target</div><div class="cell-v dim num">$62,447</div></div>
+    <div><div class="cell-l">Sold · % goal</div><div class="cell-v num">$37,900 <span style="color:var(--text-dim);font-weight:600">· 61%</span></div></div>
+    <div><div class="cell-l">Projected</div><div class="cell-v num">$66,375</div><div class="delta up num">+$3,928 · 106% pace</div></div>
+    <div class="pill on">On pace</div>
+    <div class="barwrap"><div class="bar green" style="width:60.7%"></div><div class="mark" style="left:57.1%"></div></div>
+  </div>
+
+  <div class="row lead">
+    <div class="rank">2</div>
+    <div><div class="store">Portland Rd</div><div class="mgr">Scott Penner</div></div>
+    <div><div class="cell-l">Target</div><div class="cell-v dim num">$41,500</div></div>
+    <div><div class="cell-l">Sold · % goal</div><div class="cell-v num">$24,200 <span style="color:var(--text-dim);font-weight:600">· 58%</span></div></div>
+    <div><div class="cell-l">Projected</div><div class="cell-v num">$42,382</div><div class="delta up num">+$882 · 102% pace</div></div>
+    <div class="pill on">On pace</div>
+    <div class="barwrap"><div class="bar green" style="width:58.3%"></div><div class="mark" style="left:57.1%"></div></div>
+  </div>
+
+  <div class="row lead">
+    <div class="rank">3</div>
+    <div><div class="store">Hillsboro</div><div class="mgr">Dean Deloof</div></div>
+    <div><div class="cell-l">Target</div><div class="cell-v dim num">$40,912</div></div>
+    <div><div class="cell-l">Sold · % goal</div><div class="cell-v num">$23,400 <span style="color:var(--text-dim);font-weight:600">· 57%</span></div></div>
+    <div><div class="cell-l">Projected</div><div class="cell-v num">$40,981</div><div class="delta up num">+$69 · 100% pace</div></div>
+    <div class="pill on">On pace</div>
+    <div class="barwrap"><div class="bar green" style="width:57.2%"></div><div class="mark" style="left:57.1%"></div></div>
+  </div>
+
+  <div class="row">
+    <div class="rank">4</div>
+    <div><div class="store">River Rd</div><div class="mgr">TJ Peterson</div></div>
+    <div><div class="cell-l">Target</div><div class="cell-v dim num">$60,419</div></div>
+    <div><div class="cell-l">Sold · % goal</div><div class="cell-v num">$33,100 <span style="color:var(--text-dim);font-weight:600">· 55%</span></div></div>
+    <div><div class="cell-l">Projected</div><div class="cell-v num">$57,968</div><div class="delta flat num">−$2,451 · 96% pace</div></div>
+    <div class="pill slight">Just behind</div>
+    <div class="barwrap"><div class="bar amber" style="width:54.8%"></div><div class="mark" style="left:57.1%"></div></div>
+  </div>
+
+  <div class="row">
+    <div class="rank">5</div>
+    <div><div class="store">Commercial</div><div class="mgr">Mariana Moxie</div></div>
+    <div><div class="cell-l">Target</div><div class="cell-v dim num">$91,095</div></div>
+    <div><div class="cell-l">Sold · % goal</div><div class="cell-v num">$48,500 <span style="color:var(--text-dim);font-weight:600">· 53%</span></div></div>
+    <div><div class="cell-l">Projected</div><div class="cell-v num">$84,940</div><div class="delta down num">−$6,155 · 93% pace</div></div>
+    <div class="pill behind">Behind</div>
+    <div class="barwrap"><div class="bar red" style="width:53.2%"></div><div class="mark" style="left:57.1%"></div></div>
+  </div>
+
+  <div class="row">
+    <div class="rank">6</div>
+    <div><div class="store">Center St</div><div class="mgr">Tyson Farris</div></div>
+    <div><div class="cell-l">Target</div><div class="cell-v dim num">$23,427</div></div>
+    <div><div class="cell-l">Sold · % goal</div><div class="cell-v num">$11,900 <span style="color:var(--text-dim);font-weight:600">· 51%</span></div></div>
+    <div><div class="cell-l">Projected</div><div class="cell-v num">$20,842</div><div class="delta down num">−$2,585 · 89% pace</div></div>
+    <div class="pill behind">Behind</div>
+    <div class="barwrap"><div class="bar red" style="width:50.8%"></div><div class="mark" style="left:57.1%"></div></div>
+  </div>
+
+  <div class="note">
+    <b>How to read it:</b> the bar fills with each store's % to goal; the vertical <b>pace line</b> sits at how much of the period has elapsed (57% on day 8/14). A fill past the line means you're <b>tracking to beat goal</b> — the "Projected" figure is that run-rate carried to period end. This is the same standings Mike sends, updating on its own so managers can check anytime.
+  </div>
+  <div class="foothint">Refreshes automatically · store sales from nightly snapshots + today's live total · no bonus figures shown</div>
+
+</div>
+</body>
+</html>

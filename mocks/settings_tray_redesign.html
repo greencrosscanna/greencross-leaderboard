@@ -1,0 +1,142 @@
+<meta charset="utf-8">
+<style>
+  :root{
+    --bg:#0a0e0d; --surface:#121715; --surface-2:#161c1a; --surface-3:#1a221f;
+    --border:#232a27; --border-strong:#2e3733;
+    --text:#e6ece9; --text-dim:#8a958f; --text-mute:#5e6864;
+    --green:#4ade80; --green-dim:#2f8a52; --green-soft:rgba(74,222,128,.10);
+    --red:#ef4444; --amber:#eab308;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:#050806;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--text);padding:24px;display:flex;gap:24px;flex-wrap:wrap;justify-content:center;}
+  .tray{width:460px;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:-8px 0 28px rgba(0,0,0,.55);}
+  .tray-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-mute);}
+  .body{padding:16px;display:flex;flex-direction:column;gap:16px;}
+  .sect-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);font-weight:700;margin:2px 0 -6px;}
+
+  /* Discount target */
+  .target{padding:11px 13px;border:1px solid var(--border);border-radius:10px;background:var(--bg);}
+  .target-row{display:flex;align-items:center;justify-content:space-between;}
+  .target-row b{font-size:13px;}
+  .target-row input{width:92px;background:var(--surface-2);border:1px solid var(--border-strong);color:var(--text);border-radius:7px;padding:6px 10px;text-align:right;font-size:15px;font-weight:600;}
+  .target-sub{font-size:11px;color:var(--text-mute);line-height:1.5;margin-top:7px;}
+  .chip{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;}
+  .chip.g{background:var(--green-soft);color:var(--green);} .chip.a{background:rgba(234,179,8,.12);color:var(--amber);} .chip.r{background:rgba(239,68,68,.12);color:var(--red);}
+  .legend{font-size:11px;color:var(--text-mute);display:flex;gap:16px;align-items:center;}
+  .legend .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:middle;}
+
+  /* Role tables — identical: metric | trigger | reward, metric == reward width */
+  .role{border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+  .role-head{padding:10px 13px;background:var(--surface-3);font-size:12.5px;font-weight:700;display:flex;justify-content:space-between;align-items:center;}
+  .role-head .qual{font-size:11px;font-weight:400;color:var(--text-dim);}
+  .rtable{display:grid;grid-template-columns:116px 1fr 116px;}
+  /* header band — distinct background */
+  .h{font-size:9.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--text-mute);padding:7px 13px;background:var(--surface);border-top:1px solid var(--border);}
+  .h.earn{grid-column:1 / 3;}
+  .h.rew{text-align:right;background:rgba(74,222,128,.06);color:var(--green-dim);border-left:1px solid var(--border);}
+  .cell{border-top:1px solid var(--border);padding:0 13px;min-height:38px;display:flex;align-items:center;font-size:12.5px;}
+  .c-metric{color:var(--text-dim);}
+  .c-trig{justify-content:flex-end;gap:6px;color:var(--text);}      /* right-align → inputs line up across tables */
+  .c-rew{border-left:1px solid var(--border);background:var(--green-soft);color:var(--green);font-weight:700;justify-content:flex-end;gap:2px;}
+  .op{color:var(--text-mute);font-weight:600;}
+  .inp{width:50px;background:var(--surface);border:1px solid var(--border-strong);color:var(--text);border-radius:6px;padding:4px 6px;text-align:right;font-size:12.5px;}
+  .inp.rew{width:58px;color:var(--green);border-color:var(--green-dim);background:rgba(74,222,128,.06);}
+  .unit{color:var(--text-mute);font-size:11px;width:12px;}
+  .muted{color:var(--text-mute);}
+  .tier{display:flex;flex-direction:column;gap:8px;width:100%;}
+  .tier .ln{display:flex;align-items:center;justify-content:flex-end;gap:6px;height:22px;}
+  .note{font-size:9.5px;color:var(--text-mute);}
+
+  /* Discount rules */
+  .dr-head{padding:8px 13px;font-size:11px;color:var(--text-mute);background:var(--surface);border-top:1px solid var(--border);line-height:1.4;}
+  .dr{display:flex;align-items:center;gap:9px;padding:7px 13px;border-top:1px solid var(--border);font-size:12px;}
+  .dr input{width:15px;height:15px;accent-color:var(--green);flex:none;}
+  .dr .st{margin-left:auto;font-size:9.5px;letter-spacing:.05em;flex:none;}
+  .dr .st.c{color:var(--green);} .dr .st.x{color:var(--text-mute);}
+  .dr .code{font-size:9px;color:var(--text-mute);background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 5px;flex:none;}
+  .dr-locked{padding:8px 13px;border-top:1px solid var(--border);font-size:11px;color:var(--text-mute);}
+
+  .save{margin-top:2px;background:var(--green);color:#05130a;border:none;border-radius:9px;padding:11px;font-size:14px;font-weight:700;cursor:pointer;}
+  .caption{width:100%;text-align:center;color:#9aa39e;font-size:12.5px;max-width:920px;margin:0 auto 4px;line-height:1.5;}
+</style>
+
+<div class="caption"><b style="color:#e6ece9">Settings tray v3</b> — tighter rows, header band with its own background, metric column matched to reward, trigger inputs + reward aligned down all three tables.</div>
+
+<div class="tray">
+  <div class="tray-head"><span>Incentive Settings</span><span>✕</span></div>
+  <div class="body">
+
+    <div class="sect-label">Discount target</div>
+    <div class="target">
+      <div class="target-row"><b>Discretionary discount goal</b><input value="1.5"></div>
+      <div class="target-sub">Budtenders earn the discount bonus at/under this. Leaderboard color:
+        <span class="chip g">≤ 1.5% green</span> <span class="chip a">≤ 3% amber</span> <span class="chip r">&gt; 3% red</span>.
+        Manager store-discount tiers follow this goal. Loyalty &amp; automatic promos never count.</div>
+    </div>
+
+    <div class="sect-label">Bonus thresholds</div>
+    <div class="legend"><span><span class="sw" style="background:#8a958f"></span>Trigger — earn it when</span><span><span class="sw" style="background:#4ade80"></span>Reward — payout</span></div>
+
+    <!-- Budtenders -->
+    <div class="role">
+      <div class="role-head"><span>Budtenders</span><span class="qual">Qualify: ≥ <b style="color:#e6ece9">200</b> txns · low-vol ≥ <b style="color:#e6ece9">150</b></span></div>
+      <div class="rtable">
+        <div class="h earn">Earn it when</div><div class="h rew">Reward</div>
+        <div class="cell c-metric">AOV</div><div class="cell c-trig"><span class="op">≥ $</span><input class="inp" value="33"></div><div class="cell c-rew">$<input class="inp rew" value="25"></div>
+        <div class="cell c-metric">Discount</div><div class="cell c-trig"><span class="op">≤</span><span class="muted">1.5%</span><span class="note">goal</span></div><div class="cell c-rew">$<input class="inp rew" value="25"></div>
+        <div class="cell c-metric">Attendance</div><div class="cell c-trig"><span class="muted">100%</span></div><div class="cell c-rew">$<input class="inp rew" value="15"></div>
+      </div>
+    </div>
+
+    <!-- Store Managers -->
+    <div class="role">
+      <div class="role-head"><span>Store Managers</span></div>
+      <div class="rtable">
+        <div class="h earn">Earn it when</div><div class="h rew">Reward</div>
+        <div class="cell c-metric">Sales vs goal</div>
+        <div class="cell c-trig"><div class="tier"><div class="ln"><span class="op">≥</span><input class="inp" value="110"><span class="unit">%</span></div><div class="ln"><span class="op">≥</span><input class="inp" value="105"><span class="unit">%</span></div><div class="ln"><span class="op">≥</span><input class="inp" value="100"><span class="unit">%</span></div></div></div>
+        <div class="cell c-rew"><div class="tier"><div class="ln">$<input class="inp rew" value="300"></div><div class="ln">$<input class="inp rew" value="200"></div><div class="ln">$<input class="inp rew" value="100"></div></div></div>
+
+        <div class="cell c-metric">Store discount</div>
+        <div class="cell c-trig"><div class="tier"><div class="ln"><span class="note">−33%</span><span class="op">≤</span><span class="muted">1.0%</span><span class="unit"></span></div><div class="ln"><span class="note">goal</span><span class="op">≤</span><span class="muted">1.5%</span><span class="unit"></span></div></div></div>
+        <div class="cell c-rew"><div class="tier"><div class="ln">$<input class="inp rew" value="100"></div><div class="ln">$<input class="inp rew" value="50"></div></div></div>
+
+        <div class="cell c-metric">AOV</div><div class="cell c-trig"><span class="op">≥ $</span><input class="inp" value="33"></div><div class="cell c-rew">$<input class="inp rew" value="50"></div>
+        <div class="cell c-metric">Team att.</div><div class="cell c-trig"><span class="muted">per member · 100%</span></div><div class="cell c-rew">$<input class="inp rew" value="25"></div>
+      </div>
+    </div>
+
+    <!-- Admin -->
+    <div class="role">
+      <div class="role-head"><span>Admin (Chain)</span><span class="qual">Cap: $<b style="color:#e6ece9">50</b> × stores</span></div>
+      <div class="rtable">
+        <div class="h earn">Earn it when</div><div class="h rew">Reward</div>
+        <div class="cell c-metric">Chain sales</div>
+        <div class="cell c-trig"><div class="tier"><div class="ln"><span class="op">≥</span><input class="inp" value="110"><span class="unit">%</span></div><div class="ln"><span class="op">≥</span><input class="inp" value="105"><span class="unit">%</span></div><div class="ln"><span class="op">≥</span><input class="inp" value="100"><span class="unit">%</span></div></div></div>
+        <div class="cell c-rew"><div class="tier"><div class="ln">$<input class="inp rew" value="600"></div><div class="ln">$<input class="inp rew" value="450"></div><div class="ln">$<input class="inp rew" value="300"></div></div></div>
+      </div>
+    </div>
+
+    <div class="target target-row"><b style="font-size:12.5px;color:var(--text-dim)">Hours per period <span class="muted" style="font-weight:400">(for $/hr)</span></b><input value="80" style="width:68px"></div>
+
+    <!-- DISCOUNT RULES -->
+    <div class="sect-label">Discount rules — what counts against staff</div>
+    <div class="role">
+      <div class="dr-head">Checked = counted in the discount rate. Loyalty &amp; automatic promos always excluded.</div>
+      <label class="dr"><input type="checkbox" checked><span>VETERAN DISCOUNT 15% OFF</span><span class="code">Vet15</span><span class="st c">COUNTED</span></label>
+      <label class="dr"><input type="checkbox" checked><span>30% off Clearance · Mgr Approved</span><span class="code">Clearance30</span><span class="st c">COUNTED</span></label>
+      <label class="dr"><input type="checkbox" checked><span>Volume — All Items</span><span class="st c">COUNTED</span></label>
+      <label class="dr"><input type="checkbox" checked><span>Volume — Single Item</span><span class="st c">COUNTED</span></label>
+      <label class="dr"><input type="checkbox" checked><span>5 for $20 Green Cross Edibles</span><span class="code">Ed5</span><span class="st c">COUNTED</span></label>
+      <label class="dr"><input type="checkbox" checked><span>5 for $20 Fatty Joints</span><span class="code">J5</span><span class="st c">COUNTED</span></label>
+      <label class="dr"><input type="checkbox" checked><span>4th of July — 5 for $20 Gummies</span><span class="code">Ed5</span><span class="st c">COUNTED</span></label>
+      <label class="dr"><input type="checkbox" checked><span>Free Exit Bag — $1.00</span><span class="code">Exit1</span><span class="st c">COUNTED</span></label>
+      <label class="dr"><input type="checkbox"><span>Employee Discount</span><span class="code">Employee25</span><span class="st x">EXCLUDED</span></label>
+      <label class="dr"><input type="checkbox"><span>Employee Only — 40% off Apparel</span><span class="code">Apparel</span><span class="st x">EXCLUDED</span></label>
+      <label class="dr"><input type="checkbox"><span>$2 GOOGLE REVIEW PRE-ROLL</span><span class="code">Google2</span><span class="st x">EXCLUDED</span></label>
+      <div class="dr-locked">▸ Always excluded — Loyalty (11) · Automatic promos (21)</div>
+    </div>
+
+    <button class="save">Save &amp; recalculate</button>
+  </div>
+</div>

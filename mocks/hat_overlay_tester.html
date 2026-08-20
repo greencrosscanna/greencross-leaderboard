@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Green Cross hat — alignment tester</title>
+<style>
+  :root {
+    --bg: #0d100e;
+    --card: #161a17;
+    --card-2: #1f2420;
+    --ink: #f0efea;
+    --ink-2: #a8aba6;
+    --ink-3: #6a6e6a;
+    --line: #2a312d;
+    --green: #66c585;
+    --grad: radial-gradient(circle at 30% 25%, #7dd49a 0%, #3a8b5a 45%, #1a4d2f 100%);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif; }
+  .page { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
+  h1 { font-size: 22px; letter-spacing: -0.01em; margin: 0 0 6px; }
+  .sub { color: var(--ink-3); margin: 0 0 28px; }
+  h2 { font-size: 15px; margin: 32px 0 10px; }
+  h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); font-weight: 600; margin: 0 0 10px; }
+
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  @media (max-width: 880px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+  .frame { width: 100%; aspect-ratio: 1/1; background: var(--grad); border-radius: 12px; border: 1px solid var(--line);
+    overflow: hidden; position: relative; box-shadow: 0 0 24px rgba(102,197,133,.15) inset; }
+  .frame img.base { width: 88%; height: 88%; position: absolute; top: 6%; left: 6%; display: block; }
+  .frame img.overlay { position: absolute; top: 6%; left: 6%; width: 88%; height: 88%; pointer-events: none; }
+
+  .panel small { color: var(--ink-3); display: block; margin-top: 8px; font-size: 12px; }
+  .panel a { color: var(--green); text-decoration: none; font-size: 12px; }
+  .panel a:hover { text-decoration: underline; }
+
+  .dropzone { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; color: var(--ink-2); font-size: 12px; cursor: pointer; }
+  .dropzone.dragover { border-color: var(--green); color: var(--green); }
+  .dropzone input { display: none; }
+
+  .controls { display: flex; gap: 6px; margin-top: 8px; }
+  .ctl { padding: 4px 8px; border-radius: 6px; background: var(--card-2); border: 1px solid var(--line); color: var(--ink-2); font-size: 11px; cursor: pointer; }
+  .ctl:hover { color: var(--ink); }
+
+  pre, code { background: var(--card-2); padding: 2px 6px; border-radius: 4px;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); }
+  pre { padding: 12px; overflow-x: auto; line-height: 1.4; border: 1px solid var(--line); }
+  ul { padding-left: 18px; }
+  li { margin: 4px 0; color: var(--ink-2); }
+  li strong { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Green Cross hat — alignment tester</h1>
+  <p class="sub">Use the bald base as your design target. Drop your work-in-progress SVG into panel 3 to preview the composite.</p>
+
+  <div class="grid">
+    <!-- BALD BASE -->
+    <div class="panel">
+      <h3>1. Bald base (your target)</h3>
+      <div class="frame">
+        <img class="base" src="https://api.dicebear.com/9.x/avataaars/svg?seed=hatbase&topProbability=0&facialHairProbability=0&accessoriesProbability=0&skinColor=edb98a&clothing=hoodie&clothesColor=3c4f5c&eyes=default&eyebrows=default&mouth=smile" />
+      </div>
+      <small>Design your hat to sit on this bald head.</small>
+    </div>
+
+    <!-- DICEBEAR REFERENCE HAT -->
+    <div class="panel">
+      <h3>2. DiceBear's existing cap (reference)</h3>
+      <div class="frame">
+        <img class="base" id="refHat" src="https://api.dicebear.com/9.x/avataaars/svg?seed=hatbase&top=hat&hatColor=2d5a3d&topProbability=100&facialHairProbability=0&accessoriesProbability=0&skinColor=edb98a&clothing=hoodie&clothesColor=3c4f5c&eyes=default&eyebrows=default&mouth=smile" />
+      </div>
+      <small>This is what DiceBear's <code>top=hat</code> looks like, colored GC green (<code>#2d5a3d</code>). Use it for placement reference.</small>
+      <div class="controls">
+        <a href="https://api.dicebear.com/9.x/avataaars/svg?seed=hatbase&top=hat&hatColor=2d5a3d&topProbability=100&facialHairProbability=0&accessoriesProbability=0&skinColor=edb98a&clothing=hoodie&clothesColor=3c4f5c&eyes=default&eyebrows=default&mouth=smile" target="_blank">Open SVG directly →</a>
+      </div>
+    </div>
+
+    <!-- YOUR HAT TEST -->
+    <div class="panel">
+      <h3>3. Your hat preview</h3>
+      <div class="frame">
+        <img class="base" src="https://api.dicebear.com/9.x/avataaars/svg?seed=hatbase&topProbability=0&facialHairProbability=0&accessoriesProbability=0&skinColor=edb98a&clothing=hoodie&clothesColor=3c4f5c&eyes=default&eyebrows=default&mouth=smile" />
+        <img class="overlay" id="customHat" alt="" />
+      </div>
+      <label class="dropzone" id="dropzone">
+        Drop your hat SVG here, or click to choose a file.
+        <input type="file" id="hatInput" accept=".svg,image/svg+xml" />
+      </label>
+      <small id="loadedName"></small>
+    </div>
+  </div>
+
+  <h2>Reference notes</h2>
+  <ul>
+    <li><strong>DiceBear viewBox:</strong> the rendered avatar SVG uses viewBox <code>0 0 264 280</code>. Design your hat at the same viewBox so it scales naturally.</li>
+    <li><strong>Head position:</strong> the head sits in the upper-center, roughly y=20–130 in the 280-unit space. Aim your hat's brim line for ~y=60–80.</li>
+    <li><strong>Background:</strong> keep your SVG fully transparent — no background fill — so the green gradient puck shows through.</li>
+    <li><strong>Color:</strong> use solid fills only (no external image refs). If you want a recolorable hat later, use a single <code>fill="#2d5a3d"</code> and Code can swap it dynamically via DOM attribute.</li>
+    <li><strong>Open the SVG directly</strong> (link in panel 2) to right-click → Save As. Then open it in Figma/Illustrator to study the existing hat's geometry before designing your own.</li>
+  </ul>
+
+  <h2>How Code will use it</h2>
+  <p style="color: var(--ink-2);">When your hat SVG is ready, drop it at <code>src/avatar/hats/gc-cap.svg</code> (or wherever in the repo) and tell Code. The render pipeline already handles the overlay pattern — a 2-layer puck with the DiceBear avatar (bald) on the base and your hat absolute-positioned on top. When the employee picks "Green Cross Cap" in the picker, the saved config sets <code>top: '_none'</code> + <code>customHat: 'gcCap'</code>, and the render layer composes both.</p>
+
+<script>
+  const hatInput = document.getElementById('hatInput');
+  const dropzone = document.getElementById('dropzone');
+  const customHat = document.getElementById('customHat');
+  const loadedName = document.getElementById('loadedName');
+
+  function loadFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      customHat.src = e.target.result;
+      loadedName.textContent = '✓ ' + file.name;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  hatInput.addEventListener('change', e => loadFile(e.target.files[0]));
+
+  ['dragover','dragenter'].forEach(evt => dropzone.addEventListener(evt, e => {
+    e.preventDefault(); dropzone.classList.add('dragover');
+  }));
+  ['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, e => {
+    e.preventDefault(); dropzone.classList.remove('dragover');
+  }));
+  dropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) loadFile(file);
+  });
+</script>
+</div>
+</body>
+</html>
