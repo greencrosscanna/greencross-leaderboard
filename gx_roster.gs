@@ -356,13 +356,26 @@ function gxRosterHealth_() {
   const perStore = {};
   const roster = getEmployeeRoster_();
   STORES.forEach(function (store) {
-    let crew = 0, visiting = 0, gone = 0;
+    let crew = 0, gone = 0;
+    const visiting = [];
     (roster[store.slug] || []).forEach(function (e) {
-      if (gxIsExcluded_(e)) gone++;
-      else if (!gxBelongsToStore_(e, store)) visiting++;
-      else crew++;
+      if (gxIsExcluded_(e)) { gone++; return; }
+      if (!gxBelongsToStore_(e, store)) {
+        // NAMED, unlike gone. A visitor is an ACTIVE employee whose name the kiosk already shows the
+        // whole shop, and the name is the only useful part: a corporate visitor means the gate is
+        // working, while a budtender who really transferred means their home_store is stale in Crew
+        // and they are being denied a trophy at their own store. Those two need telling apart.
+        // `gone` stays a count — a public list of who has left is not the board's to publish.
+        const rec = gxRecForEmp_(e);
+        visiting.push({
+          name: (rec && rec.displayName) || e.name || '',
+          homeStore: (rec && rec.homeStore) || '(none)',
+        });
+        return;
+      }
+      crew++;
     });
-    perStore[store.slug] = { crew: crew, visiting: visiting, gone: gone };
+    perStore[store.slug] = { crew: crew, visiting: visiting.length, gone: gone, visitors: visiting };
   });
 
   return {
