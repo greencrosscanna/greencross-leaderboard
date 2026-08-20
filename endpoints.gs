@@ -135,16 +135,56 @@ function saveStoreTrendCache_(byStore30d) {
   } catch(e) { return null; }
 }
 
-/** Returns a Set of excluded employee nameKeys. */
+/**
+ * Returns a Set of employee nameKeys to keep OFF the board.
+ *
+ * Two sources, unioned:
+ *   1. GX Core status — anyone Crew has marked retired/merged/deleted. This is the real answer, and
+ *      it keeps working for people Crew retires in future without anyone touching Leaderboard.
+ *   2. GC_EXCLUDED_JSON — the old hand-maintained list, kept only so the switch has no gap.
+ *
+ * The union is deliberate: it is the reason this change lands everywhere at once. Five call sites in
+ * this file already filter through getExcluded_(), so teaching it about status retires staff from
+ * the kiosk, the leaderboard, the director view and standings without editing any of them. When
+ * gxRosterCoverage() shows the status source covers everyone on the old list, source 2 can be
+ * emptied and then deleted, and nothing else has to change.
+ */
 function getExcluded_() {
+  const out = new Set();
+  try { (gxRoster_().retiredKeys || []).forEach(function (k) { out.add(k); }); } catch (e) { gxRosterWarn_(e); }
   const raw = getProps_().getProperty(GC_EXCLUDED_KEY);
-  try { return new Set(raw ? JSON.parse(raw) : []); } catch(e) { return new Set(); }
+  try { (raw ? JSON.parse(raw) : []).forEach(function (k) { out.add(k); }); } catch (e) {}
+  return out;
 }
 
+/**
+ * Job titles, keyed by nameKey. GX Core (Crew) wins; the old local map fills gaps only.
+ * Crew's role_title is free text, so it is normalised to the three values this app switches on.
+ */
 function getRoles_() {
+  var local = {};
   var raw = getProps_().getProperty(GC_ROLES_KEY);
-  if (!raw) return {};
-  try { return JSON.parse(raw); } catch(e) { return {}; }
+  if (raw) { try { local = JSON.parse(raw) || {}; } catch(e) { local = {}; } }
+  var out = {};
+  Object.keys(local).forEach(function (k) { out[k] = local[k]; });
+  try {
+    var byKey = gxRoster_().byKey || {};
+    Object.keys(byKey).forEach(function (k) {
+      var role = gxNormaliseRole_(byKey[k].roleTitle);
+      if (role) out[k] = role;
+    });
+  } catch (e) { gxRosterWarn_(e); }
+  return out;
+}
+
+/** Crew writes human job titles ("Asst. Manager"); this app switches on slugs. */
+function gxNormaliseRole_(title) {
+  var t = String(title || '').toLowerCase().replace(/[^a-z]+/g, ' ').trim();
+  if (!t) return '';
+  if (t.indexOf('asst') === 0 || t.indexOf('assistant') === 0) return 'asst_manager';
+  if (t.indexOf('store manager') === 0 || t === 'manager')      return 'store_manager';
+  if (t.indexOf('budtender') === 0)                             return 'budtender';
+  return '';   // intake manager, director, etc. — not a leaderboard rank, leave the local value
 }
 
 /**
@@ -192,13 +232,52 @@ function getAggTicker_() {
 }
 
 /** Returns the current Employee of the Month record { employeeKey, since }, or null if unset. */
+/**
+ * Current Employee of the Month, as { employeeKey: <nameKey>, since }.
+ *
+ * Employee of the Month is an HR function and belongs to Crew. Crew writes it to the GX Core kv
+ * registry as `cfg.eom` = {"employee_id":"…","since":"…"}, keyed on employee_id — NOT on a name.
+ * That keying is the point: the local copy below is keyed on a nameKey derived from the person's
+ * name, so a rename in Crew silently drops the star off the kiosk. Same flaw Crew already fixed for
+ * avatar seeds by pinning them to employee_number.
+ *
+ * GX Core wins when it has a value; the local Script Property is the fallback so there is no window
+ * where EoM cannot be set while Crew's picker is still being built. Once Crew ships, the local
+ * branch and Leaderboard's own picker both go.
+ */
 function getEomCurrent_() {
+  var central = gxEomFromCore_();
+  // undefined = Crew has never written the key, so the old local value is still the best answer.
+  // null = Crew HAS written it and the answer is "nobody" (cleared, or an id nobody here sold under).
+  // Falling back in that second case would put a stale star back on the kiosk after somebody
+  // deliberately cleared it, which is worse than showing none.
+  if (central !== undefined) return central;
   try {
     var raw = getProps_().getProperty(GC_EOM_KEY);
     if (!raw) return null;
     var p = JSON.parse(raw);
     return (p && p.employeeKey) ? p : null;
   } catch(e) { return null; }
+}
+
+/** Read cfg.eom from GX Core and resolve its employee_id back to this app's nameKey. */
+function gxEomFromCore_() {
+  try {
+    var raw = GXCore.getKv('cfg.eom');
+    if (raw === null || raw === undefined) return undefined;   // never written
+    if (String(raw).trim() === '') return null;                // written empty == deliberately nobody
+    var v = (typeof raw === 'object') ? raw : JSON.parse(raw);
+    var empId = String((v && v.employee_id) || '').trim();
+    if (!empId) return null;
+    var byKey = gxRoster_().byKey || {};
+    var found = null;
+    Object.keys(byKey).forEach(function (k) {
+      if (!found && byKey[k].employeeId === empId) found = k;
+    });
+    // employee_id that is not in this store's roster (e.g. a transfer, or nobody sold in 30 days)
+    // resolves to nothing rather than falling back — Crew said who it is, and it is not this person.
+    return found ? { employeeKey: found, since: (v && v.since) || '', source: 'gxcore' } : null;
+  } catch (e) { gxRosterWarn_(e); return undefined; }   // unreadable -> let the local value stand
 }
 
 /** Normalise a Dutchie name into a lookup key (lowercase, no periods/quotes, spaces→underscore). */
@@ -1514,10 +1593,24 @@ function resolveAvatarConfigs_(employees, rawConfigs) {
 }
 
 /** Returns the full avatar config map { nameKey: configObject }. */
+/**
+ * Avatar configs, keyed by nameKey. GX Core (Crew) wins; the old local map fills gaps only.
+ * Crew stamps a `seed` INTO avatar_config, pinned to employee_number, precisely so a rename cannot
+ * regenerate a different face. Pass the whole config through untouched so that seed is honoured.
+ */
 function getAvatarConfigs_() {
+  var local = {};
   var raw = PropertiesService.getScriptProperties().getProperty(GC_AVATAR_CONFIGS_KEY);
-  if (!raw) return {};
-  try { return JSON.parse(raw); } catch(e) { return {}; }
+  if (raw) { try { local = JSON.parse(raw) || {}; } catch(e) { local = {}; } }
+  var out = {};
+  Object.keys(local).forEach(function (k) { out[k] = local[k]; });
+  try {
+    var byKey = gxRoster_().byKey || {};
+    Object.keys(byKey).forEach(function (k) {
+      if (byKey[k].avatarConfig) out[k] = byKey[k].avatarConfig;
+    });
+  } catch (e) { gxRosterWarn_(e); }
+  return out;
 }
 
 /**

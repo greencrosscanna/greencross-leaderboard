@@ -731,17 +731,11 @@ function doGet(e) {
         count: Object.keys(_rdReg.byName || {}).length }, params.callback);
     }
 
-    if (params.action === 'saveeom') {
-      requireRole_(auth, ['owner','director']);
-      var eomKey = params.key || null;
-      if (eomKey) {
-        PropertiesService.getScriptProperties().setProperty(GC_EOM_KEY,
-          JSON.stringify({ employeeKey: eomKey, since: new Date().toISOString() }));
-      } else {
-        PropertiesService.getScriptProperties().deleteProperty(GC_EOM_KEY);
-      }
-      return jsonOut({ ok: true }, params.callback);
-    }
+    // 'saveeom' removed: Employee of the Month is set in Crew and stored in GX Core as cfg.eom,
+    // keyed on employee_id. Nothing in this app writes it any more, and leaving a live write route
+    // for a value this app no longer owns is how two sources of truth come back. The read path
+    // (getEomCurrent_) still honours the old GC_EOM_KEY property, but only if Crew has never
+    // written cfg.eom -- which it now has.
 
     if (params.action === 'saveavatar') {
       return jsonOut(saveAvatarConfig_(params), params.callback);
@@ -758,7 +752,7 @@ function doGet(e) {
         (avRoster[store.slug] || []).forEach(function(emp) {
           var key = nameToKey_(emp.name);
           if (!avEmpMap[key] && emp.name && emp.name !== 'Unknown') {
-            avEmpMap[key] = { key: key, name: emp.name, store: store.name };
+            avEmpMap[key] = { key: key, name: emp.name, store: store.name, dutchieId: String(emp.id || '') };
           }
         });
       });
@@ -1184,7 +1178,9 @@ function getSettings_(params) {
     (roster[store.slug] || []).forEach(function(emp) {
       var key = nameToKey_(emp.name);
       if (!empMap[key] && emp.name && emp.name !== 'Unknown') {
-        empMap[key] = { key: key, name: emp.name, store: store.name };
+        // dutchieId is carried through deliberately: it is the join to GX Core's employee roster.
+        // Joining on names is what silently orphans a person the moment Crew renames them.
+        empMap[key] = { key: key, name: emp.name, store: store.name, dutchieId: String(emp.id || '') };
       }
     });
   });

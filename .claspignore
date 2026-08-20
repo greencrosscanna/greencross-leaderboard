@@ -7,6 +7,7 @@
 !discounts.gs
 !goals.gs
 !endpoints.gs
+!gx_roster.gs
 !cache.gs
 !snapshot.gs
 !tests.gs
