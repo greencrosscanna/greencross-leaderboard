@@ -8533,6 +8533,23 @@ var standingsView = (function() {
 
 window.GC = window.GC || {};
 
+// Which store the URL is on RIGHT NOW. Every kiosk response is checked against this before it is
+// allowed to paint.
+//
+// WHY: a kiosk payload can take most of a minute on a cold GAS cache — the JSONP timeout is 65s,
+// which is longer than a slideshow slide. So a request fired for the PREVIOUS store is routinely
+// still in flight when the next store mounts, and nothing stopped it landing on top of it. The slide
+// then showed the other store's data until its own fetch arrived seconds later: Baseline's "This
+// Week's Trophies" under Center's name, which is what Mike reported and why it could not be
+// reproduced on demand — it repairs itself before you can look twice.
+//
+// Timers are already torn down by GC.router.onLeave; this covers the requests that were ALREADY in
+// the air when that ran, which no amount of clearInterval can recall.
+function kioskRouteSlug_() {
+  var m = /^#\/store\/([^/?#]+)/.exec(window.location.hash || '');
+  return m ? m[1] : '';
+}
+
 GC.views.renderKiosk = function(slug) {
   var app = document.getElementById('app');
   if (!app) return;
@@ -8547,16 +8564,21 @@ GC.views.renderKiosk = function(slug) {
   // (once from cache, once when the background network request landed 2-5s later).
   GC.api.fetchKioskAll(slug)
     .then(function(rawData) {
+      if (kioskRouteSlug_() !== slug) return;      // slideshow moved on — this paint is for a store we left
       var data = kiosk.normalize(rawData);
       app.innerHTML = kiosk.render(data, slug);
       kiosk.init(data, slug);
       // Fast-path the by-hour chart: if the (possibly stale-cached) initial render came up without hour
       // targets, a standalone storetoday (~4s, cache-warm) fills them in so the bars don't sit "maxed"
       // until the 60s poll. No-op when the first paint already had targets.
-      GC.api.fetchStoreToday(slug).then(function(td) { kiosk.refreshHourly(td); }).catch(function() {});
+      GC.api.fetchStoreToday(slug).then(function(td) {
+        if (kioskRouteSlug_() !== slug) return;
+        kiosk.refreshHourly(td);
+      }).catch(function() {});
     })
     .catch(function(err) {
       console.error('[kiosk] fetch failed:', err);
+      if (kioskRouteSlug_() !== slug) return;      // do not paint one store's failure over another store
       app.innerHTML = '<div style="padding:40px;color:var(--text-dim)">Failed to load store data.</div>';
     });
 };
@@ -10375,6 +10397,7 @@ var kiosk = (function() {
     _pollTimer = setInterval(function() {
       GC.api.fetchStoreToday(slug, { sinceTs: _lastTxnTs })
         .then(function(resp) {
+          if (kioskRouteSlug_() !== slug) return;   // in flight when we navigated away
           if (resp.isUpdate) {
             // Delta response: inject new ticker items + update numbers
             if (resp.newTicker && resp.newTicker.length) {
@@ -10402,6 +10425,10 @@ var kiosk = (function() {
     _lbTimer = setInterval(function() {
       GC.api.fetchStoreLeaderboard(slug)
         .then(function(lb) {
+          // The worst of the stale landings: this repaints .lb-section from THIS store's staff, but
+          // renderStaffGrid also reads _storeName / _badges / _eomKey, which the next store's mount
+          // has already overwritten. Letting it through splices two stores into one grid.
+          if (kioskRouteSlug_() !== slug) return;
           var data = normalizeKioskData_({
             today:       {},
             leaderboard: lb,
