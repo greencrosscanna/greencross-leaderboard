@@ -92,6 +92,13 @@ for page in [f for f in os.listdir('.') if f.endswith('.html')]:
     # counting it produced a false positive on this very rule -- the bootstrap comment names the tag
     # it replaces, and the scanner read that as a live reference.
     html = re.sub(r'<!--.*?-->', '', html, flags=re.S)
+    # Then strip <script> BODIES, keeping each opening tag. A src=/href= written INSIDE JavaScript
+    # is a string the browser never resolves as a path. The Leaderboard tests.html asserts on the
+    # literal <a href="x"> to test HTML-escaping, and this scanner read that as a shipped reference
+    # to a file named 'x' -- blocking every push in that repo for a test fixture.
+    # The OPENING TAG survives the strip, so <script src="gx-dev.js"> -- the real v1.506 incident
+    # this whole rule exists to catch -- is still caught.
+    html = re.sub(r'(<script\b[^>]*>).*?</script>', r'\1', html, flags=re.S|re.I)
     for ref in re.findall(r'(?:src|href)="([^"]+)"', html):
         if re.match(r'(https?:)?//|data:|mailto:|#|/', ref):   # remote, data, anchor, absolute
             continue
