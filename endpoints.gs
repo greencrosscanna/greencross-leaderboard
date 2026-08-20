@@ -1677,10 +1677,11 @@ function gxWriteAvatarToCore_(nameKey, configStr) {
     // BUILD THE COMPLETE ROW HERE, both directions. Do not rely on GXCore.gxUpsertEmployee to merge.
     //
     // This app pins the GXCore LIBRARY at a version, and a library call executes THAT SNAPSHOT, not
-    // whatever gx_core.gs says today. Patch-by-default landed in Core v139; this app pins v128. So a
-    // partial {employee_id, avatar_config} ran the older build-from-scratch code and gxWrite_ rebuilt
-    // every column from those two keys — which is how a live employee record lost its name, home
-    // store, role, Dutchie id and employee number in one avatar save, on 2026-08-20.
+    // whatever gx_core.gs says today. Patch-by-default landed in Core v139; this app pinned v128 on
+    // 2026-08-20 (it pins v153 now). So a partial {employee_id, avatar_config} ran the older
+    // build-from-scratch code and gxWrite_ rebuilt every column from those two keys — which is how a
+    // live employee record lost its name, home store, role, Dutchie id and employee number in one
+    // avatar save that day.
     //
     // Reading the current Core source and concluding "the singular patches, so this is safe" is the
     // trap. It is only safe once this app re-pins, and it stays wrong for anyone who forgets. A
