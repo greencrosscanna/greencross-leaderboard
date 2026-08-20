@@ -4598,7 +4598,15 @@ GC.GC_HAT_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 280.01
 
 GC.buildAvatarUrl = function(cfg, seed) {
   var params = [];
-  params.push('seed=' + encodeURIComponent(seed || 'unknown'));
+  // Crew stamps `seed` INTO avatar_config, pinned to employee_number, so a rename or a merge
+  // cannot regenerate a different face -- and we have renamed and merged real people. Prefer it
+  // over the caller's key, which is derived from the NAME and therefore moves when the name does.
+  // The fallback keeps today's face for anyone whose config predates the stamp.
+  //
+  // `seed` is also a key of cfg, so the loop below emitted it a SECOND time: every avatar with a
+  // stamped seed was requested as seed=<nameKey>&...&seed=<number>, leaving which face you got up
+  // to how DiceBear resolves a duplicate param. Skipped there now, emitted exactly once here.
+  params.push('seed=' + encodeURIComponent(cfg.seed || seed || 'unknown'));
 
   var noAccessories = cfg.accessories === '_none';
   var noFacialHair  = cfg.facialHair  === '_none';
@@ -4612,6 +4620,7 @@ GC.buildAvatarUrl = function(cfg, seed) {
     var k = keys[i];
     var v = cfg[k];
     if (v == null || v === '_none') continue;
+    if (k === 'seed') continue;   // emitted above, from cfg.seed
     if (k === 'top' && isGcHat) {
       params.push('top=shortFlat');  // shortFlat renders under the hat overlay
       continue;
@@ -11900,7 +11909,9 @@ var ava = (function() {
   // ── Local URL builder (fallback if GC.buildAvatarUrl not present) ─
   function buildLocalUrl(cfg, seed) {
     var p = [];
-    p.push('seed=' + encodeURIComponent(seed || 'default'));
+    // Same rule as GC.buildAvatarUrl: the stamped seed wins, and is emitted once. Without this the
+    // face someone PREVIEWS here differs from the one the board renders for them.
+    p.push('seed=' + encodeURIComponent(cfg.seed || seed || 'default'));
 
     var noAccessories = cfg.accessories === '_none';
     var noFacialHair  = cfg.facialHair  === '_none';
@@ -11915,6 +11926,7 @@ var ava = (function() {
     for (var k in cfg) {
       var v = cfg[k];
       if (v == null || v === '_none') continue;
+      if (k === 'seed') continue;   // emitted above, from cfg.seed
       if (skip[k]) continue;
       p.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
     }
