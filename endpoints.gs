@@ -1652,18 +1652,25 @@ function gxWriteAvatarToCore_(nameKey, configStr) {
              'on the employee record now; ask Crew to add this person to the roster.' };
   }
   try {
-    if (configStr) {
-      var r = GXCore.gxUpsertEmployee({ employee_id: rec.employeeId, avatar_config: configStr });
-      if (r && r.ok === false) return { ok: false, error: r.error || 'GX Core rejected the write' };
-    } else {
-      var live = GXCore.getEmployees().filter(function (e) {
-        return String(e.employee_id || '').trim() === rec.employeeId;
-      })[0];
-      if (!live) return { ok: false, error: 'employee_id ' + rec.employeeId + ' vanished from GX Core' };
-      var row = Object.assign({}, live);      // COMPLETE row, then blank the one column
-      row.avatar_config = '';
-      GXCore.gxUpsertEmployees([row]);
-    }
+    // BUILD THE COMPLETE ROW HERE, both directions. Do not rely on GXCore.gxUpsertEmployee to merge.
+    //
+    // This app pins the GXCore LIBRARY at a version, and a library call executes THAT SNAPSHOT, not
+    // whatever gx_core.gs says today. Patch-by-default landed in Core v139; this app pins v128. So a
+    // partial {employee_id, avatar_config} ran the older build-from-scratch code and gxWrite_ rebuilt
+    // every column from those two keys — which is how a live employee record lost its name, home
+    // store, role, Dutchie id and employee number in one avatar save, on 2026-08-20.
+    //
+    // Reading the current Core source and concluding "the singular patches, so this is safe" is the
+    // trap. It is only safe once this app re-pins, and it stays wrong for anyone who forgets. A
+    // complete row is correct under EVERY version, so it does not depend on the pin at all.
+    var live = GXCore.getEmployees().filter(function (e) {
+      return String(e.employee_id || '').trim() === rec.employeeId;
+    })[0];
+    if (!live) return { ok: false, error: 'employee_id ' + rec.employeeId + ' vanished from GX Core' };
+    var row = Object.assign({}, live);
+    row.avatar_config = configStr || '';
+    var r = GXCore.gxUpsertEmployees([row]);
+    if (r && r.ok === false) return { ok: false, error: r.error || 'GX Core rejected the write' };
   } catch (e) {
     return { ok: false, error: 'GX Core write failed: ' + (e && e.message || e) };
   }
