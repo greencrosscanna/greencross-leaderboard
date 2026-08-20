@@ -90,10 +90,96 @@ function listUsers_() {
   return { ok: true, count: out.length, users: out };
 }
 
+/**
+ * Shared sign-on, the same shape Sales already uses: try GX Core first, fall back to this app's own
+ * user store so a GX Core hiccup can never lock the floor out at open.
+ *
+ * WHY GX CORE IS NOT SIMPLY TRUSTED
+ * Its vocabulary is not this app's. `login` returns the app_access role ('director' / 'editor') and
+ * `store` from users.default_store, a GX Core store_id. This app switches on 'owner' /
+ * 'store_manager' / 'budtender' and routes on ITS OWN historical slugs (hillsboro is 'baseline',
+ * bend is 'century'). Two ways that goes wrong, both silent:
+ *   - an unmapped role falls through homeRoute()'s default to '#/director', putting a store manager
+ *     on the all-stores view
+ *   - an empty or unmapped store makes homeRoute() fall back to 'baseline', sending every manager to
+ *     the wrong shop's kiosk
+ * At the time of writing ALL TEN performance grants have default_store empty, so every store manager
+ * would land somewhere wrong. Hence gxSessionUsable_: a GX Core result is only accepted when it
+ * translates cleanly. Anything else falls back to local, which is exactly today's behaviour.
+ *
+ * Directors need no store, so they move to shared sign-on now. Managers follow automatically once
+ * users.default_store is filled in on the GX Core side -- no code change needed here.
+ */
 function loginUser(params) {
   if (!params.user || !params.pass) {
     return { ok: false, error: 'Missing credentials' };
   }
+
+  try {
+    if (typeof GXCore !== 'undefined' && GXCore && GXCore.login) {
+      var g = GXCore.login(params.user, params.pass, 'performance');
+      if (g && g.ok) {
+        var mapped = gxSessionUsable_(g);
+        if (mapped) {
+          Logger.log('[login] ' + mapped.user + ' via GX CORE (role=' + mapped.role +
+                     ', store=' + (mapped.storeSlug || 'all') + ')');
+          return mapped;
+        }
+        Logger.log('[login] ' + params.user + ' authenticated in GX Core but the session was not ' +
+                   'usable here (role=' + g.role + ', store="' + (g.store || '') + '") — using local');
+      }
+    }
+  } catch (e) {
+    Logger.log('[login/GXCore] ' + (e && e.message || e));   // never block sign-in on a Core problem
+  }
+  return _loginUserLocal_(params);
+}
+
+/** GX Core store_id -> this app's historical slug. Anything absent is deliberately unmapped. */
+var GX_STOREID_TO_SLUG = {
+  hillsboro: 'baseline', bend: 'century', 'portland-rd': 'portland',
+  'river-rd': 'river', center: 'center', commercial: 'commercial',
+};
+/** GX Core app_access role -> a role homeRoute() and requireRole_ actually understand. */
+var GX_ROLE_TO_LOCAL = {
+  owner: 'owner', director: 'director', admin: 'director',
+  editor: 'store_manager', manager: 'store_manager', viewer: 'budtender',
+};
+
+/**
+ * Translate a GX Core session, or return null if it cannot be translated safely.
+ * Null means "fall back to local" — never "guess and route them somewhere".
+ */
+function gxSessionUsable_(g) {
+  var role = GX_ROLE_TO_LOCAL[String(g.role || '').toLowerCase()];
+  if (!role) return null;
+
+  var needsStore = (role !== 'owner' && role !== 'director');
+  var slug = null;
+  if (g.store) {
+    slug = GX_STOREID_TO_SLUG[String(g.store).toLowerCase()] || null;
+    if (!slug) return null;                 // a store we cannot place: do not guess
+  }
+  if (needsStore && !slug) return null;     // manager with no store would default to Baseline
+
+  var store = slug ? STORES.filter(function (x) { return x.slug === slug; })[0] : null;
+  var name  = String(g.displayName || g.user || '');
+  return {
+    ok: true,
+    token:       issueSessionToken_(String(g.user || '').toLowerCase()),
+    user:        String(g.user || '').toLowerCase(),
+    displayName: name,
+    initials:    name.trim().split(/\s+/).slice(0, 2)
+                   .map(function (w) { return w.charAt(0); }).join('').toUpperCase() || '??',
+    role:        role,
+    storeSlug:   slug,
+    storeName:   store ? store.name : null,
+    expiresAt:   new Date(Date.now() + GC_SESSION_TTL_MS).toISOString(),
+    source:      'gxcore',
+  };
+}
+
+function _loginUserLocal_(params) {
   const props = PropertiesService.getScriptProperties();
   const users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}');
   const key   = String(params.user).toLowerCase().trim();
