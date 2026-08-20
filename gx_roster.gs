@@ -40,10 +40,16 @@ const GC_GX_ROSTER_TTL_SEC   = 600;
  * Returns { byKey: { nameKey: rec }, retiredKeys: [nameKey], stats: {...} }
  * where rec = { employeeId, displayName, preferredName, fullName, avatarConfig, roleTitle, status }
  */
+// Request-scoped memo, same pattern as _goalsCache_ in dutchie_proxy.gs. The eligibility helpers
+// below are called once PER TRANSACTION on a busy store's ticker, and CacheService.get() is a real
+// round trip -- without this the store gate would cost thousands of cache reads per kiosk poll.
+var _gxRosterMemo_ = null;
+
 function gxRoster_() {
+  if (_gxRosterMemo_) return _gxRosterMemo_;
   try {
     const raw = CacheService.getScriptCache().get(GC_GX_ROSTER_CACHE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) return (_gxRosterMemo_ = JSON.parse(raw));
   } catch (e) { /* fall through and rebuild */ }
 
   const built = gxRosterBuild_();
@@ -51,12 +57,19 @@ function gxRoster_() {
     CacheService.getScriptCache().put(GC_GX_ROSTER_CACHE_KEY,
       JSON.stringify(built), GC_GX_ROSTER_TTL_SEC);
   } catch (e) { /* cache is an optimisation, not a requirement */ }
-  return built;
+  return (_gxRosterMemo_ = built);
 }
 
 /** Force the next read to re-pull from GX Core. Call after Crew reports a change. */
 function gxRosterBust_() {
+  _gxRosterMemo_ = null;
   try { CacheService.getScriptCache().remove(GC_GX_ROSTER_CACHE_KEY); } catch (e) {}
+}
+
+/** retired / merged / deleted all mean "not somebody the board should be showing today". */
+function gxIsLive_(status) {
+  const s = String(status || '').trim().toLowerCase();
+  return s !== 'retired' && s !== 'merged' && s !== 'deleted';
 }
 
 function gxRosterBuild_() {
@@ -70,22 +83,44 @@ function gxRosterBuild_() {
     return { byKey: {}, retiredKeys: [], stats: { ok: false, error: String(e), rows: 0 } };
   }
 
-  // dutchie_employee_id -> GX Core row, and a name index for the fallback path.
-  const byDutchieId = {};
-  const byFullNameKey = {};
-  rows.forEach(function (r) {
+  const gxRecOf_ = function (r) {
     const rec = {
       employeeId:    String(r.employee_id || '').trim(),
       fullName:      String(r.full_name || '').trim(),
       preferredName: String(r.preferred_name || '').trim(),
       roleTitle:     String(r.role_title || '').trim(),
       status:        String(r.status || 'active').trim().toLowerCase(),
+      // Crew's home_store, which is a GX Core store_id ('hillsboro'), NOT this app's slug
+      // ('baseline'). The two genuinely differ for four of the six stores. Never compare this to
+      // store.slug directly -- gxBelongsToStore_ translates it through the shared registry.
+      homeStore:     String(r.home_store || '').trim().toLowerCase(),
       avatarConfig:  gxParseJson_(r.avatar_config),
     };
     rec.displayName = gxDisplayNameOf_(rec);
-    const did = String(r.dutchie_employee_id || '').trim();
-    if (did) byDutchieId[did] = rec;
-    if (rec.fullName) byFullNameKey[nameToKey_(rec.fullName)] = rec;
+    return rec;
+  };
+
+  // dutchie_employee_id -> GX Core row, and a name index for the fallback path.
+  //
+  // A LIVE ROW ALWAYS WINS THE ID, and that is not a nicety. A merged duplicate carries the same
+  // dutchie id as the person it was merged into -- both Wydick rows are 44905, both Malia rows are
+  // 45705 -- so indexing blind hands the id to whichever row was read last. That is how the board
+  // showed "Nate Wydick" while Crew showed "Robert Wydick", and with the status filter below it
+  // would have been worse than cosmetic: an active person would have been dropped off the board
+  // because a dead row owned their id.
+  const byDutchieId = {};
+  const byFullNameKey = {};
+  rows.forEach(function (r) {
+    const rec  = gxRecOf_(r);
+    const live = gxIsLive_(rec.status);
+    const did  = String(r.dutchie_employee_id || '').trim();
+    if (did && (!byDutchieId[did] || (live && !gxIsLive_(byDutchieId[did].status)))) {
+      byDutchieId[did] = rec;
+    }
+    const nk = rec.fullName ? nameToKey_(rec.fullName) : '';
+    if (nk && (!byFullNameKey[nk] || (live && !gxIsLive_(byFullNameKey[nk].status)))) {
+      byFullNameKey[nk] = rec;
+    }
   });
 
   // Walk Leaderboard's own Dutchie roster so the result is keyed by the nameKey the rest of the app
@@ -131,15 +166,7 @@ function gxRosterBuild_() {
   rows.forEach(function (r) {
     const st = String(r.status || 'active').trim().toLowerCase();
     if (st === 'merged' || st === 'deleted') return;      // duplicate rows resolved to somebody else
-    const rec = {
-      employeeId:    String(r.employee_id || '').trim(),
-      fullName:      String(r.full_name || '').trim(),
-      preferredName: String(r.preferred_name || '').trim(),
-      roleTitle:     String(r.role_title || '').trim(),
-      status:        st,
-      avatarConfig:  gxParseJson_(r.avatar_config),
-    };
-    rec.displayName = gxDisplayNameOf_(rec);
+    const rec = gxRecOf_(r);
     // Index under BOTH names. Lookups arrive keyed either way: the kiosk derives its key from the
     // Dutchie name (the legal one), while the director header derives it from the session's display
     // name. Sky is "Skyler Pinnick" in Core and "Sky Pinnick" on screen -- indexing only the legal
@@ -151,10 +178,55 @@ function gxRosterBuild_() {
     });
   });
 
+  // WHO IS NOT ON THE BOARD TODAY.
+  //
+  // retiredKeys above only covers people this app's own 30-day SALES roster happens to contain, and
+  // that roster is rebuilt from Dutchie -- which lags Crew by however long it takes Mike to
+  // deactivate someone. Ten people were retired in GX Core and still active in Dutchie, Rebeka Perez
+  // among them, so status never reached the board. This index is built from every Core row instead,
+  // so a retirement takes effect on the next roster read rather than on the next Dutchie sync.
+  // (green_cross, the house account, is retired in Core and drops out here for the same reason.)
+  //
+  // MINUS ANYTHING A LIVE ROW CLAIMS. A merged duplicate shares its name -- and its dutchie id --
+  // with the person it resolved into. Excluding "Nate Wydick" because the merged Nathan row carries
+  // that display name would take the live Robert Wydick off the board with it.
+  const liveNameKeys = {};
+  rows.forEach(function (r) {
+    if (!gxIsLive_(r.status)) return;
+    const rec = gxRecOf_(r);
+    [rec.fullName, rec.displayName].forEach(function (n) {
+      const nk = n ? nameToKey_(n) : '';
+      if (nk) liveNameKeys[nk] = true;
+    });
+  });
+
+  const excludedKeys = {};
+  retiredKeys.forEach(function (k) { excludedKeys[k] = true; });
+  rows.forEach(function (r) {
+    if (gxIsLive_(r.status)) return;
+    const rec = gxRecOf_(r);
+    [rec.fullName, rec.displayName].forEach(function (n) {
+      const nk = n ? nameToKey_(n) : '';
+      if (nk && !liveNameKeys[nk]) excludedKeys[nk] = true;
+    });
+  });
+
+  // home_store is what the trophy gate runs on, and the gate FAILS OPEN -- so if the column ever
+  // stops arriving (a Core schema change, an older pinned library version), the gate quietly stops
+  // gating and Zach B is back on Center's trophies with nothing in the log to say why. Count it.
+  const withHomeStore = rows.filter(function (r) { return String(r.home_store || '').trim(); }).length;
+  if (rows.length && !withHomeStore) {
+    Logger.log('[gx_roster] GX Core returned ' + rows.length + ' employees and NONE carry home_store — ' +
+               'the store-crew gate on trophies is inert. Check the GXCore pin in appsscript.json.');
+  }
+
   return {
     byKey: byKey,
     byCoreKey: byCoreKey,
+    byDutchieId: byDutchieId,
+    excludedKeys: excludedKeys,
     retiredKeys: retiredKeys,
+    withHomeStore: withHomeStore,
     stats: {
       ok: true, rows: rows.length,
       matchedById: matchedById, matchedByName: matchedByName, unmatched: unmatched,
@@ -182,6 +254,73 @@ function gxAllRecs_() {
   return out;
 }
 
+// ── Who is on the board right now ────────────────────────────────────────────────────────────────
+// Two questions, one answer each, both asked of GX Core rather than of Dutchie. Sky's rule: "we
+// don't want them showing up in the Leaderboard if they're gone, that's messy to the staff" -- so
+// the roster decides who appears, not whichever record Dutchie has got around to deactivating.
+//
+// BOTH ARE FOR THE CURRENT-PERIOD BOARD ONLY. A retired person's past sales genuinely happened, and
+// a historical view must still attribute them or last month's numbers change retroactively. Do not
+// wire these into the standings/history paths -- getStandings_ deliberately does not exclude.
+
+/** GX Core's record for whoever rang a transaction: {id, name} from txEmployee_ or agg.byEmployee. */
+function gxRecForEmp_(emp) {
+  const r  = gxRoster_();
+  const id = String((emp && emp.id) || '').trim();
+  if (id) {
+    const byId = (r.byDutchieId || {})[id];
+    if (byId) return byId;
+  }
+  const key = nameToKey_((emp && emp.name) || '');
+  if (!key) return null;
+  return (r.byKey || {})[key] || (r.byCoreKey || {})[key] || null;
+}
+
+/**
+ * Has GX Core said this person is gone (retired / merged / deleted)?
+ *
+ * THE ID SETTLES IT WHEN THERE IS ONE. Dutchie's employeeId joins straight to a Core row, and that
+ * row's status is the answer -- no name matching, so a rename cannot orphan it and a merged
+ * duplicate cannot answer for the live person it resolved into. The name index is the fallback for
+ * roster entries and transactions that carry no id.
+ */
+function gxIsExcluded_(emp) {
+  const id = String((emp && emp.id) || '').trim();
+  if (id) {
+    const rec = (gxRoster_().byDutchieId || {})[id];
+    if (rec) return !gxIsLive_(rec.status);
+  }
+  const key = nameToKey_((emp && emp.name) || '');
+  return !!key && !!(gxRoster_().excludedKeys || {})[key];
+}
+
+/**
+ * Is this person part of THIS store's crew, per Crew's home_store?
+ *
+ * Trophies are the store's own awards, so a budtender covering a shift from another store should
+ * not carry one off with them -- Zach B is Baseline's and was turning up on Center's "This Week's
+ * Trophies". Their sales still count toward the store's revenue and still show on today's board;
+ * this gate is only about who the awards belong to.
+ *
+ * FAILS OPEN, DELIBERATELY, in all three not-knowable cases: no Core record, no home_store on it, or
+ * a cold store registry. A trophy shown for the wrong store is a visible bug someone reports; a
+ * trophy that silently vanishes because a lookup was cold is a worse one nobody can see.
+ */
+function gxBelongsToStore_(emp, store) {
+  const rec = gxRecForEmp_(emp);
+  if (!rec || !rec.homeStore) return true;
+
+  // home_store is a Core store_id ('hillsboro'); this app's slug is its display name ('baseline').
+  // gxStoreIdToAppSlug_ is the one registry-backed translation -- do not hand-map the four that
+  // differ, that is exactly the hardcoding that breaks on a rename.
+  const id2slug = gxStoreIdToAppSlug_();
+  if (!id2slug || !Object.keys(id2slug).length) return true;   // registry cold -- do not judge
+
+  const home = id2slug[rec.homeStore] || '';
+  if (!home) return false;   // a real home store that is not one of the six (corporate) -- not crew
+  return home === String((store && store.slug) || '').trim().toLowerCase();
+}
+
 /** nickname + surname, matching GX Core's own derivation, so one person reads the same everywhere. */
 function gxDisplayNameOf_(rec) {
   if (!rec.preferredName) return rec.fullName;
@@ -194,6 +333,38 @@ function gxParseJson_(v) {
   if (!v) return null;
   if (typeof v === 'object') return v;
   try { return JSON.parse(v); } catch (e) { return null; }
+}
+
+/**
+ * Diagnostic: who is on each store's board, and who did the two gates take off it?
+ *
+ * The unit test for this logic runs against a stubbed roster; this is the same question asked of the
+ * real deployment, where GXCore.getEmployees() is the live library at the version this app pins.
+ * Run it from the editor after a re-pin -- if `home_store present` reads 0, the trophy gate is inert
+ * and the pin is the reason. Read-only.
+ */
+function gxBoardEligibility() {
+  gxRosterBust_();
+  const r = gxRosterBuild_();
+  _gxRosterMemo_ = r;
+
+  Logger.log('GX Core rows: ' + (r.stats && r.stats.rows) + '   home_store present: ' + r.withHomeStore);
+  Logger.log('off the board (retired/merged/deleted): ' + Object.keys(r.excludedKeys || {}).length + ' name keys');
+  Logger.log('');
+
+  STORES.forEach(function (store) {
+    const roster = getEmployeeRoster_()[store.slug] || [];
+    const on = [], gone = [], visiting = [];
+    roster.forEach(function (e) {
+      if (gxIsExcluded_(e)) gone.push(e.name);
+      else if (!gxBelongsToStore_(e, store)) visiting.push(e.name);
+      else on.push(e.name);
+    });
+    Logger.log(store.name + ' — ' + on.length + ' crew, ' + visiting.length + ' visiting, ' + gone.length + ' gone');
+    if (visiting.length) Logger.log('   no trophy here (another store\'s crew): ' + visiting.join(', '));
+    if (gone.length)     Logger.log('   off the board entirely:                 ' + gone.join(', '));
+  });
+  return r.stats;
 }
 
 /**

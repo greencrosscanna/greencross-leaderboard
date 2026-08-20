@@ -147,7 +147,15 @@ function saveStoreTrendCache_(byStore30d) {
  */
 function getExcluded_() {
   var out = new Set();
-  try { (gxRoster_().retiredKeys || []).forEach(function (k) { out.add(k); }); }
+  try {
+    // excludedKeys is built from EVERY GX Core row, so someone Crew retired is off the board on the
+    // next roster read -- it no longer waits for this app's 30-day Dutchie roster to be re-synced,
+    // which is what left ten retired people (Rebeka Perez among them) on the board. retiredKeys is
+    // folded into it, so this is a superset of what this function used to return.
+    var r = gxRoster_();
+    Object.keys(r.excludedKeys || {}).forEach(function (k) { out.add(k); });
+    (r.retiredKeys || []).forEach(function (k) { out.add(k); });
+  }
   catch (e) { gxRosterWarn_(e); }
   return out;
 }
@@ -438,8 +446,7 @@ function getDirectorSummary(params, pre) {
     ? mergeAggs_(Object.values(pre.prevByStoreAgg))
     : aggregateTransactions_(Object.values(pre.prevByStore || fetchAllStoresTransactions_(prior)).flat());
 
-  const _excluded     = getExcluded_();
-  const allEmps       = Object.values(curr.byEmployee).filter(e => !_excluded.has(nameToKey_(e.name)));
+  const allEmps       = Object.values(curr.byEmployee).filter(e => !gxIsExcluded_(e));
   const _discRed      = discountRedLineDec_();   // 2× the discount target
   const flaggedEmps   = allEmps.filter(e => e.discountRate > _discRed);
 
@@ -600,13 +607,12 @@ function getDirectorStaff(params, pre) {
 
   // Aggregate employees globally across all stores (skip excluded employees)
   const globalEmps = {};
-  const _dirExcluded = getExcluded_();
 
   STORES.forEach(function(store) {
     const agg = (pre.byStoreAgg && pre.byStoreAgg[store.slug]) || aggregateTransactions_(byStore[store.slug] || []);
     Object.values(agg.byEmployee).forEach(function(emp) {
       const key = emp.name.toLowerCase().replace(/\s+/g, '_');
-      if (_dirExcluded.has(nameToKey_(emp.name))) return;
+      if (gxIsExcluded_(emp)) return;
       if (!globalEmps[key]) {
         globalEmps[key] = Object.assign({}, emp, {
           storeSlug: store.slug,
@@ -631,7 +637,7 @@ function getDirectorStaff(params, pre) {
   STORES.forEach(function(store) {
     (getEmployeeRoster_()[store.slug] || []).forEach(function(p) {
       const key = p.name.toLowerCase().replace(/\s+/g, '_');
-      if (_dirExcluded.has(nameToKey_(p.name))) return;
+      if (gxIsExcluded_(p)) return;
       if (globalEmps[key]) return;   // already present from transactions — keep real stats
       globalEmps[key] = {
         initials:     p.initials,
@@ -655,7 +661,7 @@ function getDirectorStaff(params, pre) {
     const aggT = aggregateTransactions_(byStoreToday[store.slug] || []);
     Object.values(aggT.byEmployee).forEach(function(emp) {
       const key = emp.name.toLowerCase().replace(/\s+/g, '_');
-      if (_dirExcluded.has(nameToKey_(emp.name))) return;
+      if (gxIsExcluded_(emp)) return;
       if (!todayByEmp[key]) todayByEmp[key] = { sales: 0, transactions: 0, items: 0, discountsBdt: 0, subtotal: 0 };
       todayByEmp[key].sales        += emp.sales;
       todayByEmp[key].transactions += emp.transactions;
@@ -1089,10 +1095,9 @@ function getStoreToday(store, params) {
 
   // Build shift strip: active employees (have transactions today) + known
   // roster employees who haven't transacted yet (shown as off-shift).
-  const _excluded   = getExcluded_();
   const _shiftNicks = getNicknames_();
   const activeEmps = Object.values(agg.byEmployee)
-    .filter(emp => !_excluded.has(nameToKey_(emp.name)))
+    .filter(emp => !gxIsExcluded_(emp))
     .sort((a, b) => b.sales - a.sales)
     .map(emp => ({
       initials:     emp.initials,
@@ -1113,7 +1118,7 @@ function getStoreToday(store, params) {
 
   // Pull in roster employees not yet seen today (apply nicknames so display is consistent)
   const rosterEmps = (getEmployeeRoster_()[store.slug] || [])
-    .filter(e => !activeIds.has(String(e.id)) && !activeNames.has(e.name.toLowerCase()) && !_excluded.has(nameToKey_(e.name)))
+    .filter(e => !activeIds.has(String(e.id)) && !activeNames.has(e.name.toLowerCase()) && !gxIsExcluded_(e))
     .map(e => ({
       initials:     e.initials,
       name:         applyNickname_(e.name, _shiftNicks),
@@ -1147,7 +1152,7 @@ function getStoreToday(store, params) {
     let best = null;
     for (let i = 0; i < txns.length; i++) {
       const tx = txns[i];
-      if (_excluded.has(nameToKey_(txEmployee_(tx).name))) continue;
+      if (gxIsExcluded_(txEmployee_(tx))) continue;
       if (!best || txTotal_(tx) > best.price) best = makeTicker_(tx);
     }
     return best;
@@ -1173,7 +1178,7 @@ function getStoreToday(store, params) {
       const ts = tx.transactionDateLocalTime || tx.transactionDate || '';
       if (ts < cutMs) break;                       // txns are chronological — nothing older qualifies
       if (txTotal_(tx) < bigMin) continue;
-      if (_excluded.has(nameToKey_(txEmployee_(tx).name))) continue;
+      if (gxIsExcluded_(txEmployee_(tx))) continue;
       out.push(makeTicker_(tx));
     }
     return out;                                    // newest first
@@ -1191,7 +1196,7 @@ function getStoreToday(store, params) {
     // Pre-open: no new transactions arriving — return updated labels/goal only
     const newTxns = isPreOpen ? [] : txns
       .filter(tx => (tx.transactionDateLocalTime || tx.transactionDate || '') > sinceTs)
-      .filter(tx => !_excluded.has(nameToKey_(txEmployee_(tx).name)))
+      .filter(tx => !gxIsExcluded_(txEmployee_(tx)))
       .reverse();   // newest first for ticker display
     return {
       isUpdate:          true,
@@ -1218,7 +1223,7 @@ function getStoreToday(store, params) {
 
   // Full response: ticker seed = last 10 transactions newest-first (exclude excluded employees)
   const recentTxns = txns.slice().reverse()
-    .filter(tx => !_excluded.has(nameToKey_(txEmployee_(tx).name)))
+    .filter(tx => !gxIsExcluded_(txEmployee_(tx)))
     .slice(0, 10);
   const ticker = recentTxns.map(makeTicker_);
 
@@ -1291,7 +1296,14 @@ function getStoreLeaderboard(store, params) {
   const streaks   = JSON.parse(props.getProperty(GC_STREAKS_KEY) || '{}');
   const yesterday = fmtDate_(new Date(todayStartMs - 24 * 60 * 60 * 1000));
 
+  // Drop anyone GX Core says is gone BEFORE ranking, so the ranks read 1..n over people who are
+  // actually here. This list feeds the kiosk's ranked staff grid and was the one current-period
+  // surface with no status filter at all -- a retired budtender still active in Dutchie ranked
+  // normally on it. Store crew is deliberately NOT filtered here: a covering budtender's sales are
+  // this store's sales today and belong on today's board. Only the weekly trophies are gated on
+  // whose store it is -- see getStoreBadges.
   const empList = Object.values(agg.byEmployee)
+    .filter(emp => !gxIsExcluded_(emp))
     .sort((a, b) => b.sales - a.sales);
 
   // Keys for employees who transacted today — used to detect absent employees below
@@ -1402,7 +1414,6 @@ function getStoreLeaderboard(store, params) {
 
   // Build onShift roster: employees active today (on) + roster-only employees (off)
   // Mirrors the same logic in getStoreToday so _onShift stays fresh on lb refresh.
-  const _excluded    = getExcluded_();
   const activeNames  = new Set(empList.map(e => e.name.toLowerCase()));
   const onShiftActive = empList.map(emp => ({
     initials: emp.initials,
@@ -1413,7 +1424,7 @@ function getStoreLeaderboard(store, params) {
     note:     null,
   }));
   const onShiftRoster = (getEmployeeRoster_()[store.slug] || [])
-    .filter(e => !activeNames.has(e.name.toLowerCase()) && !_excluded.has(nameToKey_(e.name)))
+    .filter(e => !activeNames.has(e.name.toLowerCase()) && !gxIsExcluded_(e))
     .map(e => ({
       initials: e.initials,
       name:     applyNickname_(e.name, _storeNicknames),
@@ -1446,8 +1457,19 @@ function getStoreBadges(store, params) {
   const txns   = fetchStoreTransactions_(store.slug, range.fromUTC, range.toUTC);
   const agg    = aggregateTransactions_(txns);
 
-  // Need at least 3 transactions per employee to be badge-eligible
-  const emps = Object.values(agg.byEmployee).filter(e => e.transactions >= 3);
+  // Who can hold one of THIS store's trophies. Three gates, in order:
+  //   1. at least 3 transactions this week -- a single shift should not win an average
+  //   2. GX Core does not say they are gone (retired / merged / deleted)
+  //   3. this is their store, per Crew's home_store
+  // Gate 3 is the Zach B fix: he is Baseline's and was appearing on Center's "This Week's Trophies"
+  // because badges were awarded purely on who rang transactions here, with no notion of whose crew
+  // they are. His sales at Center still count toward Center's revenue and still show on today's
+  // board -- he just does not carry Center's award. gxBelongsToStore_ fails open, so a person GX
+  // Core has no home_store for, or a cold store registry, leaves this exactly as it was.
+  const emps = Object.values(agg.byEmployee)
+    .filter(e => e.transactions >= 3)
+    .filter(e => !gxIsExcluded_(e))
+    .filter(e => gxBelongsToStore_(e, store));
 
   if (emps.length === 0) {
     return {
