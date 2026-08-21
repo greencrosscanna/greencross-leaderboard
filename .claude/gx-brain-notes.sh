@@ -36,7 +36,10 @@ notes = d.get("notes") or []
 if not notes: sys.exit(0)
 print("\U0001F4CB Brain notes from GX Core — pending for %s (%d):" % (d.get("app", "this app"), len(notes)))
 for n in notes:
-    print("  • [%s] %s  (from %s)" % (n.get("id", ""), n.get("title", ""), n.get("from_app") or "?"))
+    # SUBJECT FIRST, id last. A note id is a database key: it tells the reader nothing, and leading
+    # with it makes them skip past the least useful token on the line before they learn what this is
+    # even about. The id stays — it is what resolve_note needs — just not where the eye lands first.
+    print("  • %s  (from %s)  [%s]" % (n.get("title", ""), n.get("from_app") or "?", n.get("id", "")))
     body = (n.get("body") or "").strip()
     if body: print("      " + body.replace("\n", "\n      "))
 print("  → run /gxbrain to act on these; resolve_note when done.")
