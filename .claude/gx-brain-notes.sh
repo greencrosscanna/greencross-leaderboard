@@ -34,14 +34,45 @@ try: d = json.load(sys.stdin)
 except Exception: sys.exit(0)
 notes = d.get("notes") or []
 if not notes: sys.exit(0)
-print("\U0001F4CB Brain notes from GX Core — pending for %s (%d):" % (d.get("app", "this app"), len(notes)))
-for n in notes:
-    # SUBJECT FIRST, id last. A note id is a database key: it tells the reader nothing, and leading
-    # with it makes them skip past the least useful token on the line before they learn what this is
-    # even about. The id stays — it is what resolve_note needs — just not where the eye lands first.
-    print("  • %s  (from %s)  [%s]" % (n.get("title", ""), n.get("from_app") or "?", n.get("id", "")))
-    body = (n.get("body") or "").strip()
-    if body: print("      " + body.replace("\n", "\n      "))
-print("  → run /gxbrain to act on these; resolve_note when done.")
+# ASKS FIRST, IN FULL. FYIs collapse to a list of subjects.
+# The board grew faster than it drained because most notes were acknowledgments — they still had to be
+# read and resolved while asking for nothing. A banner that prints a 2,500-character "done" note at the
+# same weight as a real request teaches you to skim past both.
+DONE_WORDS = ("closed", "resolved", "done", "shipped", "deployed", "retraction",
+              "correction", "acknowledged", "answered", "stand down", "no action")
+def is_fyi(n):
+    # DISPLAY-ONLY heuristic, deliberately more generous than the one that decides EXPIRY.
+    # Only kind=fyi ever auto-closes; this just decides what collapses in the banner. So a note
+    # titled "RESOLVED: … but one question" gets tucked into the skim list and still waits for a
+    # human — being wrong here costs a glance, whereas being wrong about expiry loses a request.
+    # Needed because the ✅ convention is owned by core-admin, while the spokes write CLOSED / RESOLVED / DONE.
+    k = str(n.get("kind", "")).strip().lower()
+    if k == "fyi": return True
+    if k == "ask": return False
+    t = str(n.get("title", "")).strip()
+    if t.startswith("\u2705"): return True
+    low = t.lower()
+    return any(low.startswith(w) for w in DONE_WORDS)
+asks = [n for n in notes if not is_fyi(n)]
+fyis = [n for n in notes if is_fyi(n)]
+app = d.get("app", "this app")
+if asks:
+    print("\U0001F4CB Brain notes — %d NEEDING YOU for %s%s:" % (
+        len(asks), app, (" (+%d done, below)" % len(fyis)) if fyis else ""))
+    for n in asks:
+        # SUBJECT FIRST, id last. A note id is a database key: it tells the reader nothing, and leading
+        # with it makes them skip past the least useful token before they learn what this is about.
+        print("  \u2022 %s  (from %s)  [%s]" % (n.get("title", ""), n.get("from_app") or "?", n.get("id", "")))
+        body = (n.get("body") or "").strip()
+        if body: print("      " + body.replace("\n", "\n      "))
+else:
+    print("\U0001F4CB Brain notes — nothing needs you for %s." % app)
+if fyis:
+    # Subjects only. These are marked done by the sender; read one if it looks relevant, otherwise they
+    # close themselves after 7 days. No body — that is the whole point.
+    print("  %d marked done (\u2705) — skim or ignore; they auto-close after 7 days:" % len(fyis))
+    for n in fyis:
+        print("      %s  (from %s)  [%s]" % (n.get("title", "").lstrip("\u2705 ").strip(), n.get("from_app") or "?", n.get("id", "")))
+if asks: print("  \u2192 run /gxbrain to act on these; resolve_note when done.")
 ' 2>/dev/null
 exit 0
