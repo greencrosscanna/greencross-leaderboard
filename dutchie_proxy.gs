@@ -260,6 +260,14 @@ function doGet(e) {
       if (!grant.ok) return jsonOut(grant, params.callback);
     }
 
+    // Management-only: the ADMIT test. Would enforcing the write gate refuse any real user?
+    // writeauthprobe asserts "refuses the bad"; this asserts "admits the good", which is the
+    // half that decides whether the flag can safely be turned on.
+    if (params.action === 'writegrantaudit') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(gxWriteGrantAudit_(), params.callback);
+    }
+
     // Management-only: does THIS project's session secret match GX Core's? Determines whether our
     // tokens are Core-verifiable at all. Reveals a hash, never the value.
     if (params.action === 'sessionfingerprint') {

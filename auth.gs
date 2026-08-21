@@ -426,7 +426,28 @@ function gxWriteAuthProbe_() {
     enforcing: gxWriteGrantEnforcing_(),
     gatedActions: GX_WRITE_ACTIONS.length,
     coreError: coreErr,
+    // The ADMIT half, COUNTS ONLY -- no names, so this can stay pre-auth alongside the rest.
+    // refusesUnknownUser proves the gate refuses the bad; this proves whether it would admit the
+    // good, which is the half that decides if the flag can be turned on at all. Names are behind
+    // action=writegrantaudit (owner/director), because WHO is refused is nobody else's business.
+    admit: gxAdmitCounts_(),
   };
+}
+
+/** Counts-only slice of the admit test, cached briefly -- it asks GX Core once per local user. */
+function gxAdmitCounts_() {
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get('gxAdmitCounts');
+  if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+  var out;
+  try {
+    var a = gxWriteGrantAudit_();
+    out = { ok: true, counts: a.counts, safeToEnforce: a.safeToEnforce };
+  } catch (e) {
+    out = { ok: false, error: (e && e.message) || String(e) };
+  }
+  cache.put('gxAdmitCounts', JSON.stringify(out), 300);
+  return out;
 }
 
 /**
@@ -468,5 +489,59 @@ function gxSessionFingerprint_() {
     algorithm: 'sha256, first 16 hex chars',
     gxCorePublished: '625516f184e4f203',
     matchesCore: hex.slice(0, 16) === '625516f184e4f203',
+  };
+}
+
+/**
+ * THE ADMIT TEST, for OUR population — would enforcing lock anyone out?
+ *
+ * "Refuses the bad" and "admits the good" are two different assertions, and writeauthprobe only
+ * makes the first. This makes the second, against the users we actually have.
+ *
+ * WHY IT CANNOT BE BORROWED. Inventory ran a positive admit test and it does not transfer: they
+ * retired their local-login fallback, so every signed-in Inventory user provably has an app_access
+ * row. We kept ours, so our population CAN contain signed-in users with no grant — the exact group
+ * sales found roleForApp returning null for, including their own app owner. A green result on their
+ * app says nothing about that group on ours.
+ *
+ * Sky is also the WRONG test subject here: superadmin resolves first inside roleForApp, so he is
+ * the account most likely to pass when everyone else fails. What matters is the non-superadmin rows.
+ *
+ * Read-only, no writes, no grant mutation. Owner/director gated — same audience as listusers, which
+ * already returns this roster.
+ */
+function gxWriteGrantAudit_() {
+  var users = JSON.parse(PropertiesService.getScriptProperties().getProperty(GC_USERS_KEY) || '{}');
+  var ids = Object.keys(users).sort();
+
+  var admitted = [], refusedNoGrant = [], errored = [];
+  ids.forEach(function (id) {
+    var role = null, err = null;
+    try { role = GXCore.roleForApp(String(id).toLowerCase(), 'performance'); }
+    catch (e) { err = (e && e.message) || String(e); }
+    var rec = { user: id, localRole: (users[id] || {}).role || '' };
+    if (err)        { rec.error = err; errored.push(rec); }
+    else if (role)  { rec.coreRole = role; admitted.push(rec); }
+    else            { refusedNoGrant.push(rec); }
+  });
+
+  return {
+    ok: true,
+    // The three buckets, named. Offered to inventory/pricecards as shared vocabulary so the suite
+    // does not grow three names for the same states.
+    counts: {
+      admitted:        admitted.length,
+      refused_no_grant: refusedNoGrant.length,
+      refused_unavailable: errored.length,
+      total:           ids.length,
+    },
+    // WOULD FLIPPING THE FLAG BE SAFE? This is the whole question, answered rather than estimated.
+    safeToEnforce: refusedNoGrant.length === 0 && errored.length === 0,
+    admitted:         admitted,
+    refused_no_grant: refusedNoGrant,     // <- anyone here is locked out of writes the moment we enforce
+    refused_unavailable: errored,
+    note: refusedNoGrant.length
+      ? 'DO NOT set cfg.lbWriteGrantCheck=on until these users have a performance grant in GX Core, or they lose writes.'
+      : 'Every local user resolves to a GX Core role. Enforcing would admit them all.',
   };
 }
