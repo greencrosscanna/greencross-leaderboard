@@ -135,6 +135,25 @@ function loginUser(params) {
   return _loginUserLocal_(params);
 }
 
+/**
+ * Own-key map lookup. A LOOKUP TABLE IS NOT A WHITELIST.
+ *
+ * Every plain object inherits constructor, __proto__, toString, valueOf, hasOwnProperty and
+ * isPrototypeOf, so all six return something truthy from ANY map and sail through a plain
+ * `if (MAP[input])` gate. Price Cards found this the expensive way: their router gated on
+ * `if (!READ_ACTIONS[action])` and ?action=toString served their entire pricing sheet to anyone
+ * with the bare /exec URL.
+ *
+ * Measured here before fixing: GX_ROLE_TO_LOCAL['constructor'] and GX_STOREID_TO_SLUG['__proto__']
+ * were both truthy. toString and valueOf missed only because the call sites lowercase first, which
+ * is luck, not a defence -- 'constructor' and '__proto__' are already lowercase.
+ *
+ * Use this anywhere a map decides something, rather than trusting the lookup.
+ */
+function own_(map, key) {
+  return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined;
+}
+
 /** GX Core store_id -> this app's historical slug. Anything absent is deliberately unmapped. */
 var GX_STOREID_TO_SLUG = {
   hillsboro: 'baseline', bend: 'century', 'portland-rd': 'portland',
@@ -151,13 +170,13 @@ var GX_ROLE_TO_LOCAL = {
  * Null means "fall back to local" — never "guess and route them somewhere".
  */
 function gxSessionUsable_(g) {
-  var role = GX_ROLE_TO_LOCAL[String(g.role || '').toLowerCase()];
+  var role = own_(GX_ROLE_TO_LOCAL, String(g.role || '').toLowerCase());
   if (!role) return null;
 
   var needsStore = (role !== 'owner' && role !== 'director');
   var slug = null;
   if (g.store) {
-    slug = GX_STOREID_TO_SLUG[String(g.store).toLowerCase()] || null;
+    slug = own_(GX_STOREID_TO_SLUG, String(g.store).toLowerCase()) || null;
     if (!slug) return null;                 // a store we cannot place: do not guess
   }
   if (needsStore && !slug) return null;     // manager with no store would default to Baseline
@@ -268,4 +287,149 @@ function adminSetStoreKeys(params) {
   PropertiesService.getScriptProperties().setProperty('DUTCHIE_STORE_KEYS_JSON', JSON.stringify(parsed));
   Logger.log('Store keys updated: ' + Object.keys(parsed).join(', '));
   return { ok: true, stores: Object.keys(parsed) };
+}
+
+// ============================================================
+//  WRITE AUTHORISATION — re-check the GRANT, not just the signature
+// ============================================================
+
+/**
+ * Actions that MUTATE something. Everything here gets the grant re-check; everything else is a
+ * read and is deliberately left alone.
+ *
+ * The list is of WRITES rather than of reads on purpose. Miss a write and it merely keeps today's
+ * behaviour (signature-only); misclassify a READ as a write and a Core hiccup blanks a board at
+ * open. The failure modes are not symmetric, so the list that fails safe is the one we maintain.
+ *
+ * NEW WRITE ACTION? ADD IT HERE.
+ */
+var GX_WRITE_ACTIONS = [
+  'applydiscounttargets', 'backfillsnapshots', 'bootstrapdirectors', 'bustdist', 'clearavatar',
+  'clearmanualgoal', 'goalbackfill', 'goalbackfillbulk', 'goalpush', 'installeodguard',
+  'recalculategoals', 'recalculateyoygoals', 'refreshdiscounts', 'refreshtargets', 'saveavatar',
+  'savediscountsettings', 'saveincentive', 'savemanualgoals', 'savesettings', 'setplan',
+  'setstorekeys', 'setuptrigger', 'setuser', 'syncemployees',
+];
+// `bugreport` is deliberately NOT here: filing a bug is how someone reports being broken, and it
+// must not be the thing that refuses them. `renew` is not here either -- refusing to renew a
+// session is what session expiry already does, and gating it would just turn a clean re-login
+// into a confusing one.
+
+function gxIsWriteAction_(action) {
+  return GX_WRITE_ACTIONS.indexOf(String(action || '').toLowerCase()) !== -1;
+}
+
+/**
+ * Is the write grant check ENFORCING? Read from GX Core kv so it can be flipped from the Command
+ * Center without a deploy. Default OFF -- see gxCheckWriteGrant_ for why it ships dark.
+ */
+function gxWriteGrantEnforcing_() {
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get('gxWriteGrantMode');
+  if (hit == null) {
+    hit = 'off';
+    try { hit = String(GXCore.getKv('cfg.lbWriteGrantCheck') || 'off').trim().toLowerCase(); }
+    catch (e) { hit = 'off'; }        // Core unreachable -> do not start enforcing
+    cache.put('gxWriteGrantMode', hit, 60);
+  }
+  return hit === 'on';
+}
+
+/**
+ * Re-check that the caller still has a `performance` grant in GX Core before letting a write land.
+ *
+ * WHY THIS EXISTS. validateSessionToken_ proves WHO you are -- it checks an HMAC signature and an
+ * expiry. It does not prove you still have ACCESS. Our session TTL is 7 days, so without this a
+ * revocation in GX Core was advisory for up to a week on this app.
+ *
+ * WHY GXCore.roleForApp AND NOT verifySession. verifySession validates a CORE-SIGNED token. Even
+ * when GXCore.login authenticates the user we mint our OWN token with issueSessionToken_ and
+ * discard Core's, so verifySession would reject 100% of our callers and take the whole write
+ * surface down. roleForApp asks the by-USER question instead. It also handles superadmin FIRST --
+ * getGrantsForUser reads app_access only, so a superadmin with no explicit row looks identical to
+ * a revoked user, and failing closed on that would lock Sky out of the app he uses most.
+ *
+ * WHY IT SHIPS DARK. Users who authenticate against the LOCAL store rather than GX Core may have
+ * no app_access row at all, and enforcing on them would lock them out of writes with no warning.
+ * So while the flag is off this still COMPUTES the answer and logs what it WOULD have refused --
+ * a built-in dry run. Turn cfg.lbWriteGrantCheck to "on" once the log is quiet.
+ *
+ * FAILS CLOSED when enforcing, including if GX Core is unreachable: failing open on an auth check
+ * is the same as having no check. Reads are untouched and still fail open, so a Core outage can
+ * never blank a board at open.
+ */
+function gxCheckWriteGrant_(auth, action) {
+  var enforcing = gxWriteGrantEnforcing_();
+  var role = null, err = null;
+  try {
+    role = GXCore.roleForApp(String(auth.user || '').toLowerCase(), 'performance');
+  } catch (e) {
+    err = (e && e.message) || String(e);
+  }
+
+  if (role && !err) return { ok: true, role: role };
+
+  var why = err
+    ? 'GX Core could not be reached to confirm access (' + err + ')'
+    : 'access to this app has been revoked in GX Core';
+
+  if (!enforcing) {
+    // Dry run: record precisely who would have been refused and why, so turning this on is a
+    // decision made from evidence rather than a hope.
+    Logger.log('[writegrant/DRYRUN] would refuse ' + auth.user + ' -> ' + action + ' — ' + why);
+    return { ok: true, dryRun: true };
+  }
+
+  // Fail LOUD and name the reason. A write that silently no-ops is worse than a refused one --
+  // the person believes they saved.
+  Logger.log('[writegrant/REFUSED] ' + auth.user + ' -> ' + action + ' — ' + why);
+  return {
+    ok: false,
+    error: err
+      ? 'Could not confirm your access with GX Core, so this change was not saved. Try again in a moment.'
+      : 'Your access to Leaderboard has been removed, so this change was not saved. Ask Sky to restore it.',
+    code: err ? 'grant_check_unavailable' : 'no_access',
+    user: auth.user,
+  };
+}
+
+/**
+ * Proves the write gate is REALLY wired, rather than reporting that it exists.
+ * Stealing inventory's point: a check that cannot fail reads as a pass, so the refusal is
+ * asserted here, not assumed. Pre-auth and read-only -- it reports no user data.
+ */
+function gxWriteAuthProbe_() {
+  var pinned = null, hasRoleForApp = false, refusesGarbage = null, coreErr = null;
+  try { if (typeof GXCore.libVersion === 'function') pinned = GXCore.libVersion(); } catch (e) {}
+  try { hasRoleForApp = (typeof GXCore.roleForApp === 'function'); } catch (e) {}
+  try {
+    // A user id that cannot exist. roleForApp must return null (no grant), not throw and not
+    // invent a role. If this ever reads true-ish, the gate is decorative.
+    refusesGarbage = !GXCore.roleForApp('__no_such_user_' + Utilities.getUuid().slice(0, 8), 'performance');
+  } catch (e) { coreErr = (e && e.message) || String(e); }
+
+  return {
+    ok: true,
+    pinned: pinned,
+    hasRoleForApp: hasRoleForApp,
+    refusesUnknownUser: refusesGarbage,
+    enforcing: gxWriteGrantEnforcing_(),
+    gatedActions: GX_WRITE_ACTIONS.length,
+    coreError: coreErr,
+  };
+}
+
+/**
+ * Reports the GXCore library version this deployment is bound to (GXCore.libVersion(), added in
+ * v153). An older pin has no libVersion(), which is itself the answer — the error is reported, not
+ * thrown, so the check never 500s.
+ */
+function getLibVersion_() {
+  try {
+    if (typeof GXCore === 'undefined' || !GXCore) return { ok: false, error: 'GXCore not bound' };
+    if (typeof GXCore.libVersion !== 'function') return { ok: false, error: 'pinned GXCore has no libVersion() - pre-v153' };
+    return { ok: true, gxcore: GXCore.libVersion() };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
 }

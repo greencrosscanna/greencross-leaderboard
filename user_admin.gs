@@ -165,8 +165,8 @@ function setupSheet() {
 
   // Pre-populate store keys
   const keyRows = Object.entries(STORE_KEYS_MAP).map(([dutchieName, key]) => {
-    const slug = DUTCHIE_TO_SLUG[dutchieName] || dutchieName.toLowerCase();
-    return [dutchieName, slug, SLUG_TO_NAME[slug] || slug, key, ''];
+    const slug = own_(DUTCHIE_TO_SLUG, dutchieName) || dutchieName.toLowerCase();
+    return [dutchieName, slug, own_(SLUG_TO_NAME, slug) || slug, key, ''];
   });
   keysSheet.getRange(2, 1, keyRows.length, keyRows[0].length).setValues(keyRows);
 
@@ -217,7 +217,7 @@ function pullEmployeesFromDutchie() {
       }
       const data = JSON.parse(resp.getContentText());
       const emps = Array.isArray(data) ? data : (data.employees || data.data || []);
-      const slug = DUTCHIE_TO_SLUG[dutchieName] || '';
+      const slug = own_(DUTCHIE_TO_SLUG, dutchieName) || '';
 
       emps.forEach(function(emp) {
         if (!emp || emp.isDeleted || emp.inactive) return;
@@ -228,7 +228,7 @@ function pullEmployeesFromDutchie() {
         const role      = emp.role || emp.roleName || emp.position || '';
 
         allEmployees.push({
-          store:        SLUG_TO_NAME[slug] || dutchieName,
+          store:        own_(SLUG_TO_NAME, slug) || dutchieName,
           fullName:     fullName,
           initials:     initials,
           dutchieRole:  role,

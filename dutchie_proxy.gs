@@ -200,6 +200,18 @@ function doGet(e) {
     if (params.action === 'rosterhealth') {
       return jsonOut(gxRosterHealth_(), params.callback);
     }
+    // Public: which GXCore version this DEPLOYMENT is actually bound to. appsscript.json records the
+    // PUSHED pin, and a pushed pin is not a deployed one -- those can disagree silently. Suite
+    // standard, from inventory. An old pin has no libVersion(), which is itself the answer, so the
+    // error is REPORTED rather than thrown: a diagnostic that 500s fails exactly when it is needed.
+    if (params.action === 'libversion') {
+      return jsonOut(getLibVersion_(), params.callback);
+    }
+    // Public: proves the write gate is really wired, including that a bogus user is actually
+    // REFUSED. "hasRoleForApp:true" alone would be a comfortable lie.
+    if (params.action === 'writeauthprobe') {
+      return jsonOut(gxWriteAuthProbe_(), params.callback);
+    }
     // Public: computed daily + monthly goals for all stores, keyed by Sales Dashboard names.
     // No auth required — consumed by greencross-dashboard for the current pay period.
     if (params.action === 'getdailygoals') {
@@ -237,6 +249,16 @@ function doGet(e) {
     // ── Auth required from here ────────────────────────────
     const auth = requireAuth_(params);
     if (!auth.ok) return jsonOut(auth, params.callback);
+
+    // ── Write authorisation: ONE chokepoint, so it cannot be forgotten per endpoint ──
+    // The signature above proves who you are; it does not prove you still have access. This
+    // re-checks the GRANT in GX Core for mutating actions only. Reads fall straight through and
+    // still fail open, so a Core hiccup can never blank a board at open. Ships dark (dry-run) --
+    // see gxCheckWriteGrant_.
+    if (gxIsWriteAction_(params.action)) {
+      const grant = gxCheckWriteGrant_(auth, params.action);
+      if (!grant.ok) return jsonOut(grant, params.callback);
+    }
 
     // Management-only: current local user roster (no password hashes). Useful for the shared-login migration.
     if (params.action === 'listusers') {
@@ -1139,7 +1161,7 @@ function getManagementEmployees_() {
         initials:  u.initials || username.slice(0, 2).toUpperCase(),
         section:   'management',
         roleLabel: 'Admin',
-        jobTitle:  MANAGEMENT_JOB_TITLES[username] || '',
+        jobTitle:  own_(MANAGEMENT_JOB_TITLES, username) || '',
       });
     }
   });

@@ -4613,7 +4613,10 @@ GC.buildAvatarUrl = function(cfg, seed) {
   var isGcHat       = cfg.top === '_gchat';
   // _gchat uses shortFlat underneath — hair peeks out from under the hat
   var noHair        = cfg.top === '_none';
-  var isHat         = !!(cfg.top && { hat: true, winterHat1: true }[cfg.top]);  // hat/winterHat1 need hatColor, not hairColor
+  // Own-key check, not a bare lookup: every object inherits constructor/__proto__/toString, so
+  // `{hat:true}[cfg.top]` is truthy for those and would suppress hairColor on a normal avatar.
+  var HAT_TOPS      = { hat: true, winterHat1: true };
+  var isHat         = !!(cfg.top && Object.prototype.hasOwnProperty.call(HAT_TOPS, cfg.top));  // hat/winterHat1 need hatColor, not hairColor
 
   var keys = Object.keys(cfg);
   for (var i = 0; i < keys.length; i++) {

@@ -692,7 +692,7 @@ function getDirectorStaff(params, pre) {
       name:          emp.name,
       nameKey:       nameToKey_(emp.name),  // canonical key before nickname — matches settings page
       role:          emp.role || '',
-      roleLabel:     _roles[nameToKey_(emp.name)] ? ROLE_LABELS[_roles[nameToKey_(emp.name)]] : (emp.roleLabel || ROLE_LABELS.budtender),  // unassigned staff default to Budtender (matches Settings)
+      roleLabel:     own_(ROLE_LABELS, _roles[nameToKey_(emp.name)]) || emp.roleLabel || ROLE_LABELS.budtender,  // unassigned staff default to Budtender (matches Settings)
       storeSlug:     emp.storeSlug,
       storeName:     emp.storeName,
       hoursWorked:   0,   // Dutchie doesn't expose schedule hours; integrate separately
