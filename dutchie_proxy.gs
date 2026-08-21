@@ -260,6 +260,13 @@ function doGet(e) {
       if (!grant.ok) return jsonOut(grant, params.callback);
     }
 
+    // Management-only: does THIS project's session secret match GX Core's? Determines whether our
+    // tokens are Core-verifiable at all. Reveals a hash, never the value.
+    if (params.action === 'sessionfingerprint') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(gxSessionFingerprint_(), params.callback);
+    }
+
     // Management-only: current local user roster (no password hashes). Useful for the shared-login migration.
     if (params.action === 'listusers') {
       requireRole_(auth, ['owner','director']);

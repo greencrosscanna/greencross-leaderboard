@@ -327,9 +327,19 @@ function gxWriteGrantEnforcing_() {
   var cache = CacheService.getScriptCache();
   var hit = cache.get('gxWriteGrantMode');
   if (hit == null) {
-    hit = 'off';
-    try { hit = String(GXCore.getKv('cfg.lbWriteGrantCheck') || 'off').trim().toLowerCase(); }
-    catch (e) { hit = 'off'; }        // Core unreachable -> do not start enforcing
+    var props = PropertiesService.getScriptProperties();
+    try {
+      hit = String(GXCore.getKv('cfg.lbWriteGrantCheck') || 'off').trim().toLowerCase();
+      props.setProperty('GC_WRITE_GRANT_MODE_LAST', hit);   // remember the last KNOWN-GOOD answer
+    } catch (e) {
+      // A FALLBACK ON AN AUTH PATH MUST BE NO MORE PERMISSIVE THAN THE THING IT REPLACES (crew's
+      // rule, and this is exactly the case it catches). Defaulting to 'off' here would mean an
+      // unreachable GX Core silently DISABLES enforcement -- a Core outage would quietly reopen
+      // the very window this check exists to close, and nothing would say so. Fall back to the
+      // last mode we actually read instead, so the failure can hold the line but never relax it.
+      hit = String(props.getProperty('GC_WRITE_GRANT_MODE_LAST') || 'off');
+      Logger.log('[writegrant] could not read cfg.lbWriteGrantCheck, holding last known mode: ' + hit);
+    }
     cache.put('gxWriteGrantMode', hit, 60);
   }
   return hit === 'on';
@@ -432,4 +442,31 @@ function getLibVersion_() {
   } catch (e) {
     return { ok: false, error: e.message };
   }
+}
+
+/**
+ * Truncated SHA-256 of THIS project's GC_SESSION_SECRET, for comparing against GX Core without
+ * either side revealing a value. Core publishes 625516f184e4f203.
+ *
+ * WHY IT MATTERS: Core and every spoke read the same PROPERTY NAME, and a project with no value
+ * auto-generates a random one. So matching names prove nothing -- two projects can hold different
+ * secrets under one name and their tokens will not interoperate. If this matches Core, our tokens
+ * are Core-verifiable and the write gate could collapse into GXCore.requireAuth(p, "performance").
+ * If it does not, our roleForApp-alongside-our-own-signature design is the only correct one.
+ *
+ * Owner/director gated: it reveals no secret, but it is nobody else's business.
+ */
+function gxSessionFingerprint_() {
+  var v = PropertiesService.getScriptProperties().getProperty('GC_SESSION_SECRET');
+  if (!v) return { ok: false, error: 'GC_SESSION_SECRET is not set on this project' };
+  var d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, v, Utilities.Charset.UTF_8);
+  var hex = d.map(function (b) { return ('0' + (b & 0xFF).toString(16)).slice(-2); }).join('');
+  return {
+    ok: true,
+    property: 'GC_SESSION_SECRET',
+    fingerprint: hex.slice(0, 16),
+    algorithm: 'sha256, first 16 hex chars',
+    gxCorePublished: '625516f184e4f203',
+    matchesCore: hex.slice(0, 16) === '625516f184e4f203',
+  };
 }
