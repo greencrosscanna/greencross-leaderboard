@@ -16,7 +16,7 @@ function saveChunkedCache_(cache, key, json, ttlSeconds) {
   for (let i = 0; i < json.length; i += CHUNK_SIZE) {
     chunks.push(json.slice(i, i + CHUNK_SIZE));
   }
-  const entries = {};
+  const entries = Object.create(null);
   chunks.forEach(function(chunk, i) { entries[key + '_' + i] = chunk; });
   entries[key + '_meta'] = String(chunks.length);
   cache.putAll(entries, ttlSeconds);

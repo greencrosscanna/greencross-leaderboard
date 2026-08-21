@@ -490,9 +490,9 @@ function doGet(e) {
       var props = PropertiesService.getScriptProperties();
       var allKeys = Object.keys(props.getProperties());
       var cacheRaw = props.getProperty('GC_GOALS_CACHE_JSON') || '{}';
-      var cache = {};
+      var cache = Object.create(null);
       try { cache = JSON.parse(cacheRaw); } catch(e) {}
-      var result = {};
+      var result = Object.create(null);
       ['baseline','century'].forEach(function(slug) {
         var g = cache[slug] || {};
         result[slug] = { ppGoal: g.ppGoal, dowAvg: g.dowAvg, computedAt: g.computedAt };
@@ -588,7 +588,7 @@ function doGet(e) {
       var _drange = { fromUTC: new Date(_dcur.ppStartMs).toISOString(),
                       toUTC:   new Date(_dcur.ppStartMs + _dcur.PP_MS - 1).toISOString() };
       var _dbyStore = fetchAllStoresTransactions_(_drange);
-      var _dnames = {};   // discountName -> { count, amount, sampleKeys, sample, excluded }
+      var _dnames = Object.create(null);   // discountName -> { count, amount, sampleKeys, sample, excluded }
       var _dgrand = { txTotal: 0, txWithDiscount: 0, totalDiscount: 0 };
       Object.keys(_dbyStore).forEach(function(_slug) {
         (_dbyStore[_slug] || []).forEach(function(_tx) {
@@ -645,7 +645,7 @@ function doGet(e) {
     // ?action=discaudit&token=TOKEN
     if (params.action === 'discaudit') {
       requireRole_(auth, ['owner','director']);
-      var _daReg = {};   // discountName -> { appMethod, code }  (tx discountId is always 0, so join by name)
+      var _daReg = Object.create(null);   // discountName -> { appMethod, code }  (tx discountId is always 0, so join by name)
       STORES.forEach(function(_st) {
         try {
           var _k = getDutchieStoreKey_(_st.slug);
@@ -662,7 +662,7 @@ function doGet(e) {
       var _daRange = { fromUTC: new Date(_daCur.ppStartMs).toISOString(),
                        toUTC:   new Date(_daCur.ppStartMs + _daCur.PP_MS - 1).toISOString() };
       var _daByStore = fetchAllStoresTransactions_(_daRange);
-      var _daUsage = {};   // discountName -> { count, amount }
+      var _daUsage = Object.create(null);   // discountName -> { count, amount }
       Object.keys(_daByStore).forEach(function(_slug) {
         (_daByStore[_slug] || []).forEach(function(_tx) {
           (_tx.discounts || []).forEach(function(_dd) {
@@ -747,7 +747,7 @@ function doGet(e) {
       function _custShape(tx) {
         if (!tx) return null;
         var topKeys = Object.keys(tx).filter(function(k){ return /customer|loyalt|member|patient|medical|profile|consumer/i.test(k); });
-        var shape = {};
+        var shape = Object.create(null);
         topKeys.forEach(function(k){
           var v = tx[k];
           shape[k] = (v && typeof v === 'object') ? { _keys: Object.keys(v) } : (typeof v);
@@ -972,10 +972,10 @@ function syncEmployeeRoster_() {
 
   Logger.log('syncEmployeeRoster_: fetching 30-day transactions for all stores…');
   const byStore = fetchAllStoresTransactions_(range30);
-  const roster = {};
+  const roster = Object.create(null);
 
   STORES.forEach(function(store) {
-    const seen = {};
+    const seen = Object.create(null);
     (byStore[store.slug] || []).forEach(function(tx) {
       const emp = txEmployee_(tx);
       const key = String(emp.id || emp.name);
@@ -1103,7 +1103,7 @@ function getGxStores_() {
 // Map GX Core store_id → this app's slug (= display_name lowercased). The sales cache keys rows by
 // GX store_id (bend, hillsboro, …); the app uses display-name slugs (century, baseline, …).
 function gxStoreIdToAppSlug_() {
-  const map = {};
+  const map = Object.create(null);
   try {
     const g = getGxStores_();
     ((g && g.stores) || []).forEach(function(s) {
@@ -1216,7 +1216,7 @@ function getSettings_(params) {
   var DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   // Flatten roster
-  var empMap = {};
+  var empMap = Object.create(null);
   STORES.forEach(function(store) {
     (roster[store.slug] || []).forEach(function(emp) {
       var key = nameToKey_(emp.name);
@@ -1347,7 +1347,7 @@ function saveSettings_(params) {
         var manuals  = getManualPPGoals_();
         var rGoals   = getOrComputeGoals_();
         var yGoals   = getOrComputeYoYGoals_();
-        var newManuals = {};
+        var newManuals = Object.create(null);
         Object.keys(manuals).forEach(function(slug) {
           var storedPP = parseFloat(manuals[slug]) || 0;
           if (!storedPP) return;

@@ -125,7 +125,7 @@ function getStoreTrendCache_() {
 
 function saveStoreTrendCache_(byStore30d) {
   try {
-    var trends = {};
+    var trends = Object.create(null);
     STORES.forEach(function(store) {
       trends[store.slug] = trendFromByDay_(aggregateByDay_(byStore30d[store.slug] || []));
     });
@@ -166,7 +166,7 @@ function getExcluded_() {
  * Anything that does not map (Director, Intake Manager) is left out, and the caller defaults it.
  */
 function getRoles_() {
-  var out = {};
+  var out = Object.create(null);
   try {
     var recs = gxAllRecs_();
     Object.keys(recs).forEach(function (k) {
@@ -344,7 +344,7 @@ function getDirectorToday(byStoreToday) {
   let totalRevenue  = 0;
   let totalGoal     = 0;
   let totalPaceGoal = 0;   // DOW-weighted expected-so-far, summed per store (NOT linear clock time)
-  const combinedHourMap = {};  // hour → { revenue, count }
+  const combinedHourMap = Object.create(null);  // hour → { revenue, count }
 
   STORES.forEach(function(store) {
     const txns     = (byStoreToday || {})[store.slug] || [];
@@ -399,7 +399,7 @@ function getDirectorToday(byStoreToday) {
   try { primeHourlyDist_(STORES); } catch(e) {}
 
   // Sum per-store hourly targets (reads from cache — primed just above / by kiosk views)
-  const hourlyTargetMap = {};
+  const hourlyTargetMap = Object.create(null);
   STORES.forEach(function(store) {
     const dailyGoal = getDailyGoal_(store.slug);
     if (dailyGoal <= 0) return;
@@ -590,7 +590,7 @@ function getDirectorStaff(params, pre) {
   const byStore30d = pre.byStore30d || null;
 
   // Build per-employee daily revenue buckets from the 30d window (for trend lines).
-  const empDailyBuckets = {}; // { empKey: { 'YYYY-MM-DD': revenue } }
+  const empDailyBuckets = Object.create(null); // { empKey: { 'YYYY-MM-DD': revenue } }
   if (byStore30d) {
     STORES.forEach(function(store) {
       (byStore30d[store.slug] || []).forEach(function(tx) {
@@ -606,7 +606,7 @@ function getDirectorStaff(params, pre) {
   }
 
   // Aggregate employees globally across all stores (skip excluded employees)
-  const globalEmps = {};
+  const globalEmps = Object.create(null);
 
   STORES.forEach(function(store) {
     const agg = (pre.byStoreAgg && pre.byStoreAgg[store.slug]) || aggregateTransactions_(byStore[store.slug] || []);
@@ -656,7 +656,7 @@ function getDirectorStaff(params, pre) {
   // keyed the same way as the period aggregation so it lines up per employee. Period-independent,
   // so it rides along in every directorall payload (MTD + PP) and the tab needs no extra fetch.
   const byStoreToday = pre.byStoreToday || {};
-  const todayByEmp = {};
+  const todayByEmp = Object.create(null);
   STORES.forEach(function(store) {
     const aggT = aggregateTransactions_(byStoreToday[store.slug] || []);
     Object.values(aggT.byEmployee).forEach(function(emp) {
@@ -883,7 +883,7 @@ function computeEmpTargets_(storeSlug, dailyGoal) {
   if (txns.length === 0) return {};
 
   // Group: nameKey → { dateStr → dailySales }
-  const empDays = {};
+  const empDays = Object.create(null);
   txns.forEach(function(tx) {
     const emp    = txEmployee_(tx);
     const key    = emp.name.toLowerCase().replace(/\s+/g, '_');
@@ -973,7 +973,7 @@ function getStoreToday(store, params) {
   // an off-shift Zachary still triggers disambiguation for the on-shift one.
   // Apply nicknames first so we disambiguate on display names, not raw Dutchie names.
   const _tickerNicks = getNicknames_();
-  const tickerFirstNames = {};
+  const tickerFirstNames = Object.create(null);
   const fullRoster = (getEmployeeRoster_()[store.slug] || []);
   const rosterSource = fullRoster.length > 0 ? fullRoster : Object.values(agg.byEmployee);
   rosterSource.forEach(emp => {
@@ -1041,11 +1041,11 @@ function getStoreToday(store, params) {
   const _today    = ptNow_().dateStr;
   const _freezeK  = 'GC_HOURFREEZE_' + store.slug + '_' + _today;
   const _props    = getProps_();
-  let _frozen = {};
+  let _frozen = Object.create(null);
   try { _frozen = JSON.parse(_props.getProperty(_freezeK) || '{}'); } catch (e) {}
   let _freezeDirty = false;
 
-  const dispRev = {};
+  const dispRev = Object.create(null);
   for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
     const liveRev = Math.round((hourMap[h] || { revenue: 0 }).revenue);
     if (!isPreOpen && h < nowHour) {           // completed hour → serve/lock the frozen value
@@ -1349,7 +1349,7 @@ function getStoreLeaderboard(store, params) {
   // current day-leader last took the #1 spot and hasn't lost it since.
   const leaderName    = empList.length > 0 ? empList[0].name : '';
   const leaderKey     = leaderName.toLowerCase().replace(/\s+/g, '_');
-  const runningTotals = {};
+  const runningTotals = Object.create(null);
   let   currentLeader = null;
   let   leadingSinceTs = '';
 
@@ -1589,7 +1589,13 @@ function setStorePlan(params) {
  * Returns a new map keyed by roster emp.key so callers can do a direct lookup.
  */
 function resolveAvatarConfigs_(employees, rawConfigs) {
-  var resolved = {};
+  /* No prototype, and this one is the most reachable in the app. It looks up rawConfigs by an
+     EMPLOYEE-DERIVED key and, failing that, by each underscore-separated SEGMENT of that key — so a
+     name segment of "constructor" or "__proto__" returns the inherited member and a FUNCTION lands
+     where an avatar config JSON string belongs. The segment loop is what widens it: a whole key would
+     have to match, a segment only has to appear. Same class pricecards found in their counters and
+     spiff found dropping budtenders out of a merge entirely. */
+  var resolved = Object.create(null);
   (employees || []).forEach(function(emp) {
     var key = emp.key;
     // 1. Exact match
@@ -1619,7 +1625,7 @@ function resolveAvatarConfigs_(employees, rawConfigs) {
  * a different face. Pass the config through untouched so that seed is honoured.
  */
 function getAvatarConfigs_() {
-  var out = {};
+  var out = Object.create(null);
   try {
     var recs = gxAllRecs_();
     Object.keys(recs).forEach(function (k) {
@@ -1740,7 +1746,7 @@ function getStandings_(hardRefresh) {
   var todayStartMs = ptDateToUtcMs_(todayStr);
   var yestStr      = Utilities.formatDate(new Date(todayStartMs - 12 * 3600000), STORE_TZ, 'yyyy-MM-dd');
 
-  var ppSales = {};
+  var ppSales = Object.create(null);
   STORES.forEach(function(s) { ppSales[s.slug] = 0; });
 
   // Settled portion — GX Core cache, with a Dutchie fallback.
@@ -1943,7 +1949,7 @@ function getIncentiveData_(ppStartParam, forceRefresh) {
     adminTarget += goal;
   });
 
-  var allInputs = {};
+  var allInputs = Object.create(null);
   try { allInputs = JSON.parse(props.getProperty(GC_INCENTIVE_INPUTS_KEY) || '{}'); } catch(e) {}
 
   return {
@@ -2032,7 +2038,7 @@ function computeIncentivePerf_(props, selMs, PP_MS) {
 function saveIncentiveInputs_(params) {
   var props = getProps_();
   if (params.inputs && params.ppStart) {
-    var all = {};
+    var all = Object.create(null);
     try { all = JSON.parse(props.getProperty(GC_INCENTIVE_INPUTS_KEY) || '{}'); } catch(e) {}
     var incoming = {};
     try { incoming = JSON.parse(params.inputs); } catch(e) { return { ok: false, error: 'bad inputs' }; }

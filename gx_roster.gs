@@ -108,8 +108,8 @@ function gxRosterBuild_() {
   // showed "Nate Wydick" while Crew showed "Robert Wydick", and with the status filter below it
   // would have been worse than cosmetic: an active person would have been dropped off the board
   // because a dead row owned their id.
-  const byDutchieId = {};
-  const byFullNameKey = {};
+  const byDutchieId = Object.create(null);
+  const byFullNameKey = Object.create(null);
   rows.forEach(function (r) {
     const rec  = gxRecOf_(r);
     const live = gxIsLive_(rec.status);
@@ -125,7 +125,7 @@ function gxRosterBuild_() {
 
   // Walk Leaderboard's own Dutchie roster so the result is keyed by the nameKey the rest of the app
   // already uses. The roster entry carries the Dutchie id; that is what we join on.
-  const byKey = {};
+  const byKey = Object.create(null);
   const retiredKeys = [];
   let matchedById = 0, matchedByName = 0, unmatched = 0;
   const byNameKeys = [], unmatchedKeys = [];
@@ -162,7 +162,7 @@ function gxRosterBuild_() {
   // removing that fallback would have dropped them to initials in the director header. They ARE in
   // GX Core; index them by their own name so a Core value reaches them too. Roster entries still
   // win, because that join is on the Dutchie id rather than on a name.
-  const byCoreKey = {};
+  const byCoreKey = Object.create(null);
   rows.forEach(function (r) {
     const st = String(r.status || 'active').trim().toLowerCase();
     if (st === 'merged' || st === 'deleted') return;      // duplicate rows resolved to somebody else
@@ -190,7 +190,7 @@ function gxRosterBuild_() {
   // MINUS ANYTHING A LIVE ROW CLAIMS. A merged duplicate shares its name -- and its dutchie id --
   // with the person it resolved into. Excluding "Nate Wydick" because the merged Nathan row carries
   // that display name would take the live Robert Wydick off the board with it.
-  const liveNameKeys = {};
+  const liveNameKeys = Object.create(null);
   rows.forEach(function (r) {
     if (!gxIsLive_(r.status)) return;
     const rec = gxRecOf_(r);
@@ -200,7 +200,7 @@ function gxRosterBuild_() {
     });
   });
 
-  const excludedKeys = {};
+  const excludedKeys = Object.create(null);
   retiredKeys.forEach(function (k) { excludedKeys[k] = true; });
   rows.forEach(function (r) {
     if (gxIsLive_(r.status)) return;
@@ -246,7 +246,7 @@ function gxRosterBuild_() {
  */
 function gxAllRecs_() {
   const r = gxRoster_();
-  const out = {};
+  const out = Object.create(null);
   const core = r.byCoreKey || {};
   Object.keys(core).forEach(function (k) { out[k] = core[k]; });
   const roster = r.byKey || {};
@@ -353,7 +353,7 @@ function gxRosterHealth_() {
   let libVersion = null;
   try { if (typeof GXCore.libVersion === 'function') libVersion = GXCore.libVersion(); } catch (e) {}
 
-  const perStore = {};
+  const perStore = Object.create(null);
   const roster = getEmployeeRoster_();
   STORES.forEach(function (store) {
     let crew = 0, gone = 0;
@@ -485,7 +485,7 @@ function gxRosterDelta() {
   (st.unmatchedKeys || []).forEach(function (l) { Logger.log('   UNMATCHED:   ' + l); });
   Logger.log('');
 
-  var localNicks = {};
+  var localNicks = Object.create(null);
   try {
     var rawN = getProps_().getProperty(GC_NICKNAMES_KEY);
     if (rawN) {
@@ -497,7 +497,7 @@ function gxRosterDelta() {
     }
   } catch (e) {}
 
-  var localAvatars = {};
+  var localAvatars = Object.create(null);
   try {
     var rawA = PropertiesService.getScriptProperties().getProperty(GC_AVATAR_CONFIGS_KEY);
     if (rawA) localAvatars = JSON.parse(rawA) || {};
@@ -553,7 +553,7 @@ function gxRosterDelta() {
 function gxBackfillToCore(commit) {
   var byKey = gxRoster_().byKey || {};
 
-  var localNicks = {};
+  var localNicks = Object.create(null);
   try {
     var rawN = getProps_().getProperty(GC_NICKNAMES_KEY);
     if (rawN) {
@@ -565,14 +565,14 @@ function gxBackfillToCore(commit) {
     }
   } catch (e) {}
 
-  var localAvatars = {};
+  var localAvatars = Object.create(null);
   try {
     var rawA = PropertiesService.getScriptProperties().getProperty(GC_AVATAR_CONFIGS_KEY);
     if (rawA) localAvatars = JSON.parse(rawA) || {};
   } catch (e) {}
 
   // Live rows, indexed by employee_id — each write starts from one of these, never from scratch.
-  var live = {};
+  var live = Object.create(null);
   GXCore.getEmployees().forEach(function (r) {
     var id = String(r.employee_id || '').trim();
     if (id) live[id] = r;
