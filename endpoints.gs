@@ -1758,7 +1758,12 @@ function getStandings_(hardRefresh) {
       if (rows.length) {
         rows.forEach(function(r) {
           var slug = id2slug[String(r.store)] || String(r.store);
-          if (ppSales.hasOwnProperty(slug)) ppSales[slug] += Number(r.net || 0);
+          // ppSales is Object.create(null) (line above), so it has NO hasOwnProperty — calling it
+          // as a method threw TypeError on the first row, the bare catch below swallowed it, and
+          // usedCache stayed false. The GX Core cache branch has therefore never once succeeded;
+          // every pay-period figure came from the Dutchie fallback. Numbers were right, the cache
+          // was dead weight. Same safe idiom as own_() in auth.gs.
+          if (Object.prototype.hasOwnProperty.call(ppSales, slug)) ppSales[slug] += Number(r.net || 0);
         });
         usedCache = true;
       }
