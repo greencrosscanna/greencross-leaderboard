@@ -22,8 +22,9 @@ in the suite; ship accordingly.
 `runAllTests` in the function dropdown, Run, then View → Logs for the PASS/FAIL summary. Run it after
 touching any revenue, goal or ranking math.
 
-`mocks/` holds design mocks and handoff notes (kiosk hero, standings, EOM card, avatar picker) — read them
-for intent, but they are **not shipped code**. `src/fixtures` backs fixture mode.
+`docs-mocks/` holds design mocks and handoff notes (kiosk hero, standings, EOM card, avatar picker) — read
+them for intent, but they are **not shipped code** and nothing references them. Renamed from `mocks/` on
+2026-08-22 so the name says archive rather than source. `src/fixtures` backs fixture mode.
 
 The dev server talks to the **live** backend; `gx-dev.js` blocks writes until armed. `gx-preflight.sh` runs
 as a **pre-push hook** and refuses dev leftovers (fixtures on, writes armed, localhost URLs, `@devonly`).
@@ -50,8 +51,7 @@ This app is on the shared brain. **`/gxbrain`** loads the shared rules and recon
 — the sync protocol lives in that one command, not copied here. **"brain sync" / "sync brain"** = the
 reconcile-and-report step alone (skips orientation).
 
-Coordination is now the **central brain-notes inbox** in GX Core (not this repo's `BRAIN_NOTES.md`, which is
-retired): `/gxbrain` reads notes addressed to `to_app=performance`, resolves done ones (`resolve_note`), and
+Coordination is now the **central brain-notes inbox** in GX Core (this repo's `BRAIN_NOTES.md` was retired and has now been deleted): `/gxbrain` reads notes addressed to `to_app=performance`, resolves done ones (`resolve_note`), and
 writes note-backs to any app (`add_note`). The SessionStart hook surfaces the same inbox.
 
 App-specific facts for the sync check: app key **`performance`** in GX Core; integrated via bug forwarding
