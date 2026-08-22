@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# gx-sync:keep-local  This is a FULL deploy pipeline (clasp push, DEPLOY_ID, git push to Pages,
+# watch_deploy.sh). The shared deploy.sh in gx-theme is only a version RECORDER — it files an
+# app_versions row and deploys nothing. Syncing it here does not update this app, it removes its
+# ability to deploy at all; that happened three times on 2026-08-22 before this marker existed.
+# Adopting the shared pattern is audit finding F1 and is a real change, not a sync.
 # deploy.sh — stamp version, push to GAS, commit & push to GitHub Pages.
 # Usage: ./deploy.sh "optional commit message"
 #
