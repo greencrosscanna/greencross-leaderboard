@@ -5,6 +5,45 @@ sign-on, the stores registry, the Dutchie connector, and the centralized bug-rep
 all live there. This app integrates with it (binds the `GXCore` Apps Script library; forwards bug reports
 to it, and reads its changelog). Its app key in GX Core is **`performance`**.
 
+## Stack & local loop
+
+**No build step — the file on disk IS the app.** This is the **all-staff kiosk**, the most visible surface
+in the suite; ship accordingly.
+
+| | |
+|---|---|
+| frontend | `index.html` (~12k lines, monolith) on GitHub Pages |
+| backend | `.gs` files at the repo root, deployed with clasp: `auth.gs`, `cache.gs`, `discounts.gs`, `dutchie_fetch.gs`, `dutchie_proxy.gs`, `endpoints.gs`, `goals.gs`, `gx_roster.gs`, `snapshot.gs` |
+| tests | **`tests.gs`** — covers the pure functions where a silent bug would corrupt revenue, goals or rankings |
+| run | `python3 serve.py` → <http://localhost:8181> (`--lan` for a kiosk/phone) |
+| ship | commit → push (Pages) → `./deploy.sh` records the release to `version_history` |
+
+**Running the tests is not a shell command** — open the project in the Apps Script editor, select
+`runAllTests` in the function dropdown, Run, then View → Logs for the PASS/FAIL summary. Run it after
+touching any revenue, goal or ranking math.
+
+`mocks/` holds design mocks and handoff notes (kiosk hero, standings, EOM card, avatar picker) — read them
+for intent, but they are **not shipped code**. `src/fixtures` backs fixture mode.
+
+The dev server talks to the **live** backend; `gx-dev.js` blocks writes until armed. `gx-preflight.sh` runs
+as a **pre-push hook** and refuses dev leftovers (fixtures on, writes armed, localhost URLs, `@devonly`).
+
+**Shared files** (`deploy.sh`, `serve.py`, `gx-preflight.sh`, `.claude/gx-brain-notes.sh`) come from
+**gx-theme** via `./gx-sync.sh`. Edit them **there**, then re-sync. This CLAUDE.md is **not** synced.
+
+## Incentive is moving to GX Crew — sequence matters
+
+Incentive/compensation is being pulled **out of** this app into **GX Crew** (decision 2026-08-16; Incentive
+was formerly a Leaderboard view). GX Crew is the HR system-of-record and **feeds** this app, not the reverse.
+
+The bonus math needs **per-employee, per-transaction** data *with discretionary-discount classification*,
+and that engine still lives **here**, app-side — it is **not** in the GX Core daily cache, which is
+per-store daily only. So the split is sequenced: **first** promote the per-employee metrics and the
+discretionary-discount definition to a canonical shared home, **then** cut Crew over. **Don't move the UI
+before the math has a shared home.** Coordinate with `core-admin`.
+
+This app reads **`spiff_payouts`** through GX Core — a written column contract, never app-to-app.
+
 ## Sync with the brain — run `/gxbrain` (or say "brain sync")
 
 This app is on the shared brain. **`/gxbrain`** loads the shared rules and reconciles this chat with GX Core
