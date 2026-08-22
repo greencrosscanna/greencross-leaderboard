@@ -19,13 +19,20 @@ PORTS = {
     'performance': 8181,   # Leaderboard
     'sales':       3000,
     'inventory':   3001,
-    'pricetags':   8753,   # Price Cards
+    'pricecards':  8753,   # Price Cards — .gx_app and the GX Core app_access grants both say pricecards
+    'pricetags':   8753,   # stale alias for the same app; keep until nothing references it
     'spiff':       8754,
     'crew':        8755,
     'core-admin':  8791,   # Command Center (mocks only until the Pages migration)
 }
 APP  = 'performance'
-PORT = PORTS.get(APP, 8181)
+if APP not in PORTS:
+    # Never fall through to a DEFAULT here. The old default was 8181 — Leaderboard's port, not a free
+    # one — so an app key missing from this table silently collided with a real server instead of
+    # failing. Price Cards hit exactly that: keyed pricecards, table said pricetags, and the preview
+    # opened 8753 while the server listened on 8181.
+    sys.exit("serve.py: no port for app '%s'. Add it to PORTS above." % APP)
+PORT = PORTS[APP]
 BIND = '0.0.0.0' if '--lan' in sys.argv else '127.0.0.1'
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))

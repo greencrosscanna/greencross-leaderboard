@@ -44,11 +44,13 @@ if [ "${GX_SYNC_SELFUPDATED:-}" != "1" ]; then
   rm -f "$_new"
 fi
 
+# gx-dev.js is deliberately NOT synced any more: apps load it at runtime from Pages, on localhost
+# only (see gx-dev-boot.html). Nothing to commit per repo, so production never requests it and the
+# 'referenced a file I never tracked' failure cannot recur.
 echo "Syncing shared GX spoke files for app=$APP …"
 fetch gx-brain-notes.sh .claude/gx-brain-notes.sh || true
 fetch deploy.sh          deploy.sh                 || true
 fetch serve.py           serve.py                  || true
-fetch gx-dev.js          gx-dev.js                 || true
 fetch gx-preflight.sh    gx-preflight.sh           || true
 # chmod each file individually with an explicit mode. "chmod +x a b c" is subject to umask and skips
 # the whole list if it errors early, and mktemp+mv lands these at 0600 -- which silently left deploy.sh
