@@ -126,6 +126,43 @@ else
   echo "  ✓ every local asset referenced by shipped HTML is tracked"
 fi
 
+# ─── Run this repo's tests ───────────────────────────────────────────────────────────────────────
+# Everything above catches dev leftovers — things that should not SHIP. This catches things that
+# should not WORK. Both belong on the push, for the same reason: a check that only runs when someone
+# remembers is a check that stops running.
+#
+# That is not hypothetical here. On 2026-08-22 a GX Core sales-cache branch was found to have never
+# executed once in its life — a TypeError swallowed by a bare catch, with a fallback producing
+# identical numbers. Nothing failed, nothing logged, and it was found by accident. The suite had 152
+# passing assertions at that moment and not one of them ran on a push.
+#
+# Convention over configuration: any tests/*_test.js in the repo, run with node. No test dir, no node,
+# or no matching files -> silently fine, so this is safe in every spoke including the ones with no
+# tests yet. A test that FAILS blocks the push exactly like a hard flag does.
+if [ -d tests ]; then
+  if command -v node >/dev/null 2>&1; then
+    _tests="$(ls tests/*_test.js 2>/dev/null || true)"
+    if [ -n "$_tests" ]; then
+      _tfail=""
+      for t in $_tests; do
+        if _out="$(node "$t" 2>&1)"; then
+          echo "  ✓ $t — $(printf '%s' "$_out" | tail -1)"
+        else
+          _tfail="$_tfail $t"
+          echo "  ✗ $t FAILED:"
+          # Show the failing assertions, not the whole run -- a wall of PASS lines buries the one
+          # line that matters and trains people to skim past this block.
+          printf '%s\n' "$_out" | grep -E "FAIL|Error|error:|✗" | head -12 | sed 's/^/      /'
+          printf '%s\n' "$_out" | tail -1 | sed 's/^/      /'
+        fi
+      done
+      [ -n "$_tfail" ] && FAIL=1
+    fi
+  else
+    echo "  ! tests/ exists but node is not on PATH — tests NOT run"
+  fi
+fi
+
 if [ "$FAIL" = "1" ]; then
   echo ""
   echo "PUSH BLOCKED. Fix the ✗ items above, or bypass deliberately with:  git push --no-verify"
