@@ -459,7 +459,12 @@ function getLibVersion_() {
   try {
     if (typeof GXCore === 'undefined' || !GXCore) return { ok: false, error: 'GXCore not bound' };
     if (typeof GXCore.libVersion !== 'function') return { ok: false, error: 'pinned GXCore has no libVersion() - pre-v153' };
-    return { ok: true, gxcore: GXCore.libVersion() };
+    // standings_source names the connector that actually served the settled portion of the last
+    // standings computation — 'gxcore@<iso>#<rows>' or 'dutchie@<iso>#0'. Same idea as Sales'
+    // qb.last_source. It rides on this route because this is the one PUBLIC diagnostic here, and a
+    // check that needs a session is a check nobody runs right after a deploy.
+    // No sales figures: a connector name, a row count, a timestamp.
+    return { ok: true, gxcore: GXCore.libVersion(), standings_source: getStandingsSource_() || '(not computed since deploy)' };
   } catch (e) {
     return { ok: false, error: e.message };
   }

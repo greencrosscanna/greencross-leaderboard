@@ -1717,6 +1717,29 @@ function gxWriteAvatarToCore_(nameKey, configStr) {
 //  EOD_Snapshots sheet (one read), and only TODAY is pulled fresh from Dutchie.
 //  Pace/projection is computed client-side from elapsedFrac.
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Which source served the settled portion of the last standings computation, and when.
+ * Public-readable via action=libversion — no sales figures, just the connector name, a row count
+ * and a timestamp.
+ *
+ * WRITES ONLY ON CHANGE. Kiosks poll standings continuously; an unconditional
+ * PropertiesService.setProperty here would burn the daily write quota and slow every call. In steady
+ * state this costs one read and no write.
+ */
+function recordStandingsSource_(source, rowCount) {
+  try {
+    var props = getProps_();
+    var prev  = props.getProperty('GC_STANDINGS_SOURCE') || '';
+    var stamp = source + '@' + new Date().toISOString() + '#' + (rowCount || 0);
+    // Compare the source and row count, ignoring the timestamp — otherwise every call is a "change".
+    if (prev.split('@')[0] === source && prev.split('#')[1] === String(rowCount || 0)) return;
+    props.setProperty('GC_STANDINGS_SOURCE', stamp);
+  } catch (e) {}
+}
+function getStandingsSource_() {
+  try { return getProps_().getProperty('GC_STANDINGS_SOURCE') || ''; } catch (e) { return ''; }
+}
+
 function getStandings_(hardRefresh) {
   var cache  = CacheService.getScriptCache();
   if (!hardRefresh) {
@@ -1768,6 +1791,11 @@ function getStandings_(hardRefresh) {
         usedCache = true;
       }
     } catch (e) {}
+    // Record WHICH source actually served this, the way Sales' gxpin reports qb.last_source. Before
+    // this, "the cache is working" was unfalsifiable from outside: standings is auth-gated, the
+    // fallback produces the same numbers, and the failure was a swallowed TypeError. That is exactly
+    // how this branch ran zero times for its entire life without anyone noticing.
+    recordStandingsSource_(usedCache ? 'gxcore' : 'dutchie', usedCache ? rows.length : 0);
     if (!usedCache) {   // cache down → fallback: settled days from Dutchie
       try {
         var settledRange = { fromUTC: new Date(ppStartMs).toISOString(), toUTC: new Date(todayStartMs - 1).toISOString() };
