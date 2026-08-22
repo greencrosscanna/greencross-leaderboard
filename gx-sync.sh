@@ -17,7 +17,19 @@ APP="$(tr -d ' \t\r\n' < .gx_app)"
 [ -n "$APP" ] || { echo "✗ .gx_app is empty"; exit 1; }
 
 # fetch <path-under-gx-theme> <local-dest> — copy + substitute __APP__, only on a good fetch
+# A spoke may legitimately need its own version of a shared file. Leaderboard's deploy.sh is a full
+# pipeline -- clasp push, its own DEPLOY_ID, watch_deploy.sh -- while the shared deploy.sh is only a
+# version RECORDER. Syncing it there does not update that app, it removes its ability to deploy at all,
+# and it did exactly that twice on 2026-08-22 before anyone noticed.
+#
+# Opt out by putting this marker anywhere in the local file:
+#     # gx-sync:keep-local  <why>
+# The marker lives IN the file rather than in a side list, so it travels with it, is visible to whoever
+# opens it, and cannot drift out of step with the thing it protects.
 fetch() {
+  if [ -f "$2" ] && grep -q 'gx-sync:keep-local' "$2" 2>/dev/null; then
+    echo "  • $2 (kept local — marked gx-sync:keep-local)"; return 0
+  fi
   tmp="$(mktemp)"
   if curl -fsSL "$BASE/$1" | sed "s/__APP__/$APP/g" > "$tmp" && [ -s "$tmp" ]; then
     mkdir -p "$(dirname "$2")"; mv "$tmp" "$2"; echo "  ✓ $2"
@@ -56,15 +68,36 @@ fetch gxengine.sh        gxengine.sh               || true
 # chmod each file individually with an explicit mode. "chmod +x a b c" is subject to umask and skips
 # the whole list if it errors early, and mktemp+mv lands these at 0600 -- which silently left deploy.sh
 # non-executable in some repos after a sync.
+# VERIFY, do not assume. On 2026-08-22 gx-preflight.sh, deploy.sh and serve.py came out of a sync at
+# 0600 across four repos. It has not reproduced since and the cause is unconfirmed (self-update path?
+# Dropbox reverting modes asynchronously?) -- so this does not claim to prevent it, it refuses to let it
+# pass silently. The stakes are why: .git/hooks/pre-push is `exec ./gx-preflight.sh`, so a
+# non-executable preflight does not weaken the guard, it stops it running and every push fails with
+# "Permission denied". deploy.sh losing +x fails later and much quieter.
+_notexec=""
 for f in .claude/gx-brain-notes.sh deploy.sh serve.py gx-preflight.sh gxengine.sh; do
-  [ -f "$f" ] && chmod 755 "$f" 2>/dev/null || true
+  [ -f "$f" ] || continue
+  chmod 755 "$f" 2>/dev/null || true
+  [ -x "$f" ] || _notexec="$_notexec $f"
 done
+if [ -n "$_notexec" ]; then
+  echo "  ✗ NOT EXECUTABLE after chmod:$_notexec"
+  echo "    The pre-push hook execs gx-preflight.sh, so this breaks every push until fixed:"
+  echo "      chmod 755$_notexec && git update-index --chmod=+x$_notexec"
+fi
 
 # Install preflight as a pre-push hook so dev leftovers (fixtures on, writes armed, @devonly blocks,
 # localhost URLs) can't reach Pages. Never clobber a hook that already does something else.
 if [ -d .git ]; then
   if [ ! -f .git/hooks/pre-push ] || grep -q gx-preflight .git/hooks/pre-push 2>/dev/null; then
-    printf '#!/bin/sh\nexec ./gx-preflight.sh\n' > .git/hooks/pre-push
+    # `exec sh ./gx-preflight.sh`, NOT `exec ./gx-preflight.sh`. Invoking it directly requires the
+    # executable bit, and that bit does not survive reliably here: these repos live in Dropbox
+    # CloudStorage, which reverts modes asynchronously AFTER a sync finishes — so chmod appears to
+    # work, an immediate -x check passes, and the file is 0600 again a moment later. On 2026-08-22
+    # that took the bit off gx-preflight.sh in four repos and every push died with
+    # "Permission denied": the guard did not weaken, it stopped running.
+    # Running it through sh makes the guard independent of a mode we cannot keep.
+    printf '#!/bin/sh\nexec sh ./gx-preflight.sh\n' > .git/hooks/pre-push
     chmod +x .git/hooks/pre-push
     echo "  + .git/hooks/pre-push -> gx-preflight.sh"
   else
