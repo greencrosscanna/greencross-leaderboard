@@ -69,7 +69,7 @@ writes note-backs to any app (`add_note`). The SessionStart hook surfaces the sa
 App-specific facts for the sync check: app key **`performance`** in GX Core; integrated via bug forwarding
 (`gxIngestBug` + `tab`), changelog read from `version_history`, and auto-record on deploy (central
 `deploy_version` endpoint + shared untracked `.gx_deploy_secret`); `appsscript.json` pins `GXCore`
-**v204** — but a call runs the version the live DEPLOYMENT snapshotted, so **ask the running app**
+**v211** — but a call runs the version the live DEPLOYMENT snapshotted, so **ask the running app**
 (`?action=libversion`), never this line. It said **v19** until 2026-08-22, which was wrong by 169
 versions: the pin had moved and the prose had not.
 

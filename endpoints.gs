@@ -634,10 +634,24 @@ function getDirectorStaff(params, pre) {
   // Include the FULL active roster — employees with no sales in the selected period appear with $0, so
   // Top Performers lists all active staff (not only those who rang a sale this period). Sellers keep
   // their real stats; roster-only names get zeroed metrics and their role from the settings roster.
+  //
+  // gxBelongsToStore_ gates this fill for the same reason it gates the kiosk's off-shift cards
+  // (getStoreToday / getStoreLeaderboard): the roster is derived from 30 days of transactions, so one
+  // covered shift leaves someone on a store's roster indefinitely. Here that had a SECOND symptom —
+  // this loop assigns storeSlug from whichever store reaches the name first, so Drew Phillips
+  // (home_store 'corporate') was listed at $0 under portland or river purely by iteration order.
+  // Gating on crew membership fixes both: non-crew stop being filled in at all, and everyone who is
+  // filled in lands under the one store they actually belong to, not the first one round the loop.
+  //
+  // This never hides a SELLER. Anyone with transactions is already in globalEmps from the loop above,
+  // which this gate does not touch — so a corporate covering a shift still ranks with their real
+  // numbers. The gate fails open on an unknown home_store, and in that case attribution stays
+  // first-store-wins as before.
   STORES.forEach(function(store) {
     (getEmployeeRoster_()[store.slug] || []).forEach(function(p) {
       const key = p.name.toLowerCase().replace(/\s+/g, '_');
       if (gxIsExcluded_(p)) return;
+      if (!gxBelongsToStore_(p, store)) return;
       if (globalEmps[key]) return;   // already present from transactions — keep real stats
       globalEmps[key] = {
         initials:     p.initials,
