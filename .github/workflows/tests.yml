@@ -1,0 +1,102 @@
+# ─── greencross-leaderboard — tests on every push and PR ───────────────────────────────────────
+#
+# Runs THE SAME gx-preflight.sh the pre-push hook runs. Not a reimplementation: a second copy of the
+# gate drifts from the real one and starts disagreeing with local results, which is how people learn
+# to distrust CI.
+#
+# WHY CI AND NOT JUST THE HOOK. A hook protects pushes from one machine and `git push --no-verify`
+# walks past it leaving no trace. On 2026-08-22 the hub's gate turned out to carry a portability bug
+# its author's Mac could not express — macOS /bin/sh is bash in POSIX mode, Ubuntu's is dash. CI
+# surfaced it on the first foreign run.
+#
+# `sh` is correct here: gx-preflight.sh is #!/bin/sh and uses no bashisms. Verified by running it
+# under dash before writing this file, not assumed.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # `secrets` is NOT available in an `if:` condition — a step guarded by `if: secrets.X != ''`
+    # never runs, silently. Map it to env at job level and test that.
+    env:
+      GX_SIBLING_TOKEN: ${{ secrets.GX_SIBLING_TOKEN }}
+    steps:
+      - name: Check out greencross-leaderboard
+        uses: actions/checkout@v4
+        with:
+          path: greencross-leaderboard
+
+      # Cross-repo checkout needs a PAT — the default GITHUB_TOKEN is scoped to THIS repo.
+      # Without GX_SIBLING_TOKEN the job still passes; cross_app_contract_test.js and store_palette_drift_test.js
+      # simply skip, and the summary below says so rather than letting the tick imply coverage.
+      - name: Check out greencross-command-center
+        if: env.GX_SIBLING_TOKEN != ''
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: greencrosscanna/greencross-command-center
+          path: greencross-command-center
+          token: ${{ secrets.GX_SIBLING_TOKEN }}
+
+      - name: Check out greencross-inventory
+        if: env.GX_SIBLING_TOKEN != ''
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: greencrosscanna/greencross-inventory
+          path: greencross-inventory
+          token: ${{ secrets.GX_SIBLING_TOKEN }}
+
+      - name: Check out greencross-sales
+        if: env.GX_SIBLING_TOKEN != ''
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: greencrosscanna/greencross-sales
+          path: greencross-sales
+          token: ${{ secrets.GX_SIBLING_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run the gate
+        working-directory: greencross-leaderboard
+        run: sh ./gx-preflight.sh
+
+      # Say what was NOT covered. A green check that quietly skipped a cross-repo suite is exactly the
+      # failure this suite spent a week removing.
+      - name: Report coverage honestly
+        if: always()
+        working-directory: greencross-leaderboard
+        run: |
+          {
+            echo "### Coverage"
+            echo ""
+            for t in tests/*_test.js; do
+              out="$(node "$t" 2>&1 || true)"
+              if printf '%s' "$out" | grep -qiE '^SKIP|not a sibling|Need at least two palettes'; then
+                echo "- ⚠️ \`$t\` — **SKIPPED** (sibling repo absent)"
+              else
+                echo "- ✅ \`$t\` — $(printf '%s' "$out" | tail -1)"
+              fi
+            done
+            echo ""
+            if [ -d ../greencross-command-center ]; then
+              echo "Sibling repos present — cross-repo suites ran."
+            else
+              echo "> **Siblings absent.** cross_app_contract_test.js and store_palette_drift_test.js did not run here."
+              echo "> They are still gated by this repo's local pre-push hook, so this is reduced CI"
+              echo "> coverage, not an unguarded contract. Add a repo-scoped PAT as \`GX_SIBLING_TOKEN\`"
+              echo "> to close the gap."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
