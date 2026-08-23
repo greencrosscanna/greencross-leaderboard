@@ -14,13 +14,25 @@ in the suite; ship accordingly.
 |---|---|
 | frontend | `index.html` (~12k lines, monolith) on GitHub Pages |
 | backend | `.gs` files at the repo root, deployed with clasp: `auth.gs`, `cache.gs`, `discounts.gs`, `dutchie_fetch.gs`, `dutchie_proxy.gs`, `endpoints.gs`, `goals.gs`, `gx_roster.gs`, `snapshot.gs` |
-| tests | **`tests.gs`** — covers the pure functions where a silent bug would corrupt revenue, goals or rankings |
+| tests | **`tests/*_test.js`** (node) — covers the pure functions where a silent bug would corrupt revenue, goals or rankings. `tests.gs` is now editor-only Dutchie diagnostics |
 | run | `python3 serve.py` → <http://localhost:8181> (`--lan` for a kiosk/phone) |
 | ship | commit → push (Pages) → `./deploy.sh` records the release to `version_history` |
 
-**Running the tests is not a shell command** — open the project in the Apps Script editor, select
-`runAllTests` in the function dropdown, Run, then View → Logs for the PASS/FAIL summary. Run it after
-touching any revenue, goal or ranking math.
+**The tests gate the push.** `node tests/<name>_test.js` runs one suite; `gx-preflight.sh` (the pre-push
+hook) runs every `tests/*_test.js` and **refuses the push** on a failure. Run them after touching any
+revenue, goal or ranking math — 90 assertions across four files:
+
+```bash
+for t in tests/*_test.js; do node "$t"; done
+```
+
+Each test loads the shipped `.gs` file **as text** (`tests/_harness.js` → `load()`) with the Apps Script
+globals stubbed, then calls the real function. **Never copy a function into a test** — a test carrying its
+own copy passes forever while production drifts away from it. `Utilities.formatDate` in the harness is a
+genuine ICU/`Intl` implementation, not a fixture, because every PT date helper depends on real DST math.
+
+`tests.gs` still ships to Apps Script but holds only `diagAlertProration` and `diagPagination` — live
+Dutchie diagnostics with no pass/fail, run from the editor.
 
 `docs-mocks/` holds design mocks and handoff notes (kiosk hero, standings, EOM card, avatar picker) — read
 them for intent, but they are **not shipped code** and nothing references them. Renamed from `mocks/` on
