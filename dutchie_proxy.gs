@@ -237,6 +237,46 @@ function doGet(e) {
       return jsonOut({ ok: true, msg: 'API key set' }, params.callback);
     }
 
+    // GX_DEPLOY_SECRET is set from the Apps Script console (Project Settings → Script Properties),
+    // and there is deliberately NO route to set it. There was one — an unauthenticated
+    // initdeploysecret that refused once the property existed — and "already set → refuse" is inert
+    // only for as long as the property stays set. A properties reset or a key rename re-arms it, and
+    // the next caller then sets our secret to a value of their choosing: every publish fails closed
+    // and Sales quietly renders stale revenue targets. Re-setting it is a console job.
+
+    // ── Goal publishing to GX Core — DEPLOY-SECRET gated, not session gated ───────────────
+    // These are machine routes: the nightly trigger and a deploy/console operator run them, and a
+    // route that needs a browser session is a route nobody can run from a shell right after a
+    // deploy. Same deploy-secret-only convention the suite uses for dev_claim/dev_update, and the
+    // same secret GXCore.publishGoals itself demands — so this adds no new trust, it just moves the
+    // existing one to the front door. Never returns the secret, and holds no auth fallback.
+    if (params.action === 'publishgoals' || params.action === 'installtargetrefresh') {
+      var _pgSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+      if (!_pgSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
+      if ((params.secret || '') !== _pgSecret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
+
+      if (params.action === 'installtargetrefresh') {
+        // Idempotent; installs the nightly 3am refreshTargetsAll trigger, which is also what carries
+        // the goal publish — see the tail of refreshTargetsAll.
+        installTargetRefreshTrigger();
+        return jsonOut({ ok: true, installed: 'refreshTargetsAll daily @ 3am PT (carries publishGoals)' }, params.callback);
+      }
+
+      // Publish now, and report whether the trigger that normally carries it actually exists. The
+      // error is REPORTED rather than thrown: a publish diagnostic that 500s fails exactly when you
+      // need it to tell you why nothing published.
+      var _pgTrig = ScriptApp.getProjectTriggers()
+        .filter(function (t) { return t.getHandlerFunction() === 'refreshTargetsAll'; }).length;
+      var _pgCarrier = { handler: 'refreshTargetsAll', installed: _pgTrig > 0, count: _pgTrig };
+      try {
+        var _pg = publishGoalsToCore_();
+        _pg.carrierTrigger = _pgCarrier;
+        return jsonOut(_pg, params.callback);
+      } catch (e) {
+        return jsonOut({ ok: false, error: String((e && e.message) || e), carrierTrigger: _pgCarrier }, params.callback);
+      }
+    }
+
     // ── Read-only goals for Sales Dashboard (API key auth) ─
     if (params.action === 'goals') {
       var storedKey = PropertiesService.getScriptProperties().getProperty('GC_API_READONLY_KEY');
@@ -298,6 +338,7 @@ function doGet(e) {
       requireRole_(auth, ['owner','director']);
       var _lg = refreshGoalLedger_();
       _lg.currentShape = getFrozenPeriodGoal_(_lg.current);
+      _lg.published = publishGoalsSafe_('goalledger');   // a freeze changes the shape getDailyGoals_ reads
       return jsonOut(_lg, params.callback);
     }
     // Backfill a closed period's frozen goal (reconstructed as-of), locked. ?pp=yyyy-mm-dd (period start).
@@ -352,7 +393,8 @@ function doGet(e) {
       var _had = _m.hasOwnProperty(params.slug);
       delete _m[params.slug];
       _mp.setProperty(GC_MANUAL_PP_KEY, JSON.stringify(_m));
-      return jsonOut({ ok: true, cleared: params.slug, had: _had, remaining: _m }, params.callback);
+      var _mpub = publishGoalsSafe_('clearmanualgoal');   // clearing an override restores that store's stretch
+      return jsonOut({ ok: true, cleared: params.slug, had: _had, remaining: _m, published: _mpub }, params.callback);
     }
 
 
@@ -431,7 +473,9 @@ function doGet(e) {
 
     if (params.action === 'refreshtargets') {
       requireRole_(auth, ['owner','director']);
-      return jsonOut(recalculateGoals_(), params.callback);
+      var _rt = recalculateGoals_();
+      _rt.published = publishGoalsSafe_('refreshtargets');
+      return jsonOut(_rt, params.callback);
     }
     if (params.action === 'recalculategoals') {
       requireRole_(auth, ['owner','director']);
@@ -468,7 +512,9 @@ function doGet(e) {
     // ── Plan management ────────────────────────────────────
     if (params.action === 'setplan') {
       requireRole_(auth, ['owner','director']);
-      return jsonOut(setStorePlan(params), params.callback);
+      var _sp = setStorePlan(params);
+      _sp.published = publishGoalsSafe_('setplan');   // plans are getDailyGoals_'s fallback branch
+      return jsonOut(_sp, params.callback);
     }
 
     if (params.action === 'getsettings') {
@@ -477,7 +523,11 @@ function doGet(e) {
     }
     if (params.action === 'savesettings') {
       requireRole_(auth, ['owner','director']);
-      return jsonOut(saveSettings_(params), params.callback);
+      var _ss = saveSettings_(params);
+      // Only the stretch multiplier moves the goal numbers; the other settings this route owns do
+      // not, and getDailyGoals_ is a 6-store recompute we should not put in front of every save.
+      if (params.stretch !== undefined && _ss && _ss.ok !== false) _ss.published = publishGoalsSafe_('savesettings:stretch');
+      return jsonOut(_ss, params.callback);
     }
     if (params.action === 'savemanualgoals') {
       requireRole_(auth, ['owner','director']);
