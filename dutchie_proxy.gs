@@ -237,20 +237,12 @@ function doGet(e) {
       return jsonOut({ ok: true, msg: 'API key set' }, params.callback);
     }
 
-    // ── One-time GX_DEPLOY_SECRET bootstrap (only works if not yet set) ─
-    // publishGoals fails CLOSED without this property, and clasp run does not work on this project,
-    // so the secret has to arrive over HTTP or by hand in the editor. Same write-once-if-unset shape
-    // as initapikey above: once set, this route can never overwrite it or read it back.
-    if (params.action === 'initdeploysecret') {
-      var _dsProps = PropertiesService.getScriptProperties();
-      if (_dsProps.getProperty('GX_DEPLOY_SECRET')) {
-        return jsonOut({ ok: false, error: 'Already initialised' }, params.callback);
-      }
-      var _ds = (params.secret || '').trim();
-      if (!_ds) return jsonOut({ ok: false, error: 'Missing secret param' }, params.callback);
-      _dsProps.setProperty('GX_DEPLOY_SECRET', _ds);
-      return jsonOut({ ok: true, msg: 'GX_DEPLOY_SECRET set' }, params.callback);
-    }
+    // GX_DEPLOY_SECRET is set from the Apps Script console (Project Settings → Script Properties),
+    // and there is deliberately NO route to set it. There was one — an unauthenticated
+    // initdeploysecret that refused once the property existed — and "already set → refuse" is inert
+    // only for as long as the property stays set. A properties reset or a key rename re-arms it, and
+    // the next caller then sets our secret to a value of their choosing: every publish fails closed
+    // and Sales quietly renders stale revenue targets. Re-setting it is a console job.
 
     // ── Goal publishing to GX Core — DEPLOY-SECRET gated, not session gated ───────────────
     // These are machine routes: the nightly trigger and a deploy/console operator run them, and a
