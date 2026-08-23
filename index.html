@@ -2348,21 +2348,37 @@ body.kiosk-bg {
 .badge-item.b-close  .badge-icon { background: rgba(249,115,22,0.10);  border: 1px solid rgba(249,115,22,0.4); }
 .badge-item.b-streak .badge-icon { background: rgba(250,204,21,0.10);  border: 1px solid rgba(250,204,21,0.4); }
 .badge-item.b-txn    .badge-icon { background: rgba(239,68,68,0.10);   border: 1px solid rgba(239,68,68,0.4); }
-/* Biggest sale of the day — a standing trophy, not a moment. Gold so it reads as the
-   top prize next to the weekly badges, and it holds its place until someone beats it. */
-.badge-item.b-topsale {
-  border-color: rgba(250,204,21,0.55);
-  background: linear-gradient(180deg, rgba(250,204,21,0.10), var(--surface-2) 70%);
+/* Biggest sale of the day — a standing trophy, not a moment. It rides the RECORD-HOLDER'S
+   OWN CARD, not the trophy grid. It used to be a 7th tile prepended to .badges-grid, which is
+   sized 2 wide x 3 tall for exactly six weekly trophies: the extra tile forced a ragged 4th row
+   with one orphan in the left column and squeezed the rest. The card overlay also puts the
+   record next to the person who set it, which the grid never did.
+   It covers the bottom of the card (AOV / UPT / Target and the weekly badge chips) for as long
+   as they hold the record — that trade is deliberate, per Sky 2026-08-22. */
+.emp-topsale {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 14px;
+  min-height: 32%;
+  border-top: 1px solid rgba(250,204,21,0.55);
+  background: linear-gradient(180deg, rgba(250,204,21,0.16), rgba(250,204,21,0.06) 70%), var(--surface-2);
+  z-index: 3;
+  pointer-events: none;   /* purely decorative — never eats a tap meant for the card */
 }
-.badge-item.b-topsale .badge-icon { background: rgba(250,204,21,0.14); border: 1px solid rgba(250,204,21,0.5); }
-.badge-item.b-topsale .badge-title { color: rgba(250,204,21,0.9); }
-.badge-item.b-topsale .badge-stat-value { color: #facc15; }
+.emp-topsale .ts-icon  { font-size: 19px; line-height: 1; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.45)); }
+.emp-topsale .ts-text  { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.emp-topsale .ts-label { color: rgba(250,204,21,0.9); font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
+.emp-topsale .ts-when  { color: var(--text-mute); font-size: 10px; font-weight: 600; }
+.emp-topsale .ts-amt   { color: #facc15; font-size: 16px; font-weight: 800; margin-left: auto; }
 /* Freshly beaten record gets a short pulse so a passer-by notices it changed */
 @keyframes topsale-set {
   0%   { box-shadow: 0 0 0 0 rgba(250,204,21,0.55); }
   100% { box-shadow: 0 0 0 16px rgba(250,204,21,0); }
 }
-.badge-item.b-topsale.just-set { animation: topsale-set 1.5s ease-out 3; }
+.emp-topsale.just-set { animation: topsale-set 1.5s ease-out 3; }
 
 /* Big-sale banner — the reward that outlives the confetti. Sits under the header for
    BIG_SALE_HOLD_MS so someone walking past minutes later still sees who did it. */
@@ -3771,7 +3787,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-avatar.js"></script>
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-topnav.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.576';
+window.GC = window.GC || {}; GC.VERSION = 'v1.580';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -9337,7 +9353,7 @@ var kiosk = (function() {
 
     return '<div class="kiosk-card badges-card">'
       + '<div class="kcard-label">This Week\'s Trophies</div>'
-      + '<div class="badges-grid">' + renderTopSaleTile(_topSale) + items + '</div>'
+      + '<div class="badges-grid">' + items + '</div>'
       + '</div>';
   }
 
@@ -9674,7 +9690,8 @@ var kiosk = (function() {
     if (storeData.hourlyTargets && storeData.hourlyTargets.length) _hourlyTargets = storeData.hourlyTargets;
     _goal = (today && today.goal) || storeData.goal || _goal;
 
-    // renderBadges below prints the Biggest Sale trophy, so today's record has to exist first.
+    // The Biggest Sale trophy is painted onto the holder's card after mount (paintTopSaleOverlay_),
+    // but seed the record here so the very first paint has it.
     // _slug is normally set in init(), which runs after render() — set it early for the store key.
     _slug = slug || _slug;
     seedTopSale_(storeData);
@@ -9810,6 +9827,7 @@ var kiosk = (function() {
     animatePaceNeedle(data.today.today.pace);
     animateBars();
     applyBigSaleTreatment_();   // a sale from before this mount still gets its remaining time
+    paintTopSaleOverlay_(false);  // today's standing record rides the holder's card
     holdHeatmap(data.today.hourly, data.today.peakHour, data.today.peakRevenue);
     updateClosingBanner(data.today.today);
     initConfetti();
@@ -10364,8 +10382,7 @@ var kiosk = (function() {
     // day has started, so clear yesterday's record on a kiosk that was never restarted.
     if (td.isPreOpen) {
       _topSale = null;
-      var oldTile = document.getElementById('kioskTopSale');
-      if (oldTile) oldTile.remove();
+      paintTopSaleOverlay_(false);   // clears the overlay wherever it currently sits
     } else if (td.topSale) {
       considerTopSale_(td.topSale, true);
     }
@@ -10457,9 +10474,11 @@ var kiosk = (function() {
           var section = document.querySelector('.lb-section');
           if (section) {
             section.outerHTML = renderStaffGrid(staff, _storeName, _onShift, _badges, _eomKey);
-            // The banner and the flames live on the markup just replaced — re-derive both
+            // The banner, the flames and the Biggest Sale trophy all live on the markup just
+            // replaced — re-derive all three
             paintBigSale_();
             applyBigSaleTreatment_();
+            paintTopSaleOverlay_(false);
             animateBars();
             // Animate employee amounts
             staff.forEach(function(s) {
@@ -10543,7 +10562,7 @@ var kiosk = (function() {
     if (_topSale && _topSale.price >= sale.price) return false;
     _topSale = { who: sale.who || '', whoKey: sale.whoKey || '', price: sale.price, ts: sale.ts || '' };
     saveTopSale_(_topSale);
-    paintTopSaleTile_(!!pulse);
+    paintTopSaleOverlay_(!!pulse);
     return true;
   }
 
@@ -10573,35 +10592,36 @@ var kiosk = (function() {
     ((storeData && storeData.ticker) || []).forEach(function(t) { considerTopSale_(t, false); });
   }
 
-  function renderTopSaleTile(sale) {
+  // The holder's name is NOT printed — the overlay sits on their own card, which already
+  // carries it. Repeating it there is the one place it would be redundant.
+  function renderTopSaleOverlay_(sale) {
     if (!sale) return '';
     var when = fmtTxnTime(sale.ts);
-    return '<div class="badge-item b-topsale" id="kioskTopSale">'
-      + '<div class="badge-icon">🏆</div>'
-      + '<div class="badge-info">'
-      + '  <div class="badge-title">Biggest Sale</div>'
-      + '  <div class="badge-holder">' + e(sale.who || '—') + '</div>'
+    return '<div class="emp-topsale" id="kioskTopSale">'
+      + '<div class="ts-icon">🏆</div>'
+      + '<div class="ts-text">'
+      + '  <div class="ts-label">Biggest Sale</div>'
+      + (when ? '<div class="ts-when">' + e(when) + '</div>' : '')
       + '</div>'
-      + '<div class="badge-stat">'
-      + '  <div class="badge-stat-value">' + e(fmtDollars(sale.price || 0)) + '</div>'
-      + (when ? '<div class="badge-stat-label">' + e(when) + '</div>' : '')
-      + '</div>'
+      + '<div class="ts-amt">' + e(fmtDollars(sale.price || 0)) + '</div>'
       + '</div>';
   }
 
-  // Swap the tile in place — the trophies card itself is only rebuilt on a leaderboard refresh
-  function paintTopSaleTile_(pulse) {
-    var grid = document.querySelector('.badges-card .badges-grid');
-    if (!grid || !_topSale) return;
-    var existing = document.getElementById('kioskTopSale');
-    var html = renderTopSaleTile(_topSale);
-    if (existing) {
-      existing.outerHTML = html;
-    } else {
-      grid.insertAdjacentHTML('afterbegin', html);
-    }
+  // Move the trophy onto whoever currently holds the record. Always clears the previous
+  // overlay first: the record changes hands during the day, and a stale one left on the old
+  // holder's card would read as two people holding the same trophy.
+  // Safe to call after any staff-grid rebuild — that markup is replaced every 5 minutes.
+  function paintTopSaleOverlay_(pulse) {
+    var stale = document.querySelectorAll('.emp-topsale');
+    for (var i = 0; i < stale.length; i++) stale[i].parentNode.removeChild(stale[i]);
+    if (!_topSale) return;
+    // No card means the holder isn't on the board (off-shift, or not on today's roster). The
+    // trophy simply isn't shown rather than being parked somewhere it doesn't belong.
+    var card = sellerCard_(_topSale.whoKey, _topSale.who);
+    if (!card) return;
+    card.insertAdjacentHTML('beforeend', renderTopSaleOverlay_(_topSale));
     if (pulse) {
-      var el = document.getElementById('kioskTopSale');
+      var el = card.querySelector('.emp-topsale');
       if (el) {
         el.classList.add('just-set');
         setTimeout(function() { el.classList.remove('just-set'); }, 5000);

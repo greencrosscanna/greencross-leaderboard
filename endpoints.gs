@@ -1116,9 +1116,17 @@ function getStoreToday(store, params) {
     Object.values(agg.byEmployee).map(e => e.name.toLowerCase())
   );
 
-  // Pull in roster employees not yet seen today (apply nicknames so display is consistent)
+  // Pull in roster employees not yet seen today (apply nicknames so display is consistent).
+  //
+  // gxBelongsToStore_ gates this list, and ONLY this list. The roster is derived from 30 days of
+  // transactions, so anyone who covered a single shift here lingers as an "off shift" ghost card
+  // every day after — Drew Phillips (home_store 'corporate') sat on both Portland and River that
+  // way. Someone who is not this store's crew is only on this board when they are actually
+  // transacting, and a transactor is in activeEmps above, which this gate never touches.
+  // The gate fails open when home_store is unknown, so nobody vanishes on a cold lookup.
   const rosterEmps = (getEmployeeRoster_()[store.slug] || [])
-    .filter(e => !activeIds.has(String(e.id)) && !activeNames.has(e.name.toLowerCase()) && !gxIsExcluded_(e))
+    .filter(e => !activeIds.has(String(e.id)) && !activeNames.has(e.name.toLowerCase()) && !gxIsExcluded_(e)
+                 && gxBelongsToStore_(e, store))
     .map(e => ({
       initials:     e.initials,
       name:         applyNickname_(e.name, _shiftNicks),
@@ -1423,8 +1431,11 @@ function getStoreLeaderboard(store, params) {
     sales:    emp.sales,
     note:     null,
   }));
+  // Same store-crew gate as getStoreToday — see the note there. Both have to apply it or the
+  // 5-minute leaderboard refresh would put the ghost cards straight back on the board.
   const onShiftRoster = (getEmployeeRoster_()[store.slug] || [])
-    .filter(e => !activeNames.has(e.name.toLowerCase()) && !gxIsExcluded_(e))
+    .filter(e => !activeNames.has(e.name.toLowerCase()) && !gxIsExcluded_(e)
+                 && gxBelongsToStore_(e, store))
     .map(e => ({
       initials: e.initials,
       name:     applyNickname_(e.name, _storeNicknames),
