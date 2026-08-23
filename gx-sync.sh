@@ -60,7 +60,8 @@ fi
 # only (see gx-dev-boot.html). Nothing to commit per repo, so production never requests it and the
 # 'referenced a file I never tracked' failure cannot recur.
 echo "Syncing shared GX spoke files for app=$APP …"
-fetch gx-brain-notes.sh .claude/gx-brain-notes.sh || true
+fetch gx-brain-notes.sh    .claude/gx-brain-notes.sh    || true
+fetch gx-posttool-tests.sh .claude/gx-posttool-tests.sh || true
 fetch deploy.sh          deploy.sh                 || true
 fetch serve.py           serve.py                  || true
 fetch gx-preflight.sh    gx-preflight.sh           || true
@@ -71,15 +72,55 @@ fetch gxengine.sh        gxengine.sh               || true
 # VERIFY, do not assume. On 2026-08-22 gx-preflight.sh, deploy.sh and serve.py came out of a sync at
 # 0600 across four repos. It has not reproduced since and the cause is unconfirmed (self-update path?
 # Dropbox reverting modes asynchronously?) -- so this does not claim to prevent it, it refuses to let it
-# pass silently. The stakes are why: .git/hooks/pre-push is `exec ./gx-preflight.sh`, so a
-# non-executable preflight does not weaken the guard, it stops it running and every push fails with
-# "Permission denied". deploy.sh losing +x fails later and much quieter.
+# pass silently.
+#
+# WHAT IT ACTUALLY COSTS, corrected 2026-08-22. The hook is `exec sh ./gx-preflight.sh` -- `sh` READS
+# the script, so a 0600 preflight still runs and the guard is never weakened. The earlier claim here
+# ("every push fails with Permission denied") described the older `exec ./gx-preflight.sh` form and was
+# left behind when that changed; it overstated the danger, which is its own hazard -- it invites you to
+# believe a failing push would announce the problem. Nothing announces it.
+#
+# So the real cost is quiet: `./deploy.sh` refuses by hand, and whoever hits it works around it with
+# `bash deploy.sh` and moves on (sales did, 2026-08-22). Every guard that matters is invoked through
+# `sh` for exactly this reason -- gx-preflight, theme-preflight and run-tests alike. Keep it that way:
+# a hook that depends on a mode bit is a hook this filesystem can switch off without telling you.
 _notexec=""
-for f in .claude/gx-brain-notes.sh deploy.sh serve.py gx-preflight.sh gxengine.sh; do
+for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py gx-preflight.sh gxengine.sh; do
   [ -f "$f" ] || continue
   chmod 755 "$f" 2>/dev/null || true
   [ -x "$f" ] || _notexec="$_notexec $f"
 done
+# A file can be 755 on disk and still recorded 100644 in git — the tree then reports it MODIFIED
+# forever, with a zero-line diff no edit can resolve, because the wrong bit is in the INDEX.
+#
+# THE CAUSE IS `git add -A`, NOT A ONE-OFF BAD COMMIT. gx-sync writes these files through mktemp+mv,
+# which lands them 0644, then chmods to 755. Commit with `git add -A` or `commit -a` in the window
+# before the chmod and a zero-line mode change rides along inside an unrelated commit. Nobody sees it:
+# it adds no lines to the diff and the commit is about something else entirely.
+#
+# Traced through inventory's serve.py, which was created 100755 and broken TWICE by ride-alongs:
+#     47a8b12  created                                    -> 100755
+#     3de02f8  "Adopt gxengine.sh ..."           100755    -> 100644   (ride-along)
+#     4f01457  "Restore the executable bit ..."  100644    -> 100755   (deliberate fix)
+#     6d0e56d  "gx-preflight now runs tests ..." 100755    -> 100644   (ride-along, one commit later)
+# So `update-index` alone does NOT make it stick — 4f01457 proves that; the very next commit undid it.
+# The habit is the fix, which is why the message below leads with the habit.
+_badmode=""
+for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py gx-preflight.sh gxengine.sh; do
+  [ -f "$f" ] || continue
+  case "$(git ls-files -s "$f" 2>/dev/null | awk '{print $1}')" in
+    100644) [ -x "$f" ] && _badmode="$_badmode $f" ;;
+  esac
+done
+if [ -n "$_badmode" ]; then
+  echo "  ! executable on disk but recorded 100644 in git:$_badmode"
+  echo "    Your tree shows these modified forever with an empty diff. Fix the index:"
+  echo "      git update-index --chmod=+x$_badmode && git commit -m 'track the executable bit'"
+  echo "    Then keep it fixed: DO NOT 'git add -A' or 'commit -a' in a repo gx-sync touches."
+  echo "    That is what broke it — a zero-line mode change riding along in an unrelated commit."
+  echo "    Name your files explicitly and it cannot happen."
+fi
+
 if [ -n "$_notexec" ]; then
   echo "  ✗ NOT EXECUTABLE after chmod:$_notexec"
   echo "    The pre-push hook execs gx-preflight.sh, so this breaks every push until fixed:"
@@ -113,12 +154,17 @@ if [ ! -f .claude/settings.json ]; then
   "hooks": {
     "SessionStart": [
       { "hooks": [ { "type": "command", "command": "sh .claude/gx-brain-notes.sh" } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Edit|Write",
+        "hooks": [ { "type": "command", "command": "sh .claude/gx-posttool-tests.sh" } ] }
     ]
   }
 }
 JSON
   echo "  ✓ .claude/settings.json (created)"
 else
-  echo "  • .claude/settings.json exists — leave it; ensure it runs 'sh .claude/gx-brain-notes.sh' on SessionStart"
+  echo "  • .claude/settings.json exists — leave it; ensure SessionStart runs 'sh .claude/gx-brain-notes.sh'"
+  echo "    and PostToolUse (matcher Edit|Write) runs 'sh .claude/gx-posttool-tests.sh'"
 fi
 echo "Done. (gx-sync.sh keeps itself up to date from here on.)"

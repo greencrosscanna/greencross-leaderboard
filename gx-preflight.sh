@@ -51,7 +51,10 @@ flag hard "debugger statement" \
      '(^|[^A-Za-z_])debugger[[:space:]]*;'
 
 # Cache-buster: if the app JS changed but ?v=NN did not, staff keep the cached old file.
-JS="$(grep -ohE '[A-Za-z0-9_.-]+\.js\?v=[0-9]+' index.html 2>/dev/null | head -1 || true)"
+# Same MAJOR.MINOR-aware pattern as deploy.sh — keep the two in step. Not a live bug here (only the
+# filename is used, via ${JS%%\?*}, so a truncated version was never read), but two copies of one
+# pattern drifting apart is how the deploy.sh version bug survived unnoticed in the first place.
+JS="$(grep -ohE '[A-Za-z0-9_.-]+\.js\?v=[0-9]+(\.[0-9]+)?' index.html 2>/dev/null | head -1 || true)"
 if [ -n "$JS" ]; then
   NAME="${JS%%\?*}"
   if git diff --quiet HEAD -- index.html 2>/dev/null; then :; else

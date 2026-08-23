@@ -84,12 +84,18 @@ if [ ! -f "$SECRET_FILE" ]; then
 fi
 # Ask the app what it now runs. Warm instances can serve the old snapshot briefly, so poll rather than
 # trust the first answer -- sales took ~2 minutes on 2026-08-22.
-EXEC_URL="$(curl -sL --max-time 12 "$GXCORE?action=config&key=cfg.${APP}ExecUrl" 2>/dev/null | python3 -c "
+# Try BOTH conventions. Crew already published cfg.crewEngineUrl long before this script invented
+# cfg.<app>ExecUrl, and inventing a second name for a key that exists is how pricecards/pricetags
+# broke the auth gate and the dev-server port on the same day. Check the established name first.
+for _k in "cfg.${APP}EngineUrl" "cfg.${APP}ExecUrl"; do
+EXEC_URL="$(curl -sL --max-time 12 "$GXCORE?action=config&key=$_k" 2>/dev/null | python3 -c "
 import json,sys
 try:
     d=json.load(sys.stdin); v=d.get('value') or ''
     print(v if d.get('ok') and str(v).startswith('https://') else '')
 except Exception: print('')" 2>/dev/null)"
+  [ -n "$EXEC_URL" ] && break
+done
 LV=""
 if [ -n "$EXEC_URL" ]; then
   for _ in $(seq 1 12); do
@@ -107,8 +113,17 @@ for k in ('gxcore','lib','lib_version'):
 fi
 ROWS="[{\"app\":\"$APP\",\"deployed_sha\":\"$HEAD_SHA\"$([ -n "$LV" ] && echo ",\"lib_version\":$LV")}]"
 if [ -z "$LV" ]; then
-  echo "! could not read this app's live GXCore version (no cfg.${APP}ExecUrl, or route unreachable)."
-  echo "  Recording the sha without it; run ./gxpins.sh --record once it answers."
+  # Name BOTH keys. This message used to blame only cfg.<app>ExecUrl even though the loop above tries
+  # cfg.<app>EngineUrl FIRST — so a sales deploy whose EngineUrl was present and correct produced
+  # "no cfg.salesExecUrl", and the session reading it concluded a config key was missing and asked
+  # core-admin to add one. Nothing was missing. The likely cause is the one documented above: a warm
+  # Apps Script instance serves the old snapshot for a minute or two after a redeploy, so the poll
+  # right after deploying can come back empty. An error that names the wrong cause costs somebody a
+  # real investigation.
+  echo "! could not read this app's live GXCore version."
+  echo "  Tried cfg.${APP}EngineUrl then cfg.${APP}ExecUrl. Either neither key is set, or the route"
+  echo "  did not answer — most often a warm instance still serving the pre-deploy snapshot."
+  echo "  Recording the sha without it; run ./gxpins.sh --record in a minute or two."
 fi
 RESP="$(curl -sL --max-time 20 -G "$GXCORE" \
   --data-urlencode action=record_pins \
