@@ -163,16 +163,37 @@ function baseStubs() {
   };
 }
 
-/** Every top-level `function foo(` / `var|const|let foo` in the source. */
+/**
+ * Every top-level `function foo(` / `var|const|let foo` in the source.
+ *
+ * THROWS on a duplicate. Two files declaring the same top-level name is not a
+ * style problem here — the second definition silently wins, so the sandbox
+ * would hand back one implementation while the test believes it is exercising
+ * the other, and every assertion would still pass. That is precisely the
+ * wrong-implementation-under-test failure this whole harness exists to prevent,
+ * so it has to be loud. (There are no collisions across the .gs files today;
+ * nothing but this check would keep it that way.)
+ */
 function topLevelNames(src) {
   const out = [];
   const seen = Object.create(null);
-  const add = function (n) { if (!seen[n]) { seen[n] = 1; out.push(n); } };
+  const dupes = [];
+  const add = function (n) {
+    if (seen[n]) { if (dupes.indexOf(n) === -1) dupes.push(n); return; }
+    seen[n] = 1; out.push(n);
+  };
   let m;
   const fn  = /^function\s+([A-Za-z0-9_$]+)/gm;
   const dec = /^(?:var|const|let)\s+([A-Za-z0-9_$]+)/gm;
   while ((m = fn.exec(src)))  add(m[1]);
   while ((m = dec.exec(src))) add(m[1]);
+  if (dupes.length) {
+    throw new Error(
+      'harness: duplicate top-level name(s) across the loaded .gs files: ' + dupes.join(', ') +
+      '\n  The later definition wins, so a test could assert against the wrong one. ' +
+      'Rename one, or load the files in separate sandboxes.'
+    );
+  }
   return out;
 }
 
