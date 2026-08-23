@@ -3739,6 +3739,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      menus cannot drift apart between apps. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-avatar.js"></script>
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-topnav.js"></script>
+<script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-changelog.js"></script>
 <script>
 window.GC = window.GC || {}; GC.VERSION = 'v1.585';
 
@@ -3848,10 +3849,16 @@ GC.checkWhatsNew = function() {
     .catch(function() { GC.CHANGELOG = GC.CHANGELOG || []; });
 })();
 
-// Clicking any version badge opens the full changelog.
+// Clicking any version badge opens the full changelog — the SHARED one, so the badge and the user
+// tray's Version row land in the same place. Two entry points to two different popups inside one app
+// is exactly the drift the shared layer exists to stop. Falls back to the local modal if gx-theme's
+// file has not arrived yet (it loads by URL from Pages, so it can genuinely be absent for a moment).
 document.addEventListener('click', function(e) {
   var b = e.target && e.target.closest ? e.target.closest('.ver-badge') : null;
-  if (b) { e.preventDefault(); GC.showChangelog(); }
+  if (!b) return;
+  e.preventDefault();
+  if (window.GXChangelog && GXChangelog.configured()) GXChangelog.open();
+  else GC.showChangelog();
 });
 
 // Shared user tray (.gx-user-menu, built by GXTopNav) -- Settings, Version and Sign out. GXTopNav
@@ -3879,8 +3886,10 @@ document.addEventListener('gx-topnav:action', function(e) {
   var action = e.detail && e.detail.action;
   if (action === 'settings') {
     GC.router.navigate('#/settings');
-  } else if (action === 'version') {
-    GC.showChangelog();                 // same behaviour the .ver-badge click had
+  // No 'version' branch: GXTopNav opens the shared popup (gx-changelog.js), which IS this app's
+  // showChangelog promoted into gx-theme so the other six stop reinventing it. GC.showChangelog
+  // stays for the once-per-login What's New prompt, which is a different moment and a different
+  // list (unseen entries only).
   } else if (action === 'logout') {
     if (confirm('Sign out?')) {
       GC.auth.clear();
@@ -5888,6 +5897,10 @@ var director = (function() {
     var name    = session.displayName || session.user || '';
     var nameKey = GC.nameToKey(name);
     var cfg     = (_lastHeaderData && _lastHeaderData.avatarConfigs) ? findDirAvatarCfg_(nameKey) : null;
+    if (window.GXChangelog) {
+      GXChangelog.init({ app: 'performance', title: 'GX Leaderboard',
+                        version: function () { return (window.GC && GC.VERSION) || ''; } });
+    }
     GXTopNav.renderUser(slot, {
       name:   name,
       role:   String(session.role || '').replace(/_/g, ' '),
