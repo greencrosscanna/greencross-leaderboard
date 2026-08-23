@@ -22,21 +22,32 @@ cd "$(dirname "$0")"
 
 # 0. Stamp version (git commit count) directly into index.html so the value is
 #    baked into the committed source — identical on GitHub Pages and GAS.
-BUILD=$(git rev-list --count HEAD)
-python3 - "$BUILD" << 'PYEOF'
+#
+#    The suite format is vMAJOR.BBB — a THREE-digit build (gx_core.gs, gxCheckVersionFormat_).
+#    This app's build is the commit count, which sails past 999 without noticing: at commit 1000 the
+#    old line produced "v1.1000", GX Core would have REFUSED to record it, and the failure would have
+#    looked like a deploy that worked — the app ships fine, only the release log goes quiet. Roll the
+#    generation instead, exactly as Inventory rolled v2.99 -> v3.0.
+#
+#    Left-pad here, unlike the other apps. Their build is the fractional half of a decimal (v1.28 is
+#    the 280s, so it pads RIGHT); this one is a plain integer counter, where commit 42 is v1.042.
+COUNT=$(git rev-list --count HEAD)
+MAJOR=$(( 1 + COUNT / 1000 ))
+BUILD=$(printf '%03d' $(( COUNT % 1000 )))
+python3 - "$MAJOR" "$BUILD" << 'PYEOF'
 import re, sys, os
 base = os.path.dirname(os.path.abspath(__file__))
-ver  = 'v1.' + sys.argv[1]
+ver  = 'v' + sys.argv[1] + '.' + sys.argv[2]
 path = os.path.join(base, 'index.html')
 with open(path) as f: html = f.read()
 new = re.sub(
-    r"(window\.GC = window\.GC \|\| \{\}; GC\.VERSION = ')v1\.\d+(';)",
+    r"(window\.GC = window\.GC \|\| \{\}; GC\.VERSION = ')v\d+\.\d+(';)",
     lambda m: m.group(1) + ver + m.group(2),
     html, count=1)
 with open(path, 'w') as f: f.write(new)
 print('  Stamped ' + ver + ' into index.html')
 PYEOF
-echo "▶ Version: v1.${BUILD}"
+echo "▶ Version: v${MAJOR}.${BUILD}"
 
 # 1. Push to GAS. .claspignore selects index.html + the *.gs backend files.
 echo "▶ Pushing to GAS..."
@@ -66,7 +77,7 @@ fi
 echo "▶ Pushing to GitHub..."
 # Safety guard: never commit a corrupted/empty index.html. The version marker is
 # present in every valid source file; its absence means something clobbered it.
-if ! grep -q "GC.VERSION = 'v1\." index.html; then
+if ! grep -q "GC.VERSION = 'v[0-9]\+\." index.html; then
   echo "❌ index.html is missing its version marker — aborting commit to protect the source."
   echo "   Recover with: git checkout index.html"
   exit 1
@@ -93,7 +104,7 @@ if [ -f "$SECRET_FILE" ]; then
     --data-urlencode "action=deploy_version" \
     --data-urlencode "secret=${DEPLOY_SECRET}" \
     --data-urlencode "app=performance" \
-    --data-urlencode "version=v1.${BUILD}" \
+    --data-urlencode "version=v${MAJOR}.${BUILD}" \
     --data-urlencode "sha=${PUSHED_SHA}" \
     --data-urlencode "notes=${GX_NOTES:-}" 2>/dev/null | head -c 300)
   echo "▶ GX Core version record: ${REC}"
@@ -104,5 +115,5 @@ fi
 echo "✅ Done — GitHub Pages updated. GAS: see warnings above if version limit was hit."
 
 # Launch background watcher — notifies (desktop + Claude) when Pages is actually live.
-bash "$(dirname "$0")/watch_deploy.sh" "$PUSHED_SHA" "v1.${BUILD}" &
+bash "$(dirname "$0")/watch_deploy.sh" "$PUSHED_SHA" "v${MAJOR}.${BUILD}" &
 echo "👀 Watching Pages build for ${PUSHED_SHA:0:8} in background (PID $!)"
