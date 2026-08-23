@@ -687,6 +687,83 @@ function getDailyGoals_() {
   return { month: MONTHS[pt.month], year: pt.year, stores: result };  // pt.month is 0-indexed
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+//  PUBLISH goals to GX Core — we are the PRODUCER, Core is an opaque store
+// ═══════════════════════════════════════════════════════════════════════════════
+// Sales/Cashflow used to fetch our /exec directly for these numbers. It now reads them from GX Core
+// (?action=published_goals&producer=performance), which serves back exactly what we sent.
+//
+// NOTHING ON THIS PATH RECOMPUTES ANYTHING, and that is the whole point. GX Core v199 tried to
+// DERIVE the same numbers and was backed out in v200 because it disagreed with getDailyGoals_()
+// three separate ways:
+//   1. rounding order — it summed then rounded; we round each day.
+//   2. stretch is PER STORE, off the frozen ledger, and 0 for a manual override. Portland Rd is
+//      deliberately unstretched: it carries a manual PP override living in THIS script's
+//      properties, which Core cannot see at all.
+//   3. store keying — we key on locationName ("River"); Core keyed on dutchie_name ("River Rd").
+// So the contract is: getDailyGoals_() output goes over the wire VERBATIM. Do not reshape, round,
+// rename, re-key or "tidy" it here. Any transform in this file re-opens all three bugs.
+
+/**
+ * 'YYYY-MM' scope for a getDailyGoals_() payload, derived from the payload's OWN month/year so the
+ * label can never disagree with the thing it labels (getDailyGoals_ returns month as 'Aug', not 8).
+ * Returns null on an unrecognisable month — publishing under a guessed scope is worse than not
+ * publishing, because a wrong scope is indistinguishable from a right one at the read end.
+ */
+function scopeForGoalPayload_(payload) {
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  if (!payload || !payload.year) return null;
+  var i = MONTHS.indexOf(String(payload.month));
+  if (i < 0) return null;
+  return payload.year + '-' + ('0' + (i + 1)).slice(-2);
+}
+
+/**
+ * Publish this app's finished goal payload to GX Core. Throws on a hard failure (no secret, no
+ * library method, bad scope) so a hand-run tells you why; use publishGoalsSafe_ from write paths.
+ *
+ * Fails CLOSED without GX_DEPLOY_SECRET — GXCore.publishGoals rejects an unsigned publish, so an
+ * unset property would otherwise show up as a silent no-op that looks exactly like "nothing changed".
+ */
+function publishGoalsToCore_() {
+  var secret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+  if (!secret) throw new Error('GX_DEPLOY_SECRET is not set on this script — publish fails closed');
+  if (typeof GXCore === 'undefined' || !GXCore) throw new Error('GXCore not bound');
+  if (typeof GXCore.publishGoals !== 'function') {
+    throw new Error('pinned GXCore has no publishGoals() — needs v203+; re-pin AND deploy');
+  }
+
+  var payload = getDailyGoals_();                 // ← the finished output. Passed on as-is.
+  var scope   = scopeForGoalPayload_(payload);
+  if (!scope) throw new Error('could not derive scope from payload month/year: ' + JSON.stringify({ month: payload && payload.month, year: payload && payload.year }));
+
+  var res = GXCore.publishGoals(secret, 'performance', scope, payload);
+  // A false ok must be VISIBLE. Logged at the same volume as a success, not swallowed into a return
+  // value nobody reads.
+  if (res && res.ok) {
+    Logger.log('[publishGoals] ok scope=' + scope + ' bytes=' + res.bytes + ' published_at=' + res.published_at);
+  } else {
+    Logger.log('[publishGoals] FAILED scope=' + scope + ' → ' + JSON.stringify(res));
+  }
+  return { ok: !!(res && res.ok), scope: scope, bytes: res && res.bytes, published_at: res && res.published_at, raw: res };
+}
+
+/**
+ * Fire-and-forget publish for goal-WRITE paths, so a manual override reaches Sales in seconds
+ * instead of waiting for the 3am tick. Never throws: publishing is downstream of the goal write and
+ * must never be the reason a goal write fails.
+ */
+function publishGoalsSafe_(reason) {
+  try {
+    var r = publishGoalsToCore_();
+    Logger.log('[publishGoals] (' + reason + ') ' + (r.ok ? 'published ' + r.scope : 'NOT published'));
+    return r;
+  } catch (e) {
+    Logger.log('[publishGoals] (' + reason + ') error — goal write unaffected: ' + e.message);
+    return { ok: false, error: String(e && e.message || e) };
+  }
+}
+
 /**
  * Daily revenue goal for a specific day-of-week (0=Sun,1=Mon,...,6=Sat).
  * Used to look up yesterday's goal when displaying pre-open stats.
@@ -793,7 +870,12 @@ function refreshTargetsAll() {
 
   props.setProperty(GC_TARGET_CACHE_KEY, JSON.stringify(cache));
   try { refreshGoalLedger_(); } catch (e) { Logger.log('[goalLedger] refresh failed: ' + e); }
-  return { ok: true, lookbackDays, targets: report };
+  // Publish AFTER the refresh (and after the ledger, which getDailyGoals_ prefers), never on its own
+  // clock — that ordering is what guarantees the payload Sales reads can't be older than the numbers
+  // it was computed from. This is also the cadence: the nightly 3am refreshTargetsAll trigger carries
+  // the publish, so there is no second schedule to drift out of step with the first.
+  var pub = publishGoalsSafe_('refreshTargetsAll');
+  return { ok: true, lookbackDays, targets: report, published: pub };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1118,7 +1200,9 @@ function saveManualGoals_(params) {
   });
   PropertiesService.getScriptProperties().setProperty(GC_MANUAL_PP_KEY, JSON.stringify(clean));
   Logger.log('[manualGoals] saved: ' + JSON.stringify(clean));
-  return { ok: true };
+  // A manual override changes what Sales should see NOW, not at 3am. Fire-and-forget.
+  var pub = publishGoalsSafe_('saveManualGoals');
+  return { ok: true, published: pub };
 }
 
 /**
