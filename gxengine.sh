@@ -29,15 +29,78 @@ command -v clasp >/dev/null 2>&1 || { echo "✗ clasp not on PATH"; exit 1; }
 [ -f .clasp.json ] || { echo "✗ no .clasp.json here — is this an engine repo?"; exit 1; }
 
 # ── Which deployment is live? ────────────────────────────────────────────────────────────────────
-# @HEAD is a dev deployment and must never be the target. Among the rest take the highest version --
-# that is the one serving. If there is more than one plausible candidate, SAY SO and stop rather than
-# pick: deploying over the wrong id is not recoverable by re-running.
+# @HEAD is a dev deployment and must never be the target.
+#
+# THIS USED TO GUESS, AND THE GUESS WAS WRONG. The old rule was "among the non-HEAD deployments take
+# the highest @version". That is not what "live" means — it is just the most recently CUT deployment,
+# which may be a stray nobody calls. Caught in greencross-sales on 2026-08-23: the id every caller
+# uses (hardcoded as DEFAULT_PROXY in index.html) sat at @158 while an orphaned deployment sat at
+# @159, so --deploy would have pushed HEAD, redeployed the STRAY, recorded a sha to core_pins, and
+# printed success — while the live /exec kept serving the old library pin. A silent no-op that
+# reports a deploy is worse than a failed one, and re-running does not recover it.
+#
+# The header above already promised "if there is more than one plausible candidate, SAY SO and stop
+# rather than pick". The code did the opposite. Now it does what the comment says.
+#
+# THE FIX: ask who is actually called, do not rank. An id that appears BOTH in this repo's own source
+# and in this project's deployment list is, by definition, the one this app talks to. That
+# intersection is self-correcting — GX Core's /exec id appears in every spoke's source but is never
+# in the spoke's OWN deployment list, so it drops out for free, no exclusion list to rot.
 DEPLOYS="$(clasp deployments 2>/dev/null | grep -oE '^- AKfycb[A-Za-z0-9_-]+ @[0-9]+' || true)"
 [ -n "$DEPLOYS" ] || { echo "✗ no versioned deployment found (only @HEAD?). Refusing to create one."; exit 1; }
-TARGET="$(printf '%s\n' "$DEPLOYS" | sort -t@ -k2 -n | tail -1 | awk '{print $2}')"
-CURVER="$(printf '%s\n' "$DEPLOYS" | sort -t@ -k2 -n | tail -1 | grep -oE '@[0-9]+' | tr -d '@')"
+
+# Ids this repo's own frontend/engine source actually points at.
+REPO_IDS="$(grep -rhoE 'AKfycb[A-Za-z0-9_-]{20,}' . \
+              --include='*.html' --include='*.gs' --include='*.js' --include='*.json' 2>/dev/null | sort -u)"
+# Intersect with this project's real deployments.
+MATCHED=""
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  id="$(printf '%s' "$line" | awk '{print $2}')"
+  printf '%s\n' "$REPO_IDS" | grep -qx "$id" && MATCHED="${MATCHED}${line}
+"
+done <<EOF
+$DEPLOYS
+EOF
+MATCHED="$(printf '%s' "$MATCHED" | grep -v '^$' || true)"
+NMATCH="$(printf '%s\n' "$MATCHED" | grep -c 'AKfycb' || true)"
+NDEPLOY="$(printf '%s\n' "$DEPLOYS" | grep -c 'AKfycb' || true)"
+
+if [ "${NMATCH:-0}" = "1" ]; then
+  TARGET="$(printf '%s\n' "$MATCHED" | awk '{print $2}')"
+  CURVER="$(printf '%s\n' "$MATCHED" | grep -oE '@[0-9]+' | tr -d '@')"
+  HOW="referenced by this repo's source"
+elif [ "${NMATCH:-0}" -gt 1 ]; then
+  echo "✗ this repo references ${NMATCH} of its own deployments — cannot tell which one is live:"
+  printf '%s\n' "$MATCHED" | sed 's/^- /    /'
+  echo "  Refusing to guess. Deploying over the wrong id is not recoverable by re-running."
+  echo "  Pass the right one explicitly:  GX_DEPLOY_ID=AKfycb... ./gxengine.sh --deploy"
+  exit 1
+elif [ "${NDEPLOY:-0}" = "1" ]; then
+  # No source reference, but only one candidate exists — no ambiguity to resolve.
+  TARGET="$(printf '%s\n' "$DEPLOYS" | awk '{print $2}')"
+  CURVER="$(printf '%s\n' "$DEPLOYS" | grep -oE '@[0-9]+' | tr -d '@')"
+  HOW="the only versioned deployment"
+else
+  echo "✗ ${NDEPLOY} versioned deployments exist and NONE is referenced by this repo's source."
+  echo "  The old 'highest @version wins' rule would pick one here, and in greencross-sales on"
+  echo "  2026-08-23 that rule would have picked a stray while the real /exec kept serving stale code."
+  printf '%s\n' "$DEPLOYS" | sort -t@ -k2 -n | sed 's/^- /    /'
+  echo "  Refusing to guess. Pass it explicitly:  GX_DEPLOY_ID=AKfycb... ./gxengine.sh --deploy"
+  exit 1
+fi
+
+# Explicit override always wins, and must still be a real deployment of THIS project.
+if [ -n "${GX_DEPLOY_ID:-}" ]; then
+  if ! printf '%s\n' "$DEPLOYS" | grep -q "$GX_DEPLOY_ID"; then
+    echo "✗ GX_DEPLOY_ID=$GX_DEPLOY_ID is not a deployment of this project. Refusing."; exit 1
+  fi
+  TARGET="$GX_DEPLOY_ID"
+  CURVER="$(printf '%s\n' "$DEPLOYS" | grep "$GX_DEPLOY_ID" | grep -oE '@[0-9]+' | tr -d '@')"
+  HOW="GX_DEPLOY_ID override"
+fi
 echo "app        : $APP"
-echo "deployment : $TARGET @$CURVER"
+echo "deployment : $TARGET @$CURVER  ($HOW)"
 
 # ── What is about to ship? ───────────────────────────────────────────────────────────────────────
 # The sha last recorded to core_pins is the only reliable answer to "what is running", because it was
