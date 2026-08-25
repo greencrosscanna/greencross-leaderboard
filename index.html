@@ -3039,14 +3039,9 @@ body.kiosk-bg {
 .settings-total-row .settings-store-name { color: var(--text-mute); letter-spacing: 0.5px; font-size: 10px; text-transform: uppercase; }
 .settings-total-pp { font-variant-numeric: tabular-nums; }
 
-.settings-store-name,
-.settings-emp-name {
+.settings-store-name {
   font-weight: 600;
   color: var(--text);
-}
-.settings-emp-store {
-  color: var(--text-mute);
-  font-size: 12px;
 }
 .settings-derived {
   color: var(--text-dim);
@@ -3120,9 +3115,6 @@ body.kiosk-bg {
 }
 .settings-save-status.ok  { color: var(--green); }
 .settings-save-status.err { color: var(--red); }
-
-/* ── Employee of the Month — table column ─────────────────── */
-.settings-emp-eom-col input[type="radio"] { accent-color: var(--gold); cursor: pointer; }
 
 /* ── Loading / error states ───────────────────────────────── */
 .settings-loading,
@@ -3286,38 +3278,9 @@ body.kiosk-bg {
 
 .settings-dim { color: var(--text-dim); }
 
-/* ── Combined employees card (nicknames + avatars) ───────── */
-.settings-emp-table td { vertical-align: middle; }
-.settings-emp-ava { width: 52px; padding-right: 4px; }
-.settings-emp-ava .lb-ava {
-  width: 44px;
-  height: 44px;
-  font-size: 14px;
-  cursor: pointer;
-}
-.settings-emp-ava .lb-ava img { width: 100%; height: 100%; object-fit: cover; display: block; }
-
-.settings-role-select {
-  font-size: 12px;
-  padding: 3px 6px;
-  background: var(--surface-2, var(--surface));
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 4px;
-  color: var(--text);
-  cursor: pointer;
-  max-width: 120px;
-}
 .lb-th-sort { white-space: nowrap; cursor: pointer; user-select: none; }
 .lb-th-sort:hover { color: var(--green); }
 .lb-th-sort.active { color: var(--green); }
-
-/* ── Status (exclude) toggle ─────────────────────────────── */
-.settings-emp-excl { width: 88px; text-align: center; }
-
-
-/* Mute entire row when excluded */
-.emp-row-excluded td { opacity: 0.45; }
-.emp-row-excluded .settings-emp-excl { opacity: 1; }  /* keep toggle readable */
 
 </style>
   <style>
@@ -5132,14 +5095,10 @@ GC.api = (function() {
     return gasCall('getavatardata', {});
   }
 
-  function saveSettings(plans, nicknames, excluded, roles) {
-    var params = {};
-    if (plans)                  params.plans     = JSON.stringify(plans);
-    if (nicknames)              params.nicknames = JSON.stringify(nicknames);
-    if (excluded !== undefined) params.excluded  = JSON.stringify(excluded);
-    if (roles)                  params.roles     = JSON.stringify(roles);
-    return gasCall('savesettings', params);
-  }
+  // saveSettings(plans, nicknames, excluded, roles) lived here and is gone with the Settings
+  // Employees table: nicknames, avatars, job titles and 'excluded' are all edited in Crew now.
+  // The two savesettings calls left in this app pass ONE field each (stretch, discountTarget)
+  // and go through gasCall directly -- they never needed this wrapper.
 
   // Convenience: single GAS round-trip returning all four director payloads.
   // onFresh(data) — optional callback fired when background network refresh lands.
@@ -5274,7 +5233,6 @@ GC.api = (function() {
     fetchVetFlags:    function(days) { return gasCall('vetflags', days ? { days: String(days) } : {}); },
     fetchStandings:   function(refresh) { return gasCall('standings', refresh ? { refresh: '1' } : {}); },
     fetchAvatarData:  fetchAvatarData,
-    saveSettings:     saveSettings,
     gasCall:          gasCall,
     getStaleCache:    _getStaleCache,
     // Historical snapshots — no caching (data is static once snapshotted)
@@ -10859,9 +10817,12 @@ var kiosk = (function() {
 //  Green Cross — Settings View
 //  Route: #/settings (director/owner only)
 //
-//  Two sections:
-//    1. Store Plan Targets — daily goal per store; PP + monthly auto-computed
-//    2. Employee Nicknames — map Dutchie full names to preferred display names
+//  Two cards:
+//    1. Revenue Goals — Current PP — rolling-6mo vs same-season-LY floor, + stretch/overrides
+//    2. Data — hard refresh (re-pull every day from Dutchie and re-lock the cache)
+//
+//  It used to be "Store Plan Targets" + "Employee Nicknames". Both are gone: nicknames, avatars,
+//  job titles, the excluded flag and Employee of the Month are all edited in GX Crew now.
 // ============================================================
 
 window.GC = window.GC || {};
@@ -12074,9 +12035,117 @@ GC.loadStoreColors = function(opts) {
   } catch (e) {}
 };
 
+// ── Nightly refresh: the kiosk reloads itself before the stores open ─────────────────────────
+// THE PROBLEM. A kiosk is opened once and left running for weeks. Its DATA stays current -- the
+// ticker polls every 60s and the server computes "today" -- but everything the page holds in
+// MEMORY is frozen at boot, and the frontend CODE is whatever index.html it happened to load:
+//
+//   * _goalCelebrated (kiosk) latches true when a store hits goal and is only ever reset by a
+//     fresh mount. A screen that celebrated Monday never fires confetti again -- Tuesday,
+//     Wednesday, indefinitely -- and nothing about the display says it has stopped working.
+//   * _seenTxnKeys is a dedup set that grows for every transaction, forever, on a screen with no
+//     other reason to release memory.
+//   * A shipped fix reaches nobody. The wall view already works around this one case by hand
+//     ("Always-on wall never reloads -> periodically re-pull store colors"), which is the tell:
+//     the pattern needs a general answer, not a third one-off.
+//
+// THE FIX. Reload once a day at 04:00 PT, before any store opens. One reload resets every piece of
+// per-day state at once and picks up whatever is currently on Pages, so none of the above can drift.
+//
+// WHY DAY-CHANGE AND NOT A 04:00 TIMER. Firing on "the clock says 4" needs the tab to be awake at
+// exactly 4, and a backgrounded or sleeping tab throttles setInterval -- the one tick that mattered
+// is the one it skips, silently, and the kiosk runs stale for another day. Instead we record the PT
+// day we last refreshed on and reload when the PT day has ROLLED OVER and it is past 04:00. A
+// missed window is caught on the next tick that runs, whenever that is.
+//
+// NO VERSION CHECK. Polling GX Core version_history to ask "is my build stale?" would be dead
+// weight: the reload happens nightly regardless, so a version poll could only ever agree with a
+// reload we were already going to do. If mid-day updates are wanted later, that is a different
+// feature (detect, then reload on a quiet screen) -- not a condition bolted onto this one.
+GC.nightlyRefresh = (function() {
+  var TICK_MS  = 60 * 1000;   // check once a minute; the work is two Intl calls
+  var PT_HOUR  = 4;           // reload at/after 04:00 PT -- every store is closed
+  var LS_KEY   = 'gcperf_lastRefreshDay';   // gcperf_ prefix: every GX app shares the github.io origin
+  var _timer   = null;
+  var _memDay  = null;        // fallback when localStorage is unavailable (private mode)
+
+  // PT day + hour in one formatToParts, so they can never disagree across a midnight boundary the
+  // way two separate now() reads can.
+  function ptNow() {
+    var p = {};
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: GC.PT_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', hour12: false
+    }).formatToParts(new Date()).forEach(function(x) { p[x.type] = x.value; });
+    // hourCycle h23 renders midnight as '24' in some engines -- normalise so 24 -> 0.
+    var h = parseInt(p.hour, 10) % 24;
+    return { day: p.year + '-' + p.month + '-' + p.day, hour: h };
+  }
+
+  function readDay() {
+    try { return localStorage.getItem(LS_KEY) || _memDay; } catch (e) { return _memDay; }
+  }
+  function writeDay(d) {
+    _memDay = d;
+    try { localStorage.setItem(LS_KEY, d); } catch (e) {}
+  }
+
+  // Don't yank the page out from under someone mid-edit -- realistically a director with the
+  // goal-override inputs open at 4am.
+  //
+  // FOCUS ALONE IS NOT "BUSY", and testing it that way breaks the whole feature. The login screen
+  // autofocuses #loginUser, so a kiosk parked on it has an <input> focused FOREVER. A focus-only
+  // check therefore returns true on every tick and that kiosk never refreshes again -- the exact
+  // silent-stall this module exists to prevent, reintroduced by its own safety guard. Caught by
+  // running it: the reload declined to fire on a signed-out kiosk.
+  //
+  // So require RECENT TYPING, not focus. A field someone is actually working in sees keystrokes;
+  // an abandoned one goes quiet and stops blocking after IDLE_MS.
+  var IDLE_MS   = 2 * 60 * 1000;
+  var _lastType = 0;
+  try {
+    // Capture phase, passive: fires even when a handler downstream stops propagation, and never
+    // delays input. Registered once at module init.
+    document.addEventListener('keydown', function() { _lastType = Date.now(); }, { capture: true, passive: true });
+    document.addEventListener('input',   function() { _lastType = Date.now(); }, { capture: true, passive: true });
+  } catch (e) {}
+
+  function isBusy() {
+    var el = document.activeElement;
+    if (!el) return false;
+    var tag = (el.tagName || '').toLowerCase();
+    var editable = tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable === true;
+    if (!editable) return false;
+    return (Date.now() - _lastType) < IDLE_MS;   // focused AND typed in recently
+  }
+
+  function tick() {
+    var now  = ptNow();
+    var last = readDay();
+    if (!last) { writeDay(now.day); return; }        // first run: adopt today, don't reload on boot
+    if (now.day === last) return;                    // same PT day -- nothing due
+    if (now.hour < PT_HOUR) return;                   // rolled over, but too early; wait for 04:00
+    if (isBusy()) return;                             // someone is typing -- try again next minute
+    // Record BEFORE reloading. If the write is lost we would reload, come back to the same
+    // condition, and reload again in a loop.
+    writeDay(now.day);
+    try { console.log('[GC.nightlyRefresh] PT day rolled to ' + now.day + ' -- reloading'); } catch (e) {}
+    location.reload();
+  }
+
+  function start() {
+    if (_timer) return;
+    tick();                       // seeds LS_KEY on a fresh boot
+    _timer = setInterval(tick, TICK_MS);
+  }
+
+  return { start: start, _tick: tick, _ptNow: ptNow, _isBusy: isBusy };
+})();
+
 document.addEventListener('DOMContentLoaded', function() {
   GC.router.init();
-  GC.loadStoreColors();   // overlay live GX Core store colors (single source)
+  GC.loadStoreColors();     // overlay live GX Core store colors (single source)
+  GC.nightlyRefresh.start();  // always-on screens reload themselves at 04:00 PT
 });
 </script>
 
