@@ -1639,15 +1639,16 @@ function resolveAvatarConfigs_(employees, rawConfigs) {
 
 /** Returns the full avatar config map { nameKey: configObject }. */
 /**
- * Avatar configs, keyed by nameKey. GX Core only — Crew and #/avatar both write there.
+ * Avatar configs, keyed by nameKey. GX Core only — Crew and #/avatar are both EDITORS of it.
  *
  * The local GC_AVATAR_CONFIGS_JSON fallback is gone. It made the migration lossless, but a value
  * that lived only here could not be removed from Crew: clearing it there just let the local copy
  * resurface, because "Core has nothing" and "Core has not been told" looked identical. The two
  * local-only avatars (Zachary Rodriguez, Tyson Farris) were backfilled into Core first.
  *
- * Crew stamps a `seed` INTO avatar_config, pinned to employee_number, so a rename cannot regenerate
- * a different face. Pass the config through untouched so that seed is honoured.
+ * A `seed` is stamped INTO avatar_config, pinned to employee_number, so a rename cannot regenerate a
+ * different face. Crew used to do that stamping and this app did not, which is why it now happens in
+ * GXCore.setAvatar for every writer (Core v225). Pass the config through untouched so it is honoured.
  */
 function getAvatarConfigs_() {
   var out = Object.create(null);
@@ -1672,8 +1673,9 @@ function saveAvatarConfig_(params) {
     return { ok: false, error: 'Invalid config JSON: ' + e.message };
   }
   // Writes to GX CORE, not to a local copy. #/avatar is a second EDITOR (staff build their own
-  // face; Crew can also set one) but there must only be one STORE. Writing locally is what let an
-  // avatar exist here and not in Crew, where it then could not be changed or removed.
+  // face; Crew can also set one) but there must only be one STORE — and, since Core v225, one WRITE:
+  // GXCore.setAvatar. Writing locally is what let an avatar exist here and not in Crew, where it
+  // then could not be changed or removed.
   return gxWriteAvatarToCore_(params.nameKey, configStr);
 }
 
@@ -1693,10 +1695,25 @@ function clearAvatarConfig_(params) {
 /**
  * Write (or clear) one employee's avatar in GX Core, resolved from this app's nameKey.
  *
- * Clearing cannot go through gxUpsertEmployee: it treats an empty value as "leave this column
- * alone", so a blank would be silently ignored. Clearing therefore rewrites the COMPLETE live row
- * with avatar_config emptied -- gxWrite_ replaces whole rows, so a partial object would blank every
- * other column. That is the mechanism that destroyed two employee records once already.
+ * THE WRITE ITSELF IS NOT OURS ANY MORE. avatar_config lives on the GX Core employees row, and it
+ * was being written from two apps — Crew and here — each wrapping gxUpsertEmployee in its own
+ * read-merge-write. Same row, same field, two implementations that did not agree: Crew's pinned the
+ * avatar seed to employee_number, retried lock contention and verified that a clear actually landed;
+ * this one did none of those. Which behaviour a staff member got depended on which app they happened
+ * to be standing in front of. GXCore.setAvatar is that logic once, in the app that owns the row
+ * (Core v225). Ownership is by LAYER: gx-theme renders, GX Core writes, Crew manages staff, and this
+ * app keeps the kiosk entry point staff actually reach — #/avatar is not going away, and who may
+ * edit whose avatar stays our decision.
+ *
+ * WHY THIS NO LONGER BUILDS A COMPLETE ROW. It used to, deliberately: a partial
+ * {employee_id, avatar_config} under an old pin (patch-by-default only landed in Core v139, and this
+ * app pinned v128 on 2026-08-20) ran the older build-from-scratch path, and gxWrite_ rebuilt every
+ * column from those two keys — which is how a live employee record lost its name, home store, role,
+ * Dutchie id and employee number in one avatar save that day. That reasoning was correct and is now
+ * handled inside the library: setAvatar patches through gxUpsertEmployee, which treats '' as "leave
+ * this column alone", and a removal passes clear='avatar_config' and then re-reads to confirm the
+ * field is empty. The defence moved; it was not dropped. The pin still matters — setAvatar does not
+ * exist before v225 — so re-pin AND deploy before assuming this call resolves.
  */
 function gxWriteAvatarToCore_(nameKey, configStr) {
   var rec = (gxRoster_().byKey || {})[nameKey];
@@ -1704,35 +1721,25 @@ function gxWriteAvatarToCore_(nameKey, configStr) {
     return { ok: false, error: 'No GX Core employee matches "' + nameKey + '". Avatars are stored ' +
              'on the employee record now; ask Crew to add this person to the roster.' };
   }
+  var r;
   try {
-    // BUILD THE COMPLETE ROW HERE, both directions. Do not rely on GXCore.gxUpsertEmployee to merge.
-    //
-    // This app pins the GXCore LIBRARY at a version, and a library call executes THAT SNAPSHOT, not
-    // whatever gx_core.gs says today. Patch-by-default landed in Core v139; this app pinned v128 on
-    // 2026-08-20 (it pins v153 now). So a partial {employee_id, avatar_config} ran the older
-    // build-from-scratch code and gxWrite_ rebuilt every column from those two keys — which is how a
-    // live employee record lost its name, home store, role, Dutchie id and employee number in one
-    // avatar save that day.
-    //
-    // Reading the current Core source and concluding "the singular patches, so this is safe" is the
-    // trap. It is only safe once this app re-pins, and it stays wrong for anyone who forgets. A
-    // complete row is correct under EVERY version, so it does not depend on the pin at all.
-    var live = GXCore.getEmployees().filter(function (e) {
-      return String(e.employee_id || '').trim() === rec.employeeId;
-    })[0];
-    if (!live) return { ok: false, error: 'employee_id ' + rec.employeeId + ' vanished from GX Core' };
-    var row = Object.assign({}, live);
-    row.avatar_config = configStr || '';
-    var r = GXCore.gxUpsertEmployees([row]);
-    if (r && r.ok === false) return { ok: false, error: r.error || 'GX Core rejected the write' };
+    // employee_id, not the nameKey: setAvatar accepts either, but our roster already resolved this
+    // person on the Dutchie id join, which a name match cannot get wrong. '' clears — setAvatar owns
+    // the clear= mechanics and the verification, so do not special-case it here.
+    r = GXCore.setAvatar(rec.employeeId, configStr || '', 'performance');
   } catch (e) {
     return { ok: false, error: 'GX Core write failed: ' + (e && e.message || e) };
+  }
+  if (!r || r.ok !== true) {
+    return { ok: false, error: (r && r.error) || 'GX Core rejected the write',
+             retryable: !!(r && r.retryable) };
   }
   gxRosterBust_();          // the roster cache, so the next read sees the new value
   gxBustDisplayCaches_();   // and the rendered staff lists, so the face changes on the next load
   Logger.log('[avatar] ' + (configStr ? 'saved' : 'cleared') + ' in GX Core for ' +
              rec.fullName + ' (' + rec.employeeId + ')');
-  return { ok: true, nameKey: nameKey, employee_id: rec.employeeId };
+  return { ok: true, nameKey: nameKey, employee_id: r.employee_id || rec.employeeId,
+           name: r.name, seed: r.seed, cleared: !!r.cleared };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
