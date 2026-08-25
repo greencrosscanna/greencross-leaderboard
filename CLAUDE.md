@@ -55,7 +55,13 @@ per-store daily only. So the split is sequenced: **first** promote the per-emplo
 discretionary-discount definition to a canonical shared home, **then** cut Crew over. **Don't move the UI
 before the math has a shared home.** Coordinate with `core-admin`.
 
-This app reads **`spiff_payouts`** through GX Core — a written column contract, never app-to-app.
+~~This app reads **`spiff_payouts`** through GX Core — a written column contract, never app-to-app.~~
+
+*Corrected 2026-08-25: **there is no `spiff_payouts` tab and this app never read one.** It is not in
+`GX_TABS`, nothing writes it, nothing reads it — the claim was invented in documentation and repeated
+across the suite until it read as fact. SPIFF keeps its payout data in its own sheet. The real
+Leaderboard↔Core contract is `goal_publications` (Leaderboard publishes, Sales consumes), covered by
+`tests/cross_app_goals_contract_test.js`.*
 
 ## Sync with the brain — run `/gxbrain` (or say "brain sync")
 
@@ -69,9 +75,10 @@ writes note-backs to any app (`add_note`). The SessionStart hook surfaces the sa
 App-specific facts for the sync check: app key **`performance`** in GX Core; integrated via bug forwarding
 (`gxIngestBug` + `tab`), changelog read from `version_history`, and auto-record on deploy (central
 `deploy_version` endpoint + shared untracked `.gx_deploy_secret`); `appsscript.json` pins `GXCore`
-**v211** — but a call runs the version the live DEPLOYMENT snapshotted, so **ask the running app**
-(`?action=libversion`), never this line. It said **v19** until 2026-08-22, which was wrong by 169
-versions: the pin had moved and the prose had not.
+**v220** — but a call runs the version the live DEPLOYMENT snapshotted, so **ask the running app**
+(`?action=libversion`), never this line. It said **v19** until 2026-08-22, wrong by 169 versions, and
+**v211** until 2026-08-25, wrong by two moves (215 then 220). Twice now the pin advanced and this line
+did not, which is the whole reason it tells you not to trust it.
 
 **What to build next — `/gxwhatsnext`:** run `/gxwhatsnext` in this chat to pull this app's next prioritized work — the Command Center's dependency-ordered build sequence, filtered to this app — so you can build here without switching to the CC. It reads the app key above automatically.
 
