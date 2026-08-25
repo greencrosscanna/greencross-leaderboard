@@ -3737,7 +3737,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-topnav.js"></script>
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-changelog.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.603';
+window.GC = window.GC || {}; GC.VERSION = 'v1.604';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -8603,6 +8603,7 @@ var kiosk = (function() {
   var _topSale      = null;  // { who, whoKey, price, ts } — biggest single sale today
   var _bigSale      = null;  // the sale currently on the banner, null when idle
   var _bigSaleTimer = null;  // next recompute of the big-sale treatment
+  var _bigSaleFade  = null;  // pending removal of .show after the banner's fade-out transition
   var _topSaleTimer = null;  // retires the "Biggest Sale" trophy overlay when its hold runs out
   var _bigSales     = [];    // recent big sales, newest first — the treatment is derived from these
   var _rareDropTimer = null; // auto-dismiss for the rare-drop overlay
@@ -9872,6 +9873,7 @@ var kiosk = (function() {
       clearInterval(_clockTimer); _clockTimer = null;
       clearTimeout(_hmHoldTimer); _hmHoldTimer = null;
       clearTimeout(_bigSaleTimer); _bigSaleTimer = null;
+      clearTimeout(_bigSaleFade);  _bigSaleFade  = null;
       clearTimeout(_topSaleTimer); _topSaleTimer = null;
       clearTimeout(_rareDropTimer); _rareDropTimer = null;
       _confettiRunning = false;
@@ -10523,8 +10525,11 @@ var kiosk = (function() {
           if (section) {
             section.outerHTML = renderStaffGrid(staff, _storeName, _onShift, _badges, _eomKey);
             // The banner, the flames and the Biggest Sale trophy all live on the markup just
-            // replaced — re-derive all three
-            paintBigSale_();
+            // replaced — re-derive all three. applyBigSaleTreatment_ now restores the banner
+            // itself (it repaints when #kioskBigSale isn't showing), so the bare paintBigSale_()
+            // that used to lead here is gone: it painted whatever _bigSale still held, including a
+            // sale whose 12 minutes had already run out, which then flashed on screen for the 1.3s
+            // fade the very next line started. Deriving from the clock first shows nothing stale.
             applyBigSaleTreatment_();
             paintTopSaleOverlay_(false);
             animateBars();
@@ -10711,10 +10716,19 @@ var kiosk = (function() {
   function paintBigSale_() {
     var el = document.getElementById('kioskBigSale');
     if (!el) return;
+    // Cancel any fade-out still in flight. Without this, a sale expiring and a new one landing
+    // inside the 1.3s transition leaves the OLD timeout to fire against the LIVE element and strip
+    // .show off the banner we just put up — module state says the banner is on screen, the DOM is
+    // blank, and nothing repaints it for the rest of its hold. That is the same divergence the
+    // grid rebuild caused, arriving by a different road.
+    clearTimeout(_bigSaleFade); _bigSaleFade = null;
     if (!_bigSale) {
       if (el.classList.contains('show')) {
         el.classList.add('fading');
-        setTimeout(function() { el.classList.remove('show', 'fading'); }, 1300);
+        _bigSaleFade = setTimeout(function() {
+          _bigSaleFade = null;
+          el.classList.remove('show', 'fading');
+        }, 1300);
       }
       return;
     }
@@ -10768,9 +10782,19 @@ var kiosk = (function() {
       return (s.price || 0) >= GC.THRESHOLDS.bigTransactionMin && bigSaleRemainingMs_(s) > 0;
     });
 
-    // Banner shows the most recent sale still inside its window
+    // Banner shows the most recent sale still inside its window.
     var next = live.length ? live[0] : null;
-    if ((next && next.ts) !== (_bigSale && _bigSale.ts)) {
+    // Repaint when the sale CHANGED — or when a sale should be on the banner and the DOM says it
+    // isn't. A ts-only guard trusts module state about something module state doesn't own: the
+    // banner lives on .lb-section, which the 5-minute leaderboard refresh replaces wholesale with
+    // a fresh #kioskBigSale carrying no .show, and a stale fade-out could strip .show as well.
+    // With the same sale still inside its window the ts is unchanged, so the guard was false, and
+    // the banner stayed dark for the rest of its 12-minute hold while the card flame — re-added
+    // unconditionally below — kept burning. Asking the DOM makes every pass self-healing, so a
+    // caller no longer has to remember to paintBigSale_() after replacing the markup.
+    var bannerEl  = document.getElementById('kioskBigSale');
+    var bannerOff = !!next && !(bannerEl && bannerEl.classList.contains('show'));
+    if ((next && next.ts) !== (_bigSale && _bigSale.ts) || bannerOff) {
       _bigSale = next;
       paintBigSale_();
     }
