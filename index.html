@@ -2325,8 +2325,11 @@ body.kiosk-bg {
    sized 2 wide x 3 tall for exactly six weekly trophies: the extra tile forced a ragged 4th row
    with one orphan in the left column and squeezed the rest. The card overlay also puts the
    record next to the person who set it, which the grid never did.
-   It covers the bottom of the card (AOV / UPT / Target and the weekly badge chips) for as long
-   as they hold the record — that trade is deliberate, per Sky 2026-08-22. */
+   It covers the bottom of the card (AOV / UPT / Target and the weekly badge chips) — that trade
+   is deliberate, per Sky 2026-08-22, but it is no longer open-ended: as of 2026-08-25 the overlay
+   holds for BIG_SALE_HOLD_MS from the sale itself and then fades, so a single big sale no longer
+   hides one seller's stats for the rest of the day. The RECORD still stands all day; only this
+   overlay expires. */
 .emp-topsale {
   position: absolute;
   left: 0; right: 0; bottom: 0;
@@ -2345,6 +2348,9 @@ body.kiosk-bg {
 .emp-topsale .ts-label { color: rgba(250,204,21,0.9); font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
 .emp-topsale .ts-when  { color: var(--text-mute); font-size: 10px; font-weight: 600; }
 .emp-topsale .ts-amt   { color: #facc15; font-size: 16px; font-weight: 800; margin-left: auto; }
+/* Retiring the trophy when its hold expires — mirrors #kioskBigSale.fading so the three
+   surfaces of one big sale go dark the same way. */
+.emp-topsale.fading { opacity: 0; transition: opacity 1.2s ease; }
 /* Freshly beaten record gets a short pulse so a passer-by notices it changed */
 @keyframes topsale-set {
   0%   { box-shadow: 0 0 0 0 rgba(250,204,21,0.55); }
@@ -3731,7 +3737,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-topnav.js"></script>
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-changelog.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.602';
+window.GC = window.GC || {}; GC.VERSION = 'v1.603';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -8597,6 +8603,7 @@ var kiosk = (function() {
   var _topSale      = null;  // { who, whoKey, price, ts } — biggest single sale today
   var _bigSale      = null;  // the sale currently on the banner, null when idle
   var _bigSaleTimer = null;  // next recompute of the big-sale treatment
+  var _topSaleTimer = null;  // retires the "Biggest Sale" trophy overlay when its hold runs out
   var _bigSales     = [];    // recent big sales, newest first — the treatment is derived from these
   var _rareDropTimer = null; // auto-dismiss for the rare-drop overlay
   var _rareDropCount = 0;    // enforces THRESHOLDS.rareDropMaxPerShift
@@ -9865,6 +9872,7 @@ var kiosk = (function() {
       clearInterval(_clockTimer); _clockTimer = null;
       clearTimeout(_hmHoldTimer); _hmHoldTimer = null;
       clearTimeout(_bigSaleTimer); _bigSaleTimer = null;
+      clearTimeout(_topSaleTimer); _topSaleTimer = null;
       clearTimeout(_rareDropTimer); _rareDropTimer = null;
       _confettiRunning = false;
       if (_confettiResize) { window.removeEventListener('resize', _confettiResize); _confettiResize = null; }
@@ -10575,7 +10583,7 @@ var kiosk = (function() {
   // Confetti is the moment; these are what's still there when someone looks up two minutes
   // later. Three surfaces, all fed from the same sale: a banner under the header, a flame on
   // the seller's card, and the standing "Biggest Sale" trophy.
-  var BIG_SALE_HOLD_MS = 12 * 60 * 1000;   // banner + card flame linger this long
+  var BIG_SALE_HOLD_MS = 12 * 60 * 1000;   // banner, card flame AND trophy overlay linger this long
 
   function topSaleKey_() {
     // Per-store, per-day, and app-scoped — every GX app shares the github.io origin
@@ -10632,6 +10640,18 @@ var kiosk = (function() {
     ((storeData && storeData.ticker) || []).forEach(function(t) { considerTopSale_(t, false); });
   }
 
+  // Retire the trophy on expiry: fade, then remove once the transition has run. Kept separate
+  // from paintTopSaleOverlay_'s unconditional clear because the two removals mean different
+  // things — the record CHANGING HANDS should move the trophy instantly (a cross-fade there
+  // would briefly show two holders), while running out of time should look like it's going.
+  function fadeOutTopSaleOverlay_() {
+    clearTimeout(_topSaleTimer); _topSaleTimer = null;
+    var el = document.querySelector('.emp-topsale');
+    if (!el) return;
+    el.classList.add('fading');
+    setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 1300);
+  }
+
   // The holder's name is NOT printed — the overlay sits on their own card, which already
   // carries it. Repeating it there is the one place it would be redundant.
   function renderTopSaleOverlay_(sale) {
@@ -10651,10 +10671,27 @@ var kiosk = (function() {
   // overlay first: the record changes hands during the day, and a stale one left on the old
   // holder's card would read as two people holding the same trophy.
   // Safe to call after any staff-grid rebuild — that markup is replaced every 5 minutes.
+  //
+  // THE OVERLAY EXPIRES; THE RECORD DOES NOT. It holds for BIG_SALE_HOLD_MS from the sale's own
+  // timestamp, so the trophy, the header banner and the card flame all go dark together as one
+  // treatment (Sky, 2026-08-25 — it previously had no timer at all and sat on the card until the
+  // day rolled over, covering that seller's AOV / UPT / Target the whole time).
+  //
+  // `_topSale` itself is deliberately left standing when the overlay goes: it is the DAY's record,
+  // and considerTopSale_ compares against it. Clearing it on expiry would let a $200 sale at 3pm
+  // "beat" a $900 record from the morning purely because the banner had timed out.
   function paintTopSaleOverlay_(pulse) {
     var stale = document.querySelectorAll('.emp-topsale');
     for (var i = 0; i < stale.length; i++) stale[i].parentNode.removeChild(stale[i]);
+    clearTimeout(_topSaleTimer); _topSaleTimer = null;
     if (!_topSale) return;
+    // Expired (or restored from localStorage on a later mount) — record kept, overlay not drawn.
+    var left = bigSaleRemainingMs_(_topSale);
+    if (left <= 0) return;
+    // Come back when it runs out and fade it, as the banner does for itself. Fading rather than
+    // removing: on a wall-mounted kiosk a block of card vanishing between glances reads as a
+    // rendering fault, not as a timer.
+    _topSaleTimer = setTimeout(fadeOutTopSaleOverlay_, left);
     // No card means the holder isn't on the board (off-shift, or not on today's roster). The
     // trophy simply isn't shown rather than being parked somewhere it doesn't belong.
     var card = sellerCard_(_topSale.whoKey, _topSale.who);
