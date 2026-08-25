@@ -131,9 +131,7 @@ function getOrComputeGoals_(forceRecompute) {
   const props = getProps_();
 
   // Determine current PP start
-  const { ppStartMs, PP_MS } = currentPPStart_(props);
-  const ppStartStr   = Utilities.formatDate(new Date(ppStartMs), STORE_TZ, 'yyyy-MM-dd');
-  const ppEndStr     = Utilities.formatDate(new Date(ppStartMs + PP_MS - 1), STORE_TZ, 'yyyy-MM-dd');
+  const { ppStartMs, ppStartStr, ppEndStr } = currentPPStart_(props);
 
   // Check ScriptProperties cache
   if (!forceRecompute) {
@@ -151,12 +149,12 @@ function getOrComputeGoals_(forceRecompute) {
   const ROLLING_PP = 12;
   const ranges = [];
   for (var i = ROLLING_PP; i >= 1; i--) {
-    var fromMs = ppStartMs - i * PP_MS;
-    var toMs   = fromMs + PP_MS - 1;
+    var fromMs = ppShift_(ppStartMs, -i);
+    var toMs   = ppEndMs_(fromMs);
     ranges.push({ fromUTC: new Date(fromMs).toISOString(), toUTC: new Date(toMs).toISOString() });
   }
   // Report range: oldest PP start → newest completed PP end
-  var reportFromStr = Utilities.formatDate(new Date(ppStartMs - ROLLING_PP * PP_MS), STORE_TZ, 'yyyy-MM-dd');
+  var reportFromStr = Utilities.formatDate(new Date(ppShift_(ppStartMs, -ROLLING_PP)), STORE_TZ, 'yyyy-MM-dd');
   var reportToStr   = Utilities.formatDate(new Date(ppStartMs - 1), STORE_TZ, 'yyyy-MM-dd');
 
   // Daily net for the 12 completed PPs from the GX Core sales cache (one read, was 72 Dutchie batches).
@@ -255,16 +253,16 @@ function recalculateGoals_() {
 function getPPSeries_(slug, n) {
   var props = getProps_();
   var pp = currentPPStart_(props);
-  var ppStartMs = pp.ppStartMs, PP_MS = pp.PP_MS;
+  var ppStartMs = pp.ppStartMs;
   n = n || 26;
   var reqs = [];
   for (var i = n; i >= 1; i--) {
-    var fromMs = ppStartMs - i * PP_MS;
+    var fromMs = ppShift_(ppStartMs, -i);
     reqs.push({
       key:      String(n - i),
       storeKey: getDutchieStoreKey_(slug),
       fromUTC:  new Date(fromMs).toISOString(),
-      toUTC:    new Date(fromMs + PP_MS - 1).toISOString(),
+      toUTC:    new Date(ppEndMs_(fromMs)).toISOString(),
       _fromMs:  fromMs,
     });
   }
@@ -302,8 +300,7 @@ function getOrComputeYoYGoals_(forceRecompute) {
   if (!forceRecompute && _yoyGoalsCache_) return _yoyGoalsCache_;
 
   var props = getProps_();
-  var { ppStartMs, PP_MS } = currentPPStart_(props);
-  var ppStartStr = Utilities.formatDate(new Date(ppStartMs), STORE_TZ, 'yyyy-MM-dd');
+  var { ppStartMs, ppStartStr } = currentPPStart_(props);
 
   // Check cache
   if (!forceRecompute) {
@@ -315,20 +312,20 @@ function getOrComputeYoYGoals_(forceRecompute) {
     }
   }
 
-  // Equivalent base: 52 weeks (364 days) ago — preserves day-of-week alignment
-  var YEAR_MS   = 364 * 24 * 60 * 60 * 1000;
-  var yoyBaseMs = ppStartMs - YEAR_MS;          // 1 year ago, same season
+  // Equivalent base: 52 weeks (364 days) ago — preserves day-of-week alignment. Shifted in
+  // CALENDAR days: 364 * 86400000 crosses two DST changes and lands an hour off PT midnight.
+  var yoyBaseMs = ptDateToUtcMs_(ptDateShift_(ppStartStr, -364));
 
   // 6 bi-weekly windows around the anchor (−3 to +2 PPs) — smooths the floor so
   // one anomalous fortnight last year (a storm, a one-off promo) can't skew it.
   var ranges = [];
   for (var i = -3; i <= 2; i++) {
-    var f1 = yoyBaseMs + i * PP_MS;
-    ranges.push({ fromUTC: new Date(f1).toISOString(), toUTC: new Date(f1 + PP_MS - 1).toISOString() });
+    var f1 = ppShift_(yoyBaseMs, i);
+    ranges.push({ fromUTC: new Date(f1).toISOString(), toUTC: new Date(ppEndMs_(f1)).toISOString() });
   }
 
-  var yoyFrom = Utilities.formatDate(new Date(yoyBaseMs - 3 * PP_MS), STORE_TZ, 'yyyy-MM-dd');
-  var yoyTo   = Utilities.formatDate(new Date(yoyBaseMs + 3 * PP_MS - 1), STORE_TZ, 'yyyy-MM-dd');
+  var yoyFrom = Utilities.formatDate(new Date(ppShift_(yoyBaseMs, -3)), STORE_TZ, 'yyyy-MM-dd');
+  var yoyTo   = Utilities.formatDate(new Date(ppEndMs_(ppShift_(yoyBaseMs, 2))), STORE_TZ, 'yyyy-MM-dd');
   Logger.log('[yoy] Computing same-season floor for PP ' + ppStartStr + ' | window: ' + yoyFrom + ' – ' + yoyTo);
 
   // Y1 data (1 year ago) is historical within a PP — cache aggregated totals + DOW buckets.
@@ -917,8 +914,8 @@ function currentPeriodGoalShape_(props) {
     };
   });
   return {
-    periodStart: Utilities.formatDate(new Date(cur.ppStartMs), STORE_TZ, 'yyyy-MM-dd'),
-    periodEnd:   Utilities.formatDate(new Date(cur.ppStartMs + cur.PP_MS - 1), STORE_TZ, 'yyyy-MM-dd'),
+    periodStart: cur.ppStartStr,
+    periodEnd:   cur.ppEndStr,
     stores:      stores,
     computedAt:  new Date().toISOString()
   };
@@ -1018,7 +1015,7 @@ function refreshGoalLedger_() {
   var cur = currentPPStart_(props);
   var locked = [];
   for (var k = 1; k <= 2; k++) {
-    var startStr = Utilities.formatDate(new Date(cur.ppStartMs - k * cur.PP_MS), STORE_TZ, 'yyyy-MM-dd');
+    var startStr = Utilities.formatDate(new Date(ppShift_(cur.ppStartMs, -k)), STORE_TZ, 'yyyy-MM-dd');
     var e = getFrozenPeriodGoal_(startStr);
     if (e && !e.locked) { writeGoalLedger_(props, e, true); locked.push(startStr); }
   }
@@ -1058,22 +1055,24 @@ function aggregateRangesToGoal_(fetched) {
 }
 
 /** Rolling 12-PP goal shape AS OF a period starting ppStartMs (mirrors getOrComputeGoals_, cache-free). */
-function rollingGoalShapeAsOf_(ppStartMs, PP_MS) {
+function rollingGoalShapeAsOf_(ppStartMs) {
   var ranges = [];
   for (var i = 12; i >= 1; i--) {
-    var fromMs = ppStartMs - i * PP_MS;
-    ranges.push({ fromUTC: new Date(fromMs).toISOString(), toUTC: new Date(fromMs + PP_MS - 1).toISOString() });
+    var fromMs = ppShift_(ppStartMs, -i);
+    ranges.push({ fromUTC: new Date(fromMs).toISOString(), toUTC: new Date(ppEndMs_(fromMs)).toISOString() });
   }
   return aggregateRangesToGoal_(dailyNetForRanges_(ranges));
 }
 
 /** Same-season YoY floor shape AS OF a period starting ppStartMs (mirrors getOrComputeYoYGoals_, cache-free). */
-function yoyGoalShapeAsOf_(ppStartMs, PP_MS) {
-  var yoyBaseMs = ppStartMs - 364 * 24 * 60 * 60 * 1000;   // 52 weeks back, DOW-aligned
+function yoyGoalShapeAsOf_(ppStartMs) {
+  // 52 weeks back, DOW-aligned — in calendar days, so two DST changes cannot shift it off midnight.
+  var yoyBaseMs = ptDateToUtcMs_(ptDateShift_(
+    Utilities.formatDate(new Date(ppStartMs), STORE_TZ, 'yyyy-MM-dd'), -364));
   var ranges = [];
   for (var i = -3; i <= 2; i++) {
-    var f1 = yoyBaseMs + i * PP_MS;
-    ranges.push({ fromUTC: new Date(f1).toISOString(), toUTC: new Date(f1 + PP_MS - 1).toISOString() });
+    var f1 = ppShift_(yoyBaseMs, i);
+    ranges.push({ fromUTC: new Date(f1).toISOString(), toUTC: new Date(ppEndMs_(f1)).toISOString() });
   }
   return aggregateRangesToGoal_(dailyNetForRanges_(ranges));
 }
@@ -1088,10 +1087,9 @@ function backfillPeriodGoal_(periodStart) {
   var existing = getFrozenPeriodGoal_(periodStart);
   if (existing && existing.locked) return { ok: true, skipped: 'already locked', periodStart: periodStart };
 
-  var PP_MS     = currentPPStart_(props).PP_MS;
   var ppStartMs = ptDateToUtcMs_(periodStart);
-  var gr = rollingGoalShapeAsOf_(ppStartMs, PP_MS);
-  var gy = yoyGoalShapeAsOf_(ppStartMs, PP_MS);
+  var gr = rollingGoalShapeAsOf_(ppStartMs);
+  var gy = yoyGoalShapeAsOf_(ppStartMs);
   var stretch = getStretchMultiplier_();
   var manuals = getManualPPGoals_();
 
@@ -1107,7 +1105,7 @@ function backfillPeriodGoal_(periodStart) {
   });
   var entry = {
     periodStart: periodStart,
-    periodEnd:   Utilities.formatDate(new Date(ppStartMs + PP_MS - 1), STORE_TZ, 'yyyy-MM-dd'),
+    periodEnd:   Utilities.formatDate(new Date(ppEndMs_(ppStartMs)), STORE_TZ, 'yyyy-MM-dd'),
     stores:      stores,
     computedAt:  new Date().toISOString(),
     backfilled:  true
@@ -1123,10 +1121,13 @@ function backfillPeriodGoal_(periodStart) {
 
 /** Which pay-period START (yyyy-mm-dd, PT) a given PT date falls in. */
 function periodStartForDate_(dateStr) {
-  var cur = currentPPStart_(getProps_());
-  var k   = Math.ceil((cur.ppStartMs - ptDateToUtcMs_(dateStr)) / cur.PP_MS);
+  var cur  = currentPPStart_(getProps_());
+  // Counted in whole PT calendar days, then in whole periods. Dividing a raw ms difference by a
+  // nominal PP_MS mis-rounds by an hour across a DST change and can pick the adjacent period.
+  var days = Math.round((cur.ppStartMs - ptDateToUtcMs_(dateStr)) / 86400000);
+  var k    = Math.ceil(days / PP_DAYS);
   if (k < 0) k = 0;
-  return Utilities.formatDate(new Date(cur.ppStartMs - k * cur.PP_MS), STORE_TZ, 'yyyy-MM-dd');
+  return Utilities.formatDate(new Date(ppShift_(cur.ppStartMs, -k)), STORE_TZ, 'yyyy-MM-dd');
 }
 
 /** As-of PP target for a store: frozen ledger for a CLOSED period, live resolveGoal_ for the open one. */
