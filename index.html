@@ -2539,9 +2539,18 @@ body.kiosk-bg {
 .ticker-feed {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  /* Row pitch is 36px (31px row + this 5px gap). Tightened from 39px so the height left over
+     after whole-row clamping buys another sale rather than sitting blank. */
+  gap: 5px;
+  /* Fill the height the lower-grid row actually gives this card rather than a fixed cap.
+     The row is sized by the TALLEST sibling card, which differs per store — so the old
+     max-height:220px left ~60px dead at the bottom AND sliced row 6 in half at every store,
+     in a different place each time. height:0 stops the feed's own rows from inflating the
+     grid row; min-height is the floor for when every sibling card is short. Whole-row
+     clamping is fitTickerFeed_()'s job — CSS cannot know where a row boundary falls. */
+  flex: 1 1 auto;
+  height: 0;
   min-height: 180px;
-  max-height: 220px;
   overflow: hidden;
   position: relative;
 }
@@ -2550,7 +2559,7 @@ body.kiosk-bg {
   border: 1px solid var(--border);
   border-left: 3px solid var(--green);
   border-radius: 6px;
-  padding: 8px 10px;
+  padding: 7px 10px;
   display: grid;
   /* time | name (grows) | items (fixed for "99 items") | amount (fixed) */
   grid-template-columns: 40px 1fr 62px 52px;
@@ -2768,7 +2777,6 @@ body.kiosk-bg {
   .badges-card          { grid-column: 1; grid-row: 1; }
   .heatmap-card         { grid-column: 1; grid-row: 2; }
   .ticker-card          { grid-column: 2; grid-row: 1 / 3; }
-  .ticker-feed          { max-height: 680px; }
 
   /* Ticker: initials on iPad, first name on desktop.
      Collapse name col to initials width so items/amount sit tight together. */
@@ -3704,7 +3712,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-topnav.js"></script>
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-changelog.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.596';
+window.GC = window.GC || {}; GC.VERSION = 'v1.597';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -8558,6 +8566,9 @@ var kiosk = (function() {
   var _rareDropCount = 0;    // enforces THRESHOLDS.rareDropMaxPerShift
   var _hmDrawn      = false; // by-hour chart has been drawn (and animated) once
   var _hmHoldTimer  = null;  // cap on how long the placeholder waits for fresh hours
+  var _tickerRO     = null;  // ResizeObserver on the ticker feed -> fitTickerFeed_, dropped on leave
+  var _tickerResize = null;  // window-resize fallback for the same, when RO is unavailable
+  var _fitting      = false; // re-entrancy guard for fitTickerFeed_
   var _hmBoot       = null;  // boot payload's hours — fallback if the freshen never lands
   var _lastTxnTs    = '';    // cursor for incremental ticker polling
   var _seenTxnKeys  = {};    // dedup set: "ts|who|price" → true, prevents re-injection on repeat polls
@@ -9509,6 +9520,50 @@ var kiosk = (function() {
       + '</div>';
   }
 
+  /**
+   * Hide any ticker row that would only partially fit, so the feed never shows a sliced row.
+   *
+   * The feed fills the lower-grid row, whose height comes from the tallest sibling card and so
+   * differs per store; nothing makes that height a whole multiple of a row. `overflow:hidden`
+   * alone therefore cuts the bottom row through the middle — the most-reported kiosk eyesore,
+   * and the reason it "looks different on all six stores". Rows are uniform in practice but
+   * measured individually anyway: a wrapped name or a longer amount changes a row's height, and
+   * assuming a fixed pitch is how this breaks again later.
+   *
+   * Rows are only ever hidden from a contiguous tail, so measurement happens before any of them
+   * is hidden and no second reflow is needed.
+   */
+  function fitTickerFeed_() {
+    var feed = document.getElementById('kioskTickerFeed');
+    if (!feed) return;
+    // Hiding rows cannot change the feed's own box — its height comes from `flex:1` against the
+    // card, not from its content (that is what `height:0` buys). So the ResizeObserver below
+    // cannot loop through us. The guard is belt-and-braces: an accidental loop here would spin a
+    // kiosk's CPU forever with nobody sitting at it to notice.
+    if (_fitting) return;
+    _fitting = true;
+    try { fitTickerFeedInner_(feed); } finally { _fitting = false; }
+  }
+
+  function fitTickerFeedInner_(feed) {
+    var items = feed.children;
+    var i;
+    // Unhide first — a resize (or a slideshow rotation into a taller card) can win rows back.
+    for (i = 0; i < items.length; i++) items[i].style.display = '';
+
+    var limit = feed.clientHeight;
+    if (!limit) return;                       // not laid out yet; the next call will catch it
+    var top = feed.getBoundingClientRect().top;
+
+    for (i = 0; i < items.length; i++) {
+      // 0.5px of slack: sub-pixel layout should not cost a whole row.
+      if (items[i].getBoundingClientRect().bottom - top > limit + 0.5) {
+        for (var j = i; j < items.length; j++) items[j].style.display = 'none';
+        return;
+      }
+    }
+  }
+
   // ── Closing push helpers ───────────────────────────────
 
   /** Returns minutes left until store close (10pm PT), using client-side PT time. */
@@ -9754,6 +9809,14 @@ var kiosk = (function() {
     paintTopSaleOverlay_(false);  // today's standing record rides the holder's card
     holdHeatmap(data.today.hourly, data.today.peakHour, data.today.peakRevenue);
     updateClosingBanner(data.today.today);
+    // Clamp now for the common case, then again once layout has settled. The first call runs in
+    // the same tick as the innerHTML swap, where the lower-grid row has not yet been sized by its
+    // tallest card — measured 212px here against a settled 262px, i.e. two rows' difference. The
+    // ResizeObserver below would catch that on its own, but only where it is available and only
+    // while the tab is rendering, and the first paint is the one staff actually look at.
+    fitTickerFeed_();
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fitTickerFeed_);
+    var feedEl = document.getElementById('kioskTickerFeed');
     initConfetti();
     startPolling(slug);
 
@@ -9769,8 +9832,22 @@ var kiosk = (function() {
       clearTimeout(_rareDropTimer); _rareDropTimer = null;
       _confettiRunning = false;
       if (_confettiResize) { window.removeEventListener('resize', _confettiResize); _confettiResize = null; }
+      if (_tickerResize)   { window.removeEventListener('resize', _tickerResize);   _tickerResize   = null; }
+      if (_tickerRO)       { _tickerRO.disconnect();                                 _tickerRO       = null; }
       document.body.classList.remove('kiosk-bg');
     });
+
+    // Re-clamp whenever the feed's box changes under us. A window `resize` is only one cause —
+    // the lower-grid row is sized by the TALLEST sibling card, so the leaderboard re-rendering or
+    // the by-hour targets landing silently retunes the ticker's height with no resize event at
+    // all. Observe the element itself and every cause is covered by one hook.
+    if (feedEl && typeof ResizeObserver === 'function') {
+      _tickerRO = new ResizeObserver(function() { fitTickerFeed_(); });
+      _tickerRO.observe(feedEl);
+    } else {
+      _tickerResize = function() { fitTickerFeed_(); };
+      window.addEventListener('resize', _tickerResize);
+    }
 
     // User chip → sign out
     var kioskChip = document.getElementById('kioskUserChip');
@@ -9961,6 +10038,9 @@ var kiosk = (function() {
 
     // Keep feed trimmed to 10 rows
     while (feed.children.length > 10) feed.removeChild(feed.lastChild);
+
+    // A row was just prepended, so what fits has shifted — re-clamp to whole rows.
+    fitTickerFeed_();
   }
 
   // ── Data normalizer ────────────────────────────────────────────
