@@ -1421,30 +1421,49 @@ body.kiosk-bg {
 }
 .btn-history:hover { border-color: var(--green); color: var(--green); }
 .btn-history.active { border-color: var(--amber, #f59e0b); color: var(--amber, #f59e0b); }
-.hist-date-input {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 5px 9px;
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-  display: none;
-}
-.hist-date-input.visible { display: block; }
-.hist-bar-label { font-size: 10px; letter-spacing: 1.1px; text-transform: uppercase;
-  color: var(--text-mute); font-weight: 700; }
-/* ── Historical banner ──────────────────────────────────── */
-.hist-banner {
-  display: flex; align-items: center; gap: 12px;
-  padding: 9px 24px;
+/* ── History control row ──────────────────────
+   One row that says what you are looking at AND changes it. This was two stacked rows until
+   2026-08-25 — a "SHOWING <picker>" subnav above an amber "Viewing <date> — End of Day Snapshot"
+   banner — which said the same thing twice and cost ~94px above the content.
+
+   A MODIFIER on the shared .gx-subnav, never an override: .gx-subnav keeps its shared appearance
+   in the other five apps, and the amber "these are not live numbers" tint belongs to this view,
+   which no other app has. */
+.gx-subnav--hist {
   background: rgba(245,158,11,0.07);
   border-bottom: 1px solid rgba(245,158,11,0.2);
-  font-size: 13px;
-  color: var(--text-dim);
+  gap: 8px;
 }
-.hist-banner strong { color: var(--text); }
+.hist-cal-icon   { flex-shrink: 0; color: var(--text-mute); }
+.hist-view-label { font-size: 13px; color: var(--text-dim); }
+.hist-eod        { font-size: 12px; color: var(--text-mute); }
+/* The date pill: styled text with the real <input type="date"> lying invisible on top of it. */
+.hist-date-picker {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+.hist-date-picker:hover,
+.hist-date-picker:focus-within { border-color: var(--amber, #f59e0b); }
+.hist-date-text  { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.hist-date-caret { font-size: 9px; color: var(--text-mute); }
+/* Transparent and stretched over the pill, so a click anywhere on the date opens the browser's own
+   calendar. Deliberately NOT showPicker(): that is Chromium-only, and the fallback path it needs
+   would only ever run on someone else's machine — i.e. never here, where it could be noticed. */
+.hist-date-input {
+  position: absolute;
+  /* -1px, not 0: an absolutely-positioned child is placed against the parent's PADDING box, so
+     inset:0 leaves the pill's 1px border as a dead ring where a click does nothing. Matches
+     .hist-date-picker's border-width. */
+  inset: -1px;
+  opacity: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
 .btn-live {
   background: none;
   border: 1px solid var(--border);
@@ -3712,7 +3731,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-topnav.js"></script>
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-changelog.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.597';
+window.GC = window.GC || {}; GC.VERSION = 'v1.598';
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -5565,6 +5584,9 @@ GC.views.renderDirectorHistorical = function(dateStr) {
           + (data.error || 'The nightly trigger runs at ~11pm PT.'),
           'history', dateStr
         );
+        // The error screen keeps the history row on purpose, so another day is one click away.
+        // It only actually IS one click away if the row's controls get wired.
+        director.wireHistoryControls();
         return;
       }
       app.innerHTML = director.renderHistorical(data, dateStr);
@@ -5572,6 +5594,7 @@ GC.views.renderDirectorHistorical = function(dateStr) {
     })
     .catch(function(err) {
       app.innerHTML = director.renderError('Could not load snapshot for ' + dateStr + ': ' + err.message, 'history', dateStr);
+      director.wireHistoryControls();
     });
 };
 
@@ -5845,11 +5868,27 @@ var director = (function() {
   // History controls live in a .gx-subnav row UNDER the nav, not inside it. Two reasons: the picker
   // belongs to the History VIEW rather than to the chrome, and putting it in the nav over-constrained
   // that flex line -- the tabs were the only shrinkable item, so "Standings" was silently clipped.
+  //
+  // Consolidated 2026-08-25: this row used to be just "SHOWING <picker>", with an amber
+  // "Viewing <long date> — End of Day Snapshot" banner repeating it directly underneath. Now the
+  // long date IS the picker — the native input lies invisible over the styled text — so there is
+  // one row instead of two and the date is stated once.
+  //
+  // dateStr is null on the loading shell and on errors where the day never resolved. The row still
+  // renders: the content below must not jump when it appears, and a failed load needs a way to
+  // reach another day.
   function renderHistoryBar(dateStr) {
-    return '<div class="gx-subnav">'
-      + '<span class="hist-bar-label">Showing</span>'
-      + '<input type="date" id="histDateInput" class="hist-date-input visible" max="' + histMaxDate() + '"'
-      +   (dateStr ? ' value="' + GC.esc(dateStr) + '"' : '') + '>'
+    return '<div class="gx-subnav gx-subnav--hist">'
+      + '<svg class="hist-cal-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'
+      + '<span class="hist-view-label">Viewing</span>'
+      + '<span class="hist-date-picker">'
+      +   '<span class="hist-date-text">' + (dateStr ? e(fmtHistDate(dateStr)) : 'Pick a day') + '</span>'
+      +   '<span class="hist-date-caret">▼</span>'
+      +   '<input type="date" id="histDateInput" class="hist-date-input" aria-label="Choose which day to view"'
+      +     ' max="' + histMaxDate() + '"' + (dateStr ? ' value="' + GC.esc(dateStr) + '"' : '') + '>'
+      + '</span>'
+      + (dateStr ? '<span class="hist-eod">End of Day Snapshot</span>' : '')
+      + '<button class="btn-live" id="btnBackToLive">↩ Back to Live</button>'
       + '</div>';
   }
 
@@ -7154,7 +7193,6 @@ var director = (function() {
     var histStores  = histData.stores || [];
     var todayObj    = buildHistTodayObj(histStores);
     var storeList   = buildHistStores(histStores);
-    var displayDate = fmtHistDate(dateStr);
 
     // The nav is FULL-BLEED: it sits outside .app-page, which is a centred, max-width, padded
     // content wrapper. Rendered inside it the bar was inset by 24px and pushed down 14px, so
@@ -7162,11 +7200,6 @@ var director = (function() {
     return renderHeader(null, 'history')
       + renderHistoryBar(dateStr)
       + '<div class="app-page">'
-      + '<div class="hist-banner" id="histBanner">'
-      +   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'
-      +   'Viewing <strong>' + e(displayDate) + '</strong> — End of Day Snapshot'
-      +   '<button class="btn-live" id="btnBackToLive">↩ Back to Live</button>'
-      + '</div>'
       + renderStatusStrip(storeList)
       + (todayObj.goal
           ? '<div class="dir-today-row">'
@@ -7186,12 +7219,6 @@ var director = (function() {
     if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
     startClock();
 
-    var btnBack = document.getElementById('btnBackToLive');
-    if (btnBack) btnBack.addEventListener('click', function() {
-      GC.views.renderDirector();
-    });
-
-
     // Wire the picker that changes which historical day is shown. The History NAV LINK carries the
     // active state now (renderHeader(..., 'history')), so there is no button to mark.
     wireHistoryControls();
@@ -7205,6 +7232,15 @@ var director = (function() {
 
   // ── History controls (shared between live init + historical init) ──
   function wireHistoryControls() {
+    // Back to Live lives in the history row now, which the loading shell and the error screen
+    // render too — so it is wired HERE rather than in initHistorical, which only ever runs after a
+    // snapshot loads. Before this, a failed load drew a picker and a button that both did nothing.
+    var btnBack = document.getElementById('btnBackToLive');
+    if (btnBack && !btnBack.dataset.wired) {
+      btnBack.dataset.wired = '1';
+      btnBack.addEventListener('click', function() { GC.views.renderDirector(); });
+    }
+
     var dateInput = document.getElementById('histDateInput');
     if (!dateInput) return;
     // There is no History BUTTON any more -- History is a nav link, and the nav handler loads the
