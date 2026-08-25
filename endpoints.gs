@@ -48,9 +48,9 @@ function getDateRange_(period) {
     }
     case 'pp': {
       // Bi-weekly pay period — anchor and offset via shared helper.
-      const { ppStartMs, PP_MS } = currentPPStart_();
+      const { ppStartMs, ppEndMs } = currentPPStart_();
       fromMs = ppStartMs;
-      toMs   = ppStartMs + PP_MS - 1;
+      toMs   = ppEndMs;
       break;
     }
     case '30d': {
@@ -1774,15 +1774,19 @@ function getStandings_(hardRefresh) {
 
   var props     = getProps_();
   var pp        = currentPPStart_(props);
-  var ppStartMs = pp.ppStartMs, PP_MS = pp.PP_MS;
+  var ppStartMs = pp.ppStartMs, PP_MS = pp.PP_MS;   // PP_MS: duration only, see linearFrac below
   var DAY_MS    = 86400000;
   var nowMs     = Date.now();
 
-  var ppStartStr = Utilities.formatDate(new Date(ppStartMs),             STORE_TZ, 'yyyy-MM-dd');
-  var ppEndStr   = Utilities.formatDate(new Date(ppStartMs + PP_MS - 1), STORE_TZ, 'yyyy-MM-dd');
+  var ppStartStr = pp.ppStartStr;
+  var ppEndStr   = pp.ppEndStr;
   var todayStr   = Utilities.formatDate(new Date(nowMs),                 STORE_TZ, 'yyyy-MM-dd');
-  var daysTotal  = Math.round(PP_MS / DAY_MS);
-  var dayNum     = Math.max(1, Math.min(daysTotal, Math.floor((nowMs - ppStartMs) / DAY_MS) + 1));
+  var daysTotal  = PP_DAYS;
+  // Which day of the period today is — counted in PT CALENDAR days. Dividing elapsed ms by DAY_MS
+  // is an hour out for the rest of any period containing a DST change, which flips this to the
+  // wrong day for the hour either side of midnight.
+  var dayNum     = Math.max(1, Math.min(daysTotal,
+                     Math.round((ptDateToUtcMs_(todayStr) - ptDateToUtcMs_(ppStartStr)) / DAY_MS) + 1));
 
   // Per-store PP sales. SETTLED days (ppStart..yesterday) come from GX Core's shared sales cache
   // (closing-report net = Dutchie EOD to the penny). TODAY is not in the cache until it settles overnight,
@@ -1957,20 +1961,19 @@ function incentiveAccessOk_(auth) {
 function getIncentiveData_(ppStartParam, forceRefresh) {
   var props = getProps_();
   var cur   = currentPPStart_(props);
-  var PP_MS = cur.PP_MS;
 
   var selMs = ppStartParam ? ptDateToUtcMs_(ppStartParam) : cur.ppStartMs;
   var ppStartStr = Utilities.formatDate(new Date(selMs), STORE_TZ, 'yyyy-MM-dd');
-  var ppEndStr   = Utilities.formatDate(new Date(selMs + PP_MS - 1), STORE_TZ, 'yyyy-MM-dd');
+  var ppEndStr   = Utilities.formatDate(new Date(ppEndMs_(selMs)), STORE_TZ, 'yyyy-MM-dd');
   var isCurrent  = selMs === cur.ppStartMs;
 
   // Selectable periods: current + last 8 completed.
   var periods = [];
   for (var pi = 0; pi <= 8; pi++) {
-    var ms = cur.ppStartMs - pi * PP_MS;
+    var ms = ppShift_(cur.ppStartMs, -pi);
     periods.push({
       start:   Utilities.formatDate(new Date(ms), STORE_TZ, 'yyyy-MM-dd'),
-      end:     Utilities.formatDate(new Date(ms + PP_MS - 1), STORE_TZ, 'yyyy-MM-dd'),
+      end:     Utilities.formatDate(new Date(ppEndMs_(ms)), STORE_TZ, 'yyyy-MM-dd'),
       current: pi === 0,
     });
   }
@@ -1986,7 +1989,7 @@ function getIncentiveData_(ppStartParam, forceRefresh) {
     try { var c = props.getProperty(perfKey); if (c) { perf = JSON.parse(c); fromCache = true; } } catch(e) {}
   }
   if (!perf) {
-    perf = computeIncentivePerf_(props, selMs, PP_MS);
+    perf = computeIncentivePerf_(props, selMs);
     if (!isCurrent) { try { props.setProperty(perfKey, JSON.stringify(perf)); } catch(e) {} }
   }
 
@@ -2028,8 +2031,10 @@ function getIncentiveData_(ppStartParam, forceRefresh) {
  * those are overlaid fresh so a cached completed period still reflects the current
  * goal and edited attendance/SPIFF.
  */
-function computeIncentivePerf_(props, selMs, PP_MS) {
-  var range   = { fromUTC: new Date(selMs).toISOString(), toUTC: new Date(selMs + PP_MS - 1).toISOString() };
+function computeIncentivePerf_(props, selMs) {
+  // End derived from selMs's own next-period start: a period containing a DST change is 14
+  // calendar days but not 14 * 24h, so a nominal length would clip or overrun it by an hour.
+  var range   = { fromUTC: new Date(selMs).toISOString(), toUTC: new Date(ppEndMs_(selMs)).toISOString() };
   var byStore = fetchAllStoresTransactions_(range);
   var roles   = getRoles_();
   var users   = {};

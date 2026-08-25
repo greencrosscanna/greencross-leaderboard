@@ -109,11 +109,14 @@ function getProps_() {
 }
 
 /**
- * Returns the UTC-ms start of the CURRENT pay period, plus PP_MS (the period length).
- * Reads the anchor once per GAS execution and caches the result in _ppStartCache_.
+ * Returns the CURRENT pay period's boundaries. Reads the anchor once per GAS execution and
+ * caches the result in _ppStartCache_.
+ *
+ * Prefer ppStartStr/ppEndStr/ppEndMs over doing arithmetic on ppStartMs — see ppShift_ for why
+ * `ppStartMs ± n * PP_MS` is a trap.
  *
  * @param  {GoogleAppsScript.Properties.Properties=} props  Optional pre-fetched ScriptProperties.
- * @return {{ ppStartMs: number, PP_MS: number }}
+ * @return {{ ppStartMs: number, ppEndMs: number, ppStartStr: string, ppEndStr: string, PP_MS: number }}
  */
 function currentPPStart_(props) {
   if (_ppStartCache_) return _ppStartCache_;
@@ -122,11 +125,28 @@ function currentPPStart_(props) {
   var anchorMs  = ptDateToUtcMs_(anchorStr);
   var PP_MS     = PP_DAYS * 24 * 60 * 60 * 1000;
   var todayMs   = ptDateToUtcMs_(ptNow_().dateStr);
+  // Math.round absorbs the ±1h a DST change puts into this difference, so the OFFSET is safe.
   var daysSince = Math.round((todayMs - anchorMs) / (24 * 60 * 60 * 1000));
   var ppOffset  = daysSince >= 0
     ? Math.floor(daysSince / PP_DAYS)
     : Math.ceil(daysSince / PP_DAYS) - 1;
-  _ppStartCache_ = { ppStartMs: anchorMs + ppOffset * PP_MS, PP_MS: PP_MS };
+  // Applying that offset is what used to be unsafe. This was `anchorMs + ppOffset * PP_MS`, which
+  // lands an hour off PT midnight whenever the anchor and the target period sit on opposite sides
+  // of a DST change — and an hour before midnight formats to the PREVIOUS DAY. With the 2026-05-11
+  // (PDT) anchor that silently mis-dated every period before 2026-03-08, and would have moved the
+  // LIVE period a day early from 2026-11-09. Shift calendar days instead; see ppShift_.
+  var ppStartStr = ptDateShift_(anchorStr, ppOffset * PP_DAYS);
+  var ppStartMs  = ptDateToUtcMs_(ppStartStr);
+  _ppStartCache_ = {
+    ppStartMs:  ppStartMs,
+    // Derived from the NEXT period's start, so a DST-crossing period is still exactly 14 days.
+    ppEndMs:    ptDateToUtcMs_(ptDateShift_(ppStartStr, PP_DAYS)) - 1,
+    ppStartStr: ppStartStr,
+    ppEndStr:   ptDateShift_(ppStartStr, PP_DAYS - 1),
+    // Nominal length. Fine as a DURATION (elapsed fractions, flat daily splits); never use it to
+    // derive a boundary date — that is ppShift_/ppEndMs_'s job.
+    PP_MS:      PP_MS,
+  };
   return _ppStartCache_;
 }
 
@@ -164,6 +184,38 @@ function ptDateToUtcMs_(ptDateStr) {
   const offMs = (12 - ptH) * 3600000;   // PDT → 7h, PST → 8h
   // PT midnight = Date.UTC(y,mo-1,d,0,0,0) + offset
   return Date.UTC(y, mo - 1, d) + offMs;
+}
+
+/**
+ * Shift a PT calendar date by whole days. 'YYYY-MM-DD' in, 'YYYY-MM-DD' out.
+ *
+ * Date.UTC arithmetic on the y/m/d parts never touches a wall clock, so it cannot drift across a
+ * DST change the way `ms + n * 86400000` does. Pay periods are defined in CALENDAR days — "the
+ * period starts on the 17th" — so calendar arithmetic is the honest model for them.
+ */
+function ptDateShift_(ptDateStr, days) {
+  const [y, mo, d] = ptDateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, mo - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/**
+ * UTC-ms of the PT midnight starting the pay period `n` periods away from the one at ppStartMs.
+ * n is negative to walk backwards.
+ *
+ * ALWAYS use this instead of `ppStartMs ± n * PP_MS`. PP_MS is a NOMINAL 14 days; a period that
+ * contains a DST change is 14 calendar days but 335 or 337 hours, so fixed-ms arithmetic lands an
+ * hour off true midnight and formats back to the WRONG DATE — one day early going back from a PDT
+ * anchor into PST. That is not hypothetical: it put five backfilled periods in GX Core period_goals
+ * a day early, and made 2026-03-01..2026-03-15 a fifteen-day period carrying a 14-day goal total.
+ */
+function ppShift_(ppStartMs, n) {
+  const startStr = Utilities.formatDate(new Date(ppStartMs), STORE_TZ, 'yyyy-MM-dd');
+  return ptDateToUtcMs_(ptDateShift_(startStr, n * PP_DAYS));
+}
+
+/** Last millisecond of the pay period starting at ppStartMs (i.e. next period's start, minus 1). */
+function ppEndMs_(ppStartMs) {
+  return ppShift_(ppStartMs, 1) - 1;
 }
 
 /**
@@ -363,7 +415,7 @@ function doGet(e) {
       var _bdone = [], _bskip = [];
       for (var _bk = 1; _bk <= _bn; _bk++) {
         if (Date.now() - _bt0 > 270000) break;   // ~4.5 min budget
-        var _bStart = Utilities.formatDate(new Date(_bcur.ppStartMs - _bk * _bcur.PP_MS), STORE_TZ, 'yyyy-MM-dd');
+        var _bStart = Utilities.formatDate(new Date(ppShift_(_bcur.ppStartMs, -_bk)), STORE_TZ, 'yyyy-MM-dd');
         var _bex = getFrozenPeriodGoal_(_bStart);
         if (_bex && _bex.locked) { _bskip.push(_bStart); continue; }
         try { backfillPeriodGoal_(_bStart); _bdone.push(_bStart); } catch (e) {}
@@ -636,7 +688,7 @@ function doGet(e) {
       var _dprops = getProps_();
       var _dcur   = currentPPStart_(_dprops);
       var _drange = { fromUTC: new Date(_dcur.ppStartMs).toISOString(),
-                      toUTC:   new Date(_dcur.ppStartMs + _dcur.PP_MS - 1).toISOString() };
+                      toUTC:   new Date(_dcur.ppEndMs).toISOString() };
       var _dbyStore = fetchAllStoresTransactions_(_drange);
       var _dnames = Object.create(null);   // discountName -> { count, amount, sampleKeys, sample, excluded }
       var _dgrand = { txTotal: 0, txWithDiscount: 0, totalDiscount: 0 };
@@ -710,7 +762,7 @@ function doGet(e) {
       var _daProps = getProps_();
       var _daCur   = currentPPStart_(_daProps);
       var _daRange = { fromUTC: new Date(_daCur.ppStartMs).toISOString(),
-                       toUTC:   new Date(_daCur.ppStartMs + _daCur.PP_MS - 1).toISOString() };
+                       toUTC:   new Date(_daCur.ppEndMs).toISOString() };
       var _daByStore = fetchAllStoresTransactions_(_daRange);
       var _daUsage = Object.create(null);   // discountName -> { count, amount }
       Object.keys(_daByStore).forEach(function(_slug) {
