@@ -970,14 +970,32 @@ function writeGoalLedger_(props, entry, locked) {
 }
 
 /** Read a period's frozen goal shape: local first (fast), then GX Core's shared table (reshaped). Null if none.
- *  NOTE: getPeriodGoals('', periodStart) returns { ok, rows:[...] } (store ""), NOT a single entry. */
+ *  NOTE: getPeriodGoals('', periodStart) returns { ok, rows:[...] } (store ""), NOT a single entry.
+ *
+ *  THE ARGUMENT IS A PERIOD START, SO THE MATCH MUST BE ON period_start — NOT "the period containing this
+ *  date". GXCore.getPeriodGoals is deliberately dual-purpose: it matches `ps === d || (ps <= d && d <= pe)`,
+ *  because its other callers ask "what goal applied on this date?". This function asks a different question —
+ *  "is THIS period already frozen?" — and the range half of that match answers it wrong whenever a stored row
+ *  is mis-keyed: a stale row is returned for a start it does not actually begin at, and rowsToLedgerEntry_
+ *  then stamps it with the REQUESTED start, so the caller gets a mislabeled entry that looks legitimate.
+ *
+ *  That is not hypothetical. It silently defeated the DST remediation on 2026-08-25: goalbackfillbulk asked
+ *  for 2026-03-02, the stale 15-day 2026-03-01..2026-03-15 row matched on range, the guard saw locked:true
+ *  and SKIPPED — so the run reported all five mis-dated periods as `alreadyLocked` and wrote nothing. A false
+ *  success is worse than a failure here: it reads as "already fixed" and closes the ticket.
+ *
+ *  Every call site passes a period START (periodStartForDate_ converts first), so filtering to an exact
+ *  period_start is what all of them already intend. */
 function getFrozenPeriodGoal_(periodStart) {
   var props = getProps_();
   try { var raw = props.getProperty(GC_GOAL_LEDGER_PREFIX + periodStart); if (raw) return JSON.parse(raw); } catch (e) {}
   try {
     if (typeof GXCore.getPeriodGoals === 'function') {
       var r = GXCore.getPeriodGoals('', periodStart);
-      if (r && r.ok && r.rows && r.rows.length) return rowsToLedgerEntry_(r.rows, periodStart);
+      if (r && r.ok && r.rows && r.rows.length) {
+        var exact = r.rows.filter(function (row) { return String(row.period_start).slice(0, 10) === periodStart; });
+        if (exact.length) return rowsToLedgerEntry_(exact, periodStart);
+      }
     }
   } catch (e) {}
   return null;
