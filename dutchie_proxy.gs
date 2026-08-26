@@ -76,25 +76,13 @@ const EXCLUDED_DISCOUNT_KEYWORDS = [
 // Canonical store list — slugs must match src/fixtures/ filenames
 // and the frontend GC.STORES registry in utils.js.
 // dutchieName = the key used in DUTCHIE_STORE_KEYS_JSON ScriptProperty.
-//
-// TWO OF THESE ARE NOT GUESSABLE, AND THEY HAVE BEEN "FIXED" THE WRONG WAY BEFORE.
-// The store branded Century sits at 341 SW Century Dr, BEND OR, so its Dutchie key is 'Bend'.
-// The store branded Baseline sits on Baseline Rd, HILLSBORO OR, so its key is 'Hillsboro'.
-// Brand name and city name are swapped relative to each other, which reads like a mistake and
-// is not one:
-//   Bend       → Century  (341 SW Century Dr, Bend OR)
-//   Hillsboro  → Baseline (Hillsboro OR)
-// Corroborated by user_admin.gs STORE_KEYS_MAP (the map that sits next to the actual API keys)
-// and by GX Core's store registry. 56d4622 inverted these two rows and deleted this note; the
-// inversion then survived three months because d89f8f3 added locationName with the CORRECT
-// mapping and repointed the Sales goals export at it, hiding the only symptom anyone could see.
-// dutchieName selects the API KEY (getDutchieStoreKey_), so inverting it does not mislabel a
-// column — it points Baseline and Century at each other's transactions, staff and discounts.
-// tests/store_key_mapping_test.js pins this against user_admin.gs. Do not "fix" it past that test.
+// Confirmed from GX2 Dashboard STORE_KEYS (May 2026):
+//   Bend       → Baseline
+//   Hillsboro  → Century
 const STORES = [
-  { slug: 'baseline',   name: 'Baseline',   dutchieName: 'Hillsboro',   locationName: 'Hillsboro'   },
+  { slug: 'baseline',   name: 'Baseline',   dutchieName: 'Bend',        locationName: 'Hillsboro'   },
   { slug: 'center',     name: 'Center',     dutchieName: 'Center',      locationName: 'Center'      },
-  { slug: 'century',    name: 'Century',    dutchieName: 'Bend',        locationName: 'Bend'        },
+  { slug: 'century',    name: 'Century',    dutchieName: 'Hillsboro',   locationName: 'Bend'        },
   { slug: 'commercial', name: 'Commercial', dutchieName: 'Commercial',  locationName: 'Commercial'  },
   { slug: 'portland',   name: 'Portland',   dutchieName: 'Portland Rd', locationName: 'Portland Rd' },
   { slug: 'river',      name: 'River',      dutchieName: 'River',       locationName: 'River'       },
