@@ -11,11 +11,12 @@
        The old per-app touch icons were 1254x1254 / ~2.8MB -- roughly 7x more resolution than iOS
        ever uses, downloaded on every page load. -->
   <link rel="stylesheet" href="https://greencrosscanna.github.io/greencross-gx-theme/gx-theme.css">
-  <!-- Avatar picker styles. Deliberately a SEPARATE opt-in file rather than part of gx-theme.css:
-       gx-theme.css reaches five apps on their next load with no deploy gate, and this is ~200 lines
-       of component styling only the apps that mount a picker want. Pairs with gx-avatar-picker.js
-       below; every class in it is namespaced .gxava-. -->
-  <link rel="stylesheet" href="https://greencrosscanna.github.io/greencross-gx-theme/gx-avatar-picker.css">
+  <!-- NO avatar-picker tags here on purpose. Its js+css are fetched ON DEMAND by
+       GXAvatar.loadPicker() when the avatar route actually opens (see GC.views.renderAvatar).
+       They were <link>ed and <script>ed here until 2026-08-26, which cost every page load two
+       blocking cross-origin requests (~29KB, ~185ms warm, over a second on a cold CDN edge) for a
+       builder the kiosk never opens. The loader lives in gx-avatar.js, which this page already
+       loads for the small avatar chip, so on-demand loading added no request of its own. -->
   <link rel="icon" type="image/png" href="https://greencrosscanna.github.io/greencross-gx-theme/gc-icon.png">
   <link rel="apple-touch-icon" sizes="180x180" href="https://greencrosscanna.github.io/greencross-gx-theme/gc-touch-icon.png">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
@@ -3327,9 +3328,9 @@ body.kiosk-bg {
    ------------------------------------------------------------
    WHAT USED TO BE HERE: the ~40-rule avatar PICKER stylesheet (.avatar-page, .avatar-grid,
    .ava-tab, .ava-chip, .ava-swatch, .ava-lb-*, …). It moved to gx-theme as
-   gx-avatar-picker.css, which this page now <link>s in <head>. Keeping a local copy would
-   have re-created exactly the drift that motivated the move, so the rules are gone, not
-   duplicated.
+   gx-avatar-picker.css, which GXAvatar.loadPicker() injects on demand when the avatar route
+   opens — NOT a <link> in <head>; see the note there. Keeping a local copy would have
+   re-created exactly the drift that motivated the move, so the rules are gone, not duplicated.
 
    EVERYTHING BELOW IS NOT THE PICKER'S AND STAYS:
      .lb-ava*          this app's staff-grid avatar circle, laid out by .emp-card / .emp-head /
@@ -3445,7 +3446,6 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
 <!-- GXAvatarPicker: the suite's one avatar BUILDER, lifted out of this app's GC.views.renderAvatar
      and now mounted back by the thin adapter further down. Depends on GXAvatar above (URL + hat SVG),
      so it must load after it. -->
-<script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-avatar-picker.js"></script>
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-topnav.js"></script>
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-changelog.js"></script>
 <script>
@@ -11289,8 +11289,9 @@ var settings = (function() {
 //  Route: #/avatar?employee=<nameKey>
 //
 //  THE PICKER IS NOT IN THIS FILE ANY MORE. The 494 lines that used to live here — the options
-//  table, the markup, the chip/swatch wiring, the tabs — are gx-theme's gx-avatar-picker.js
-//  (loaded in <head>), which is the suite's one avatar builder. This app is its first adopter.
+//  table, the markup, the chip/swatch wiring, the tabs — are gx-theme's gx-avatar-picker.js,
+//  fetched ON DEMAND below via GXAvatar.loadPicker() rather than loaded on every page. It is the
+//  suite's one avatar builder, and this app is its first adopter.
 //  What is left below is the part that was never the component's business:
 //
 //    · resolving a nameKey to an employee + saved config, INCLUDING two workarounds that exist
@@ -11393,8 +11394,14 @@ GC.views.renderAvatar = (function() {
     host.innerHTML = shell('…',
       '<div style="padding:40px 24px;color:var(--text-dim,#a8aba6)">Loading…</div>');
 
-    GC.api.fetchAvatarData()
-      .then(function(data) {
+    /* THE BUILDER IS FETCHED HERE, NOT AT PAGE LOAD. It used to be two blocking cross-origin tags in
+       <head> and <body> — ~29KB and roughly 185ms warm, over a second on a cold CDN edge — paid by
+       EVERY page load including the kiosk, which runs all day and never opens a picker.
+       Loading it here is also FASTER for the one route that does want it: the download runs in
+       parallel with fetchAvatarData rather than serialising ahead of it. */
+    Promise.all([GC.api.fetchAvatarData(), GXAvatar.loadPicker()])
+      .then(function(results) {
+        var data = results[0];
         // Hard dependency, and there is no local fallback to degrade to any more. Say so plainly
         // rather than letting "GXAvatarPicker is not defined" reach a budtender's screen.
         if (!window.GXAvatarPicker) {
