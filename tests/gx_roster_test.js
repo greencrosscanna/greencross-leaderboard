@@ -36,13 +36,17 @@ const CORE_ROWS = [
 // registry is the part a hand-rolled map gets wrong.
 // The REAL registry, as GX Core publishes it. Four of the six store_ids differ from this app's
 // slug — that translation is the whole reason the gate goes through the registry and not a hand map.
+// Verbatim from a live ?action=gxstores response (2026-08-26). The bend/hillsboro rows previously
+// carried each other's dutchie_name here — the 56d4622 inversion copied into the test data, where
+// it read as a third confirmation of the wrong mapping. Re-check against the live endpoint before
+// editing these, never against another file in this repo.
 const CORE_STORES = [
-  { store_id: 'bend',        display_name: 'Century',    dutchie_name: 'Hillsboro',   color: '#fff', sort_order: '1' },
+  { store_id: 'bend',        display_name: 'Century',    dutchie_name: 'Bend',        color: '#fff', sort_order: '1' },
   { store_id: 'center',      display_name: 'Center',     dutchie_name: 'Center',      color: '#fff', sort_order: '2' },
   { store_id: 'commercial',  display_name: 'Commercial', dutchie_name: 'Commercial',  color: '#fff', sort_order: '3' },
-  { store_id: 'hillsboro',   display_name: 'Baseline',   dutchie_name: 'Bend',        color: '#fff', sort_order: '4' },
+  { store_id: 'hillsboro',   display_name: 'Baseline',   dutchie_name: 'Hillsboro',   color: '#fff', sort_order: '4' },
   { store_id: 'portland-rd', display_name: 'Portland',   dutchie_name: 'Portland Rd', color: '#fff', sort_order: '5' },
-  { store_id: 'river-rd',    display_name: 'River',      dutchie_name: 'River',       color: '#fff', sort_order: '6' },
+  { store_id: 'river-rd',    display_name: 'River',      dutchie_name: 'River Rd',    color: '#fff', sort_order: '6' },
 ];
 
 // This app's own 30-day sales roster — everyone below rang something at Portland recently.
