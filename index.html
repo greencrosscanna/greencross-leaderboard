@@ -11722,6 +11722,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <!-- Bug report button + modal: built by gx-bugreport.js (gx-theme). No markup here. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-bugreport.js"></script>
+<script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-updatecheck.js"></script>
 <script>
 /* ── Bug reporter ─────────────────────────────────────────
    The form is shared now; what stays is the part that is genuinely Leaderboard's — its session, its
@@ -11755,6 +11756,16 @@ GC.bug = (function () {
       uploadShot: GXBugReport.gxCoreUploader(GXCORE, function () {
         try { return (GC.auth.load() || {}).token || ''; } catch (e) { return ''; }
       }),
+    });
+    /* Stale-build check. autoReload because this is a KIOSK: it runs unattended for days with
+       nobody there to click a toast, so a stale build would persist until someone noticed. Every
+       other app in the suite prompts instead — a reload mid-task costs a person their place. */
+    GXUpdateCheck.init({
+      app:      'performance',
+      gxcore:   GXCORE,
+      version:  function () { return (window.GC&&GC.VERSION)||""; },
+      isAuthed: function () { try{return !!(GC.auth.load()||{}).token;}catch(e){return false;} },
+      autoReload: true,
     });
   }
   return {
