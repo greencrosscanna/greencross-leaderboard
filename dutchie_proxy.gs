@@ -329,6 +329,43 @@ function doGet(e) {
       }
     }
 
+    // ── Incentive PERFORMANCE slice, for GX Crew — DEPLOY-SECRET gated, READ ONLY ──────────
+    // The Incentive dashboard is moving to GX Crew (2026-08-26). The split that survives the move:
+    // Leaderboard stays the PERFORMANCE engine — it owns the Dutchie ingest, aggregateTransactions_,
+    // the discretionary-discount classification and the frozen closed-period snapshots — and Crew
+    // becomes the PAYOUT app, owning the bonus math, the attendance/SPIFF inputs and the Capstone
+    // export. That is Sky's own contract sentence: SPIFF sets the goals, LB tracks the performance,
+    // Crew reads the performance.
+    //
+    // So this hands Crew exactly what `incentive` hands the browser, and NOTHING ELSE:
+    //   • no save twin. Crew owns the payout state; a second writer for one pay period is how the
+    //     numbers diverge, and there would be no way to tell which copy paid people.
+    //   • deploy-secret, not session. incentiveAccessOk_ gates on a logged-in username (sky/mike),
+    //     which a server-to-server caller does not have and should not be issued one to fake.
+    //     Same convention as publishgoals above.
+    //   • the FROZEN path is preserved untouched: a completed period is still computed once and
+    //     cached forever, so Crew reading history cannot cause a recompute of numbers that paid
+    //     people. Crew must therefore never pass refresh for a closed period, and cannot — the
+    //     parameter is deliberately not forwarded.
+    //
+    // TEMPORARY, AND KNOWN TO BE. This is app-to-app, which the shared brain forbids: everything
+    // cross-app is supposed to go through GX Core. It is here because promoting per-employee
+    // performance into GX Core needs a core-admin change plus an immutable library cut plus a
+    // re-pin in every spoke, and Mike needs Incentive in Crew this week. A brain note is filed
+    // asking for that promotion; SPIFF wants the same per-employee data, which is what justifies
+    // doing it properly. DELETE THIS ROUTE when GX Core exposes the slice.
+    // Placed ABOVE requireAuth_ deliberately: this is a machine caller with a secret and no
+    // session, and every route below that line is rejected as 'not signed in' before it is
+    // reached. publishgoals sits up here for the same reason.
+    if (params.action === 'incentiveperf') {
+      var _ipSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+      if (!_ipSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
+      if ((params.secret || '') !== _ipSecret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
+      var _ipData = getIncentiveData_(params.ppStart, false);   // never forces a refresh — see above
+      _ipData.source = 'leaderboard';                            // so a Crew payload always says where its numbers came from
+      return jsonOut(_ipData, params.callback);
+    }
+
     // ── Read-only goals for Sales Dashboard (API key auth) ─
     if (params.action === 'goals') {
       var storedKey = PropertiesService.getScriptProperties().getProperty('GC_API_READONLY_KEY');
