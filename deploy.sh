@@ -100,14 +100,46 @@ SECRET_FILE="$(dirname "$0")/.gx_deploy_secret"
 if [ -f "$SECRET_FILE" ]; then
   DEPLOY_SECRET=$(tr -d '\r\n' < "$SECRET_FILE")
   GXCORE_URL="https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec"
-  REC=$(curl -sL -G "$GXCORE_URL" \
-    --data-urlencode "action=deploy_version" \
-    --data-urlencode "secret=${DEPLOY_SECRET}" \
-    --data-urlencode "app=performance" \
-    --data-urlencode "version=v${MAJOR}.${BUILD}" \
-    --data-urlencode "sha=${PUSHED_SHA}" \
-    --data-urlencode "notes=${GX_NOTES:-}" 2>/dev/null | head -c 300)
-  echo "▶ GX Core version record: ${REC}"
+  # ── Retry the two-hop miss, and never claim success on it ────────────────────────────────────
+  # GX Core's /exec is a TWO-HOP redirect whose second hop intermittently serves Google's "unable to
+  # open the file" HTML page instead of JSON. The old form here was a single `curl -sL … | head -c 300`
+  # whose output was printed and then followed, unconditionally, by "✅ Done". So a miss printed 300
+  # characters of truncated Drive HTML next to a green tick and the release went UNRECORDED — worse
+  # than the shared script's old behaviour, which at least dumped something obviously wrong.
+  #
+  # Observed for real on 2026-08-26: greencross-crew hit exactly this and filed nothing while the
+  # terminal looked healthy. The shared gx-theme deploy.sh was fixed that day; THIS repo carries its
+  # own deploy.sh (for the Pages watcher below), so it did not inherit the fix and needs its own.
+  #
+  # Retrying is safe for a stated reason: gxRecordVersion keys its write on ['app','version'], so a
+  # replay upserts the same row rather than appending a duplicate.
+  REC=""
+  for _n in 1 2 3 4; do
+    [ "$_n" -gt 1 ] && sleep "$((_n - 1))"
+    REC=$(curl -sL --http1.1 --max-time 45 -G "$GXCORE_URL" \
+      --data-urlencode "action=deploy_version" \
+      --data-urlencode "secret=${DEPLOY_SECRET}" \
+      --data-urlencode "app=performance" \
+      --data-urlencode "version=v${MAJOR}.${BUILD}" \
+      --data-urlencode "sha=${PUSHED_SHA}" \
+      --data-urlencode "notes=${GX_NOTES:-}" 2>/dev/null || true)
+    case "$REC" in
+      '{'*|'['*) break ;;
+      *) [ "$_n" -lt 4 ] && echo "  ↻ GX Core returned no JSON (two-hop miss) — retry $((_n + 1))/4…" >&2 ;;
+    esac
+  done
+  case "$REC" in
+    *'"ok":true'*)
+      echo "▶ GX Core version record: $(printf '%s' "$REC" | head -c 300)" ;;
+    '{'*|'['*)
+      echo "⚠️  GX Core REFUSED the version record for v${MAJOR}.${BUILD}:" >&2
+      echo "    $(printf '%s' "$REC" | head -c 300)" >&2 ;;
+    *)
+      # One line, not the page. The HTML is what hid this failure in the first place.
+      echo "⚠️  FAILED to record v${MAJOR}.${BUILD} — GX Core never returned JSON in 4 tries." >&2
+      echo "    version_history has NO row for this release. Pages IS updated; only the record is missing." >&2
+      echo "    Safe to re-run (the row is keyed on app+version)." >&2 ;;
+  esac
 else
   echo "ℹ️  No .gx_deploy_secret — skipped GX Core version record (create it to enable auto-publish)."
 fi
