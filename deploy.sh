@@ -3,7 +3,15 @@
 # watch_deploy.sh). The shared deploy.sh in gx-theme is only a version RECORDER — it files an
 # app_versions row and deploys nothing. Syncing it here does not update this app, it removes its
 # ability to deploy at all; that happened three times on 2026-08-22 before this marker existed.
-# Adopting the shared pattern is audit finding F1 and is a real change, not a sync.
+# Adopting the shared pattern would be a real change, not a sync — but it is NOT a recorded audit
+# finding, despite this line having cited "audit finding F1" until 2026-08-27. F1 is
+# GX_F1_VERSION_FORMATS.md in the hub, it is about version formats, and it is retracted; there is no
+# F2 or F3 anywhere. The citation was to something that does not exist.
+#
+# What the concern actually deserved was handled without converging anything: the hub's
+# tests/deploy_recorders_failloudly_test.js reads every spoke's deploy.sh and asserts the properties
+# whose absence loses a release silently — it retries, it tests the response body shape, it can report
+# failure. That runs against THIS file too, so keep-local costs nothing in safety.
 # deploy.sh — stamp version, push to GAS, commit & push to GitHub Pages.
 # Usage: ./deploy.sh "optional commit message"
 #
