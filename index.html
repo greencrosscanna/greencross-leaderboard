@@ -4,10 +4,14 @@
   <meta charset="UTF-8">
   <!-- Icons: shared from gx-theme, absolute, so every app is identical and nothing is copied per
        repo. Two DIFFERENT images on purpose:
-         favicon          dark mark, sized for a browser tab strip
-         apple-touch-icon green mark at 180x180, the size iOS actually uses for an iPhone home
-                          screen. iOS strips transparency and composites on the wallpaper, so the
-                          vibrant square reads there where a dark one would disappear.
+         favicon          GREEN mark on TRANSPARENT. A tab strip is light or dark depending on the
+                          browser and the OS theme, so an icon with its own background tile only ever
+                          matches one of them. Alpha lets the mark sit on whatever the strip is.
+         apple-touch-icon the GC-3D-BUTTON pack (Dark) at 180x180 — a different pack from the icon
+                          one, because the button artwork IS a rounded tile, which is what a home
+                          screen icon is. FULL-BLEED and FULLY OPAQUE: iOS discards the alpha channel
+                          and composites what is left on WHITE (not black — that cost two wrong ships
+                          to establish), so any transparent inset becomes a white frame.
        The old per-app touch icons were 1254x1254 / ~2.8MB -- roughly 7x more resolution than iOS
        ever uses, downloaded on every page load. -->
   <link rel="stylesheet" href="https://greencrosscanna.github.io/greencross-gx-theme/gx-theme.css">
@@ -19,6 +23,14 @@
        loads for the small avatar chip, so on-demand loading added no request of its own. -->
   <link rel="icon" type="image/png" href="https://greencrosscanna.github.io/greencross-gx-theme/gc-icon.png">
   <link rel="apple-touch-icon" sizes="180x180" href="https://greencrosscanna.github.io/greencross-gx-theme/gc-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="167x167" href="https://greencrosscanna.github.io/greencross-gx-theme/gc-touch-icon-167.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="https://greencrosscanna.github.io/greencross-gx-theme/gc-touch-icon-152.png">
+  <!-- Home-screen install: without these iOS opens the app in Safari chrome
+       rather than standalone. -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Green Cross">
+  <meta name="theme-color" content="#0a0e0d">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Green Cross — Performance</title>
 
