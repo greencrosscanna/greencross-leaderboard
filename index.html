@@ -11737,6 +11737,12 @@ GC.bug = (function () {
       /* gasCall resolves on the proxy's JSON body. gx-bugreport treats a resolved {ok:false} as a
          failure, so a rejected report can no longer close the modal saying "Bug reported — thanks!" */
       submit: function (payload) { return GC.api.gasCall('bugreport', payload); },
+      // Screenshot upload. A separate call from `submit` because the image cannot ride the report
+      // payload — see gx-bugreport.js. The shared uploader is the transport; this app supplies only
+      // its own session token, so auth still originates here.
+      uploadShot: GXBugReport.gxCoreUploader(GXCORE, function () {
+        try { return (GC.auth.load() || {}).token || ''; } catch (e) { return ''; }
+      }),
     });
   }
   return {
