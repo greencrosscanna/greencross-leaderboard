@@ -3460,8 +3460,31 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      so it must load after it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-topnav.js"></script>
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-changelog.js"></script>
+<!-- Shared maintenance gate: the "out back" screen that covers the app when it is deliberately
+     down. Loaded here, early, because it OVERLAYS at z-index 10000 rather than replacing the body
+     — so it sits above the login gate (being told the app is down shouldn't require signing in
+     first) and leaves the bug reporter reachable underneath. This app's highest z-index is the
+     slideshow bar at 9999, so nothing here contests it. -->
+<script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
 <script>
 window.GC = window.GC || {}; GC.VERSION = 'v1.626';
+
+// ── GX Core web-app URL — ONE definition ──
+// This was previously a `var` inside loadChangelogFromGXCore(), i.e. function-scoped, while the
+// bug reporter and the stale-build check both referenced a bare `GXCORE` ~8000 lines later. That
+// threw "GXCORE is not defined" on EVERY page load of v1.626 in production, which took
+// GXBugReport.init and GXUpdateCheck.init down with it — so the kiosk, which runs unattended for
+// days and is the one app that auto-reloads rather than prompting, had silently stopped picking up
+// new deploys. Nothing surfaced it: the throw is in a DOMContentLoaded handler and the page renders
+// fine without it. Hoisted here so there is one definition, above every consumer.
+window.GXCORE_URL = 'https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec';
+
+// Maintenance gate. Guarded on the global because gx-theme loads by URL from GitHub Pages: a bad
+// minute of that CDN must not take the kiosk with it. Un-gates itself within ~20s of the flags
+// clearing, with nobody clicking — which is the point for a wall-mounted screen.
+if (window.GXMaintenance) {
+  GXMaintenance.init({ app: 'performance', appName: 'Leaderboard', gxcore: window.GXCORE_URL });
+}
 
 // ── Changelog + "What's New" popup ──
 // Release notes live in ONE place now: GX Core (authored in the Command Center's version popup).
@@ -3530,7 +3553,7 @@ GC.checkWhatsNew = function() {
 // Adapts { version, deployed_at, notes } → this app's { v, date, items } changelog shape,
 // then (re)runs checkWhatsNew so the popup shows once the notes land. Fails silently.
 (function loadChangelogFromGXCore() {
-  var GXCORE = 'https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec';
+  var GXCORE = window.GXCORE_URL;
   function fmtDate(raw) {   // deployed_at → 'Mon D, YYYY' in Pacific time
     if (!raw) return '';
     var str = String(raw).trim(), M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -11753,7 +11776,7 @@ GC.bug = (function () {
       // Screenshot upload. A separate call from `submit` because the image cannot ride the report
       // payload — see gx-bugreport.js. The shared uploader is the transport; this app supplies only
       // its own session token, so auth still originates here.
-      uploadShot: GXBugReport.gxCoreUploader(GXCORE, function () {
+      uploadShot: GXBugReport.gxCoreUploader(window.GXCORE_URL, function () {
         try { return (GC.auth.load() || {}).token || ''; } catch (e) { return ''; }
       }),
     });
@@ -11762,7 +11785,7 @@ GC.bug = (function () {
        other app in the suite prompts instead — a reload mid-task costs a person their place. */
     GXUpdateCheck.init({
       app:      'performance',
-      gxcore:   GXCORE,
+      gxcore:   window.GXCORE_URL,
       version:  function () { return (window.GC&&GC.VERSION)||""; },
       isAuthed: function () { try{return !!(GC.auth.load()||{}).token;}catch(e){return false;} },
       autoReload: true,
