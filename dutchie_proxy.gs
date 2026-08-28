@@ -230,6 +230,10 @@ function ptHourNow_() {
 // ── Router ────────────────────────────────────────────────────
 function doGet(e) {
   const params = e.parameter || {};
+  /* Apps Script reuses a warm instance between requests, so any module-level memo outlives the
+     request that filled it. Thresholds now live in GX Core and Sky edits them there; a stale copy
+     here means an edit silently does nothing until the instance recycles. Cleared per request. */
+  _incThreshCache_ = null;
 
   // Serve the frontend when no action
   if (!params.action) {

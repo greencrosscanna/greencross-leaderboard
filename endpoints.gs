@@ -1952,6 +1952,11 @@ function incentiveDefaults_() {
  * against a goal nobody set on it.
  *
  * Cached for the execution: getKv is a sheet read, and the discount path asks for this per store.
+ * The cache is CLEARED AT THE TOP OF doGet, and that is not optional — Apps Script reuses a warm
+ * instance across requests, so a module-level global outlives the request that filled it. Without
+ * the reset, changing a threshold in GX Core appeared to do nothing for minutes at a time: the
+ * write landed, the sheet held the new value, and this app kept serving the old one. Caught by
+ * setting aovTarget to 34 and watching it keep reporting 33.
  *
  * Falls back to the local ScriptProperty and then to the built-in defaults. That order matters —
  * if GX Core is unreachable this app must keep scoring exactly as it did rather than silently
