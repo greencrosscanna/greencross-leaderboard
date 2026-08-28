@@ -1945,12 +1945,31 @@ function incentiveDefaults_() {
   };
 }
 
+/* GX CORE HOLDS THE THRESHOLDS NOW (kv `incentiveThresholds`), because they are not Leaderboard's.
+ * GX Crew owns compensation and edits them there; this app still READS them, both for the incentive
+ * payload and — the part that is easy to miss — for the kiosk's discount colouring, which takes its
+ * target from budtender.discountMaxPct. Two copies of that number means the board grades staff
+ * against a goal nobody set on it.
+ *
+ * Cached for the execution: getKv is a sheet read, and the discount path asks for this per store.
+ *
+ * Falls back to the local ScriptProperty and then to the built-in defaults. That order matters —
+ * if GX Core is unreachable this app must keep scoring exactly as it did rather than silently
+ * reverting everyone to defaults, which would repaint the whole board and change the incentive. */
+var _incThreshCache_ = null;
 function getIncentiveThresholds_() {
+  if (_incThreshCache_) return _incThreshCache_;
+  var ok = function (t) { return t && t.budtender && t.manager && t.admin; };
+  try {
+    var fromCore = JSON.parse(GXCore.getKv('incentiveThresholds') || 'null');
+    if (ok(fromCore)) { _incThreshCache_ = fromCore; return fromCore; }
+  } catch (e) {}
   try {
     var saved = JSON.parse(getProps_().getProperty(GC_INCENTIVE_THRESH_KEY) || 'null');
-    if (saved && saved.budtender && saved.manager && saved.admin) return saved;
+    if (ok(saved)) { _incThreshCache_ = saved; return saved; }
   } catch(e) {}
-  return incentiveDefaults_();
+  _incThreshCache_ = incentiveDefaults_();
+  return _incThreshCache_;
 }
 
 /** Access gate: username allowlist (sky + Mike — both are 'director' role, so role check won't distinguish them). */
