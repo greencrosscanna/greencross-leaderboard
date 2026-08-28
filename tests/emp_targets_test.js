@@ -54,33 +54,82 @@ function test_unknownEmployeeSkipped() {
   _eq_('unknown budtender excluded', Object.keys(r.targets).length, 0);
 }
 
-// ── The asymmetry that makes two targets non-comparable ─────────────
-// This is the behaviour that made Pam's target exceed Jayden's. It is pinned
-// here as CURRENT behaviour, not as desired behaviour — see the note in
-// diagEmpTargets_. If this test starts failing, the fallback was changed on
-// purpose and the assertion should move with it.
-function test_allDaysFallbackInflatesOnASlowDow() {
-  // Today is Thursday. Thursdays are slow; Wednesdays are busy.
-  // Heavy: works every Thursday (3 samples) at 1000 → same-dow basis → 1025.
-  // Light: worked ONE Thursday at 1000 plus busy Wednesdays at 2000 →
-  //        only 1 same-dow sample → falls back to ALL days → average is
-  //        pulled up by the Wednesdays → target lands ABOVE Heavy's.
+// ── storeDowFactor_ ─────────────────────────────────────────────────
+function test_storeDowFactorNeedsEvidence() {
+  _eq_('no data → no scaling', S.storeDowFactor_({}, 4), 1);
+  // One Thursday only — a single date is not a weekday shape.
+  _eq_('one sample → no scaling', S.storeDowFactor_({ '2026-08-06': 5000 }, 4), 1);
+}
+
+function test_storeDowFactorMeasuresTheWeekday() {
+  // Thursdays 1000, Wednesdays 3000. Overall mean of the two weekday averages is
+  // 2000, so Thursday indexes at 0.5 and Wednesday at 1.5 (both at the clamp).
+  const days = {};
+  THU.forEach(d => days[d] = 1000);
+  WED.forEach(d => days[d] = 3000);
+  _eq_('slow weekday scales down', S.storeDowFactor_(days, 4), 0.5);
+  _eq_('busy weekday scales up',   S.storeDowFactor_(days, 3), 1.5);
+}
+
+function test_storeDowFactorClamped() {
+  // Thursday near zero against huge Wednesdays would be ~0 unscaled; the clamp
+  // stops one freak day from erasing a target.
+  const days = {};
+  THU.forEach(d => days[d] = 1);
+  WED.forEach(d => days[d] = 100000);
+  _ok_('never below 0.5', S.storeDowFactor_(days, 4) >= 0.5);
+  _ok_('never above 1.5', S.storeDowFactor_(days, 3) <= 1.5);
+}
+
+// ── The fix: an all-days fallback is aimed at today's weekday ────────
+// The defect this closes is that a fallback target ignored the weekday entirely,
+// so one person got the SAME number on a dead Sunday and a peak Saturday (on the
+// live board, Jayden's Sun and Mon targets were both exactly $1,965). Note the
+// fix deliberately does not promise any ordering between two employees — a
+// stronger seller covering an unusual shift still gets the higher target, which
+// is correct. What it promises is that the number now depends on the weekday.
+function test_allDaysFallbackIsDowScaled() {
   const txns = [];
-  THU.forEach(d => txns.push(tx('Heavy Seller', d, 1000)));
-  txns.push(tx('Light Seller', THU[0], 1000));
+  THU.forEach(d => txns.push(tx('Heavy Seller', d, 1000)));   // Thursdays are the slow day
+  txns.push(tx('Light Seller', THU[0], 1000));                // one Thursday → falls back
   WED.forEach(d => txns.push(tx('Light Seller', d, 2000)));
 
-  const r = S.empTargetsFromTxns_(txns, 4, 0);
-  const heavy = r.detail['heavy_seller'];
+  const r     = S.empTargetsFromTxns_(txns, 4, 0);
   const light = r.detail['light_seller'];
 
-  _eq_('heavy uses same-dow', heavy.basis, 'same-dow');
-  _eq_('light falls back to all-days', light.basis, 'all-days');
-  _eq_('heavy target is its Thursday average', heavy.target, 1025);
-  // Light: (1000 + 2000*4) / 5 = 1800 → ×1.025 → 1845
-  _eq_('light target is a blended average', light.target, 1845);
-  _ok_('the lighter Thursday seller gets the HIGHER Thursday target',
-       light.target > heavy.target);
+  _eq_('scaled, and says so', light.basis, 'all-days-dow-scaled');
+  _ok_('aimed down toward the slow weekday', light.dowFactor < 1);
+  _ok_('scaled below the raw blend', light.target < Math.round(light.rawAvgDaily * 1.025));
+  _eq_('heavy is untouched', r.detail['heavy_seller'].target, 1025);
+}
+
+function test_fallbackTargetVariesByWeekday() {
+  // The regression that matters: the same person, same history, asked for a slow
+  // weekday and a busy one, must not come back with the identical number.
+  const txns = [];
+  THU.forEach(d => txns.push(tx('Heavy Seller', d, 1000)));
+  WED.forEach(d => txns.push(tx('Heavy Seller', d, 3000)));
+  txns.push(tx('Light Seller', THU[0], 1500));                 // 1 Thu, 0 Wed → always falls back
+
+  const thu = S.empTargetsFromTxns_(txns, 4, 0).detail['light_seller'];
+  const wed = S.empTargetsFromTxns_(txns, 3, 0).detail['light_seller'];
+
+  _eq_('same raw history both times', thu.rawAvgDaily, wed.rawAvgDaily);
+  _eq_('falls back on Thursday', thu.basis, 'all-days-dow-scaled');
+  _eq_('falls back on Wednesday', wed.basis, 'all-days-dow-scaled');
+  _ok_('the slow weekday asks for less than the busy one', thu.target < wed.target);
+}
+
+function test_sameDowTargetsAreNeverScaled() {
+  // The fix must not move anybody who has real same-weekday history — that is
+  // every employee on a day they normally work.
+  const txns = [];
+  THU.forEach(d => txns.push(tx('Ada Lovelace', d, 1000)));
+  WED.forEach(d => txns.push(tx('Ada Lovelace', d, 4000)));   // skews the store weekday shape
+  const r = S.empTargetsFromTxns_(txns, 4, 0);
+  _eq_('same-dow basis', r.detail['ada_lovelace'].basis, 'same-dow');
+  _eq_('factor recorded as 1', r.detail['ada_lovelace'].dowFactor, 1);
+  _eq_('target is the plain Thursday average', r.targets['ada_lovelace'], 1025);
 }
 
 H.run('emp_targets', {
@@ -88,5 +137,10 @@ H.run('emp_targets', {
   test_sameDaySummed,
   test_fallbackWhenNoHistory,
   test_unknownEmployeeSkipped,
-  test_allDaysFallbackInflatesOnASlowDow,
+  test_storeDowFactorNeedsEvidence,
+  test_storeDowFactorMeasuresTheWeekday,
+  test_storeDowFactorClamped,
+  test_allDaysFallbackIsDowScaled,
+  test_fallbackTargetVariesByWeekday,
+  test_sameDowTargetsAreNeverScaled,
 });

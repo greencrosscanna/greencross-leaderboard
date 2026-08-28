@@ -864,6 +864,45 @@ function getDirectorAlerts(pre) {
  * @return {Object}  { nameKey: targetDollars, ... }
  */
 /**
+ * How busy `todayDow` is at this store relative to an average day, measured from the
+ * SAME 28-day window the targets are built from — so it needs no goal state and no
+ * second fetch, and it moves with the store instead of a hardcoded curve.
+ *
+ * Used only to aim an all-days average at a specific weekday. Returns 1 (no change)
+ * whenever the evidence is too thin to trust: a weekday needs at least 2 dates of
+ * store history, and the result is clamped to [0.5, 1.5] so one freak day — a holiday,
+ * an outage, a soft open — cannot double or erase somebody's target.
+ *
+ * @param {Object} storeDays  { 'yyyy-MM-dd': storeSalesThatDay }
+ * @param {number} todayDow   0=Sun … 6=Sat
+ * @return {number} multiplier, 1 when indeterminate
+ */
+function storeDowFactor_(storeDays, todayDow) {
+  const sums   = [0,0,0,0,0,0,0];
+  const counts = [0,0,0,0,0,0,0];
+  Object.keys(storeDays || {}).forEach(function(dateStr) {
+    const v = storeDays[dateStr];
+    if (!(v > 0)) return;
+    const d = new Date(dateStr + 'T12:00:00').getDay();
+    sums[d]   += v;
+    counts[d] += 1;
+  });
+
+  if (counts[todayDow] < 2) return 1;
+
+  const avgs = [];
+  for (let d = 0; d <= 6; d++) if (counts[d] > 0) avgs.push(sums[d] / counts[d]);
+  if (avgs.length < 2) return 1;
+
+  const overall = avgs.reduce(function(a, b) { return a + b; }, 0) / avgs.length;
+  if (!(overall > 0)) return 1;
+
+  const factor = (sums[todayDow] / counts[todayDow]) / overall;
+  if (!isFinite(factor) || factor <= 0) return 1;
+  return Math.min(1.5, Math.max(0.5, factor));
+}
+
+/**
  * Pure per-employee target math, split out of computeEmpTargets_ so the kiosk, the
  * emptargetdiag route and tests/emp_targets_test.js all run THE SAME code. The
  * question this has to answer is "why is this person's target above that person's",
@@ -876,18 +915,24 @@ function getDirectorAlerts(pre) {
  * @return {Object} { targets: {nameKey: dollars}, detail: {nameKey: {...}} }
  */
 function empTargetsFromTxns_(txns, todayDow, fallback) {
-  // Group: nameKey → { dateStr → dailySales }
-  const empDays = Object.create(null);
+  // Group: nameKey → { dateStr → dailySales }, and the store's own totals per
+  // date (every ringing employee, so the weekday shape below is the store's).
+  const empDays   = Object.create(null);
+  const storeDays = Object.create(null);
   (txns || []).forEach(function(tx) {
-    const emp    = txEmployee_(tx);
-    const key    = emp.name.toLowerCase().replace(/\s+/g, '_');
-    if (!key || key === 'unknown') return;
-    const ts     = tx.transactionDateLocalTime || tx.transactionDate || '';
-    const day    = ts.slice(0, 10);
+    const ts  = tx.transactionDateLocalTime || tx.transactionDate || '';
+    const day = ts.slice(0, 10);
     if (!day || day.length < 10) return;
+    storeDays[day] = (storeDays[day] || 0) + txTotal_(tx);
+
+    const emp = txEmployee_(tx);
+    const key = emp.name.toLowerCase().replace(/\s+/g, '_');
+    if (!key || key === 'unknown') return;
     if (!empDays[key]) empDays[key] = {};
     empDays[key][day] = (empDays[key][day] || 0) + txTotal_(tx);
   });
+
+  const dowFactor = storeDowFactor_(storeDays, todayDow);
 
   // Average daily sales per employee — same day-of-week only, then +2.5 %.
   // Using the same DOW (e.g. only Sundays on a Sunday) means the target
@@ -907,16 +952,26 @@ function empTargetsFromTxns_(txns, todayDow, fallback) {
       ? sameDowVals
       : Object.values(days).filter(v => v > 0);
 
-    const avg    = dayVals.length ? dayVals.reduce((s, v) => s + v, 0) / dayVals.length : 0;
+    const rawAvg = dayVals.length ? dayVals.reduce((s, v) => s + v, 0) / dayVals.length : 0;
+
+    // A same-DOW average is already specific to today. An all-days average is NOT:
+    // it blends every weekday this person worked, so used raw it hands a Sunday
+    // filler the same number as a Saturday one. Scale it onto today's weekday using
+    // the store's own shape from this same window. Only the fallback branch is
+    // scaled — a target computed from real same-weekday history is left alone.
+    const avg    = usedSameDow ? rawAvg : rawAvg * dowFactor;
     const target = dayVals.length === 0 ? fallback : Math.round(avg * 1.025);
 
     targets[key] = target;
     detail[key]  = {
-      basis:        dayVals.length === 0 ? 'fallback' : (usedSameDow ? 'same-dow' : 'all-days'),
+      basis:        dayVals.length === 0 ? 'fallback'
+                                         : (usedSameDow ? 'same-dow' : 'all-days-dow-scaled'),
       daysWorked:   Object.keys(days).length,
       sameDowCount: sameDowVals.length,
       sampleCount:  dayVals.length,
       avgDaily:     Math.round(avg),
+      rawAvgDaily:  Math.round(rawAvg),
+      dowFactor:    usedSameDow ? 1 : Math.round(dowFactor * 1000) / 1000,
       target:       target,
       days:         days,
     };
@@ -1018,6 +1073,8 @@ function diagEmpTargets_(storeSlug, dowOverride) {
       daysWorked:   d.daysWorked,
       sameDowCount: d.sameDowCount,
       sampleCount:  d.sampleCount,
+      rawAvgDaily:  d.rawAvgDaily,
+      dowFactor:    d.dowFactor,
       days:         d.days,
     };
   }).sort(function(a, b) { return b.target - a.target; });
