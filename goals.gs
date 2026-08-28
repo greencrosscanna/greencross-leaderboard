@@ -865,6 +865,11 @@ function refreshTargetsAll() {
       + ' / ' + lookbackDays + 'd × 14 → pp=$' + ppTarget);
   });
 
+  // Write-only today: nothing in the app reads ppTarget back (getPayPeriodTarget_ goes
+  // through resolveGoal_). Kept as the nightly run's audit trail -- it is the only record
+  // that this ran and what it computed -- and it is safe to REPLACE the whole property
+  // because this function is now its sole writer. Per-employee targets used to share this
+  // key and were wiped here every night; they moved to GC_EMP_TARGET_CACHE_KEY.
   props.setProperty(GC_TARGET_CACHE_KEY, JSON.stringify(cache));
   try { refreshGoalLedger_(); } catch (e) { Logger.log('[goalLedger] refresh failed: ' + e); }
   // Publish AFTER the refresh (and after the ledger, which getDailyGoals_ prefers), never on its own

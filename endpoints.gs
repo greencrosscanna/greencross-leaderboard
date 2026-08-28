@@ -864,6 +864,30 @@ function getDirectorAlerts(pre) {
  * @return {Object}  { nameKey: targetDollars, ... }
  */
 /**
+ * Drop cache entries older than `cutoff`, keeping today's and other stores'.
+ *
+ * The prune this replaces read the date with k.split(':')[1], but the key is
+ * '<slug>:dow:<date>' -- index 1 is the literal string 'dow'. 'dow' < a yyyy-MM-dd
+ * cutoff is always false, so nothing was ever deleted and the property grew without
+ * bound toward the 9KB-per-value ScriptProperties limit, at which point setProperty
+ * throws inside the leaderboard payload. Anchoring on the date at the END of the key
+ * also means an entry in any other shape is unrecognised, and dropped rather than kept
+ * forever -- which is what clears the entries left behind by the shared-key era.
+ *
+ * @param {Object} cache
+ * @param {string} cutoff  yyyy-MM-dd; entries dated before this are removed
+ * @return {Object} the same object, pruned in place
+ */
+function pruneEmpTargetCache_(cache, cutoff) {
+  cache = cache || {};
+  Object.keys(cache).forEach(function(k) {
+    const m = /:(\d{4}-\d{2}-\d{2})$/.exec(k);
+    if (!m || m[1] < cutoff) delete cache[k];
+  });
+  return cache;
+}
+
+/**
  * How busy `todayDow` is at this store relative to an average day, measured from the
  * SAME 28-day window the targets are built from — so it needs no goal state and no
  * second fetch, and it moves with the store instead of a hardcoded curve.
@@ -982,7 +1006,7 @@ function empTargetsFromTxns_(txns, todayDow, fallback) {
 
 function computeEmpTargets_(storeSlug, dailyGoal) {
   const props    = PropertiesService.getScriptProperties();
-  const cacheRaw = props.getProperty(GC_TARGET_CACHE_KEY) || '{}';
+  const cacheRaw = props.getProperty(GC_EMP_TARGET_CACHE_KEY) || '{}';
   let   cache    = {};
   try { cache = JSON.parse(cacheRaw); } catch (e) { cache = {}; }
 
@@ -1018,14 +1042,9 @@ function computeEmpTargets_(storeSlug, dailyGoal) {
   const targets  = empTargetsFromTxns_(txns, todayDow, fallback).targets;
 
   // Persist: keep entries for other stores/dates in the cache, add ours
-  // Prune stale entries (> 2 days old) to avoid unbounded growth
-  const cutoff = fmtDate_(todayStartMs - 2 * 24 * 60 * 60 * 1000);
-  Object.keys(cache).forEach(function(k) {
-    const datePart = k.split(':')[1] || '';
-    if (datePart && datePart < cutoff) delete cache[k];
-  });
   cache[cacheKey] = targets;
-  props.setProperty(GC_TARGET_CACHE_KEY, JSON.stringify(cache));
+  props.setProperty(GC_EMP_TARGET_CACHE_KEY,
+    JSON.stringify(pruneEmpTargetCache_(cache, fmtDate_(todayStartMs - 2 * 24 * 60 * 60 * 1000))));
 
   return targets;
 }

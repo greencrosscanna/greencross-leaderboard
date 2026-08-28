@@ -132,6 +132,58 @@ function test_sameDowTargetsAreNeverScaled() {
   _eq_('target is the plain Thursday average', r.targets['ada_lovelace'], 1025);
 }
 
+// ── pruneEmpTargetCache_ ────────────────────────────────────────────
+// The prune this replaces read the date with split(':')[1] on a key shaped
+// '<slug>:dow:<date>' — index 1 is the literal 'dow', and 'dow' < a date is
+// always false, so the cache never shrank.
+function test_pruneDropsStaleKeepsFresh() {
+  const cache = {
+    'commercial:dow:2026-08-28': { a: 1 },
+    'commercial:dow:2026-08-27': { a: 1 },
+    'river:dow:2026-08-20':      { a: 1 },
+    'century:dow:2026-07-01':    { a: 1 },
+  };
+  S.pruneEmpTargetCache_(cache, '2026-08-26');
+  _ok_('today kept',            !!cache['commercial:dow:2026-08-28']);
+  _ok_('yesterday kept',        !!cache['commercial:dow:2026-08-27']);
+  _ok_('last week dropped',     !cache['river:dow:2026-08-20']);
+  _ok_('last month dropped',    !cache['century:dow:2026-07-01']);
+}
+
+function test_pruneKeepsOtherStoresSameDay() {
+  const cache = {
+    'commercial:dow:2026-08-28': { a: 1 },
+    'river:dow:2026-08-28':      { a: 1 },
+    'century:dow:2026-08-28':    { a: 1 },
+  };
+  S.pruneEmpTargetCache_(cache, '2026-08-26');
+  _eq_('every store survives its own entry', Object.keys(cache).length, 3);
+}
+
+function test_pruneDropsLegacyShapes() {
+  // Left over from when this key was shared with refreshTargetsAll's
+  // { slug: { ppTarget } } — unrecognised, so cleared rather than kept forever.
+  const cache = {
+    'commercial:dow:2026-08-28': { a: 1 },
+    'commercial':                { ppTarget: 90218 },
+    'river':                     { ppTarget: 64458 },
+  };
+  S.pruneEmpTargetCache_(cache, '2026-08-26');
+  _eq_('only the dated entry survives', Object.keys(cache).length, 1);
+  _ok_('and it is the right one', !!cache['commercial:dow:2026-08-28']);
+}
+
+function test_pruneHandlesEmpty() {
+  _eq_('empty stays empty', Object.keys(S.pruneEmpTargetCache_({}, '2026-08-26')).length, 0);
+  // A missing/garbled property parses to nothing; the caller then writes today's
+  // entry into whatever comes back, so this must not throw and must stay usable.
+  let threw = false;
+  let out;
+  try { out = S.pruneEmpTargetCache_(null, '2026-08-26'); } catch (e) { threw = true; }
+  _ok_('null does not throw', !threw);
+  _ok_('null yields a writable object', out !== null && typeof out === 'object');
+}
+
 H.run('emp_targets', {
   test_sameDowAverage,
   test_sameDaySummed,
@@ -143,4 +195,8 @@ H.run('emp_targets', {
   test_allDaysFallbackIsDowScaled,
   test_fallbackTargetVariesByWeekday,
   test_sameDowTargetsAreNeverScaled,
+  test_pruneDropsStaleKeepsFresh,
+  test_pruneKeepsOtherStoresSameDay,
+  test_pruneDropsLegacyShapes,
+  test_pruneHandlesEmpty,
 });

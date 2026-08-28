@@ -29,7 +29,13 @@ const GC_STREAKS_KEY        = 'GC_STREAKS_JSON';
 const GC_EMPLOYEES_KEY      = 'GC_STORE_EMPLOYEES_JSON';
 const GC_PAY_PERIOD_ANCHOR  = 'GC_PAY_PERIOD_ANCHOR'; // stored as "YYYY-MM-DD" local date
 const GC_NICKNAMES_KEY       = 'GC_NICKNAMES_JSON';
+// Store-level rolling PP targets, written nightly by refreshTargetsAll. It owns this
+// property outright: it rebuilds the whole object and setProperty REPLACES, so anything
+// else stored here is erased at 3am. Per-employee daily targets used to share it and were
+// silently wiped every night -- they now live in GC_EMP_TARGET_CACHE_KEY below.
 const GC_TARGET_CACHE_KEY   = 'GC_ROLLING_TARGET_CACHE_JSON';
+// Per-employee daily targets, keyed '<slug>:dow:<yyyy-MM-dd>' -> { nameKey: dollars }.
+const GC_EMP_TARGET_CACHE_KEY = 'GC_EMP_TARGET_CACHE_JSON';
 const GC_GOALS_CACHE_KEY    = 'GC_GOALS_CACHE_JSON';
 const GC_STRETCH_KEY        = 'GC_STRETCH_MULTIPLIER';  // stored as decimal, e.g. 0.025 = 2.5%
 const GC_YOY_GOALS_KEY      = 'GC_YOY_GOALS_JSON';
