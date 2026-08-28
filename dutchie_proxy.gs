@@ -388,6 +388,17 @@ function doGet(e) {
       return jsonOut(_ipData, params.callback);
     }
 
+    // Secret-gated, read-only: how today's per-employee targets were derived for one
+    // store. Same secret as incentiveperf. Exists because the target is a per-person
+    // rolling average, so "why is X's target above Y's" is only answerable from the
+    // inputs — and clasp run is unavailable here, so diagnostics ship as web actions.
+    if (params.action === 'emptargetdiag') {
+      var _etSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+      if (!_etSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
+      if ((params.secret || '') !== _etSecret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
+      return jsonOut(diagEmpTargets_(params.store || STORES[0].slug, params.dow), params.callback);
+    }
+
     // ── Read-only goals for Sales Dashboard (API key auth) ─
     if (params.action === 'goals') {
       var storedKey = PropertiesService.getScriptProperties().getProperty('GC_API_READONLY_KEY');

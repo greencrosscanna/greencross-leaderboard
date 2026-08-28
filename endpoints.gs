@@ -863,6 +863,68 @@ function getDirectorAlerts(pre) {
  * @param {number} dailyGoal  Store-level daily goal (used for fallback)
  * @return {Object}  { nameKey: targetDollars, ... }
  */
+/**
+ * Pure per-employee target math, split out of computeEmpTargets_ so the kiosk, the
+ * emptargetdiag route and tests/emp_targets_test.js all run THE SAME code. The
+ * question this has to answer is "why is this person's target above that person's",
+ * which the returned number alone cannot answer — so `detail` reports the basis each
+ * target was computed on, not just the result.
+ *
+ * @param {Array}  txns      Transactions covering the 28-day window
+ * @param {number} todayDow  0=Sun … 6=Sat
+ * @param {number} fallback  Target for an employee with no usable history
+ * @return {Object} { targets: {nameKey: dollars}, detail: {nameKey: {...}} }
+ */
+function empTargetsFromTxns_(txns, todayDow, fallback) {
+  // Group: nameKey → { dateStr → dailySales }
+  const empDays = Object.create(null);
+  (txns || []).forEach(function(tx) {
+    const emp    = txEmployee_(tx);
+    const key    = emp.name.toLowerCase().replace(/\s+/g, '_');
+    if (!key || key === 'unknown') return;
+    const ts     = tx.transactionDateLocalTime || tx.transactionDate || '';
+    const day    = ts.slice(0, 10);
+    if (!day || day.length < 10) return;
+    if (!empDays[key]) empDays[key] = {};
+    empDays[key][day] = (empDays[key][day] || 0) + txTotal_(tx);
+  });
+
+  // Average daily sales per employee — same day-of-week only, then +2.5 %.
+  // Using the same DOW (e.g. only Sundays on a Sunday) means the target
+  // reflects actual Sunday traffic, not a blend of busy Fridays and slow Tuesdays.
+  // Fall back to all worked days if fewer than 2 same-DOW samples exist.
+  const targets = {};
+  const detail  = {};
+  Object.entries(empDays).forEach(function([key, days]) {
+    // Same-day-of-week entries
+    const sameDowVals = Object.entries(days)
+      .filter(([dateStr, v]) => v > 0 && new Date(dateStr + 'T12:00:00').getDay() === todayDow)
+      .map(([, v]) => v);
+
+    // Fall back to all worked days if we don't have at least 2 matching samples
+    const usedSameDow = sameDowVals.length >= 2;
+    const dayVals = usedSameDow
+      ? sameDowVals
+      : Object.values(days).filter(v => v > 0);
+
+    const avg    = dayVals.length ? dayVals.reduce((s, v) => s + v, 0) / dayVals.length : 0;
+    const target = dayVals.length === 0 ? fallback : Math.round(avg * 1.025);
+
+    targets[key] = target;
+    detail[key]  = {
+      basis:        dayVals.length === 0 ? 'fallback' : (usedSameDow ? 'same-dow' : 'all-days'),
+      daysWorked:   Object.keys(days).length,
+      sameDowCount: sameDowVals.length,
+      sampleCount:  dayVals.length,
+      avgDaily:     Math.round(avg),
+      target:       target,
+      days:         days,
+    };
+  });
+
+  return { targets: targets, detail: detail };
+}
+
 function computeEmpTargets_(storeSlug, dailyGoal) {
   const props    = PropertiesService.getScriptProperties();
   const cacheRaw = props.getProperty(GC_TARGET_CACHE_KEY) || '{}';
@@ -896,41 +958,9 @@ function computeEmpTargets_(storeSlug, dailyGoal) {
   // Don't cache an empty result — let the next poll retry the fetch
   if (txns.length === 0) return {};
 
-  // Group: nameKey → { dateStr → dailySales }
-  const empDays = Object.create(null);
-  txns.forEach(function(tx) {
-    const emp    = txEmployee_(tx);
-    const key    = emp.name.toLowerCase().replace(/\s+/g, '_');
-    if (!key || key === 'unknown') return;
-    const ts     = tx.transactionDateLocalTime || tx.transactionDate || '';
-    const day    = ts.slice(0, 10);
-    if (!day || day.length < 10) return;
-    if (!empDays[key]) empDays[key] = {};
-    empDays[key][day] = (empDays[key][day] || 0) + txTotal_(tx);
-  });
-
-  // Average daily sales per employee — same day-of-week only, then +2.5 %.
-  // Using the same DOW (e.g. only Sundays on a Sunday) means the target
-  // reflects actual Sunday traffic, not a blend of busy Fridays and slow Tuesdays.
-  // Fall back to all worked days if fewer than 2 same-DOW samples exist.
   const todayDow = pt.dow;   // 0=Sun … 6=Sat
   const fallback = dailyGoal > 0 ? Math.round(dailyGoal / 4) : 0;
-  const targets  = {};
-  Object.entries(empDays).forEach(function([key, days]) {
-    // Same-day-of-week entries
-    const sameDowVals = Object.entries(days)
-      .filter(([dateStr, v]) => v > 0 && new Date(dateStr + 'T12:00:00').getDay() === todayDow)
-      .map(([, v]) => v);
-
-    // Fall back to all worked days if we don't have at least 2 matching samples
-    const dayVals = sameDowVals.length >= 2
-      ? sameDowVals
-      : Object.values(days).filter(v => v > 0);
-
-    if (dayVals.length === 0) { targets[key] = fallback; return; }
-    const avg = dayVals.reduce((s, v) => s + v, 0) / dayVals.length;
-    targets[key] = Math.round(avg * 1.025);
-  });
+  const targets  = empTargetsFromTxns_(txns, todayDow, fallback).targets;
 
   // Persist: keep entries for other stores/dates in the cache, add ours
   // Prune stale entries (> 2 days old) to avoid unbounded growth
@@ -943,6 +973,65 @@ function computeEmpTargets_(storeSlug, dailyGoal) {
   props.setProperty(GC_TARGET_CACHE_KEY, JSON.stringify(cache));
 
   return targets;
+}
+
+/**
+ * Read-only explanation of today's per-employee targets for one store. Answers
+ * "how was this number set" with the inputs, not just the output — it reuses
+ * empTargetsFromTxns_, so it can never drift from what the kiosk actually shows.
+ *
+ * Deliberately does NOT write the target cache: a diagnostic that mutates the
+ * thing it measures is worse than none.
+ *
+ * @param {string} storeSlug
+ * @return {Object}
+ */
+function diagEmpTargets_(storeSlug, dowOverride) {
+  const pt           = ptNow_();
+  const today        = pt.dateStr;
+  const todayStartMs = ptDateToUtcMs_(today);
+  const dailyGoal    = getDailyGoal_(storeSlug);
+  const fallback     = dailyGoal > 0 ? Math.round(dailyGoal / 4) : 0;
+
+  let txns = [];
+  try {
+    txns = fetchStoreTransactions_(
+      storeSlug,
+      new Date(todayStartMs - 28 * 24 * 60 * 60 * 1000).toISOString(),
+      new Date(todayStartMs - 1).toISOString()
+    );
+  } catch (e) {
+    return { ok: false, error: 'fetch failed: ' + e.message, store: storeSlug };
+  }
+
+  // dowOverride lets us ask "what would Tuesday's targets be" without waiting for
+  // Tuesday — the same-DOW basis means every weekday produces a different table.
+  const useDow = (dowOverride === 0 || dowOverride) ? Number(dowOverride) : pt.dow;
+  const res  = empTargetsFromTxns_(txns, useDow, fallback);
+  const rows = Object.keys(res.detail).map(function(k) {
+    const d = res.detail[k];
+    return {
+      nameKey:      k,
+      target:       d.target,
+      basis:        d.basis,
+      avgDaily:     d.avgDaily,
+      daysWorked:   d.daysWorked,
+      sameDowCount: d.sameDowCount,
+      sampleCount:  d.sampleCount,
+      days:         d.days,
+    };
+  }).sort(function(a, b) { return b.target - a.target; });
+
+  return {
+    ok:        true,
+    store:     storeSlug,
+    date:      today,
+    dow:       useDow,
+    dailyGoal: dailyGoal,
+    fallback:  fallback,
+    txnCount:  txns.length,
+    employees: rows,
+  };
 }
 
 // ============================================================
