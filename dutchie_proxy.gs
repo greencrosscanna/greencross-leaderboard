@@ -333,6 +333,24 @@ function doGet(e) {
       }
     }
 
+    // ── Discount RULES, for GX Crew — DEPLOY-SECRET gated ─────────────────────────────────
+    // Which promotions count against a staff discount rate. They live here because they filter the
+    // TRANSACTION data — the half of the incentive that stayed in Leaderboard — but they are edited
+    // in Crew's settings tray alongside the thresholds, because to whoever is setting the scheme
+    // they are one screen and one decision.
+    //
+    // This is the only WRITE Crew makes into this app, and it is narrower than it looks: it forwards
+    // to saveDiscountSettings_ unchanged, which stores an exclusion map and nothing else. It cannot
+    // reach a threshold, a goal or a payout. Like `incentiveperf`, it sits ABOVE requireAuth_ (a
+    // machine caller has no session) and dies with that route when GX Core takes the slice over.
+    if (params.action === 'discountrules' || params.action === 'discountrules_save') {
+      var _drSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+      if (!_drSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
+      if ((params.secret || '') !== _drSecret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
+      return jsonOut(params.action === 'discountrules' ? getDiscountSettings_()
+                                                       : saveDiscountSettings_(params), params.callback);
+    }
+
     // ── Incentive PERFORMANCE slice, for GX Crew — DEPLOY-SECRET gated, READ ONLY ──────────
     // The Incentive dashboard is moving to GX Crew (2026-08-26). The split that survives the move:
     // Leaderboard stays the PERFORMANCE engine — it owns the Dutchie ingest, aggregateTransactions_,
