@@ -388,6 +388,16 @@ function doGet(e) {
       return jsonOut(_ipData, params.callback);
     }
 
+    // Secret-gated, read-only: which pacing layer is actually answering per store --
+    // GX Core's shared engine, the local mirrored curve, or the LINEAR fallback. The
+    // three are indistinguishable from expectedSalesFrac_'s return value alone.
+    if (params.action === 'pacediag') {
+      var _pdSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+      if (!_pdSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
+      if ((params.secret || '') !== _pdSecret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
+      return jsonOut(diagPace_(), params.callback);
+    }
+
     // ── Read-only goals for Sales Dashboard (API key auth) ─
     if (params.action === 'goals') {
       var storedKey = PropertiesService.getScriptProperties().getProperty('GC_API_READONLY_KEY');

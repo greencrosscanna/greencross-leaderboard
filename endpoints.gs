@@ -424,6 +424,10 @@ function getDirectorToday(byStoreToday) {
     paceGap:            paceGap,
     toGo:               toGo,
     dayFrac:            r3_(dayFrac),
+    // Chain-wide DOW-weighted position — see the note in getStoreToday. No single shape
+    // here because this is six stores summed; the client uses the value and re-derives
+    // its glide from the elapsed share of the day.
+    expectedFrac:       r3_(_expFrac),
     projectedRevenue:   projectedRevenue,
     timeRemainingLabel: timeRemainingLabel,
     hourly:             hourly,
@@ -564,6 +568,9 @@ function getDirectorStores(params, pre) {
       tags:          tags,
       tagTooltips:   tagTooltips,
       today:         { revenue: aggToday.sales, goal: dailyGoal, pace: todayPace, pctToGoal: dailyGoal > 0 ? r3_(aggToday.sales / dailyGoal) : 0, projected: projectedRevenue, projectedPace: projectedPace, dayFrac: r3_(dayFrac),
+                       // Weighted pace position + the curve behind it, so the wall's hash marks
+                       // land where the pace VALUE says they should (see getStoreToday).
+                       expectedFrac: r3_(expectedFrac), hourShape: getHourlyDistCached_(store) || null,
                        transactions: aggToday.transactions, avgOrderValue: aggToday.avgOrderValue, avgUPT: aggToday.avgUPT, discountRate: aggToday.discountRate },
       flagCount:     flaggedEmps.length,
     };
@@ -1261,6 +1268,13 @@ function getStoreToday(store, params) {
     timeRemainingLabel: timeRemainingLabel,
     isPreOpen:          isPreOpen,
     dayFrac:            r3_(dayFrac),
+    // The DOW-weighted position the pace VALUE above is measured against, plus the curve
+    // it came from. The client needs the shape, not just the number: it redraws the pace
+    // marker every render so the line glides, and it cannot do that from a value that is
+    // up to 5 minutes stale. Without these the marker falls back to linear clock time --
+    // which is what made the gauge disagree with its own pace percentage.
+    expectedFrac:       r3_(expectedFrac),
+    hourShape:          getHourlyDistCached_(store) || null,
     transactions:       agg.transactions,
     avgOrderValue:      agg.avgOrderValue,
     avgUPT:             agg.avgUPT,
@@ -1898,6 +1912,7 @@ function getStandings_(hardRefresh) {
       target:       Math.round(target),
       sales:        Math.round(sales),
       expectedFrac: r3_(ef),
+      hourShape:    getHourlyDistCached_(store) || null,
     };
   });
   var chainEf = chainTotal > 0 ? chainSoFar / chainTotal : linearFrac;

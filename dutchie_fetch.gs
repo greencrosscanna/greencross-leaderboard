@@ -787,3 +787,81 @@ function trendFromByDay_(byDay, opts) {
   const trendPct = prior7 > 0 ? r3_((last7 - prior7) / prior7) : 0;
   return { trend30d: trend30d, trendPct: trendPct };
 }
+
+/**
+ * Read-only: which pacing path is actually live, per store, right now.
+ *
+ * expectedSalesFrac_ has three layers — the GX Core shared engine, the local mirrored
+ * curve, and a LINEAR dayFrac fallback — and it returns a bare number, so a curve that
+ * silently fell back to linear is indistinguishable from a working one. That is exactly
+ * the question "is the gauge pace weighted like the rest of the goals?" is asking, so
+ * this probes each layer separately rather than reporting the result alone.
+ *
+ * Pure read: it calls the same helpers the kiosk calls and writes nothing.
+ *
+ * @return {Object}
+ */
+function diagPace_() {
+  const { hour: nowHour, minute: nowMinute } = ptHourNow_();
+  const elapsed = Math.max(0, Math.min(nowHour + nowMinute / 60 - STORE_OPEN_HOUR, STORE_HOURS));
+  const dayFrac = elapsed / STORE_HOURS;
+
+  const coreAvailable = (typeof GXCore !== 'undefined'
+    && typeof GXCore.expectedSalesFrac === 'function');
+
+  const rows = STORES.map(function(store) {
+    // Layer 1 — GX Core shared engine.
+    let coreFrac = null, coreErr = '';
+    if (coreAvailable) {
+      try {
+        const f = GXCore.expectedSalesFrac(coreStoreId_(store), nowHour, nowMinute, dayFrac);
+        if (typeof f === 'number' && isFinite(f) && f > 0) coreFrac = f;
+      } catch (e) { coreErr = String(e.message || e); }
+    }
+
+    // Layer 2 — the local mirrored curve (cache-only, same reader the kiosk uses).
+    const dist = getHourlyDistCached_(store);
+    let localFrac = null;
+    if (dist) {
+      let ef = 0;
+      for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
+        if (h < nowHour)        ef += (dist[h] || 0);
+        else if (h === nowHour) ef += (dist[h] || 0) * (nowMinute / 60);
+      }
+      localFrac = ef > 0 ? ef : null;
+    }
+
+    // What the kiosk actually gets, and therefore which layer answered.
+    const effective = expectedSalesFrac_(store, nowHour, nowMinute, dayFrac);
+    const source = (coreFrac !== null && Math.abs(effective - coreFrac) < 1e-9) ? 'gxcore'
+                 : (localFrac !== null && Math.abs(effective - localFrac) < 1e-9) ? 'local-curve'
+                 : 'LINEAR-FALLBACK';
+
+    const dailyGoal = getDailyGoal_(store.slug);
+    return {
+      store:        store.slug,
+      dailyGoal:    dailyGoal,
+      expectedFrac: Math.round(effective * 10000) / 10000,
+      linearFrac:   Math.round(dayFrac  * 10000) / 10000,
+      source:       source,
+      // How far the live answer sits from a straight clock. ~0 means the gauge is
+      // reading linear whether or not a curve is technically loaded.
+      deltaVsLinear: Math.round((effective - dayFrac) * 10000) / 10000,
+      coreFrac:     coreFrac  === null ? null : Math.round(coreFrac  * 10000) / 10000,
+      localFrac:    localFrac === null ? null : Math.round(localFrac * 10000) / 10000,
+      curveWarm:    !!dist,
+      coreErr:      coreErr,
+      paceGoal:     Math.round(dailyGoal * effective),
+      shape:        dist || null,
+    };
+  });
+
+  return {
+    ok: true,
+    now: { hour: nowHour, minute: nowMinute },
+    storeHours: { open: STORE_OPEN_HOUR, close: STORE_CLOSE_HOUR, span: STORE_HOURS },
+    elapsedHours: Math.round(elapsed * 100) / 100,
+    coreAvailable: coreAvailable,
+    stores: rows,
+  };
+}
