@@ -88,3 +88,41 @@ function checkStoreKeyVocabulary() {
   Logger.log('labels: ' + labels.sort().join(', '));
   return { set: true, storeIdKeyed: hasIds, legacyStillPresent: hasNames, labels: labels.sort() };
 }
+
+// ============================================================
+//  RECOVERY — run restoreLegacyStoreKeyLabels() if the kiosk lost its Dutchie data.
+//
+//  WHAT WENT WRONG (2026-08-29): an earlier draft of migrateStoreKeysToStoreId() REPLACED the
+//  name labels with store_id ones instead of adding them. Production is pinned to version 486,
+//  which looks keys up by NAME, so after that ran NONE of the six resolved — not just the
+//  transposed pair, because 'Center' !== 'center'. getDutchieStoreKey_ throws for every store.
+//
+//  This puts the name labels back ALONGSIDE the store_id ones, which is the state the migration
+//  should have produced. v486 works again immediately, and the store_id code still works the
+//  moment it deploys.
+// ============================================================
+function restoreLegacyStoreKeyLabels() {
+  var props = PropertiesService.getScriptProperties();
+  var cur = JSON.parse(props.getProperty('DUTCHIE_STORE_KEYS_JSON') || '{}');
+
+  var missing = EXPECTED_STORE_IDS.filter(function (id) { return !cur[id]; });
+  if (missing.length) {
+    throw new Error('Cannot restore — these store_ids have no key to copy from: ' + missing.join(', ')
+                  + '. Present labels: ' + Object.keys(cur).sort().join(', '));
+  }
+
+  var out = {};
+  Object.keys(cur).forEach(function (k) { out[k] = cur[k]; });
+  // store_id -> the legacy NAME v486 asks for. Inverse of LEGACY_LABEL_TO_STORE_ID.
+  Object.keys(LEGACY_LABEL_TO_STORE_ID).forEach(function (label) {
+    out[label] = cur[LEGACY_LABEL_TO_STORE_ID[label]];
+  });
+
+  props.setProperty('DUTCHIE_STORE_KEYS_JSON', JSON.stringify(out));
+  var labels = Object.keys(out).sort();
+  Logger.log('Restored. ' + labels.length + ' labels (expect 12): ' + labels.join(', '));
+  Logger.log(labels.length === 12
+    ? 'Both spellings present — v486 works now, and the store_id code will work when deployed.'
+    : 'WARNING: expected 12 labels. Check the list above before trusting this.');
+  return { ok: true, count: labels.length, labels: labels };
+}
