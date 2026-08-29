@@ -16,3 +16,4 @@
 # TEMPORARY — the one-time store_id key migration. Remove this line and delete the file
 # once migrateStoreKeysToStoreId() has run and the deploy is verified.
 !migrate_store_keys.gs
+!hourly_dist_repair.gs

@@ -199,6 +199,26 @@ function smoothHourly_(sums) {
 }
 
 /**
+ * Evict from the hourly-dist cache by DATE, never by key name.
+ *
+ * The old line was `Object.keys(cache).sort()` then shift-and-delete past 60 entries. That sorts
+ * "slug:dow:date" LEXICOGRAPHICALLY, so every `baseline:*` key sorts before every `center:*` key and
+ * Baseline was always the first store evicted — permanently starved once the cache passed the cap,
+ * which is exactly how it presented: flat hourly goals at Baseline and nowhere else.
+ *
+ * Every read is for TODAY (`slug:dow:todayDateStr`), so an entry from any earlier date is already
+ * unreachable. Dropping those is what keeps the cache small enough that the cap never fires at all.
+ */
+function pruneHourlyDistCache_(cache, todayStr) {
+  const out = {};
+  Object.keys(cache || {}).forEach(function (k) {
+    // key = slug:dow:YYYY-MM-DD — keep only today's, which is all anything can ever read.
+    if (k.slice(-10) === todayStr) out[k] = cache[k];
+  });
+  return out;
+}
+
+/**
  * Same-DOW hourly shape { 9: 0.045, … } summing to 1.0. Primary: GX Core shared pacing engine
  * (getHourlyShape — ported verbatim from this file, values verified identical). Falls back to the
  * local Dutchie compute below if Core is unavailable. Consolidates the shape source across apps.
@@ -289,10 +309,9 @@ function getHourlyDistLocal_(store) {
     dist[h] = Math.round(_smoothed[h] / total * 10000) / 10000; // 4 dp, smoothed
   }
 
-  // Cache — purge stale keys (keep ≤ 60 entries: 6 stores × 7 DOWs × ~1.4 safety)
+  // Cache — drop every entry that is not for today (nothing can read them) before writing.
   cache[cacheKey] = dist;
-  const keys = Object.keys(cache).sort();
-  while (keys.length > 60) { delete cache[keys.shift()]; }
+  cache = pruneHourlyDistCache_(cache, now.dateStr);
   try { props.setProperty(GC_HOURLY_DIST_KEY, JSON.stringify(cache)); } catch(e) {}
 
   return dist;
@@ -325,8 +344,7 @@ function primeHourlyDist_(stores) {
         } catch (e) {}
       });
       if (wrote) {
-        const keys = Object.keys(cache).sort();
-        while (keys.length > 60) delete cache[keys.shift()];
+        cache = pruneHourlyDistCache_(cache, now.dateStr);
         try { props.setProperty(GC_HOURLY_DIST_KEY, JSON.stringify(cache)); } catch (e) {}
       }
       return;
@@ -402,8 +420,7 @@ function primeHourlyDistLocal_(stores) {
     for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) dist[h] = Math.round(_sm[h] / total * 10000) / 10000;
     cache[store.slug + ':' + dow + ':' + now.dateStr] = dist;
   });
-  const keys = Object.keys(cache).sort();
-  while (keys.length > 60) { delete cache[keys.shift()]; }
+  cache = pruneHourlyDistCache_(cache, now.dateStr);
   try { props.setProperty(GC_HOURLY_DIST_KEY, JSON.stringify(cache)); } catch(e) {}
 }
 
