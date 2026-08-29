@@ -72,3 +72,37 @@ function verifyStoreKeyMapping() {
   Logger.log('All six store_ids open the store GX Core says they should. Mapping verified against Dutchie.');
   return { ok: true, verified: ids.length, legacyLabelsPresent: legacy.sort() };
 }
+
+/* ── Drop the legacy NAME labels once the store_id deploy has proven itself ──────────────────────
+   DUTCHIE_STORE_KEYS_JSON currently answers to BOTH spellings of the same six keys: the store_ids
+   the running code uses, and the old Dutchie-name labels ('Bend', 'Hillsboro', …) left in place on
+   2026-08-29 as the rollback path. Version 486 resolves keys by NAME, so while those labels exist a
+   rollback to it still works.
+
+   Run this only when you are satisfied v488 is staying. It refuses unless verifyStoreKeyMapping()
+   would pass first, because dropping the fallback while the primary is wrong takes the kiosk down
+   with no way back.
+
+   AFTER THIS RUNS, ROLLING BACK TO 486 WILL FAIL CLOSED — 486 will find no key under any name it
+   knows. That is the intended end state (one vocabulary, no ambiguity), but it is a one-way door
+   until someone re-adds the labels by hand. */
+function dropLegacyStoreKeyLabels() {
+  var v = verifyStoreKeyMapping();          // throws if any store_id opens the wrong store
+  if (!v || !v.ok) throw new Error('verification did not pass — refusing to drop the fallback');
+
+  var props = PropertiesService.getScriptProperties();
+  var cur = JSON.parse(props.getProperty('DUTCHIE_STORE_KEYS_JSON') || '{}');
+  var ids = Object.keys(EXPECTED_LOCATION_ID);
+
+  var out = {}, dropped = [];
+  Object.keys(cur).forEach(function (k) {
+    if (ids.indexOf(k) !== -1) out[k] = cur[k]; else dropped.push(k);
+  });
+  var missing = ids.filter(function (id) { return !out[id]; });
+  if (missing.length) throw new Error('refusing to write — would leave no key for: ' + missing.join(', '));
+
+  props.setProperty('DUTCHIE_STORE_KEYS_JSON', JSON.stringify(out));
+  Logger.log('Dropped ' + dropped.length + ' legacy label(s): ' + (dropped.sort().join(', ') || '(none)'));
+  Logger.log('Now store_id only: ' + Object.keys(out).sort().join(', ') + '  — rollback to 486 will no longer work.');
+  return { ok: true, dropped: dropped.sort(), remaining: Object.keys(out).sort() };
+}
