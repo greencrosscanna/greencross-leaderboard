@@ -14,8 +14,11 @@
 //    2. setUserPassword_('username', '<password>', 'store_manager', 'slug', 'Display Name', 'IN')
 //       ... repeat for each user — do NOT commit passwords to source
 //    3. setStorePlans_({ baseline: { monthly: 255000, daily: 8500 }, ... })
-//    4. Store Dutchie keys: Script Properties → DUTCHIE_STORE_KEYS_JSON
-//       {"Baseline":"key...","Center":"key...","Century":"key...","Commercial":"key...","Portland Rd":"key...","River Rd":"key..."}
+//    4. Store Dutchie keys: Script Properties → DUTCHIE_STORE_KEYS_JSON, keyed by GX CORE store_id:
+//       {"bend":"key...","center":"key...","commercial":"key...","hillsboro":"key...","portland-rd":"key...","river-rd":"key..."}
+//       (Before 2026-08-29 this was keyed by Dutchie store NAME. The example here used a THIRD set
+//        of labels again — "Baseline"/"Century"/"River Rd" — matching neither the property nor Core.
+//        Keyed by store_id there is exactly one correct spelling, and it is the one Core publishes.)
 //    5. Deploy as web app → copy URL → set GC.api.GAS_URL in api.js
 //    6. Set GC.api.USE_FIXTURES = false in api.js
 // ============================================================
@@ -81,17 +84,22 @@ const EXCLUDED_DISCOUNT_KEYWORDS = [
 
 // Canonical store list — slugs must match src/fixtures/ filenames
 // and the frontend GC.STORES registry in utils.js.
-// dutchieName = the key used in DUTCHIE_STORE_KEYS_JSON ScriptProperty.
-// Confirmed from GX2 Dashboard STORE_KEYS (May 2026):
-//   Bend       → Baseline
-//   Hillsboro  → Century
+//
+// storeId = the GX Core `store_id` slug. It is BOTH the join key to Core's stores tab AND the key
+// into DUTCHIE_STORE_KEYS_JSON. Credentials are keyed by store_id and nothing else.
+//
+// This field replaced `dutchieName` on 2026-08-29. That field held a Dutchie key LABEL, and this
+// project's labels had Bend and Hillsboro TRANSPOSED relative to Core, Inventory and Sales — so the
+// table below carried a compensating swap (slug 'century' → dutchieName 'Hillsboro') to cancel it out.
+// Two errors multiplying to the right answer is why the mapping kept getting "fixed" and breaking the
+// kiosk (PR #8, 2026-08-26). store_id is Core-owned and unambiguous, so the swap cannot recur.
 const STORES = [
-  { slug: 'baseline',   name: 'Baseline',   dutchieName: 'Bend',        locationName: 'Hillsboro'   },
-  { slug: 'center',     name: 'Center',     dutchieName: 'Center',      locationName: 'Center'      },
-  { slug: 'century',    name: 'Century',    dutchieName: 'Hillsboro',   locationName: 'Bend'        },
-  { slug: 'commercial', name: 'Commercial', dutchieName: 'Commercial',  locationName: 'Commercial'  },
-  { slug: 'portland',   name: 'Portland',   dutchieName: 'Portland Rd', locationName: 'Portland Rd' },
-  { slug: 'river',      name: 'River',      dutchieName: 'River',       locationName: 'River'       },
+  { slug: 'baseline',   name: 'Baseline',   storeId: 'hillsboro',   locationName: 'Hillsboro'   },
+  { slug: 'center',     name: 'Center',     storeId: 'center',      locationName: 'Center'      },
+  { slug: 'century',    name: 'Century',    storeId: 'bend',        locationName: 'Bend'        },
+  { slug: 'commercial', name: 'Commercial', storeId: 'commercial',  locationName: 'Commercial'  },
+  { slug: 'portland',   name: 'Portland',   storeId: 'portland-rd', locationName: 'Portland Rd' },
+  { slug: 'river',      name: 'River',      storeId: 'river-rd',    locationName: 'River'       },
 ];
 
 // Chunk size for CacheService (leave headroom below 100KB limit)

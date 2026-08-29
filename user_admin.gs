@@ -28,34 +28,43 @@ const GC_PERF_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxXqtL-rKju
 // (Or add a dedicated admin action protected by a setup secret.)
 const ADMIN_TOKEN = 'REPLACE_WITH_DIRECTOR_TOKEN';
 
-// Store keys — matches STORES in dutchie_proxy.gs
-const STORE_KEYS_MAP = {
-  'Hillsboro':   '77e157f3fcdf43d9864daf0420df8c97',  // → Baseline
-  'Center':      '6a7e9c3187a6471d8a0a2d05cfa92023',  // → Center
-  'Commercial':  'd97da3cef3f74dd087cee7d4239a851d',  // → Commercial
-  'Bend':        'a2de33457b8f4d35972d3c47832207eb',  // → Century
-  'Portland Rd': '5671f32c2c2a4756811e9513945815f4',  // → Portland
-  'River':       '5212417431014845a6db39bcb4ccef6b',  // → River
-};
+// ── STORE REGISTRY — no credentials, no name-keyed lookups ──────────────────────
+// MUST match STORES in dutchie_proxy.gs. `storeId` is the GX Core store_id: the join key to Core's
+// stores tab AND the key into DUTCHIE_STORE_KEYS_JSON.
+//
+// WHAT USED TO BE HERE, and why it is gone (2026-08-29):
+//   • STORE_KEYS_MAP held all six live Dutchie API keys as literals. This repo is PUBLIC and they
+//     sat at HEAD from 2026-05-20. Keys now live ONLY in the Store Keys sheet tab and in the
+//     dashboard's Script Properties. Never paste a key into this file.
+//   • DUTCHIE_TO_SLUG mapped 'Hillsboro'→baseline and 'Bend'→century. That is INVERTED: measurement
+//     (2026-08-28, unanimous 6/6 per store) and three independent sources — GX Core's stores tab,
+//     Inventory and Sales — all agree the key labelled 'Bend' serves the Hillsboro/Baseline store.
+//     This file was the last written artefact still asserting the wrong direction, and it is exactly
+//     the "documentary source" that got trusted over measurement in PR #8. Keyed by store_id there
+//     is no direction left to get backwards.
+const STORES = [
+  { slug: 'baseline',   name: 'Baseline',   storeId: 'hillsboro'   },
+  { slug: 'center',     name: 'Center',     storeId: 'center'      },
+  { slug: 'century',    name: 'Century',    storeId: 'bend'        },
+  { slug: 'commercial', name: 'Commercial', storeId: 'commercial'  },
+  { slug: 'portland',   name: 'Portland',   storeId: 'portland-rd' },
+  { slug: 'river',      name: 'River',      storeId: 'river-rd'    },
+];
 
-// Slug lookup for display
-const DUTCHIE_TO_SLUG = {
-  'Hillsboro':   'baseline',
-  'Center':      'center',
-  'Bend':        'century',
-  'Commercial':  'commercial',
-  'Portland Rd': 'portland',
-  'River':       'river',
-};
-
-const SLUG_TO_NAME = {
-  'baseline':   'Baseline',
-  'center':     'Center',
-  'century':    'Century',
-  'commercial': 'Commercial',
-  'portland':   'Portland',
-  'river':      'River',
-};
+/** Read { store_id: apiKey } from the Store Keys tab. The sheet is the only place keys live here. */
+function readStoreKeysFromSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(KEYS_SHEET);
+  if (!sh || sh.getLastRow() < 2) return {};
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues();
+  const out = {};
+  rows.forEach(function(row) {
+    const storeId = String(row[0] || '').trim();
+    const key     = String(row[3] || '').trim();
+    if (storeId && key) out[storeId] = key;
+  });
+  return out;
+}
 
 // ── Sheet tab names ────────────────────────────────────────────
 const USERS_SHEET  = 'Users';
@@ -150,7 +159,7 @@ function setupSheet() {
   if (!keysSheet) keysSheet = ss.insertSheet(KEYS_SHEET);
   keysSheet.clearContents();
 
-  const keysHeaders = ['Dutchie Store Name', 'App Slug', 'App Name', 'API Key', 'Last Pushed'];
+  const keysHeaders = ['GX Core store_id', 'App Slug', 'App Name', 'API Key', 'Last Pushed'];
   keysSheet.getRange(1, 1, 1, keysHeaders.length)
     .setValues([keysHeaders])
     .setFontWeight('bold')
@@ -163,10 +172,11 @@ function setupSheet() {
   keysSheet.setColumnWidth(4, 280);
   keysSheet.setColumnWidth(5, 160);
 
-  // Pre-populate store keys
-  const keyRows = Object.entries(STORE_KEYS_MAP).map(([dutchieName, key]) => {
-    const slug = own_(DUTCHIE_TO_SLUG, dutchieName) || dutchieName.toLowerCase();
-    return [dutchieName, slug, own_(SLUG_TO_NAME, slug) || slug, key, ''];
+  // Pre-populate the store rows. The API Key column is deliberately left BLANK — paste the keys in
+  // by hand, once, into the sheet. They must never be seeded from source.
+  const existing = readStoreKeysFromSheet_();
+  const keyRows = STORES.map(function(st) {
+    return [st.storeId, st.slug, st.name, existing[st.storeId] || '', ''];
   });
   keysSheet.getRange(2, 1, keyRows.length, keyRows[0].length).setValues(keyRows);
 
@@ -187,37 +197,37 @@ function pullEmployeesFromDutchie() {
 
   showToast_('Fetching employees from all stores…', 'Working');
 
-  // Fetch employees in parallel from all stores
-  const requests = Object.entries(STORE_KEYS_MAP).map(([dutchieName, key]) => ({
-    url: DUTCHIE_BASE + '/employees?Skip=0&Take=500',
-    headers: {
-      Authorization: 'Basic ' + Utilities.base64Encode(key + ':'),
-      Accept: 'application/json',
-    },
-    muteHttpExceptions: true,
-    _storeName: dutchieName,
-  }));
+  // Fetch employees in parallel from all stores. Credentials come from the sheet, keyed by store_id.
+  const sheetKeys = readStoreKeysFromSheet_();
+  const fetchable = STORES.filter(function(st) { return !!sheetKeys[st.storeId]; });
+  if (!fetchable.length) {
+    showToast_('No API keys in the Store Keys tab. Paste them in, then re-run.', 'Error');
+    return;
+  }
+  const requests = fetchable.map(function(st) {
+    return {
+      url: DUTCHIE_BASE + '/employees?Skip=0&Take=500',
+      headers: {
+        Authorization: 'Basic ' + Utilities.base64Encode(sheetKeys[st.storeId] + ':'),
+        Accept: 'application/json',
+      },
+      muteHttpExceptions: true,
+    };
+  });
 
-  // UrlFetchApp.fetchAll doesn't preserve metadata, so we track by index
-  const fetchRequests = requests.map(r => ({
-    url: r.url,
-    headers: r.headers,
-    muteHttpExceptions: r.muteHttpExceptions,
-  }));
-
-  const responses = UrlFetchApp.fetchAll(fetchRequests);
+  // fetchAll preserves ORDER, not metadata — index back into `fetchable`, which built `requests`.
+  const responses = UrlFetchApp.fetchAll(requests);
   const allEmployees = [];
 
-  Object.keys(STORE_KEYS_MAP).forEach(function(dutchieName, i) {
+  fetchable.forEach(function(st, i) {
     try {
       const resp = responses[i];
       if (resp.getResponseCode() !== 200) {
-        Logger.log('Employee fetch error for ' + dutchieName + ': ' + resp.getResponseCode());
+        Logger.log('Employee fetch error for ' + st.storeId + ': ' + resp.getResponseCode());
         return;
       }
       const data = JSON.parse(resp.getContentText());
       const emps = Array.isArray(data) ? data : (data.employees || data.data || []);
-      const slug = own_(DUTCHIE_TO_SLUG, dutchieName) || '';
 
       emps.forEach(function(emp) {
         if (!emp || emp.isDeleted || emp.inactive) return;
@@ -228,15 +238,15 @@ function pullEmployeesFromDutchie() {
         const role      = emp.role || emp.roleName || emp.position || '';
 
         allEmployees.push({
-          store:        own_(SLUG_TO_NAME, slug) || dutchieName,
+          store:        st.name,
           fullName:     fullName,
           initials:     initials,
           dutchieRole:  role,
-          slug:         slug,
+          slug:         st.slug,
         });
       });
     } catch(e) {
-      Logger.log('Error parsing employees for store ' + dutchieName + ': ' + e.message);
+      Logger.log('Error parsing employees for store ' + st.storeId + ': ' + e.message);
     }
   });
 
@@ -334,7 +344,7 @@ function pushUsersToApp() {
     const initials = String(row[COL_INITIALS - 1] || '').trim();
 
     // Find storeSlug from store name
-    const storeSlug = Object.entries(SLUG_TO_NAME).find(([, name]) => name === storeName)?.[0] || null;
+    const storeSlug = (STORES.find(function(st) { return st.name === storeName; }) || {}).slug || null;
 
     const rowNum = i + 2;
 
@@ -399,14 +409,19 @@ function pushStoreKeysToDashboard() {
     showToast_('Store Keys tab is empty. Run Setup first.', 'Error'); return;
   }
 
-  // Build the JSON from the sheet (dutchieName → key)
-  const rows = keysSheet.getRange(2, 1, keysSheet.getLastRow() - 1, 4).getValues();
-  const keysObj = {};
-  rows.forEach(function(row) {
-    const dutchieName = String(row[0] || '').trim();
-    const key         = String(row[3] || '').trim();
-    if (dutchieName && key) keysObj[dutchieName] = key;
-  });
+  // Build the JSON from the sheet (store_id → key). Column A is the GX Core store_id.
+  const keysObj = readStoreKeysFromSheet_();
+  if (!Object.keys(keysObj).length) {
+    showToast_('No API keys found in the Store Keys tab.', 'Error'); return;
+  }
+  const known = STORES.map(function(st) { return st.storeId; });
+  const unknown = Object.keys(keysObj).filter(function(k) { return known.indexOf(k) === -1; });
+  if (unknown.length) {
+    // Fail loudly. A stale NAME left in column A would push a key the dashboard can never look up,
+    // and the kiosk would fail closed with no clue why.
+    showToast_('Column A must hold GX Core store_ids. Unrecognised: ' + unknown.join(', '), 'Error');
+    return;
+  }
 
   const payload = JSON.stringify(keysObj);
 

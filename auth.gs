@@ -154,11 +154,54 @@ function own_(map, key) {
   return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined;
 }
 
-/** GX Core store_id -> this app's historical slug. Anything absent is deliberately unmapped. */
+/**
+ * GX Core store_id -> this app's historical slug.
+ *
+ * DEMOTED to an offline fallback: gxSlugForStoreId_ derives the slug from GX Core's live
+ * registry first and only falls back here. Kept rather than deleted -- the consolidation note
+ * asked for deletion on the grounds that the slug IS display_name lowercased, which is true
+ * (verified against live gxstores 2026-08-28, all six agree) -- but deleting it outright would
+ * make a GX Core outage a LOGIN outage, because this map is what places a manager on a store.
+ * A registry that is merely stale is survivable; one that is unreachable at sign-in is not.
+ */
 var GX_STOREID_TO_SLUG = {
   hillsboro: 'baseline', bend: 'century', 'portland-rd': 'portland',
   'river-rd': 'river', center: 'center', commercial: 'commercial',
 };
+
+/**
+ * GX Core store_id -> this app's slug, from the LIVE registry, falling back to the static map.
+ *
+ * The slug is display_name lowercased. Deriving it means a store renamed or added in the Command
+ * Center places correctly here without a deploy -- which is the whole point of the consolidation:
+ * the hardcoded table stops being the source of truth and becomes what it claims to be.
+ *
+ * Still fails CLOSED. A derived slug is only accepted if this app actually has a STORES entry for
+ * it, and an unknown store_id returns null so the caller refuses the session rather than guessing.
+ * Guessing here would put a manager on somebody else's store.
+ *
+ * @param {string} storeId  GX Core store_id, e.g. 'hillsboro'
+ * @return {string|null}
+ */
+function gxSlugForStoreId_(storeId) {
+  var id = String(storeId || '').toLowerCase();
+  if (!id) return null;
+
+  try {
+    var reg = getGxStores_();
+    if (reg && reg.ok && reg.stores) {
+      for (var i = 0; i < reg.stores.length; i++) {
+        if (String(reg.stores[i].store_id || '').toLowerCase() !== id) continue;
+        var derived = String(reg.stores[i].display_name || '').trim().toLowerCase();
+        // Only trust a derived slug this app can actually serve.
+        if (derived && STORES.some(function (x) { return x.slug === derived; })) return derived;
+        break;   // Core knows this store but we cannot serve it -- fall through to the map
+      }
+    }
+  } catch (e) { /* Core unreachable -- the fallback below is the point */ }
+
+  return own_(GX_STOREID_TO_SLUG, id) || null;
+}
 /** GX Core app_access role -> a role homeRoute() and requireRole_ actually understand. */
 var GX_ROLE_TO_LOCAL = {
   owner: 'owner', director: 'director', admin: 'director',
@@ -176,7 +219,7 @@ function gxSessionUsable_(g) {
   var needsStore = (role !== 'owner' && role !== 'director');
   var slug = null;
   if (g.store) {
-    slug = own_(GX_STOREID_TO_SLUG, String(g.store).toLowerCase()) || null;
+    slug = gxSlugForStoreId_(g.store);
     if (!slug) return null;                 // a store we cannot place: do not guess
   }
   if (needsStore && !slug) return null;     // manager with no store would default to Baseline
@@ -270,7 +313,7 @@ function adminSetUser(params) {
 
 /**
  * Write DUTCHIE_STORE_KEYS_JSON to ScriptProperties.
- * Params: keys — JSON string of { dutchieName: apiKey, ... }
+ * Params: keys — JSON string of { store_id: apiKey, ... }  (GX Core store_id slugs)
  * Auth:   director token required
  */
 function adminSetStoreKeys(params) {
