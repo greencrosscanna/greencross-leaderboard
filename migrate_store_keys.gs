@@ -1,27 +1,32 @@
 // ============================================================
-//  ONE-TIME MIGRATION — DUTCHIE_STORE_KEYS_JSON: name-keyed  ->  GX Core store_id
+//  Dutchie key migration — Dutchie NAME  ->  GX Core store_id
 //
-//  Run migrateStoreKeysToStoreId() ONCE in this project's editor, then deploy the matching code
-//  change (dutchie_proxy.gs STORES + dutchie_fetch.gs getDutchieStoreKey_).
+//  RUN  migrateStoreKeysToStoreId()  — that is the only thing you need to do in here.
 //
-//  ORDER MATTERS. The old code reads keys[store.dutchieName]; the new code reads keys[store.storeId].
-//  Whichever you change first, the kiosk fails CLOSED (throws "No Dutchie key for store_id: …")
-//  until the other lands — it never serves the WRONG store's numbers. Run this, then deploy
-//  immediately. Off-peak is kind but not required.
+//  ZERO DOWNTIME BY DESIGN. It does not replace the old labels, it ADDS the store_id ones
+//  alongside them. So the property ends up holding both spellings of the same six keys:
 //
-//  WHY THE REMAP IS NOT THE IDENTITY. This project's labels had Bend and Hillsboro transposed:
-//  the key labelled 'Bend' serves the Hillsboro/Baseline store, and 'Hillsboro' serves Bend/Century.
-//  Confirmed 2026-08-28 by measurement (6/6 employees per store) and 2026-08-29 by comparing key
-//  material against Inventory, Sales and GX Core, which all label them the other way round.
+//      {"Bend":"<k>", ..., "bend":"<k2>", "hillsboro":"<k>", ...}
 //
-//  Safe to re-run: it detects an already-migrated property and does nothing.
-//  DELETE THIS FILE once the migration has run and the deploy is verified.
+//  Production is pinned to version 486, which is the OLD code and looks keys up by NAME. A
+//  straight replace would have taken the kiosk down the moment it ran, and left it down until
+//  a new version was deployed. Holding both means the running app keeps working, the new code
+//  works the instant it deploys, and the order of the two no longer matters.
+//
+//  AFTER the store_id code is deployed and verified, run cleanupLegacyStoreKeyLabels() to drop
+//  the six name entries. There is no rush and nothing breaks if it waits.
+//
+//  checkStoreKeyVocabulary() is read-only — safe to run any time. It never logs a key value.
+//
+//  WHY bend AND hillsboro CROSS OVER BELOW: this project's key labels had those two transposed.
+//  The key labelled 'Bend' serves the Hillsboro/Baseline store and vice versa — confirmed by
+//  measurement on 2026-08-28 and by comparing key material against GX Core, Inventory and Sales
+//  on 2026-08-29, all three of which label them the other way. The crossing is the fix, not a typo.
 // ============================================================
 
-// Old label -> GX Core store_id. Note bend/hillsboro cross over. That crossing IS the bug.
 var LEGACY_LABEL_TO_STORE_ID = {
-  'Hillsboro':   'bend',          // key labelled Hillsboro actually serves Bend / Century
-  'Bend':        'hillsboro',     // key labelled Bend actually serves Hillsboro / Baseline
+  'Hillsboro':   'bend',          // labelled Hillsboro, actually serves Bend / Century
+  'Bend':        'hillsboro',     // labelled Bend, actually serves Hillsboro / Baseline
   'Center':      'center',
   'Commercial':  'commercial',
   'Portland Rd': 'portland-rd',
@@ -36,43 +41,50 @@ function migrateStoreKeysToStoreId() {
   if (!raw) throw new Error('DUTCHIE_STORE_KEYS_JSON is not set — nothing to migrate.');
 
   var cur = JSON.parse(raw);
-  var labels = Object.keys(cur);
-
-  // Already migrated?
-  var already = labels.filter(function (l) { return EXPECTED_STORE_IDS.indexOf(l) !== -1; });
-  if (already.length === labels.length && labels.length === 6) {
-    Logger.log('Already store_id-keyed. No change. Labels: ' + labels.sort().join(', '));
-    return { ok: true, migrated: false, labels: labels.sort() };
-  }
-
   var out = {};
-  var unmapped = [];
-  labels.forEach(function (label) {
-    var id = Object.prototype.hasOwnProperty.call(LEGACY_LABEL_TO_STORE_ID, label)
-      ? LEGACY_LABEL_TO_STORE_ID[label] : null;
-    if (!id) { unmapped.push(label); return; }
-    out[id] = cur[label];
+  Object.keys(cur).forEach(function (k) { out[k] = cur[k]; });   // keep every existing label
+
+  Object.keys(LEGACY_LABEL_TO_STORE_ID).forEach(function (label) {
+    if (Object.prototype.hasOwnProperty.call(cur, label)) {
+      out[LEGACY_LABEL_TO_STORE_ID[label]] = cur[label];
+    }
   });
 
-  if (unmapped.length) {
-    throw new Error('Unrecognised label(s), refusing to write: ' + unmapped.join(', '));
-  }
   var missing = EXPECTED_STORE_IDS.filter(function (id) { return !out[id]; });
   if (missing.length) {
-    throw new Error('Would leave store(s) with no key, refusing to write: ' + missing.join(', '));
+    throw new Error('Refusing to write — these store_ids would have no key: ' + missing.join(', ')
+                  + '. Present labels: ' + Object.keys(cur).sort().join(', '));
   }
 
   props.setProperty('DUTCHIE_STORE_KEYS_JSON', JSON.stringify(out));
-  Logger.log('Migrated. Now keyed by store_id: ' + Object.keys(out).sort().join(', '));
-  return { ok: true, migrated: true, labels: Object.keys(out).sort() };
+  Logger.log('OK. Property now answers to both spellings: ' + Object.keys(out).sort().join(', '));
+  Logger.log('Nothing has changed for the running app. Safe to deploy the store_id code whenever.');
+  return { ok: true, labels: Object.keys(out).sort() };
 }
 
-/** Read-only check. Logs which vocabulary the property currently uses. No key values are logged. */
+/** Run only AFTER the store_id code is deployed and verified. Drops the six legacy name labels. */
+function cleanupLegacyStoreKeyLabels() {
+  var props = PropertiesService.getScriptProperties();
+  var cur = JSON.parse(props.getProperty('DUTCHIE_STORE_KEYS_JSON') || '{}');
+  var missing = EXPECTED_STORE_IDS.filter(function (id) { return !cur[id]; });
+  if (missing.length) {
+    throw new Error('Refusing to clean up — not fully migrated yet, missing: ' + missing.join(', '));
+  }
+  var out = {};
+  EXPECTED_STORE_IDS.forEach(function (id) { out[id] = cur[id]; });
+  props.setProperty('DUTCHIE_STORE_KEYS_JSON', JSON.stringify(out));
+  Logger.log('Cleaned. Now store_id only: ' + Object.keys(out).sort().join(', '));
+  return { ok: true, labels: Object.keys(out).sort() };
+}
+
+/** Read-only. Says which spellings the property currently answers to. Logs no key values. */
 function checkStoreKeyVocabulary() {
   var raw = PropertiesService.getScriptProperties().getProperty('DUTCHIE_STORE_KEYS_JSON');
   if (!raw) { Logger.log('DUTCHIE_STORE_KEYS_JSON is NOT SET.'); return { set: false }; }
-  var labels = Object.keys(JSON.parse(raw)).sort();
-  var isStoreId = labels.join(',') === EXPECTED_STORE_IDS.slice().sort().join(',');
-  Logger.log((isStoreId ? 'store_id-keyed (migrated)' : 'legacy NAME-keyed') + ': ' + labels.join(', '));
-  return { set: true, storeIdKeyed: isStoreId, labels: labels };
+  var labels = Object.keys(JSON.parse(raw));
+  var hasIds = EXPECTED_STORE_IDS.every(function (id) { return labels.indexOf(id) !== -1; });
+  var hasNames = Object.keys(LEGACY_LABEL_TO_STORE_ID).some(function (n) { return labels.indexOf(n) !== -1; });
+  Logger.log('store_id keys: ' + (hasIds ? 'YES' : 'no') + '   legacy name keys: ' + (hasNames ? 'YES' : 'no'));
+  Logger.log('labels: ' + labels.sort().join(', '));
+  return { set: true, storeIdKeyed: hasIds, legacyStillPresent: hasNames, labels: labels.sort() };
 }
