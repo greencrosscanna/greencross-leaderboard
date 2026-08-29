@@ -17,3 +17,4 @@
 # once migrateStoreKeysToStoreId() has run and the deploy is verified.
 !migrate_store_keys.gs
 !hourly_dist_repair.gs
+!verify_store_keys.gs
