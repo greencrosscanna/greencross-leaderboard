@@ -9,8 +9,9 @@ function getDutchieStoreKey_(slug) {
   const keys  = JSON.parse(props.getProperty('DUTCHIE_STORE_KEYS_JSON') || '{}');
   const store = STORES.find(s => s.slug === slug);
   if (!store) throw new Error('Unknown store: ' + slug);
-  const key = keys[store.dutchieName];
-  if (!key) throw new Error('No Dutchie key for store: ' + store.dutchieName + '. Set DUTCHIE_STORE_KEYS_JSON in Script Properties.');
+  // Keyed by GX Core store_id — see the STORES comment in dutchie_proxy.gs for why this is not a name.
+  const key = Object.prototype.hasOwnProperty.call(keys, store.storeId) ? keys[store.storeId] : null;
+  if (!key) throw new Error('No Dutchie key for store_id: ' + store.storeId + '. Set DUTCHIE_STORE_KEYS_JSON in Script Properties.');
   return key;
 }
 

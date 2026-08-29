@@ -34,15 +34,16 @@ const CORE_ROWS = [
 
 // store_id is deliberately NOT the app slug for River — that translation through the shared
 // registry is the part a hand-rolled map gets wrong.
-// The REAL registry, as GX Core publishes it. Four of the six store_ids differ from this app's
+// The REAL registry, as GX Core publishes it (verbatim, re-verified 2026-08-29 — the
+// dutchie_name column here was INVERTED on bend/hillsboro until then). Four of the six store_ids differ from this app's
 // slug — that translation is the whole reason the gate goes through the registry and not a hand map.
 const CORE_STORES = [
-  { store_id: 'bend',        display_name: 'Century',    dutchie_name: 'Hillsboro',   color: '#fff', sort_order: '1' },
+  { store_id: 'bend',        display_name: 'Century',    dutchie_name: 'Bend',        color: '#fff', sort_order: '1' },
   { store_id: 'center',      display_name: 'Center',     dutchie_name: 'Center',      color: '#fff', sort_order: '2' },
   { store_id: 'commercial',  display_name: 'Commercial', dutchie_name: 'Commercial',  color: '#fff', sort_order: '3' },
-  { store_id: 'hillsboro',   display_name: 'Baseline',   dutchie_name: 'Bend',        color: '#fff', sort_order: '4' },
+  { store_id: 'hillsboro',   display_name: 'Baseline',   dutchie_name: 'Hillsboro',   color: '#fff', sort_order: '4' },
   { store_id: 'portland-rd', display_name: 'Portland',   dutchie_name: 'Portland Rd', color: '#fff', sort_order: '5' },
-  { store_id: 'river-rd',    display_name: 'River',      dutchie_name: 'River',       color: '#fff', sort_order: '6' },
+  { store_id: 'river-rd',    display_name: 'River',      dutchie_name: 'River Rd',    color: '#fff', sort_order: '6' },
 ];
 
 // This app's own 30-day sales roster — everyone below rang something at Portland recently.

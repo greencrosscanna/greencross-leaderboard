@@ -15,7 +15,9 @@ cd "$(dirname "$0")"
 APP="performance"
 FAIL=0
 # Files we ship. Exclude the shared tooling, which legitimately contains these words.
-FILES="$(git ls-files '*.html' '*.js' '*.css' 2>/dev/null | grep -vE '^(gx-dev\.js|gx-preflight\.sh|serve\.py)$' || true)"
+# NOTE '*.gs'. Until 2026-08-29 this glob was html/js/css only, so Apps Script backends — where every
+# spoke keeps its credentials and its POS plumbing — were invisible to EVERY check below.
+FILES="$(git ls-files '*.html' '*.js' '*.css' '*.gs' 2>/dev/null | grep -vE '^(gx-dev\.js|gx-preflight\.sh|serve\.py)$' || true)"
 [ -n "$FILES" ] || { echo "preflight: no shipped files found — skipping."; exit 0; }
 
 # flag <severity> <label> <grep-pattern> [keep-comments]
@@ -49,6 +51,62 @@ flag hard "localhost URL in shipped code" \
      'https?://(localhost|127\.0\.0\.1)'
 flag hard "debugger statement" \
      '(^|[^A-Za-z_])debugger[[:space:]]*;'
+
+# ─── CREDENTIALS IN SOURCE ───────────────────────────────────────────────────────────────────────
+# Scans EVERY TRACKED FILE, not only the ones we ship. That distinction is the entire point.
+#
+# On 2026-08-29 the same six LIVE Dutchie POS keys were found at HEAD in two PUBLIC repos
+# (sales, leaderboard) and in history in a third (inventory). Preflight had never seen any of them:
+# every exposure was in a .gs file and the glob above was html/js/css only. leaderboard/user_admin.gs
+# was additionally .claspignore'd — never deployed, never tested, never scanned — and sat readable
+# for 101 days. A 2026-06-02 "redact plaintext credentials" pass greped the one file it remembered
+# and left the copy behind.
+#
+# GitHub secret scanning does not cover this shape either: a Dutchie key is a bare 32-hex string
+# with no provider prefix, so it matches only under "non-provider patterns", which was off.
+#
+# Mark a genuine false positive with  @notasecret  on the same line.
+_secrets="$(python3 - <<'PYEOF'
+import re, subprocess, os
+try:
+    files = [f for f in subprocess.run(['git','ls-files'], capture_output=True, text=True).stdout.split(chr(10)) if f]
+except Exception:
+    raise SystemExit(0)
+SKIP = {'gx-preflight.sh'}
+HEX32 = re.compile(r'\b[0-9a-f]{32}\b')
+Q = chr(39) + chr(34)
+ASSIGN = re.compile(r'(?i)(api[_-]?key|secret|token|password|passwd|credential)\s*[:=]\s*[' + Q + r']([A-Za-z0-9_\-]{20,})[' + Q + r']')
+def randomish(v):
+    return any(c.isdigit() for c in v) and any(c.islower() for c in v)
+out = []
+for f in files:
+    if f in SKIP or not os.path.isfile(f):
+        continue
+    try:
+        txt = open(f, encoding='utf-8', errors='ignore').read()
+    except Exception:
+        continue
+    if chr(0) in txt[:4096]:
+        continue
+    for n, line in enumerate(txt.split(chr(10)), 1):
+        if '@notasecret' in line:
+            continue
+        if HEX32.search(line):
+            out.append(f + ':' + str(n) + ': 32-hex literal (Dutchie POS key shape)')
+            continue
+        m = ASSIGN.search(line)
+        if m and randomish(m.group(2)):
+            out.append(f + ':' + str(n) + ': ' + m.group(1) + ' assigned a literal secret')
+print(chr(10).join(out[:40]))
+PYEOF
+)"
+if [ -n "$_secrets" ]; then
+  echo "  ✗ credential literal in a tracked file — rotate it, then move it to Script Properties:"
+  printf '%s\n' "$_secrets" | sed 's/^/      /'
+  FAIL=1
+else
+  echo "  ✓ no credential literals in tracked files"
+fi
 
 # Cache-buster: if the app JS changed but ?v=NN did not, staff keep the cached old file.
 # Same MAJOR.MINOR-aware pattern as deploy.sh — keep the two in step. Not a live bug here (only the

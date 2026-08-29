@@ -313,7 +313,7 @@ function adminSetUser(params) {
 
 /**
  * Write DUTCHIE_STORE_KEYS_JSON to ScriptProperties.
- * Params: keys — JSON string of { dutchieName: apiKey, ... }
+ * Params: keys — JSON string of { store_id: apiKey, ... }  (GX Core store_id slugs)
  * Auth:   director token required
  */
 function adminSetStoreKeys(params) {

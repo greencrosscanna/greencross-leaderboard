@@ -1233,7 +1233,7 @@ function saveManualGoals_(params) {
  * Returns monthly revenue goals for all 12 months of the current year, keyed by
  * Dutchie store name (matching the Sales Dashboard's STORES[].name convention).
  * Uses the same max(rolling, yoy) + stretch + manual override logic as the leaderboard.
- * Response: { ok: true, goals: { dutchieName: { Jan: X, Feb: Y, ... } } }
+ * Response: { ok: true, goals: { locationName: { Jan: X, Feb: Y, ... } } }
  */
 function getGoalsForDashboard_() {
   var MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -1249,7 +1249,7 @@ function getGoalsForDashboard_() {
         var base = computeAccurateMonthly_(g.dowAvg, year, i);
         monthly[name] = Math.round(base * (1 + res.stretch));
       });
-      dashGoals[s.locationName || s.dutchieName] = monthly;
+      dashGoals[s.locationName] = monthly;
     } catch(e) {
       Logger.log('getGoalsForDashboard_ error for ' + s.slug + ': ' + e.message);
     }
