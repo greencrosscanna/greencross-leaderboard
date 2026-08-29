@@ -3479,6 +3479,17 @@ window.GC = window.GC || {}; GC.VERSION = 'v1.641';
 // fine without it. Hoisted here so there is one definition, above every consumer.
 window.GXCORE_URL = 'https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec';
 
+// One GXClient for GX Core, memoised. GXClient carries the retry the bare /exec second hop needs
+// (it 404s on ~6% of rapid calls), so nothing here should hand-roll a JSONP call. Returns null if
+// gx-theme has not loaded, and every caller is expected to cope rather than throw.
+GC.gxCore = (function () {
+  var _c = null;
+  return function () {
+    if (!_c && typeof GXClient !== 'undefined') _c = GXClient(window.GXCORE_URL);
+    return _c;
+  };
+})();
+
 // Maintenance gate. Guarded on the global because gx-theme loads by URL from GitHub Pages: a bad
 // minute of that CDN must not take the kiosk with it. Un-gates itself within ~20s of the flags
 // clearing, with nobody clicking — which is the point for a wall-mounted screen.
@@ -5454,6 +5465,7 @@ var director = (function() {
   // ── Module state — UI preferences read from GC.state, data always null on init ──
   var _data          = null;   // never persisted — always reloaded fresh
   var _avatarConfigs = {};
+  var _selfAvatarCfg;   // the signed-in user's face after a save from the chip; see paintUserTray
   var _storeFilter   = GC.state.get('dir.storeFilter',  'all');
   var _tagFilter     = null;
   var _clockTimer    = null;
@@ -5750,7 +5762,13 @@ var director = (function() {
     if (!session) { slot.innerHTML = ''; return; }
     var name    = session.displayName || session.user || '';
     var nameKey = GC.nameToKey(name);
-    var cfg     = (_lastHeaderData && _lastHeaderData.avatarConfigs) ? findDirAvatarCfg_(nameKey) : null;
+    // _selfAvatarCfg is the just-saved face, and it WINS: after a save from the chip the tray has to
+    // repaint from what we hold, not from _lastHeaderData, which is the last fetched payload and
+    // still carries the old config (and is null outright on the kiosk). undefined = never saved this
+    // session; null = deliberately cleared, which is not the same thing and must not fall through.
+    var cfg     = (_selfAvatarCfg !== undefined)
+      ? _selfAvatarCfg
+      : ((_lastHeaderData && _lastHeaderData.avatarConfigs) ? findDirAvatarCfg_(nameKey) : null);
     if (window.GXChangelog) {
       GXChangelog.init({ app: 'performance', title: 'GX Leaderboard',
                         version: function () { return (window.GC && GC.VERSION) || ''; } });
@@ -5760,6 +5778,33 @@ var director = (function() {
       role:   String(session.role || '').replace(/_/g, ' '),
       // Seeded on nameKey, matching what this app has always used, so faces do not change.
       avatar: window.GXAvatar ? GXAvatar.chip(cfg, name, nameKey) : (session.initials || '??'),
+      // Staff change their OWN face from the chip. Omitted -- not passed as a disabled row -- when
+      // the pieces are missing, because gx-topnav only renders the row when this object is present:
+      // an Avatar row that opened an editor whose Save could not work is the SPIFF gear again.
+      avatarEdit: (session.token && window.GXAvatar && GC.gxCore()) ? {
+        token:  session.token,
+        app:    'performance',
+        client: GC.gxCore(),
+        // Same seed rule as the #/avatar picker: the stored config's own seed if there is one,
+        // else nameKey. core-admin's note asks for employee_number, but this app never receives
+        // it -- getavatardata does not carry the field -- and seeding the editor differently from
+        // the chip beside it would show a stranger's face to anyone with no avatar yet. Core
+        // re-stamps the real employee_number seed on the first save either way.
+        seed:   (cfg && cfg.seed) || nameKey,
+        config: cfg,
+        onSaved: function (c) {
+          _selfAvatarCfg = (c || null);
+          // Keep the fetched map in step so every OTHER surface painted from it agrees.
+          if (_avatarConfigs) {
+            if (c) _avatarConfigs[nameKey] = c; else delete _avatarConfigs[nameKey];
+          }
+          // The server busts its own caches; this is the client half. Without it the new face
+          // sits behind this app's cached kiosk/director payloads for up to 3 minutes, so the
+          // chip updates and the leaderboard card underneath it does not.
+          try { GC.api.clearAvatarCaches(); } catch (e) {}
+          paintUserTray();
+        }
+      } : undefined,
       items: [
         { action: 'settings', label: 'Settings' },
         { action: 'version',  label: 'Version', value: (window.GC && GC.VERSION) ? GC.VERSION : '' },
