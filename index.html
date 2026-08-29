@@ -3719,16 +3719,19 @@ GC.slideshow = (function() {
   var _active      = false;
   var _slugs       = GC.STORE_SLUGS;
   var _idx         = 0;
-  var _intervalMs  = 2 * 60 * 1000;
+  // 30s. Six stores, so a full circuit is 3 minutes — a wall screen that takes 12 minutes to
+  // come back around is one nobody watches for their own store.
+  var _intervalMs  = 30 * 1000;
   var _timer       = null;
   var _hideTimer   = null;
 
   function start(startIdx) {
     _active = true;
     _idx    = (startIdx != null) ? startIdx : 0;
-    if (document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen().catch(function() {});
-    }
+    // No requestFullscreen. It only ever worked from the click that started the slideshow, so a
+    // kiosk that reloaded came back windowed with no gesture to re-enter on, and the browser's
+    // "exit full screen" overlay landed on top of the board. Full screen is the display's job
+    // (kiosk mode / F11), not something the page should be grabbing.
     _navigate();
   }
 
@@ -3739,9 +3742,6 @@ GC.slideshow = (function() {
     _timer = _hideTimer = null;
     var bar = document.getElementById('ssBar');
     if (bar) bar.remove();
-    if (document.fullscreenElement && document.exitFullscreen) {
-      document.exitFullscreen().catch(function() {});
-    }
     GC.router.navigate('#/director');
   }
 
@@ -3944,6 +3944,94 @@ GC.dayFrac = function() {
     var h = parseInt(parts[0], 10), m = parseInt(parts[1], 10);
     return Math.max(0, Math.min(h + m / 60 - 8, 14)) / 14;
   } catch(e) { return 0; }
+};
+
+/**
+ * DOW-weighted twin of GC.dayFrac: how much of the day's sales the store's own hourly
+ * curve expects by now, off the CLIENT clock so a pace marker still glides between the
+ * ≤5-minute server payloads.
+ *
+ * `shape` is the { hour: weight } curve from the server (today.hourShape). Without one
+ * this returns the linear dayFrac, which is the honest answer when no curve is loaded --
+ * but note that returning linear SILENTLY is exactly how the gauge came to disagree with
+ * its own pace percentage, so callers that can show a state should check hasShape first.
+ */
+GC.expectedFrac = function(shape) {
+  var linear = GC.dayFrac();
+  if (!shape) return linear;
+  try {
+    var ptStr = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles', hour: 'numeric', minute: 'numeric', hour12: false
+    }).format(new Date());
+    var parts = ptStr.split(':');
+    var h = parseInt(parts[0], 10), m = parseInt(parts[1], 10);
+    var ef = 0, total = 0;
+    for (var hh = 8; hh < 22; hh++) {
+      var w = +shape[hh] || 0;
+      total += w;
+      if (hh < h)       ef += w;
+      else if (hh === h) ef += w * (m / 60);
+    }
+    // Shapes are normalised to 1.0 server-side; renormalise defensively so a partial
+    // curve cannot report a fraction of the wrong scale.
+    if (!(total > 0)) return linear;
+    ef = ef / total;
+    return ef > 0 ? Math.max(0, Math.min(ef, 1)) : linear;
+  } catch (e) { return linear; }
+};
+
+/**
+ * One hourly curve for several stores, weighted by each store's daily goal — a chain-wide
+ * pace line has to follow the mix of stores it covers, not an unweighted mean of their
+ * shapes. Returns null when no store carried a curve, so callers fall back to linear.
+ */
+GC.chainShape = function(stores) {
+  if (!stores || !stores.length) return null;
+  var out = {}, any = false;
+  for (var i = 0; i < stores.length; i++) {
+    var sh = stores[i] && stores[i].hourShape;
+    var wt = Math.max(0, +(stores[i] && (stores[i].target || stores[i].goal)) || 0);
+    if (!sh || !wt) continue;
+    for (var h = 8; h < 22; h++) { out[h] = (out[h] || 0) + (+sh[h] || 0) * wt; any = true; }
+  }
+  return any ? out : null;
+};
+
+/**
+ * The pace position to draw, in one place: the store's own curve when we have it (live off
+ * the client clock so the marker glides), else the server's weighted value, else linear.
+ *
+ * Written as an explicit ladder because GC.expectedFrac already falls back to linear
+ * internally — so `GC.expectedFrac(x) || serverValue` silently never reaches the server
+ * value, which is the shape of the bug this whole change is fixing.
+ */
+GC.paceFrac = function(shape, serverFrac) {
+  if (GC.hasShape(shape)) return GC.expectedFrac(shape);
+  if (serverFrac > 0) return serverFrac;
+  return GC.dayFrac();
+};
+
+/**
+ * A tick across the gauge arc at fraction f (0..1), as SVG line coords. The arc is the
+ * semicircle "M 22 122 A 98 98 0 0 1 218 122" — centre (120,122), r 98, swept left to
+ * right — so f maps onto π…0 and the tick is drawn along the radius, spanning the stroke.
+ */
+GC.arcTick = function(f, cx, cy, r, halfWidth) {
+  var a  = Math.PI * (1 - Math.max(0, Math.min(f, 1)));
+  var ca = Math.cos(a), sa = Math.sin(a);
+  return {
+    x1: (cx + ca * (r - halfWidth)).toFixed(2),
+    y1: (cy - sa * (r - halfWidth)).toFixed(2),
+    x2: (cx + ca * (r + halfWidth)).toFixed(2),
+    y2: (cy - sa * (r + halfWidth)).toFixed(2),
+  };
+};
+
+/** True when a real curve is available — i.e. the pace marker is weighted, not linear. */
+GC.hasShape = function(shape) {
+  if (!shape) return false;
+  for (var h = 8; h < 22; h++) if (+shape[h] > 0) return true;
+  return false;
 };
 
 GC.fmtCurrency = function(n) {
@@ -5111,6 +5199,13 @@ GC.router = (function() {
       roles: ['owner','director','store_manager','asst_manager'],
       render: function() { GC.views.renderStandings(); },
     },
+    {
+      // Headless standings for a phone — same data, no chrome, sized to one screen.
+      id: 'standings-mobile',
+      pattern: /^\/standings\/m$/,
+      roles: ['owner','director','store_manager','asst_manager'],
+      render: function() { GC.views.renderStandingsMobile(); },
+    },
   ];
 
   // ── Dispatch ───────────────────────────────────────────
@@ -5240,6 +5335,7 @@ GC.views = {
   renderAvatar:      function(qp) { console.warn('[GC.views] renderAvatar not registered', qp); },
   renderIncentive:   function() { console.warn('[GC.views] renderIncentive not registered'); },
   renderStandings:   function() { console.warn('[GC.views] renderStandings not registered'); },
+  renderStandingsMobile: function() { console.warn('[GC.views] renderStandingsMobile not registered'); },
 };
 
 </script>
@@ -6045,7 +6141,9 @@ var director = (function() {
     var pctDisp    = Math.round(pct * 100) + '%';
     var capped     = Math.min(pct, 1);
     var offset     = Math.round(DIR_ARC_LEN * (1 - capped));
-    var paceOffset = Math.round(DIR_ARC_LEN * (1 - Math.min(GC.dayFrac(), 1)));  // live pace marker (not the cached server dayFrac)
+    // Weighted pace, off the client clock so it still advances between payloads. Straight
+    // clock time here disagreed with the server's weighted pace value shown beside it.
+    var paceOffset = Math.round(DIR_ARC_LEN * (1 - Math.min(GC.paceFrac(today.hourShape, today.expectedFrac), 1)));
     var closed  = today.timeRemainingLabel === 'Closed';
 
     var soldStr = GC.fmtCurrency(today.revenue || 0);
@@ -7170,7 +7268,7 @@ var sky = (function() {
   var _cursor  = '';       // last seen txn timestamp across the merged feed
   var _queue   = [];       // pending NEW sales waiting to drip in (chronological)
   var _liveSold = null;    // aggregate sold today; climbs as sales drip in
-  var _goal = 0, _projected = 0, _pace = 0, _dayFrac = 0;
+  var _goal = 0, _projected = 0, _pace = 0, _dayFrac = 0, _chainShape = null;
 
   function e(s) { return GC.esc(String(s == null ? '' : s)); }
   function paceLabel(p) { return (p > 0 ? '+' : '') + Math.round((p || 0) * 100) + '%'; }
@@ -7235,8 +7333,11 @@ var sky = (function() {
     if (_liveSold == null) return;
     var pct  = _goal > 0 ? _liveSold / _goal : 0;
     var w    = Math.min(pct * 100, 100);
-    var over = _dayFrac > 0 && pct >= _dayFrac;                 // over pace
-    var mark = Math.min(_dayFrac * 100, 100);
+    // Recompute off the client clock each render so the hash glides between the ≤5-min
+    // fetches, rather than snapping forward when a payload lands.
+    var live = _chainShape ? GC.expectedFrac(_chainShape) : _dayFrac;
+    var over = live > 0 && pct >= live;                          // over pace
+    var mark = Math.min(live * 100, 100);
     var sv = document.getElementById('skySoldVal'); if (sv) sv.textContent = fullCur(_liveSold);
     var pe = document.getElementById('skyAggPct');  if (pe) pe.textContent = Math.round(pct * 100) + '%';
     var fl = document.getElementById('skyAggFill');  if (fl) {
@@ -7262,7 +7363,7 @@ var sky = (function() {
     var pct  = t.pctToGoal || 0;
     var overGoal = pct > 1;
     var w    = Math.min(Math.round(pct * 100), 100);
-    var df   = GC.dayFrac();                         // LIVE pace line off the client clock — advances each render (not the ≤5-min-cached server value)
+    var df   = GC.paceFrac(t.hourShape, t.expectedFrac);  // LIVE pace line off the client clock — advances each render (not the ≤5-min-cached server value), weighted by the store's own hourly curve
     var paceMark = +(df * 100).toFixed(2);           // 2-dp so it glides instead of snapping to whole %
     // Hash = the 100%-goal line when over goal (so the overage is proportional &
     // distinguishes 104 / 110 / 112%), otherwise the live pace line (day fraction).
@@ -7315,7 +7416,11 @@ var sky = (function() {
       _goal      = today.goal || 0;
       _projected = today.projectedRevenue || 0;
       _pace      = today.pace || 0;
-      _dayFrac   = GC.dayFrac();   // LIVE pace line (hash position); server pace value still drives the % math
+      // LIVE pace line (hash position); server pace value still drives the % math. Weighted
+      // by the goal-weighted blend of the stores' own hourly curves, so the hash agrees with
+      // the pace label sitting next to it instead of tracking the wall clock.
+      _chainShape = GC.chainShape(stores);
+      _dayFrac    = GC.expectedFrac(_chainShape);
       if (_liveSold == null) _liveSold = today.revenue || 0;   // initial baseline; store polls refine it
       var agg  = document.getElementById('skyAgg');
       var grid = document.getElementById('skyGrid');
@@ -7568,6 +7673,77 @@ table.inc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-w
   .inc-actions, .inc-gear, .inc-tray, .inc-tray-back, .inc-att, .inc-spiff, .inc-arrow { display: none !important; }
   .inc-att-print, .inc-spiff-print { display: inline !important; }
 }
+
+/* ── Mobile Standings (#/standings/m) ─────────────────────────────────────────
+   One phone screen, no scroll. Everything is sized off the viewport rather than in
+   px: the page is a flex column at 100dvh (dvh, not vh, so Safari's collapsing
+   address bar doesn't cut the last row off), the store list takes the leftover
+   space with flex:1, and each row splits that space evenly. Six stores is the real
+   case; more stores just makes every row shorter instead of pushing a scrollbar. */
+.stnm {
+  position: fixed; inset: 0;
+  height: 100dvh; width: 100%;
+  display: flex; flex-direction: column;
+  background: var(--bg, #0e1412); color: var(--text, #dfe7e2);
+  padding: max(10px, env(safe-area-inset-top)) 12px max(10px, env(safe-area-inset-bottom));
+  gap: 8px; overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  -webkit-text-size-adjust: 100%;
+}
+.stnm-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex: none; }
+.stnm-ttl { font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
+.stnm-day { font-size: 11px; color: var(--text-mute, #7d8f87); font-weight: 600; }
+.stnm-x {
+  font-size: 11px; color: var(--text-mute, #7d8f87); text-decoration: none;
+  border: 1px solid var(--border, #222b27); border-radius: 6px; padding: 3px 8px;
+}
+
+/* Chain summary — three numbers and the one bar that matters. */
+.stnm-hero { flex: none; border: 1px solid var(--border, #222b27); border-radius: 10px; padding: 9px 10px; }
+.stnm-hero-row { display: flex; justify-content: space-between; gap: 6px; }
+.stnm-h { min-width: 0; }
+.stnm-h .l { font-size: 9px; letter-spacing: .07em; text-transform: uppercase; color: var(--text-mute, #7d8f87); }
+.stnm-h .v { font-size: 17px; font-weight: 800; line-height: 1.15; }
+.stnm-h .v.green { color: #4ade80; } .stnm-h .v.amber { color: #fbbf24; } .stnm-h .v.red { color: #f87171; }
+.stnm-cbar { position: relative; height: 7px; border-radius: 4px; background: #1c2421; margin-top: 8px; overflow: hidden; }
+.stnm-cfill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: #4ade80; }
+.stnm-cmark { position: absolute; top: -2px; bottom: -2px; width: 2px; border-radius: 2px; background: #e8fff1; opacity: .85; }
+
+/* Store rows fill whatever is left. */
+.stnm-list { flex: 1 1 auto; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.stnm-row {
+  flex: 1 1 0; min-height: 0;
+  display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto auto;
+  /* space-evenly, not center: rows stretch to fill the screen, so centring leaves a bald
+     patch above the store name and below the bar. Even distribution uses the height. */
+  align-content: space-evenly; gap: 3px 8px;
+  border: 1px solid var(--border, #222b27); border-radius: 10px; padding: 8px 10px;
+}
+.stnm-row.on { border-color: rgba(74,222,128,0.35); }
+.stnm-nm  { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stnm-rt  { text-align: right; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.stnm-rt.on { color: #4ade80; } .stnm-rt.slight { color: #fbbf24; } .stnm-rt.behind { color: #f87171; }
+.stnm-sub { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px;
+            font-size: 10.5px; color: var(--text-mute, #7d8f87); }
+.stnm-bar { grid-column: 1 / -1; position: relative; height: 6px; border-radius: 3px; background: #1c2421; overflow: hidden; }
+.stnm-fill { position: absolute; inset: 0 auto 0 0; border-radius: 3px; }
+.stnm-fill.on { background: #4ade80; } .stnm-fill.slight { background: #fbbf24; } .stnm-fill.behind { background: #f87171; }
+.stnm-mark { position: absolute; top: -2px; bottom: -2px; width: 2px; border-radius: 2px; background: #e8fff1; opacity: .8; }
+.stnm-err { margin: auto; text-align: center; color: var(--text-mute, #7d8f87); font-size: 13px; padding: 20px; }
+
+/* Landscape / very short screens: drop the sub-line so the rows still fit. */
+@media (max-height: 560px) {
+  .stnm-sub { display: none; }
+  .stnm-h .v { font-size: 15px; }
+}
+
+/* Button that opens it, on the desktop Standings page. */
+.stn-mobile {
+  font-size: 11px; color: var(--text-mute); text-decoration: none;
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 9px;
+  background: transparent; cursor: pointer;
+}
+.stn-mobile:hover { border-color: var(--green); color: var(--green); }
 
 /* ===== Period Standings (#/standings) ===== */
 .stn-wrap { max-width: 1100px; margin: 0 auto; padding: 22px 24px 60px; }
@@ -8149,6 +8325,99 @@ var incentive = (function() {
 // ============================================================
 window.GC = window.GC || {};
 
+GC.views.renderStandingsMobile = function() {
+  var app = document.getElementById('app'); if (!app) return;
+  standingsMobileView.start(app);
+};
+
+/**
+ * Standings on a phone: the same numbers as #/standings, no chrome, sized to one screen.
+ * Built for Mike checking the day from his pocket, so the target is "answers without
+ * scrolling" rather than "everything" — target, sold, chain pace, and one row per store.
+ *
+ * It deliberately reuses standingsView.compute so the two views can never disagree about
+ * what pace means; the only thing that differs here is the layout.
+ */
+var standingsMobileView = (function() {
+  var _app = null, _timer = null;
+  var REFRESH_MS = 120000;
+
+  function e(s)    { return GC.esc(String(s == null ? '' : s)); }
+  function pct0(n) { return Math.round((n || 0) * 100) + '%'; }
+  // Phone-width money: $12.4k rather than $12,431 — the exact dollar is not why you
+  // pull this up, and the full number is what forces a horizontal squeeze.
+  function mk(n) {
+    var v = Math.round(n || 0), a = Math.abs(v);
+    if (a >= 1000) return (v < 0 ? '-' : '') + '$' + (Math.abs(v) / 1000).toFixed(a >= 10000 ? 0 : 1) + 'k';
+    return (v < 0 ? '-' : '') + '$' + a.toLocaleString('en-US');
+  }
+
+  function render(d) {
+    var c        = standingsView.compute(d);
+    var pp       = d.payPeriod;
+    var chainCls = c.chain.status === 'on' ? 'green' : (c.chain.status === 'slight' ? 'amber' : 'red');
+    var chainFill= Math.max(1, Math.min(100, c.chain.pctGoal * 100));
+    var chainMark= Math.max(0, Math.min(100, c.chain.ef * 100));
+
+    var rows = c.stores.map(function(s) {
+      var fill = Math.max(1, Math.min(100, s.pctGoal * 100));
+      var mark = Math.max(0, Math.min(100, s.ef * 100));
+      var sign = s.delta >= 0 ? '+' : '−';
+      return '<div class="stnm-row ' + s.status + '">'
+        + '<div class="stnm-nm">' + e(s.name) + '</div>'
+        + '<div class="stnm-rt ' + s.status + '">' + pct0(s.pace) + ' pace</div>'
+        + '<div class="stnm-sub"><span>' + mk(s.sales) + ' of ' + mk(s.target) + ' · ' + pct0(s.pctGoal) + '</span>'
+        +   '<span>' + sign + mk(Math.abs(s.delta)) + '</span></div>'
+        + '<div class="stnm-bar"><div class="stnm-fill ' + s.status + '" style="width:' + fill.toFixed(1) + '%"></div>'
+        +   '<div class="stnm-mark" style="left:' + mark.toFixed(1) + '%"></div></div>'
+        + '</div>';
+    }).join('');
+
+    _app.innerHTML = '<div class="stnm">'
+      + '<div class="stnm-hd">'
+      +   '<div><div class="stnm-ttl">Period Standings</div>'
+      +     '<div class="stnm-day">Day ' + pp.dayNum + ' of ' + pp.daysTotal + ' · ' + e(pp.end) + '</div></div>'
+      +   '<a class="stnm-x" href="#/standings">Full</a>'
+      + '</div>'
+      + '<div class="stnm-hero">'
+      +   '<div class="stnm-hero-row">'
+      +     '<div class="stnm-h"><div class="l">Sold</div><div class="v">' + mk(d.chain.sales) + '</div></div>'
+      +     '<div class="stnm-h"><div class="l">Target</div><div class="v">' + mk(d.chain.target) + '</div></div>'
+      +     '<div class="stnm-h"><div class="l">Pace</div><div class="v ' + chainCls + '">' + pct0(c.chain.pace) + '</div></div>'
+      +     '<div class="stnm-h"><div class="l">On pace</div><div class="v">' + c.chain.onPace + '/' + c.stores.length + '</div></div>'
+      +   '</div>'
+      +   '<div class="stnm-cbar"><div class="stnm-cfill" style="width:' + chainFill.toFixed(1) + '%"></div>'
+      +     '<div class="stnm-cmark" style="left:' + chainMark.toFixed(1) + '%"></div></div>'
+      + '</div>'
+      + '<div class="stnm-list">' + rows + '</div>'
+      + '</div>';
+  }
+
+  function load() {
+    GC.api.fetchStandings().then(function(d) {
+      if (!d || d.ok === false) {
+        _app.innerHTML = '<div class="stnm"><div class="stnm-err">' + e((d && d.error) || 'Failed to load standings')
+          + '<br><br><a class="stnm-x" href="#/standings">Full view</a></div></div>';
+        return;
+      }
+      render(d);
+    }).catch(function(err) {
+      _app.innerHTML = '<div class="stnm"><div class="stnm-err">Error: ' + e(String(err)) + '</div></div>';
+    });
+  }
+
+  function start(app) {
+    _app = app;
+    app.innerHTML = '<div class="stnm"><div class="stnm-err">Loading…</div></div>';
+    load();
+    clearInterval(_timer);
+    _timer = setInterval(load, REFRESH_MS);
+    GC.router.onLeave(function() { clearInterval(_timer); _timer = null; });
+  }
+
+  return { start: start };
+})();
+
 GC.views.renderStandings = function() {
   var app = document.getElementById('app'); if (!app) return;
   standingsView.start(app);
@@ -8211,6 +8480,7 @@ var standingsView = (function() {
       +     '<div class="stn-sub">Pay Period · ' + e(pp.start) + ' → ' + e(pp.end) + ' · <b>Day ' + pp.dayNum + ' of ' + pp.daysTotal + '</b></div></div>'
       +   '<div style="display:flex;gap:10px;align-items:center">'
       +     '<span class="stn-live"><span class="stn-dot"></span> Live</span>'
+      +     '<a class="stn-mobile" href="#/standings/m" title="Phone view — the day on one screen">Mobile</a>'
       +     (isDirector_() ? '' : '<a class="stn-back" href="' + e(GC.auth.homeRoute()) + '">← Back</a>')
       +   '</div>'
       + '</div>'
@@ -8264,7 +8534,10 @@ var standingsView = (function() {
     });
   }
 
-  return { start: start };
+  // compute is exported for the phone view (#/standings/m) so both render the SAME
+  // pace maths. Two copies would drift, and a phone disagreeing with the wall about
+  // which stores are on pace is worse than having no phone view.
+  return { start: start, compute: compute };
 })();
 </script>
 <script>
@@ -8650,7 +8923,18 @@ var kiosk = (function() {
     var isFinal    = closed || preOpen;
     // Arc for "M 22 122 A 98 98 0 0 1 218 122" ≈ π × 98 = 308
     var ARC_LEN    = 308;
-    var paceOffset = Math.round(ARC_LEN * (1 - Math.min(GC.dayFrac(), 1)));  // live pace marker (not the cached server dayFrac)
+    // DOW-weighted pace, off the client clock so it still glides between payloads. This
+    // used to be GC.dayFrac() — straight clock time — while the pace PERCENTAGE beside it
+    // came from the server's weighted curve, so the arc and the number disagreed all day.
+    var paceFrac   = GC.paceFrac(today.hourShape, today.expectedFrac);
+    var paceOffset = Math.round(ARC_LEN * (1 - Math.min(paceFrac, 1)));
+    // Where pace IS, marked across the arc. Once revenue passes pace the darker pace arc is
+    // buried under the goal arc and you can no longer see what you beat — this keeps the
+    // line you cleared visible. Hidden when behind, where the arc's own leading edge already
+    // shows it, and hidden pre-open/closed where there is no live pace to mark.
+    var paceTick        = GC.arcTick(paceFrac, 120, 122, 98, 8);
+    var paceTickVisible = !closed && !today.isPreOpen && paceFrac > 0.02
+                          && (today.pctToGoal || 0) >= paceFrac;
 
     // Card label: "Yesterday's Results" pre-open, "Daily Goal · $X" otherwise
     var cardLabel = preOpen
@@ -8696,6 +8980,13 @@ var kiosk = (function() {
       + '          stroke-dasharray="' + ARC_LEN + '"'
       + '          stroke-dashoffset="' + ARC_LEN + '"'
       + '          style="transition: stroke-dashoffset 1.6s cubic-bezier(.2,.7,.3,1)"/>'
+      + '    <line id="kioskPaceTick"'
+      + '          x1="' + paceTick.x1 + '" y1="' + paceTick.y1 + '"'
+      + '          x2="' + paceTick.x2 + '" y2="' + paceTick.y2 + '"'
+      + '          stroke="#e8fff1" stroke-width="2" stroke-linecap="round"'
+      + '          data-frac="' + paceFrac.toFixed(4) + '"'
+      + '          opacity="' + (paceTickVisible ? '0.9' : '0') + '"'
+      + '          style="transition: opacity .6s ease"/>'
       + '    <path id="kioskGoalOverflow"'
       + '          d="M 22 122 A 98 98 0 0 1 218 122"'
       + '          stroke="none" stroke-width="16" fill="none" stroke-linecap="round"'
@@ -9736,6 +10027,14 @@ var kiosk = (function() {
     var ovr = document.getElementById('kioskGoalOverflow');
 
     if (arc) arc.setAttribute('stroke-dashoffset', String(Math.round(ARC_LEN * (1 - capped))));
+
+    // The pace tick only earns its place once you are AT or PAST pace — behind it, the goal
+    // arc's own leading edge is already the answer and a second line just adds clutter.
+    var tick = document.getElementById('kioskPaceTick');
+    if (tick) {
+      var pf = parseFloat(tick.getAttribute('data-frac'));
+      tick.setAttribute('opacity', (pf > 0.02 && pct >= pf) ? '0.9' : '0');
+    }
 
     if (ovr) {
       if (pct > 1) {
