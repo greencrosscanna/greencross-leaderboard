@@ -114,7 +114,15 @@ function filterRetailSorted_(rawTxns) {
 
 /**
  * Fetch transactions for a single store; returns only Retail transactions,
- * chronologically sorted. Paginates past the 5 000-record cap.
+ * chronologically sorted.
+ *
+ * Does NOT paginate — one request per date range. Dutchie returns the whole set
+ * in a single response and its Skip offset is broken; see the pagination note on
+ * fetchTxnPagesByKey_ for the live evidence. Take=DUTCHIE_TAKE is a warning
+ * threshold, not a cap Dutchie enforces (a 28-day Commercial window comes back at
+ * ~5,600 retail rows against Take=5000). This line claimed it paginated until
+ * 2026-08-29 — it never has, and a reader trusting that would look for a loop
+ * that deliberately isn't there.
  */
 function fetchStoreTransactions_(storeSlug, fromUTC, toUTC) {
   const storeKey = getDutchieStoreKey_(storeSlug);
