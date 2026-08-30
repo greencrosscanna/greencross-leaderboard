@@ -413,6 +413,16 @@ function doGet(e) {
       return jsonOut(diagEmpTargets_(params.store || STORES[0].slug, params.dow), params.callback);
     }
 
+    // Secret-gated, read-only: what SPIFF is returning for one store and how much of it
+    // survives the window filter and the roster join. Exists for the same reason as
+    // emptargetdiag: "why is there no tick on this card" is only answerable from the inputs.
+    if (params.action === 'spiffdiag') {
+      var _spSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+      if (!_spSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
+      if ((params.secret || '') !== _spSecret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
+      return jsonOut(diagSpiff_(params.store || STORES[0].slug), params.callback);
+    }
+
     // Secret-gated, read-only: which pacing layer is actually answering per store --
     // GX Core's shared engine, the local mirrored curve, or the LINEAR fallback. The
     // three are indistinguishable from expectedSalesFrac_'s return value alone.

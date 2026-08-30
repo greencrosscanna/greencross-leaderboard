@@ -10,6 +10,7 @@
 !gx_roster.gs
 !cache.gs
 !snapshot.gs
+!spiff.gs
 !tests.gs
 !index.html
 !appsscript.json

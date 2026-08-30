@@ -2119,6 +2119,60 @@ body.kiosk-bg {
 .emp-extra.pb        { color: var(--blue); }
 .emp-extra.muted     { color: var(--text-mute); font-weight: 500; }
 
+/* ── SPIFF sell-through row ─────────────────────────────────────
+   Vendor bonus progress, read from the SPIFF app (it owns the target, the count and
+   the payout; we only draw them). Sits under the stats and above the streak line.
+
+   TWO SHAPES ON PURPOSE. Sky asked for "empty checkboxes ... boxes are checked as
+   staff sells the SPIFF items". That reads beautifully at a target of 5 and turns
+   into confetti at a target of 55 — the live programme on 2026-08-29 was 110 of 55.
+   So: discrete ticks up to SPIFF_TICK_MAX, a slim bar beyond it. Same information,
+   and the count is printed either way so the bar is never the only source of truth. */
+.emp-spiff {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  font-size: 11px;
+}
+.emp-spiff-head {
+  display: flex; align-items: baseline; gap: 6px;
+  color: var(--text-dim); font-weight: 600;
+  margin-bottom: 5px;
+}
+.emp-spiff-vendor {
+  flex: 1 1 auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.emp-spiff-count { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.emp-spiff-more  { color: var(--text-mute); font-weight: 500; }
+
+/* Ticks: filled = sold, hollow = still to sell. */
+.emp-spiff-ticks { display: flex; flex-wrap: wrap; gap: 3px; }
+.emp-spiff-tick {
+  width: 10px; height: 10px; border-radius: 3px;
+  border: 1px solid var(--border);
+  background: transparent;
+}
+.emp-spiff-tick.on { background: var(--green); border-color: var(--green); }
+
+/* Bar: the same thing when the target is too large to draw one box at a time. */
+.emp-spiff-bar {
+  height: 6px; border-radius: 3px;
+  background: var(--surface-2); overflow: hidden;
+}
+.emp-spiff-bar > span {
+  display: block; height: 100%; border-radius: 3px;
+  background: var(--green);
+}
+
+/* Hit: the payout is the point, so it gets the gold and the ticks stop competing. */
+.emp-spiff.hit .emp-spiff-tick.on { background: var(--gold); border-color: var(--gold); }
+.emp-spiff.hit .emp-spiff-bar > span { background: var(--gold); }
+.emp-spiff-paid {
+  color: var(--gold-bright); font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ══════════════════════════════════════════════════════════════
    EMPLOYEE OF THE MONTH — animated gold ring + accent treatment
    Copy the @property, @keyframes, and ::before block VERBATIM.
@@ -3467,7 +3521,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      slideshow bar at 9999, so nothing here contests it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.646';
+window.GC = window.GC || {}; GC.VERSION = 'v1.647';
 
 // ── GX Core web-app URL — ONE definition ──
 // This was previously a `var` inside loadChangelogFromGXCore(), i.e. function-scoped, while the
@@ -4036,6 +4090,72 @@ GC.arcTick = function(f, cx, cy, r, halfWidth) {
     x2: (cx + ca * (r + halfWidth)).toFixed(2),
     y2: (cy - sa * (r + halfWidth)).toFixed(2),
   };
+};
+
+/* Largest SPIFF target still drawn as discrete ticks. Above this the row switches to a bar.
+   12 is where a wrapped tick row stops reading as "things to sell" and starts reading as
+   texture on a kiosk card seen from across the room. */
+GC.SPIFF_TICK_MAX = 12;
+
+/**
+ * One SPIFF sell-through row for a kiosk staff card.
+ *
+ * SPIFF owns every number here — target, units, payout. This only decides how to draw them.
+ *
+ * The rules that matter:
+ *   • ZERO IS DRAWN. 0 of 5 renders five hollow ticks. A SPIFF nobody can see is a SPIFF
+ *     nobody sells; the empty row is the prompt.
+ *   • OVERSHOOT DOES NOT OVERFLOW. The live programme on 2026-08-29 was 110 units against a
+ *     target of 55. Ticks and bar clamp at the target, and the true count is printed beside
+ *     them — so "110/55" is legible without drawing 110 boxes or a bar twice its container.
+ *   • THE PAYOUT ONLY APPEARS ONCE EARNED. Showing "$25" next to an unhit programme would
+ *     read as money already banked.
+ *
+ * @param {Object} sp { vendor, program, units, target, hit, earned, totalEarned, more }
+ */
+GC.spiffRow = function(sp) {
+  if (!sp) return '';
+  var esc    = GC.esc || function(v) { return String(v == null ? '' : v); };
+  var units  = Math.max(0, +sp.units  || 0);
+  var target = Math.max(0, +sp.target || 0);
+  var hit    = !!sp.hit;
+  // Clamp for DRAWING only — `units` stays intact for the printed count.
+  var filled = target > 0 ? Math.min(units, target) : units;
+  var pct    = target > 0 ? Math.round((filled / target) * 100) : 0;
+
+  var label = sp.vendor || sp.program || 'SPIFF';
+  var count = target > 0 ? (units + '/' + target) : String(units);
+
+  var progress;
+  if (target > 0 && target <= GC.SPIFF_TICK_MAX) {
+    var ticks = '';
+    for (var i = 0; i < target; i++) {
+      ticks += '<span class="emp-spiff-tick' + (i < filled ? ' on' : '') + '"></span>';
+    }
+    progress = '<div class="emp-spiff-ticks">' + ticks + '</div>';
+  } else {
+    progress = '<div class="emp-spiff-bar"><span style="width:' + pct + '%"></span></div>';
+  }
+
+  // `earned` is the lead programme's payout; `totalEarned` covers the others folded into
+  // "+N more", so the two never contradict each other on the same card.
+  var paidAmt  = hit ? (+sp.totalEarned || +sp.earned || 0) : 0;
+  var paidHtml = paidAmt > 0
+    ? '<span class="emp-spiff-paid">+$' + paidAmt + '</span>'
+    : '';
+  var moreHtml = (+sp.more > 0)
+    ? '<span class="emp-spiff-more">+' + (+sp.more) + ' more</span>'
+    : '';
+
+  return '<div class="emp-spiff' + (hit ? ' hit' : '') + '">'
+    + '<div class="emp-spiff-head">'
+    +   '<span class="emp-spiff-vendor">' + esc(label) + '</span>'
+    +   moreHtml
+    +   '<span class="emp-spiff-count">' + esc(count) + '</span>'
+    +   paidHtml
+    + '</div>'
+    + progress
+    + '</div>';
 };
 
 /** True when a real curve is available — i.e. the pace marker is weighted, not linear. */
@@ -9257,6 +9377,12 @@ var kiosk = (function() {
 
       var amtId = 'kioskEmpAmt' + s.rank;
 
+      // SPIFF sell-through, when this person has a programme running this pay period.
+      // s.spiff is null when SPIFF has NO row for them — which is not the same as a row
+      // at zero: somebody at 0 of 5 still draws the empty ticks, because an unstarted
+      // SPIFF nobody can see is an unsold SPIFF.
+      var spiffHtml = s.spiff ? GC.spiffRow(s.spiff) : '';
+
       // Under 100%: bar fills proportionally, no glow, no mark.
       // Over 100%:  bar is always full width + glow; hash mark slides left
       //             to show how far past target they are (mark = 100/rawPct %).
@@ -9307,6 +9433,7 @@ var kiosk = (function() {
         + '  </div>'
         + '</div>'
         + statsBody
+        + spiffHtml
         + badgesHtml
         + statusHtml
         + extraHtml
@@ -10306,6 +10433,10 @@ var kiosk = (function() {
         leadingSince:    s.leadingSince   || '',
         target:          s.target         || 0,
         personalBestPct: s.personalBestPct || null,
+        // SPIFF sell-through, or null when this person has no programme running. `|| null`
+        // rather than a default object on purpose: null means "no programme", and a row at
+        // zero units is a REAL programme that must still draw its empty ticks.
+        spiff:           s.spiff          || null,
         note:            s.note           || null,
       };
     });

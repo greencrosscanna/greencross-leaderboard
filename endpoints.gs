@@ -1593,6 +1593,13 @@ function getStoreLeaderboard(store, params) {
   const fallbackTgt = dailyGoal > 0 ? Math.round(dailyGoal / 4) : 0;
 
   const _storeNicknames = getNicknames_();
+
+  // SPIFF sell-through for this store's crew, joined on the Dutchie employee id that both
+  // sides already carry. Wrapped: SPIFF is a separate app and this is the all-staff kiosk —
+  // if it is down, cards render without a SPIFF row rather than not rendering at all.
+  let _spiff = { ok: false, byId: {} };
+  try { _spiff = spiffForStore_(store); } catch (e) { Logger.log('spiffForStore_ failed: ' + e); }
+
   const staff = empList.map((emp, i) => {
     const nameKey = nameToKey_(emp.name);  // canonical key before nickname — matches settings page
     const target  = empTargets[emp.name.toLowerCase().replace(/\s+/g, '_')] || fallbackTgt;
@@ -1609,6 +1616,9 @@ function getStoreLeaderboard(store, params) {
       streakDays:    emp._streak != null ? emp._streak : 1,
       leadingSince:  i === 0 ? leaderLeadingSince : '',
       target:        target,
+      // null when SPIFF has no row for this person — which is NOT the same as a row at zero.
+      // Someone at 0 of 5 still gets a card row; only "no programme at all" is absent.
+      spiff:         _spiff.byId[String(emp.id || '')] || null,
       note:          null,
     };
   });

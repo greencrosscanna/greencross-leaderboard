@@ -1,0 +1,161 @@
+#!/usr/bin/env node
+/* SPIFF progress -> kiosk staff cards (spiff.gs).
+ *
+ * These guard the three ways this join has already gone wrong somewhere in the suite, all of
+ * which fail SILENTLY — no error, just money missing from a screen:
+ *
+ *   1. FILTERING ON pay_period AS A STRING. SPIFF stores it as a human-readable RANGE
+ *      ("2026-08-17 - 2026-08-30"), not a start date. Crew asked for "2026-08-17", matched
+ *      nothing, and every person's column read $0 — indistinguishable from a fortnight where
+ *      nobody sold anything. We filter on the WINDOW instead, so these assert overlap.
+ *
+ *   2. JOINING ON THE WRONG ID. SPIFF's employee_id is DUTCHIE'S numeric id (44905), not a GX
+ *      Core slug. Matching raw against slugs found nobody and fell through to name matching,
+ *      which reassigns money on a rename.
+ *
+ *   3. TREATING ZERO AS ABSENT. Somebody at 2 of 5 has earned 0 and must still get a card row;
+ *      that half-filled row is the entire point of the feature. Only "no programme at all"
+ *      is absent.
+ *
+ * Per tests/_harness.js's rule these never reimplement — spiff.gs is read off disk and the real
+ * functions are called.
+ */
+'use strict';
+const { load, run, _eq_, _ok_ } = require('./_harness');
+
+const M = load(['spiff.gs']);
+
+const PP_START = '2026-08-17', PP_END = '2026-08-30';
+
+/* Shaped exactly like the live payload, captured from SPIFF 2026-08-29. */
+function row(over) {
+  return Object.assign({
+    program_id: 'green-cross-test-202608',
+    pay_period: '2026-08-17 - 2026-08-30',
+    store_id:   'bend',
+    employee_id: 44905,
+    name:       'Nathan Wydick',
+    units:      110,
+    target:     55,
+    hit:        true,
+    earned:     25,
+    vendor:     'Green Cross',
+    program_name: 'Green Cross - Test4',
+    start_date: '2026-08-17',
+    end_date:   '2026-08-30',
+  }, over || {});
+}
+
+const tests = {
+
+  /* store_id is GX Core's id ('bend'), NOT our slug ('century'). Filtering by the slug would
+     silently return nothing for every store whose two names differ. */
+  filtersToTheRequestedStore() {
+    const rows = [row(), row({ store_id: 'river-rd', employee_id: 1 })];
+    _eq_('only bend rows', M.spiffFilterRows_(rows, 'bend', PP_START, PP_END).length, 1);
+    _eq_('slug does not match a core id',
+         M.spiffFilterRows_(rows, 'century', PP_START, PP_END).length, 0);
+    _eq_('store id is case/space insensitive',
+         M.spiffFilterRows_([row({ store_id: ' Bend ' })], 'bend', PP_START, PP_END).length, 1);
+  },
+
+  /* THE CREW BUG. A programme counts when its window OVERLAPS the pay period — it is not
+     required to line up with it, and its pay_period STRING is never consulted. */
+  windowOverlapNotStringMatch() {
+    const f = (o) => M.spiffFilterRows_([row(o)], 'bend', PP_START, PP_END).length;
+    _eq_('exactly the period',        f({}), 1);
+    _eq_('starts mid-period',         f({ start_date: '2026-08-24', end_date: '2026-09-06' }), 1);
+    _eq_('ends mid-period',           f({ start_date: '2026-08-04', end_date: '2026-08-20' }), 1);
+    _eq_('spans the whole period',    f({ start_date: '2026-01-01', end_date: '2026-12-31' }), 1);
+    _eq_('one day of overlap counts', f({ start_date: '2026-08-30', end_date: '2026-09-12' }), 1);
+    _eq_('entirely before',           f({ start_date: '2026-08-01', end_date: '2026-08-16' }), 0);
+    _eq_('entirely after',            f({ start_date: '2026-08-31', end_date: '2026-09-13' }), 0);
+    /* A mismatched pay_period string must NOT exclude a row whose dates overlap — that
+       string is SPIFF's formatting, not the fact. */
+    _eq_('bogus pay_period string is ignored',
+         f({ pay_period: 'whatever SPIFF prints next' }), 1);
+  },
+
+  /* A row we cannot place in time is dropped rather than guessed at: showing a tick for a
+     programme that may have ended last month is worse than showing none. */
+  undatedRowsAreDropped() {
+    const f = (o) => M.spiffFilterRows_([row(o)], 'bend', PP_START, PP_END).length;
+    _eq_('no start_date', f({ start_date: '' }), 0);
+    _eq_('no end_date',   f({ end_date: null }), 0);
+    _eq_('junk date',     f({ start_date: 'Aug 17' }), 0);
+    _eq_('null row',      M.spiffFilterRows_([null], 'bend', PP_START, PP_END).length, 0);
+  },
+
+  /* Dates arrive as TEXT and are compared as text. Constructing a Date here is what shifted
+     SPIFF's own window a day (fixed their side 2026-08-29); an ISO timestamp must still
+     place correctly on its date. */
+  datesAreComparedAsText() {
+    const rows = [row({ start_date: '2026-08-17T00:00:00.000Z', end_date: '2026-08-30T00:00:00.000Z' })];
+    _eq_('ISO timestamps truncate to their date',
+         M.spiffFilterRows_(rows, 'bend', PP_START, PP_END).length, 1);
+  },
+
+  /* Keyed by the Dutchie id as a STRING — comparing 44905 to '44905' is exactly the silent
+     miss this join exists to avoid. */
+  indexesByDutchieIdAsString() {
+    const idx = M.spiffIndexByEmployee_([row()]);
+    _ok_('numeric id is indexed under its string form', !!idx['44905']);
+    _eq_('earned carried', idx['44905'].earned, 25);
+    _eq_('one programme',  idx['44905'].programs.length, 1);
+    _eq_('no rows -> empty index', Object.keys(M.spiffIndexByEmployee_([])).length, 0);
+    _eq_('row with no employee_id is skipped',
+         Object.keys(M.spiffIndexByEmployee_([row({ employee_id: '' })])).length, 0);
+  },
+
+  /* ZERO IS NOT ABSENT — the assertion this whole feature rests on. */
+  zeroEarnedStillGetsARow() {
+    const idx = M.spiffIndexByEmployee_([row({ units: 2, target: 5, hit: false, earned: 0 })]);
+    _ok_('somebody short of target is present', !!idx['44905']);
+    _eq_('their earned is zero, not missing', idx['44905'].earned, 0);
+    const lead = M.spiffLeadProgram_(idx['44905']);
+    _eq_('and they still get a lead programme', lead.lead.units, 2);
+    _eq_('with the target to fill toward',      lead.lead.target, 5);
+  },
+
+  /* Several programmes: lead with the one still in reach, not an arbitrary first row. */
+  leadProgramPrefersTheOneStillInReach() {
+    const idx = M.spiffIndexByEmployee_([
+      row({ program_id: 'a', units: 110, target: 55, hit: true,  earned: 25 }),
+      row({ program_id: 'b', units: 1,   target: 10, hit: false, earned: 0  }),
+      row({ program_id: 'c', units: 8,   target: 10, hit: false, earned: 0  }),
+    ]);
+    const pick = M.spiffLeadProgram_(idx['44905']);
+    _eq_('closest unhit programme leads', pick.lead.program_id, 'c');
+    _eq_('the other two are counted, not hidden', pick.more, 2);
+    _eq_('total earned sums every programme', pick.totalEarned, 25);
+  },
+
+  /* Nothing left to chase — show the win rather than an arbitrary row. */
+  leadProgramFallsBackToBiggestPayout() {
+    const idx = M.spiffIndexByEmployee_([
+      row({ program_id: 'a', hit: true, earned: 10 }),
+      row({ program_id: 'b', hit: true, earned: 40 }),
+    ]);
+    const pick = M.spiffLeadProgram_(idx['44905']);
+    _eq_('biggest payout leads when all are hit', pick.lead.program_id, 'b');
+    _eq_('total is the sum, not the lead', pick.totalEarned, 50);
+  },
+
+  emptyEntryHasNoLead() {
+    _eq_('no programmes -> null', M.spiffLeadProgram_({ programs: [] }), null);
+    _eq_('undefined entry -> null', M.spiffLeadProgram_(undefined), null);
+  },
+
+  /* A target of 0 would divide by zero in the ranking. It must not throw, and must not be
+     treated as "still in reach". */
+  zeroTargetDoesNotBreakRanking() {
+    const idx = M.spiffIndexByEmployee_([
+      row({ program_id: 'z', units: 0, target: 0, hit: false, earned: 0 }),
+      row({ program_id: 'y', units: 3, target: 6, hit: false, earned: 0 }),
+    ]);
+    const pick = M.spiffLeadProgram_(idx['44905']);
+    _eq_('the real programme leads', pick.lead.program_id, 'y');
+  },
+};
+
+run('spiff_progress', tests);

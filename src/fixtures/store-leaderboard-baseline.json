@@ -5,27 +5,32 @@
     {
       "rank": 1, "initials": "LP", "name": "Lina Park",     "firstName": "Lina",
       "role": "Budtender",  "sales": 1420, "txns": 17, "aov": 83.53, "upt": 2.6,
-      "streak": 5, "streakType": "fire", "personalBestPct": null, "note": null
+      "streak": 5, "streakType": "fire", "personalBestPct": null, "note": null,
+      "spiff": { "vendor": "Green Cross", "program": "Green Cross - Test4", "units": 110, "target": 55, "hit": true,  "earned": 25, "totalEarned": 25, "more": 0 }
     },
     {
       "rank": 2, "initials": "DD", "name": "Dean Deloof", "firstName": "Sofia",
       "role": "Store Mgr",  "sales": 1380, "txns": 18, "aov": 76.67, "upt": 2.4,
-      "streak": 3, "streakType": "fire", "personalBestPct": null, "note": null
+      "streak": 3, "streakType": "fire", "personalBestPct": null, "note": null,
+      "spiff": { "vendor": "Stiiizy", "program": "Stiiizy Summer Push", "units": 3, "target": 5, "hit": false, "earned": 0, "totalEarned": 0, "more": 0 }
     },
     {
       "rank": 3, "initials": "AL", "name": "Avery Liu",     "firstName": "Avery",
       "role": "Asst Mgr",   "sales": 1210, "txns": 16, "aov": 75.63, "upt": 2.3,
-      "streak": 2, "streakType": null,   "personalBestPct": null, "note": null
+      "streak": 2, "streakType": null,   "personalBestPct": null, "note": null,
+      "spiff": { "vendor": "Wyld", "program": "Wyld Gummies", "units": 0, "target": 6, "hit": false, "earned": 0, "totalEarned": 0, "more": 0 }
     },
     {
       "rank": 4, "initials": "CC", "name": "Theo Bennett",  "firstName": "Theo",
       "role": "Budtender",  "sales": 980,  "txns": 13, "aov": 75.38, "upt": 2.2,
-      "streak": 0, "streakType": null,   "personalBestPct": 0.92, "note": null
+      "streak": 0, "streakType": null,   "personalBestPct": 0.92, "note": null,
+      "spiff": { "vendor": "Grön", "program": "Grön Chews", "units": 18, "target": 40, "hit": false, "earned": 0, "totalEarned": 0, "more": 2 }
     },
     {
       "rank": 5, "initials": "TP", "name": "Marcus Chen",   "firstName": "Marcus",
       "role": "Budtender",  "sales": 945,  "txns": 12, "aov": 78.75, "upt": 2.4,
-      "streak": 0, "streakType": null,   "personalBestPct": null, "note": "Back at 8p"
+      "streak": 0, "streakType": null,   "personalBestPct": null, "note": "Back at 8p",
+      "spiff": { "vendor": "Dutchie Farms", "program": "Pre-roll Blitz", "units": 5, "target": 5, "hit": true, "earned": 15, "totalEarned": 40, "more": 1 }
     },
     {
       "rank": 6, "initials": "RS", "name": "Riley Sato",    "firstName": "Riley",
