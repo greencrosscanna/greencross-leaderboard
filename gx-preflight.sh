@@ -73,6 +73,19 @@ try:
 except Exception:
     raise SystemExit(0)
 SKIP = {'gx-preflight.sh'}
+# Vendored third-party bundles. A minified library is full of 32-hex runs that are not secrets --
+# vendor/xlsx@0.18.5/xlsx.full.min.js in gx-theme produces three -- and a scan that cries wolf on
+# code nobody wrote gets switched off, which is worse than not having it. Narrow on purpose: it skips
+# vendor/ and .min.js, NOT whole file types, so a real key in real source is still caught.
+#
+# NO LONE APOSTROPHES ANYWHERE IN THIS HEREDOC. It sits inside a command substitution, and the shell
+# scans that for the matching paren while tracking quotes -- so a single unbalanced quote character
+# in a PYTHON COMMENT desyncs it and the whole gate dies with "unexpected EOF while looking for
+# matching )". Cost twenty minutes on 2026-08-30, twice: once in a comment about the vendor skip, and
+# again in the comment warning about it. Write "does not", never the contraction or the possessive.
+def vendored(p):
+    parts = p.split('/')
+    return 'vendor' in parts or 'vendors' in parts or 'third_party' in parts or p.endswith('.min.js')
 HEX32 = re.compile(r'\b[0-9a-f]{32}\b')
 Q = chr(39) + chr(34)
 ASSIGN = re.compile(r'(?i)(api[_-]?key|secret|token|password|passwd|credential)\s*[:=]\s*[' + Q + r']([A-Za-z0-9_\-]{20,})[' + Q + r']')
@@ -80,7 +93,7 @@ def randomish(v):
     return any(c.isdigit() for c in v) and any(c.islower() for c in v)
 out = []
 for f in files:
-    if f in SKIP or not os.path.isfile(f):
+    if f in SKIP or vendored(f) or not os.path.isfile(f):
         continue
     try:
         txt = open(f, encoding='utf-8', errors='ignore').read()
@@ -200,13 +213,52 @@ fi
 # Convention over configuration: any tests/*_test.js in the repo, run with node. No test dir, no node,
 # or no matching files -> silently fine, so this is safe in every spoke including the ones with no
 # tests yet. A test that FAILS blocks the push exactly like a hard flag does.
+# ── JUDGE THE COMMIT, NOT THE DESK ───────────────────────────────────────────────────────────────
+# These tests used to run against the working tree. A pre-push hook that does that is answering the
+# wrong question: it tells you your DESK is healthy, when what is about to reach everyone else is
+# HEAD. The two differ constantly here, because every repo sits dirty for long stretches.
+#
+# It cost something on 2026-08-29. In greencross-crew, a session staged a test file while its
+# implementation was still unstaged, and a second session's `git commit` swept the shared index.
+# Commit 69b4150 carried the test and not the code: checked out clean it failed two of its own
+# tests, while the working tree passed all twelve. The hook would have waved it straight through.
+#
+# The rule already existed twenty lines up — the missing-asset check reads `git show HEAD:page`
+# precisely because a half-landed change once 404ed every app with a green preflight. The test run
+# just never followed it.
+#
+# So: if the tree is dirty, run the suites inside a throwaway worktree checked out at HEAD.
+#   • A CLEAN tree needs no worktree — HEAD and the tree are the same bytes. Most pushes skip this.
+#   • The worktree is a SIBLING, not /tmp. The cross-app suites reach ../greencross-<app>, and a
+#     worktree under /tmp resolves that to nothing and turns a real contract test into a silent skip.
+#   • If the worktree cannot be made, tests still run — against the tree — and SAY SO. Degrading
+#     quietly to the weaker check is how this hole stayed open in the first place.
 if [ -d tests ]; then
   if command -v node >/dev/null 2>&1; then
-    _tests="$(ls tests/*_test.js 2>/dev/null || true)"
+    _rundir="."
+    _wt=""
+    _scope="working tree"
+    if [ -n "$(git status --porcelain 2>/dev/null || true)" ]; then
+      _sha="$(git rev-parse HEAD 2>/dev/null || true)"
+      _wt="../.gxpreflight-$(basename "$PWD")-$$"
+      if [ -n "$_sha" ] && git worktree add --detach "$_wt" "$_sha" >/dev/null 2>&1; then
+        _rundir="$_wt"
+        _scope="HEAD $(printf '%s' "$_sha" | cut -c1-8) — your tree is dirty, so this is what a push actually sends"
+        # Remove it however we leave, including the exit 1 below.
+        trap 'git worktree remove --force "$_wt" >/dev/null 2>&1 || true' EXIT INT TERM
+      else
+        _wt=""
+        echo "  ! could not create a worktree at HEAD — tests ran against the WORKING TREE, which is"
+        echo "    NOT what is being pushed. Treat a pass here as unproven."
+      fi
+    fi
+    # List from wherever we are actually running: the commit may add or remove test files.
+    _tests="$(cd "$_rundir" && ls tests/*_test.js 2>/dev/null || true)"
     if [ -n "$_tests" ]; then
+      echo "  tests run against: $_scope"
       _tfail=""
       for t in $_tests; do
-        if _out="$(node "$t" 2>&1)"; then
+        if _out="$(cd "$_rundir" && node "$t" 2>&1)"; then
           echo "  ✓ $t — $(printf '%s' "$_out" | tail -1)"
         else
           _tfail="$_tfail $t"
@@ -217,7 +269,15 @@ if [ -d tests ]; then
           printf '%s\n' "$_out" | tail -1 | sed 's/^/      /'
         fi
       done
-      [ -n "$_tfail" ] && FAIL=1
+      if [ -n "$_tfail" ]; then
+        FAIL=1
+        [ -n "$_wt" ] && echo "      ^ these ran against HEAD. If they pass on your desk, the fix is"
+        [ -n "$_wt" ] && echo "        almost certainly uncommitted — commit it rather than re-running."
+      fi
+    fi
+    if [ -n "$_wt" ]; then
+      git worktree remove --force "$_wt" >/dev/null 2>&1 || true
+      trap - EXIT INT TERM
     fi
   else
     echo "  ! tests/ exists but node is not on PATH — tests NOT run"

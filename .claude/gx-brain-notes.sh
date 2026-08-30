@@ -28,7 +28,12 @@ gx_fetch() {
   done
 }
 
-gx_fetch notes pending | python3 -c '
+# status=open means pending OR blocked — everything not yet CLOSED, in one call.
+#
+# REQUIRES GX Core to have shipped `open` (getNotes, 2026-08-25). Against an older Core, `open` matches
+# no note and returns [] with no error, and this hook would print "nothing needs you" over a full inbox.
+# That is why this file ships only AFTER the Core deploy, never alongside it.
+gx_fetch notes open | python3 -c '
 import sys, json
 try: d = json.load(sys.stdin)
 except Exception: sys.exit(0)
@@ -53,8 +58,13 @@ def is_fyi(n):
     if t.startswith("\u2705"): return True
     low = t.lower()
     return any(low.startswith(w) for w in DONE_WORDS)
-asks = [n for n in notes if not is_fyi(n)]
-fyis = [n for n in notes if is_fyi(n)]
+# BLOCKED is not fresh work and must not be rendered as if it were. It means a human — usually Sky —
+# owes a decision or an action no agent can take. Printed at the same weight as an unread ask, it reads
+# identically to "nobody has looked at this", which is exactly the confusion the status was added to end.
+blocked = [n for n in notes if str(n.get("status", "")).strip().lower() == "blocked"]
+rest = [n for n in notes if n not in blocked]
+asks = [n for n in rest if not is_fyi(n)]
+fyis = [n for n in rest if is_fyi(n)]
 app = d.get("app", "this app")
 if asks:
     print("\U0001F4CB Brain notes — %d NEEDING YOU for %s%s:" % (
@@ -65,8 +75,19 @@ if asks:
         print("  \u2022 %s  (from %s)  [%s]" % (n.get("title", ""), n.get("from_app") or "?", n.get("id", "")))
         body = (n.get("body") or "").strip()
         if body: print("      " + body.replace("\n", "\n      "))
+elif blocked:
+    print("\U0001F4CB Brain notes — nothing NEW for %s (%d blocked, below)." % (app, len(blocked)))
 else:
     print("\U0001F4CB Brain notes — nothing needs you for %s." % app)
+if blocked:
+    # Subject + the reason, no body. The reason is the only new information: the note itself was read
+    # when it was parked, and what a reader needs now is WHO is holding it and for WHAT.
+    print("  \u23F8 %d BLOCKED on a human — parked, not forgotten:" % len(blocked))
+    for n in blocked:
+        print("      %s  (from %s)  [%s]" % (n.get("title", ""), n.get("from_app") or "?", n.get("id", "")))
+        why = (n.get("blocked_on") or "").strip()
+        if why: print("          waiting on: " + why)
+    print("      \u2192 unblock_note when the answer lands; resolve_note when it is actually done.")
 if fyis:
     # Subjects only. These are marked done by the sender; read one if it looks relevant, otherwise they
     # close themselves after 7 days. No body — that is the whole point.
