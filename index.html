@@ -3531,7 +3531,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      slideshow bar at 9999, so nothing here contests it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.663';
+window.GC = window.GC || {}; GC.VERSION = 'v1.664';
 
 // ── GX Core web-app URL — ONE definition ──
 // This was previously a `var` inside loadChangelogFromGXCore(), i.e. function-scoped, while the
@@ -4872,8 +4872,9 @@ GC.api = (function() {
     // changelog from the new user tray -- the guard was right, the declaration was incomplete.
     'version_history', 'vetflags'
   ];
-  // Guarded writes: bugreport, clearavatar, recalculategoals, saveavatar, savediscountsettings,
+  // Guarded writes: bugreport, clearavatar, recalculategoals, saveavatar,
   //                 saveincentive, savemanualgoals, savesettings
+  // (savediscountsettings dropped 2026-08-30 — the route refuses; nothing here calls it.)
 
 
   // Deployed GAS web app URL.
@@ -5230,7 +5231,9 @@ GC.api = (function() {
     fetchIncentive:   function(ppStart, refresh) { var p = {}; if (ppStart) p.ppStart = ppStart; if (refresh) p.refresh = '1'; return gasCall('incentive', p); },
     saveIncentive:    function(payload) { return gasCall('saveincentive', payload); },
     fetchDiscountSettings: function() { return gasCall('discountsettings', {}); },
-    saveDiscountSettings:  function(overrides) { return gasCall('savediscountsettings', { overrides: JSON.stringify(overrides) }); },
+    // saveDiscountSettings removed 2026-08-30: the discount overrides live in GX Core kv
+    // `discountRules` and are edited in GX Crew. The backend route now refuses the write, so a
+    // caller here could only have produced a "Saved" that changed nothing.
     fetchVetFlags:    function(days) { return gasCall('vetflags', days ? { days: String(days) } : {}); },
     fetchStandings:   function(refresh) { return gasCall('standings', refresh ? { refresh: '1' } : {}); },
     fetchAvatarData:  fetchAvatarData,
@@ -8322,7 +8325,7 @@ var incentive = (function() {
 
       +   '<section class="ist-sec">'
       +     '<div class="ist-sechead"><div class="ist-seclabel">Discount rules</div><div class="ist-hint"><b class="ist-cnt" id="istCounted">—</b> of <span id="istTotal">11</span> counted</div></div>'
-      +     '<p class="ist-sub">Checked rules count against staff discount rates. Loyalty &amp; automatic promos are always excluded.</p>'
+      +     '<p class="ist-sub">Checked rules count against staff discount rates. Loyalty &amp; automatic promos are always excluded. <b>Read-only here</b> — edited in GX Crew → Incentive settings.</p>'
       +     '<div class="ist-role" id="istDiscList"><div class="ist-msg">Loading discount list…</div></div>'
       +   '</section>'
 
@@ -8387,23 +8390,43 @@ var incentive = (function() {
       _discData = d; renderDiscList();
     }).catch(function(err) { host.innerHTML = '<div class="ist-msg">Error: ' + e(String(err)) + '</div>'; });
   }
+  // READ-ONLY since 2026-08-30. The rules are GX Core's (kv `discountRules`) and are edited in GX
+  // Crew's incentive tray; this app only applies them. The list stays visible because it is the
+  // legend for the discount column on the board — you need to know which promos count against staff
+  // — but the toggles are disabled rather than removed, since a live-looking control whose save is
+  // refused (or, worse, silently dropped) is how someone believes they changed a pay rule.
   function renderDiscList() {
     var d = _discData, host = document.getElementById('istDiscList'); if (!host) return;
     var rows = d.discretionary.map(function(x) {
-      return '<label class="ist-dr' + (x.excluded ? ' off' : '') + '"><input type="checkbox" class="ist-tog" data-name="' + e(x.name) + '"' + (x.excluded ? '' : ' checked') + '>'
+      return '<label class="ist-dr' + (x.excluded ? ' off' : '') + '" title="Edited in GX Crew"><input type="checkbox" class="ist-tog" disabled data-name="' + e(x.name) + '"' + (x.excluded ? '' : ' checked') + '>'
         + '<span class="ist-dr-name">' + e(x.name) + '</span>'
         + (x.code ? '<span class="ist-code">' + e(x.code) + '</span>' : '') + '</label>';
     }).join('');
+    // Where the rules came from. 'core' is the healthy answer and says so quietly; anything else
+    // means this app has fallen back to a local copy Crew cannot edit, and the discount rates on the
+    // board are being computed under rules nobody can see. That has to be legible without logs.
+    //
+    // ABSENT is its own case, not a default to 'core'. Pages serves this file the moment it is
+    // pushed while the Apps Script backend only moves on ./deploy.sh, so there is a real window in
+    // which a NEW frontend is talking to an OLD backend that still reads the local property and
+    // reports no source at all. Defaulting that to "reading GX Core" would print a reassurance that
+    // is precisely backwards during the one window where it matters.
+    var src = d.source;
+    var srcLine;
+    if (src === 'core') {
+      srcLine = '<div class="ist-msg">Edited in GX Crew → Incentive settings. Read live from GX Core.</div>';
+    } else if (!src) {
+      srcLine = '<div class="ist-msg"><b>Rules source unreported.</b> This app\'s backend has not been redeployed yet, so it is still reading its own local copy — not GX Core.</div>';
+    } else {
+      srcLine = '<div class="ist-msg" style="color:var(--danger,#e5484d)"><b>⚠ Not reading GX Core.</b> Using the local <b>' + e(src)
+        + '</b> copy' + (d.fallbackReason ? ' — ' + e(d.fallbackReason) : '')
+        + '. Any rule changed in GX Crew is NOT being applied to these discount rates.</div>';
+    }
     host.innerHTML = (rows || '<div class="ist-msg">No discretionary discounts.</div>')
-      + '<div class="ist-locked" title="' + e((d.autoExcluded.loyalty.concat(d.autoExcluded.automatic)).join(' · ')) + '">Always excluded — Loyalty (' + d.counts.loyalty + ') · Automatic promos (' + d.counts.automatic + ')</div>';
+      + '<div class="ist-locked" title="' + e((d.autoExcluded.loyalty.concat(d.autoExcluded.automatic)).join(' · ')) + '">Always excluded — Loyalty (' + d.counts.loyalty + ') · Automatic promos (' + d.counts.automatic + ')</div>'
+      + srcLine;
     var tot = document.getElementById('istTotal'); if (tot) tot.textContent = d.discretionary.length;
     updateDiscCount_();
-    host.querySelectorAll('.ist-tog').forEach(function(cb) {
-      cb.addEventListener('change', function() {
-        cb.closest('.ist-dr').classList.toggle('off', !cb.checked);
-        updateDiscCount_();
-      });
-    });
   }
   function updateDiscCount_() {
     var el = document.getElementById('istCounted'); if (!el) return;
@@ -8415,18 +8438,16 @@ var incentive = (function() {
     var note = document.getElementById('istSaveNote');
     var goal = _T.budtender.discountMaxPct;
     if (isNaN(goal) || goal < 0.5 || goal > 10) { if (note) note.textContent = 'Discount goal must be 0.5–10%'; return; }
-    var overrides = {};
-    document.querySelectorAll('.ist-tog').forEach(function(cb) { overrides[cb.dataset.name] = !cb.checked; });
     if (note) note.textContent = 'Saving…';
-    // Sequential: thresholds first (persists discountMaxPct=goal), THEN savesettings
-    // (re-reads the fresh thresholds, so it doesn't clobber tier edits) which busts
-    // the director cache, THEN the discount toggles.
+    // Sequential: thresholds first (persists discountMaxPct=goal), THEN savesettings (re-reads the
+    // fresh thresholds, so it doesn't clobber tier edits) which busts the director cache.
+    // The discount-toggle step that used to run third is GONE: the overrides are GX Core's and are
+    // edited in GX Crew. Sending them from here would have written a property nothing reads.
     var ok = function(r) { return r && r.ok !== false; };
     GC.api.saveIncentive({ ppStart: _d.payPeriod.start, inputs: JSON.stringify(_inp), thresholds: JSON.stringify(_T) })
       .then(function(r1) { if (!ok(r1)) throw 0; return GC.api.gasCall('savesettings', { discountTarget: String(goal) }); })
-      .then(function(r2) { if (!ok(r2)) throw 0; return Object.keys(overrides).length ? GC.api.saveDiscountSettings(overrides) : { ok: true }; })
-      .then(function(r3) {
-        if (!ok(r3)) throw 0;
+      .then(function(r2) {
+        if (!ok(r2)) throw 0;
         GC.DISCOUNT_TARGET = goal / 100;
         _discData = null;
         if (note) note.textContent = 'Saved ✓ recalculating…';

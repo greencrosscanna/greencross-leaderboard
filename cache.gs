@@ -105,6 +105,10 @@ function buildDirectorAll_(period, hardRefresh) {
  * Runs on Google's servers — no browser involved.
  */
 function refreshDirectorCache() {
+  // Warm-instance guard: this trigger builds a cached aggregate that carries the budtender
+  // discount rate, and the discount overrides now come from GX Core (readDiscConfig_).
+  // Drop the per-execution memo so a warm instance cannot score against rules Crew has changed.
+  resetDiscountMemos_();
   const cache = CacheService.getScriptCache();
 
   // Precompute the per-store hourly-target SHAPE for today so the kiosk "by hour" chart never waits on

@@ -17,7 +17,26 @@
 // ============================================================
 
 const GC_DISCOUNT_REGISTRY_KEY = 'GC_DISCOUNT_REGISTRY_JSON'; // { builtAt, byName: { name: {appMethod, code, klass} } }
-const GC_DISCOUNT_EXCL_KEY     = 'GC_DISCOUNT_EXCL_JSON';     // { overrides: { name: true|false } }  true = excluded
+const GC_DISCOUNT_EXCL_KEY     = 'GC_DISCOUNT_EXCL_JSON';     // LEGACY local copy of the overrides — fallback only, see readDiscConfig_
+const GC_DISCOUNT_RULES_CORE_KEY = 'discountRules';           // GX Core kv key — SOURCE OF TRUTH for { overrides: { name: true|false } }
+
+/* OWNERSHIP, 2026-08-30 — the two halves of this file now live in different places:
+ *
+ *   REGISTRY  (GC_DISCOUNT_REGISTRY_KEY)  stays OURS. It is a derived cache of Dutchie's discount
+ *     definitions, rebuilt every 6-12h from this app's own credentials and classified by
+ *     classifyDiscount_. Nothing human-edited about it; nothing outside this app can rebuild it.
+ *
+ *   OVERRIDES ({ overrides: { name: bool } })  moved to GX CORE kv `discountRules`. They are a
+ *     compensation setting, not a Leaderboard setting: GX Crew's incentive tray edits them next to
+ *     the thresholds (already in Core kv `incentiveThresholds`), because to whoever sets the scheme
+ *     they are one screen and one decision. This app READS them and applies them to transaction
+ *     data — the half of the incentive engine that stayed here.
+ *
+ * Before this, Crew edited them by calling THIS app's ?action=discountrules_save over HTTP with the
+ * deploy secret — app-to-app, which the shared brain forbids, and it made a pay-affecting setting
+ * depend on our /exec being up. Leaderboard no longer writes the overrides at all; see
+ * saveDiscountSettings_ for why there is deliberately no write-through.
+ */
 
 // Discretionary discounts seeded OFF (excluded) by default. Owner-confirmed 2026-08-07.
 const DISCOUNT_SEED_EXCLUDED = [
@@ -81,8 +100,25 @@ function refreshDiscountRegistryIfStale_(maxAgeHours) {
   return buildDiscountRegistry_();
 }
 
-// ── Per-execution memoized reads (hot path must never hit Dutchie) ──
+// ── Per-execution memoized reads ──
+// The hot path must never hit Dutchie, and — since 2026-08-30 — must never hit GX Core per
+// transaction either. isExcludedDiscount_ runs once per DISCOUNT LINE per transaction
+// (txDiscountBudtender_, dutchie_fetch.gs), so an unmemoised GXCore.getKv would be a sheet read
+// through a bound library thousands of times per aggregation. Read once, reuse for the execution.
 var _discRegMemo_ = null, _discCfgMemo_ = null;
+
+/**
+ * Drop both memos. MUST be called at the top of every entry point, not just once at load:
+ * Apps Script reuses a warm instance between requests, so a module-level memo outlives the request
+ * that filled it. With the overrides in GX Core and Crew editing them there, a surviving memo means
+ * an edit silently does nothing until the instance recycles — exactly the bug that hit the
+ * thresholds (an aovTarget change appeared to do nothing for minutes). Called from doGet and from
+ * the triggers that build cached aggregates carrying the budtender discount rate.
+ *
+ * Deliberately NOT a TTL: within one execution the rules must not change halfway through an
+ * aggregation, or a single pay-period number is computed under two different rule sets.
+ */
+function resetDiscountMemos_() { _discRegMemo_ = null; _discCfgMemo_ = null; }
 
 function readDiscountRegistry_() {
   if (_discRegMemo_) return _discRegMemo_;
@@ -93,14 +129,48 @@ function readDiscountRegistry_() {
   return _discRegMemo_;
 }
 
+/**
+ * The discretionary-discount overrides, from GX Core kv `discountRules`.
+ * Returns { overrides: {name: bool}, source: 'core'|'property'|'seed', fallbackReason: string|null }.
+ *
+ * Fallback order: GX Core → the legacy local property → the seed list. The fallback is LOUD by
+ * design — it logs, and `source` rides along on every settings payload (?action=discountsettings and
+ * ?action=discountrules). A silent fall back to a stale local copy while Crew edits Core is the exact
+ * failure this move exists to remove: every staff discount rate would look fine and be wrong, and
+ * nothing on the kiosk would say so. If `source` ever reads anything but 'core', either GX Core is
+ * unreachable or the kv key is gone.
+ *
+ * Falling back rather than throwing is the same call getIncentiveThresholds_ makes: if GX Core is
+ * down the board must keep scoring as it did, not repaint every staff member against defaults.
+ */
 function readDiscConfig_() {
   if (_discCfgMemo_) return _discCfgMemo_;
-  var raw = getProps_().getProperty(GC_DISCOUNT_EXCL_KEY);
-  if (raw) { try { _discCfgMemo_ = JSON.parse(raw); } catch (e) { _discCfgMemo_ = null; } }
-  if (!_discCfgMemo_ || !_discCfgMemo_.overrides) {
+  var hasOverrides = function (c) { return !!(c && c.overrides && typeof c.overrides === 'object'); };
+  var label = 'GX Core kv `' + GC_DISCOUNT_RULES_CORE_KEY + '`';
+
+  var why = '', raw = null;
+  try { raw = GXCore.getKv(GC_DISCOUNT_RULES_CORE_KEY); }
+  catch (e) { why = 'GXCore.getKv threw: ' + ((e && e.message) || e); }
+  if (!why && (raw === null || raw === undefined || String(raw).trim() === '')) why = label + ' is empty or missing';
+  if (!why) {
+    var parsed = null;
+    try { parsed = JSON.parse(raw); } catch (e2) { why = label + ' is not valid JSON'; }
+    if (!why && !hasOverrides(parsed)) why = label + ' has no `overrides` object';
+    if (!why) { _discCfgMemo_ = { overrides: parsed.overrides, source: 'core', fallbackReason: null }; return _discCfgMemo_; }
+  }
+
+  var local = null;
+  try { local = JSON.parse(getProps_().getProperty(GC_DISCOUNT_EXCL_KEY) || 'null'); } catch (e3) {}
+  var src = hasOverrides(local) ? 'property' : 'seed';
+  Logger.log('[discounts] FALLBACK: ' + why + '. Reading discount overrides from the LOCAL ' + src +
+             ' copy instead. If GX Crew has edited the rules since, every staff discount rate this ' +
+             'execution produces is computed under the OLD rules.');
+
+  if (src === 'property') { _discCfgMemo_ = { overrides: local.overrides, source: 'property', fallbackReason: why }; }
+  else {
     var ov = {};
-    DISCOUNT_SEED_EXCLUDED.forEach(function(n) { ov[n] = true; });
-    _discCfgMemo_ = { overrides: ov };
+    DISCOUNT_SEED_EXCLUDED.forEach(function (n) { ov[n] = true; });
+    _discCfgMemo_ = { overrides: ov, source: 'seed', fallbackReason: why };
   }
   return _discCfgMemo_;
 }
@@ -127,12 +197,7 @@ function isExcludedDiscount_(name) {
  */
 function getDiscountSettings_() {
   var reg = refreshDiscountRegistryIfStale_(6);
-  var cfg = (function () {
-    var raw = getProps_().getProperty(GC_DISCOUNT_EXCL_KEY);
-    if (raw) { try { return JSON.parse(raw); } catch (e) {} }
-    var ov = {}; DISCOUNT_SEED_EXCLUDED.forEach(function (n) { ov[n] = true; });
-    return { overrides: ov };
-  })();
+  var cfg = readDiscConfig_();          // GX Core kv, with a LOGGED fallback — see readDiscConfig_
   var overrides = cfg.overrides || {};
   var discretionary = [], automatic = [], loyalty = [];
   Object.keys(reg.byName || {}).forEach(function (nm) {
@@ -149,31 +214,48 @@ function getDiscountSettings_() {
     discretionary: discretionary,
     autoExcluded: { automatic: automatic, loyalty: loyalty },
     counts: { automatic: automatic.length, loyalty: loyalty.length, discretionary: discretionary.length },
+    // WHERE THE RULES CAME FROM. 'core' is the only healthy answer; anything else means this app is
+    // scoring staff against a copy GX Crew cannot edit. Surfaced in the settings tray and returned
+    // by ?action=discountrules so the fallback is diagnosable without reading the logs.
+    source: cfg.source || 'core',
+    fallbackReason: cfg.fallbackReason || null,
+    editedIn: 'GX Crew → Incentive settings (stored in GX Core kv `' + GC_DISCOUNT_RULES_CORE_KEY + '`)',
   };
 }
 
 /**
- * Persist discretionary discount toggles. params.overrides = JSON { name: bool }
- * (true = excluded). Class rules (loyalty/automatic) always win regardless of
- * what's saved here. Busts director/standings caches so rates refresh.
+ * THIS APP NO LONGER WRITES THE OVERRIDES. Refuses, loudly, and says where to edit them.
+ *
+ * It used to persist them to the local ScriptProperty. Once GX Core kv `discountRules` became the
+ * source of truth (readDiscConfig_), that write is READ BY NOTHING: the property is only ever
+ * consulted as a fallback when Core is unreachable. Leaving the writer in place would have been the
+ * worst outcome available — the settings tray would report "Saved ✓", the toggles would come back
+ * from Core on the next load exactly as they were, and the only visible symptom would be discount
+ * rates that quietly disagree with the rules someone believes they set. This app has done that
+ * before with Employee of the Month; see the 'saveeom' note in dutchie_proxy.gs.
+ *
+ * A write-THROUGH to GX Core was the obvious alternative and is deliberately not taken. There is no
+ * bound-library writer (GXCore.setKv does not exist), so it would mean this app POSTing to Core's
+ * secret-gated ?action=set_config — which re-creates the second writer and the app-to-app HTTP hop
+ * that moving the rules to Core existed to remove, only pointed the other way. One writer, and it is
+ * GX Crew, which owns compensation.
+ *
+ * Deliberately still a route rather than a deleted one: during the Leaderboard-then-Crew cutover an
+ * explicit "edit it in Crew" beats an 'unknown action', which reads as a network fault.
  */
 function saveDiscountSettings_(params) {
-  var incoming = {};
-  try { incoming = JSON.parse(params.overrides || '{}'); } catch (e) { return { ok: false, error: 'bad overrides' }; }
-  if (!incoming || typeof incoming !== 'object') return { ok: false, error: 'bad overrides' };
-  var cfg = {};
-  try { cfg = JSON.parse(getProps_().getProperty(GC_DISCOUNT_EXCL_KEY) || '{}'); } catch (e) {}
-  var overrides = cfg.overrides || {};
-  Object.keys(incoming).forEach(function (nm) { overrides[nm] = !!incoming[nm]; });
-  getProps_().setProperty(GC_DISCOUNT_EXCL_KEY, JSON.stringify({ overrides: overrides }));
-  _discCfgMemo_ = { overrides: overrides };
-  // Director/standings aggregates cache the budtender discount rate; let them
-  // rebuild so the new exclusions show (they carry a ≤6-min TTL regardless).
-  try {
-    var cache = CacheService.getScriptCache();
-    cache.remove('gc_dirall_v2_pp'); cache.remove('gc_dirall_v2_mtd');
-  } catch (e) {}
-  return { ok: true, overrides: overrides };
+  var attempted = {};
+  try { attempted = JSON.parse((params && params.overrides) || '{}'); } catch (e) {}
+  Logger.log('[discounts] REFUSED a discount-override write. GX Core kv `' + GC_DISCOUNT_RULES_CORE_KEY +
+             '` owns these now; edit them in GX Crew. Attempted: ' + JSON.stringify(attempted));
+  return {
+    ok: false,
+    error: 'Discount rules are no longer edited here. They live in GX Core kv `' +
+           GC_DISCOUNT_RULES_CORE_KEY + '` and are edited in GX Crew → Incentive settings.',
+    editedIn: 'GX Crew → Incentive settings',
+    coreKey: GC_DISCOUNT_RULES_CORE_KEY,
+    written: false,
+  };
 }
 
 // ============================================================

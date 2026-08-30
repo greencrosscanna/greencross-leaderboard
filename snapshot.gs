@@ -101,6 +101,10 @@ function writeSnapshotRow_(sheet, date, store, data) {
  * Called nightly by the time-based trigger.
  */
 function snapshotAllStores_() {
+  // Warm-instance guard: this trigger builds a cached aggregate that carries the budtender
+  // discount rate, and the discount overrides now come from GX Core (readDiscConfig_).
+  // Drop the per-execution memo so a warm instance cannot score against rules Crew has changed.
+  resetDiscountMemos_();
   var sheet = getSnapshotSheet_();
   var date  = ptNow_().dateStr;   // 'YYYY-MM-DD' in PT
 

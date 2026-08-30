@@ -253,6 +253,11 @@ function doGet(e) {
      request that filled it. Thresholds now live in GX Core and Sky edits them there; a stale copy
      here means an edit silently does nothing until the instance recycles. Cleared per request. */
   _incThreshCache_ = null;
+  /* Same reason, same fix: the discretionary-discount OVERRIDES moved to GX Core kv `discountRules`
+     (2026-08-30) and GX Crew edits them there. They are memoised per execution because
+     isExcludedDiscount_ runs per discount line per transaction — so the memo has to be dropped here
+     or a warm kiosk instance keeps scoring against rules Crew already changed. */
+  resetDiscountMemos_();
 
   // Serve the frontend when no action
   if (!params.action) {
@@ -358,10 +363,19 @@ function doGet(e) {
     // in Crew's settings tray alongside the thresholds, because to whoever is setting the scheme
     // they are one screen and one decision.
     //
-    // This is the only WRITE Crew makes into this app, and it is narrower than it looks: it forwards
-    // to saveDiscountSettings_ unchanged, which stores an exclusion map and nothing else. It cannot
-    // reach a threshold, a goal or a payout. Like `incentiveperf`, it sits ABOVE requireAuth_ (a
-    // machine caller has no session) and dies with that route when GX Core takes the slice over.
+    // READ-ONLY as of 2026-08-30. The rules moved to GX Core kv `discountRules`; GX Crew edits them
+    // there through Core's secret-gated set_config, so the app-to-app WRITE into this app is gone —
+    // and with it the dependency of a pay-affecting setting on this /exec being up.
+    //
+    // `discountrules` is KEPT anyway, as a diagnostic rather than a data source. It answers the one
+    // question you actually ask when discount rates look wrong — "what rules is Leaderboard applying
+    // right now, and where did it get them?" — because it returns getDiscountSettings_ with the
+    // classified registry AND `source`. `source` reading 'property' or 'seed' is the whole tell that
+    // this app has fallen back off Core and is scoring against a copy Crew cannot edit. Nothing else
+    // in the suite can see that; Core only knows what it stores, not what we read.
+    //
+    // `discountrules_save` is kept ONLY to refuse in words: during the cutover a Crew build that has
+    // not moved yet gets "edit it in Crew", not a silent success against a property nothing reads.
     if (params.action === 'discountrules' || params.action === 'discountrules_save') {
       var _drSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
       if (!_drSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
@@ -974,6 +988,8 @@ function doGet(e) {
       requireRole_(auth, ['owner','director']);
       return jsonOut(getDiscountSettings_(), params.callback);
     }
+    // Kept as an explicit refusal, not a writer — the overrides live in GX Core kv `discountRules`
+    // and are edited in GX Crew. saveDiscountSettings_ explains why there is no write-through.
     if (params.action === 'savediscountsettings') {
       requireRole_(auth, ['owner','director']);
       return jsonOut(saveDiscountSettings_(params), params.callback);
@@ -1210,6 +1226,10 @@ function syncEmployeeRoster_() {
 // Warms storetoday AND storeleaderboard so fetchKioskAll (which needs
 // both) renders the heatmap instantly on first page view.
 function warmAllKioskCaches_() {
+  // Warm-instance guard: this trigger builds a cached aggregate that carries the budtender
+  // discount rate, and the discount overrides now come from GX Core (readDiscConfig_).
+  // Drop the per-execution memo so a warm instance cannot score against rules Crew has changed.
+  resetDiscountMemos_();
   STORES.forEach(function(store) {
     try {
       getStoreToday(store, {});
