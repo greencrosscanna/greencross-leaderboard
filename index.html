@@ -11270,10 +11270,13 @@ var settings = (function() {
 
   // ── Header ────────────────────────────────────────────────
   function renderHeader() {
+    // No Sign out here. It lives in the shared user tray (gx-topnav), which is the canonical
+    // home for Settings / Version / Sign out — this header button was a leftover from before
+    // that move and was the only place the action appeared twice. Removed 2026-08-30 on Sky's
+    // bug report; the tray and the kiosk user chip both still sign out, so nothing is stranded.
     return '<header class="settings-header">'
       + '<button class="btn-ghost settings-back" id="settingsBack">← Back</button>'
       + '<h1 class="settings-title">Settings</h1>'
-      + '<button class="btn-ghost settings-logout" id="settingsLogout" style="margin-left:auto" title="Sign out of this device">Sign out</button>'
       + '</header>';
   }
 
@@ -11573,16 +11576,6 @@ var settings = (function() {
           }
         })
         .then(function() { spiffTog.disabled = false; });
-    });
-
-    // Sign out
-    var logout = document.getElementById('settingsLogout');
-    if (logout) logout.addEventListener('click', function() {
-      if (confirm('Sign out?')) {
-        GC.auth.clear();
-        GC.state.reset();
-        GC.router.navigate('#/login');
-      }
     });
 
     // Recalculate button — chains prefetchY2 → prefetchY1 → recalculategoals
