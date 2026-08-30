@@ -5,9 +5,9 @@
  * exists today and break on the next programme SPIFF creates:
  *
  *   • OVERSHOOT. The live programme on 2026-08-29 was 110 units against a target of 55.
- *     Unclamped, that is 110 tick boxes or a bar at 200% of its container. The printed
- *     count must still say 110/55 — clamping the DRAWING must not clamp the TRUTH.
- *   • ZERO. 0 of 5 has to draw five hollow ticks; the empty row is the prompt to sell.
+ *     Unclamped that is a bar at 200% of its container. The printed count must still say
+ *     110/55 — clamping the DRAWING must not clamp the TRUTH.
+ *   • ZERO. 0 of 5 has to draw an empty track; the empty bar is the prompt to sell.
  *     A row that renders nothing at zero would hide every SPIFF nobody has started.
  *   • THE PAYOUT. "$25" beside an unhit programme reads as money already banked.
  *
@@ -26,24 +26,16 @@ function grabGC(name) {
   if (!m) throw new Error('could not extract GC.' + name + ' from index.html');
   return m[0];
 }
-function grabConst(name) {
-  const re = new RegExp('\\nGC\\.' + name + ' = [^;]+;');
-  const m = src.match(re);
-  if (!m) throw new Error('could not extract GC.' + name + ' from index.html');
-  return m[0];
-}
 
 const ctx = { GC: {}, Math: Math, String: String, Number: Number };
 vm.createContext(ctx);
-vm.runInContext(grabConst('SPIFF_TICK_MAX'), ctx);
 ['esc', 'spiffRow'].forEach((n) => vm.runInContext(grabGC(n), ctx));
 const GC = ctx.GC;
 
-const ticksOn  = (h) => (h.match(/emp-spiff-tick on/g)  || []).length;
-/* The trailing char class matters: the CONTAINER is class="emp-spiff-ticks", so a bare
-   /emp-spiff-tick/ counts it as a box and every count comes back one high. */
-const ticksAll = (h) => (h.match(/emp-spiff-tick["\s]/g) || []).length;
 const barPct   = (h) => { const m = h.match(/width:(\d+)%/); return m ? +m[1] : null; };
+/* Nothing should render ticks any more — this guards the removal, so a future revert
+   that reintroduces them has to update this suite deliberately rather than by accident. */
+const hasTicks = (h) => h.indexOf('emp-spiff-tick') > -1;
 
 function sp(over) {
   return Object.assign({
@@ -59,37 +51,29 @@ const tests = {
     _eq_('undefined renders nothing', GC.spiffRow(undefined), '');
   },
 
-  /* Small target -> one box per unit, exactly as Sky described it. */
-  smallTargetDrawsTicks() {
-    const h = GC.spiffRow(sp({ units: 2, target: 5, hit: false, earned: 0, totalEarned: 0 }));
-    _eq_('five boxes',        ticksAll(h), 5);
-    _eq_('two of them filled', ticksOn(h), 2);
-    _ok_('count printed',      h.indexOf('2/5') > -1);
-    _ok_('no bar',             h.indexOf('emp-spiff-bar') === -1);
+  /* ONE SHAPE AT EVERY SIZE. Sky chose the bar over the ticks on 2026-08-29 after seeing
+     both on the real board, so a target of 5 and a target of 55 must render identically. */
+  everyTargetSizeUsesABar() {
+    [5, 12, 13, 55, 400].forEach(function (t) {
+      const h = GC.spiffRow(sp({ units: 1, target: t, hit: false, earned: 0, totalEarned: 0 }));
+      _ok_('target ' + t + ' uses a bar', h.indexOf('emp-spiff-bar') > -1);
+      _ok_('target ' + t + ' draws no ticks', !hasTicks(h));
+    });
   },
 
-  /* ZERO IS DRAWN — the empty row is the prompt. */
+  barFillMatchesProgress() {
+    _eq_('2 of 5 is 40%',   barPct(GC.spiffRow(sp({ units: 2,  target: 5,  hit: false }))), 40);
+    _eq_('20 of 55 is 36%', barPct(GC.spiffRow(sp({ units: 20, target: 55, hit: false }))), 36);
+  },
+
+  /* ZERO IS DRAWN — the empty track is the prompt. */
   zeroDrawsAnEmptyRow() {
     const h = GC.spiffRow(sp({ units: 0, target: 5, hit: false, earned: 0, totalEarned: 0 }));
-    _ok_('renders',            h.length > 0);
-    _eq_('five boxes',         ticksAll(h), 5);
-    _eq_('none filled',        ticksOn(h), 0);
-    _ok_('count says 0/5',     h.indexOf('0/5') > -1);
-    _ok_('no payout shown',    h.indexOf('emp-spiff-paid') === -1);
-  },
-
-  /* Above the tick ceiling the row becomes a bar rather than confetti. */
-  largeTargetSwitchesToABar() {
-    const h = GC.spiffRow(sp({ units: 20, target: 55, hit: false, earned: 0, totalEarned: 0 }));
-    _ok_('uses a bar',   h.indexOf('emp-spiff-bar') > -1);
-    _eq_('no ticks',     ticksAll(h), 0);
-    _eq_('bar is 36%',   barPct(h), 36);
-    _ok_('count printed', h.indexOf('20/55') > -1);
-  },
-
-  atTheTickCeiling() {
-    _eq_('12 still ticks', ticksAll(GC.spiffRow(sp({ units: 1, target: 12, hit: false }))), 12);
-    _eq_('13 is a bar',    ticksAll(GC.spiffRow(sp({ units: 1, target: 13, hit: false }))), 0);
+    _ok_('renders',         h.length > 0);
+    _ok_('has a bar',       h.indexOf('emp-spiff-bar') > -1);
+    _eq_('fill is 0%',      barPct(h), 0);
+    _ok_('count says 0/5',  h.indexOf('0/5') > -1);
+    _ok_('no payout shown', h.indexOf('emp-spiff-paid') === -1);
   },
 
   /* THE LIVE CASE. Drawing clamps; the printed count does not. */
@@ -99,9 +83,8 @@ const tests = {
     _ok_('true count still printed', h.indexOf('110/55') > -1);
 
     const t = GC.spiffRow(sp({ units: 9, target: 5, hit: true }));
-    _eq_('never more boxes than the target', ticksAll(t), 5);
-    _eq_('all filled',                       ticksOn(t), 5);
-    _ok_('true count still printed',         t.indexOf('9/5') > -1);
+    _eq_('small overshoot also caps', barPct(t), 100);
+    _ok_('true count still printed',  t.indexOf('9/5') > -1);
   },
 
   payoutOnlyOnceEarned() {
@@ -141,7 +124,7 @@ const tests = {
     const h = GC.spiffRow({ units: 1, target: 4 });
     _ok_('renders with no vendor', h.length > 0);
     _ok_('labelled SPIFF',         h.indexOf('SPIFF') > -1);
-    _eq_('ticks still drawn',      ticksAll(h), 4);
+    _eq_('bar still drawn at 25%', barPct(h), 25);
   },
 };
 

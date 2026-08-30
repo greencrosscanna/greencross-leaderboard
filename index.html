@@ -2123,11 +2123,11 @@ body.kiosk-bg {
    Vendor bonus progress, read from the SPIFF app (it owns the target, the count and
    the payout; we only draw them). Sits under the stats and above the streak line.
 
-   TWO SHAPES ON PURPOSE. Sky asked for "empty checkboxes ... boxes are checked as
-   staff sells the SPIFF items". That reads beautifully at a target of 5 and turns
-   into confetti at a target of 55 — the live programme on 2026-08-29 was 110 of 55.
-   So: discrete ticks up to SPIFF_TICK_MAX, a slim bar beyond it. Same information,
-   and the count is printed either way so the bar is never the only source of truth. */
+   ONE SHAPE. This first shipped as discrete ticks for small targets and a bar for large
+   ones, per the original "empty checkboxes" ask. Looking at the real board, Sky picked the
+   bar for every size (2026-08-29): two shapes meant two things to learn, and 10px boxes
+   read as texture rather than units at kiosk distance. The count is always printed beside
+   the bar, so the fill is never the only source of truth. */
 .emp-spiff {
   margin-top: 8px;
   padding-top: 8px;
@@ -2146,27 +2146,18 @@ body.kiosk-bg {
 .emp-spiff-count { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
 .emp-spiff-more  { color: var(--text-mute); font-weight: 500; }
 
-/* Ticks: filled = sold, hollow = still to sell. */
-.emp-spiff-ticks { display: flex; flex-wrap: wrap; gap: 3px; }
-.emp-spiff-tick {
-  width: 10px; height: 10px; border-radius: 3px;
-  border: 1px solid var(--border);
-  background: transparent;
-}
-.emp-spiff-tick.on { background: var(--green); border-color: var(--green); }
-
-/* Bar: the same thing when the target is too large to draw one box at a time. */
+/* One bar at every target size — see GC.spiffRow for why the ticks went. Slightly taller
+   than a hairline so it still reads as a fill from across the room. */
 .emp-spiff-bar {
-  height: 6px; border-radius: 3px;
+  height: 7px; border-radius: 4px;
   background: var(--surface-2); overflow: hidden;
 }
 .emp-spiff-bar > span {
-  display: block; height: 100%; border-radius: 3px;
+  display: block; height: 100%; border-radius: 4px;
   background: var(--green);
 }
 
-/* Hit: the payout is the point, so it gets the gold and the ticks stop competing. */
-.emp-spiff.hit .emp-spiff-tick.on { background: var(--gold); border-color: var(--gold); }
+/* Hit: the payout is the point, so the fill goes gold to match the badge. */
 .emp-spiff.hit .emp-spiff-bar > span { background: var(--gold); }
 .emp-spiff-paid {
   color: var(--gold-bright); font-weight: 700;
@@ -4092,22 +4083,23 @@ GC.arcTick = function(f, cx, cy, r, halfWidth) {
   };
 };
 
-/* Largest SPIFF target still drawn as discrete ticks. Above this the row switches to a bar.
-   12 is where a wrapped tick row stops reading as "things to sell" and starts reading as
-   texture on a kiosk card seen from across the room. */
-GC.SPIFF_TICK_MAX = 12;
-
 /**
  * One SPIFF sell-through row for a kiosk staff card.
  *
  * SPIFF owns every number here — target, units, payout. This only decides how to draw them.
  *
- * The rules that matter:
- *   • ZERO IS DRAWN. 0 of 5 renders five hollow ticks. A SPIFF nobody can see is a SPIFF
- *     nobody sells; the empty row is the prompt.
+ * ONE SHAPE, ALWAYS A BAR. This started with discrete ticks for small targets and a bar for
+ * large ones, per the original "empty checkboxes" ask. Seen on the real board (2026-08-29) the
+ * split was the problem: two different shapes meant two different things to learn, and the
+ * ticks lost at kiosk distance — 10px boxes read as texture, not as units. Sky picked the bar
+ * for every target size. A target of 5 and a target of 55 now look the same and scan the same.
+ *
+ * The rules that survive from the tick version:
+ *   • ZERO IS DRAWN. 0 of 6 renders an empty track, not nothing. A SPIFF nobody can see is a
+ *     SPIFF nobody sells; the empty bar is the prompt.
  *   • OVERSHOOT DOES NOT OVERFLOW. The live programme on 2026-08-29 was 110 units against a
- *     target of 55. Ticks and bar clamp at the target, and the true count is printed beside
- *     them — so "110/55" is legible without drawing 110 boxes or a bar twice its container.
+ *     target of 55. The bar clamps at 100% and the true count is printed beside it, so
+ *     "110/55" stays legible without a bar twice the width of its container.
  *   • THE PAYOUT ONLY APPEARS ONCE EARNED. Showing "$25" next to an unhit programme would
  *     read as money already banked.
  *
@@ -4120,22 +4112,10 @@ GC.spiffRow = function(sp) {
   var target = Math.max(0, +sp.target || 0);
   var hit    = !!sp.hit;
   // Clamp for DRAWING only — `units` stays intact for the printed count.
-  var filled = target > 0 ? Math.min(units, target) : units;
-  var pct    = target > 0 ? Math.round((filled / target) * 100) : 0;
+  var pct    = target > 0 ? Math.round((Math.min(units, target) / target) * 100) : 0;
 
   var label = sp.vendor || sp.program || 'SPIFF';
   var count = target > 0 ? (units + '/' + target) : String(units);
-
-  var progress;
-  if (target > 0 && target <= GC.SPIFF_TICK_MAX) {
-    var ticks = '';
-    for (var i = 0; i < target; i++) {
-      ticks += '<span class="emp-spiff-tick' + (i < filled ? ' on' : '') + '"></span>';
-    }
-    progress = '<div class="emp-spiff-ticks">' + ticks + '</div>';
-  } else {
-    progress = '<div class="emp-spiff-bar"><span style="width:' + pct + '%"></span></div>';
-  }
 
   // `earned` is the lead programme's payout; `totalEarned` covers the others folded into
   // "+N more", so the two never contradict each other on the same card.
@@ -4154,7 +4134,7 @@ GC.spiffRow = function(sp) {
     +   '<span class="emp-spiff-count">' + esc(count) + '</span>'
     +   paidHtml
     + '</div>'
-    + progress
+    + '<div class="emp-spiff-bar"><span style="width:' + pct + '%"></span></div>'
     + '</div>';
 };
 
