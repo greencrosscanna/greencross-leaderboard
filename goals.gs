@@ -585,9 +585,31 @@ function resolveEffectiveGoal_(slug, gr, gy, stretch, manuals) {
     var isStretchDerived = expectedPP_ > 0 &&
       Math.abs(manualPP - expectedPP_) / expectedPP_ < 0.01;
     if (!isStretchDerived) {
-      // True manual override — scale DOW averages proportionally to the override PP
-      var computedPP = g.ppGoal || 1;
-      var scale = manualPP / computedPP;
+      // True manual override — rescale the DOW shape so it SUMS to the override across the period.
+      //
+      // The basis is the shape's own two-week total, NOT g.ppGoal. No consumer reads the override
+      // figure directly: GX Core's period_goals carries dow_targets, and Sales expands those per date
+      // and adds them up. So the number that has to come out right is the SUM of the seven targets
+      // over fourteen days — and normalising on ppGoal only lands there when 2 x sum(dowAvg) happens
+      // to equal ppGoal.
+      //
+      // It does not always. ppGoal is the mean of twelve period TOTALS, while dowAvg is a mean per
+      // weekday over the days that HAVE data, so a day the window is missing lowers ppGoal without
+      // lowering dowAvg and the rescale overshoots. Measured on Portland Rd, the only manual override
+      // in the map: its sales history starts 2025-07-29, so the period beginning 2025-12-22 was short
+      // 22 of its 168 window days and Sales rendered that $41,500 goal as $47,735 (+15.0%). The next
+      // period was short 8 days and rendered $43,564 (+5.0%); from 2026-01-19 the window had cleared
+      // the gap and it landed on $41,500. A DST-stretched window does the same thing with the sign
+      // flipped — one extra day in the 168 is the steady -0.7% that store has carried since
+      // 2026-04-27.
+      //
+      // Normalising on the shape makes the identity true by construction rather than hoping the
+      // window is clean. ppGoal stays the fallback only for a store with no shape at all, where
+      // there is nothing else to divide by.
+      var dowSum = 0;
+      if (g.dowAvg) for (var k = 0; k <= 6; k++) dowSum += (g.dowAvg[k] || 0);
+      var basis = dowSum > 0 ? dowSum * (PP_DAYS / 7) : (g.ppGoal || 1);
+      var scale = manualPP / basis;
       var scaledAvg = {};
       if (g.dowAvg) {
         for (var d = 0; d <= 6; d++) {
