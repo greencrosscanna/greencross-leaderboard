@@ -1,0 +1,29 @@
+{
+  "_comment": "Minimal getsettings payload so the Settings page can be opened in fixture mode. Two stores is enough to render the goals table; the point of this fixture is the Kiosk display card below it. Add fields here as Settings grows.",
+  "ok": true,
+  "stretch": 0.025,
+  "discountTarget": 0.015,
+  "rollingComputedAt": "2026-08-29T11:02:00.000Z",
+  "reportFrom": "2026-02-16", "reportTo": "2026-08-16",
+  "yoyComputedAt": "2026-08-29T11:02:00.000Z",
+  "yoyFrom": "2025-08-18", "yoyTo": "2025-08-31",
+  "showSpiff": false,
+  "goals": [
+    {
+      "slug": "baseline", "name": "Baseline", "activeSource": "rolling",
+      "effectivePP": 43946, "hasManual": false,
+      "rolling": { "ppGoal": 42874, "dowAvg": [2754, 2912, 2651, 3215, 3060, 3628, 3072] },
+      "yoy":     { "ppGoal": 40120, "dowAvg": [2580, 2730, 2480, 3010, 2870, 3400, 2880] },
+      "active":  { "ppGoal": 42874, "dowAvg": [2754, 2912, 2651, 3215, 3060, 3628, 3072] }
+    },
+    {
+      "slug": "century", "name": "Century", "activeSource": "yoy",
+      "effectivePP": 69580, "hasManual": false,
+      "rolling": { "ppGoal": 66120, "dowAvg": [4210, 4480, 4090, 4950, 4720, 5590, 4740] },
+      "yoy":     { "ppGoal": 67883, "dowAvg": [4330, 4600, 4200, 5090, 4850, 5740, 4870] },
+      "active":  { "ppGoal": 67883, "dowAvg": [4330, 4600, 4200, 5090, 4850, 5740, 4870] }
+    }
+  ],
+  "nicknames": {}, "employees": [], "excluded": [], "manualGoals": {},
+  "avatarConfigs": {}, "eom": null, "roles": {}
+}

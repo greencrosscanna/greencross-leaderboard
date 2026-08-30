@@ -23,7 +23,24 @@
 'use strict';
 const { load, run, _eq_, _ok_ } = require('./_harness');
 
-const M = load(['spiff.gs']);
+/* A settable Properties stub, so the "Include SPIFF" switch can be tested at the value level.
+   GC_SPIFF_SHOW_KEY lives in dutchie_proxy.gs, which we do not load here — spiff.gs reads it as a
+   free variable, so the sandbox supplies it under the same name the shipped constant uses. */
+const store = {};
+const M = load(['spiff.gs'], {
+  stubs: {
+    GC_SPIFF_SHOW_KEY: 'GC_SPIFF_SHOW',
+    PropertiesService: {
+      getScriptProperties: function () {
+        return {
+          getProperty: function (k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
+          setProperty: function (k, v) { store[k] = String(v); },
+        };
+      },
+    },
+  },
+});
+const setShow = (v) => { if (v === undefined) delete store.GC_SPIFF_SHOW; else store.GC_SPIFF_SHOW = v; };
 
 const PP_START = '2026-08-17', PP_END = '2026-08-30';
 
@@ -155,6 +172,44 @@ const tests = {
     ]);
     const pick = M.spiffLeadProgram_(idx['44905']);
     _eq_('the real programme leads', pick.lead.program_id, 'y');
+  },
+  /* THE SWITCH. Default OFF: a SPIFF programme is a vendor arrangement that is not always
+     running — there was exactly one live on 2026-08-29 — so defaulting on would put an empty
+     bar on most cards at most stores. */
+  spiffRowIsOffUntilSwitchedOn() {
+    setShow(undefined);
+    _eq_('unset property means off', M.spiffShowEnabled_(), false);
+    setShow('true');
+    _eq_('on when set to true',      M.spiffShowEnabled_(), true);
+    setShow('false');
+    _eq_('off when set to false',    M.spiffShowEnabled_(), false);
+    setShow(undefined);
+  },
+
+  /* THE TEXT-BOOLEAN TRAP. The value round-trips through Properties as a STRING, and
+     Boolean('false') is true — the suite has a rule about this precisely because it has bitten
+     before. Only the exact string 'true' may enable the row. */
+  onlyTheStringTrueCountsAsOn() {
+    ['false', 'FALSE', 'False', '0', '', 'no', 'off', 'null', 'undefined'].forEach(function (v) {
+      setShow(v);
+      _eq_('"' + v + '" is not on', M.spiffShowEnabled_(), false);
+    });
+    /* Not even a near-miss of the real value: a stray 'True' is a config typo, and silently
+       honouring it would hide the typo until somebody wondered why the kiosk changed. */
+    setShow('True');
+    _eq_('"True" is not on (case matters)', M.spiffShowEnabled_(), false);
+    setShow(undefined);
+  },
+
+  /* Off means no fetch at all — the switch is also the kill switch if SPIFF misbehaves.
+     UrlFetchApp.fetch throws in the harness, so reaching the network here would fail loudly. */
+  offSkipsTheFetchEntirely() {
+    setShow('false');
+    const res = M.spiffForStore_({ slug: 'century' });
+    _eq_('returns not-ok', res.ok, false);
+    _eq_('no cards',       Object.keys(res.byId).length, 0);
+    _ok_('says why',       /disabled/i.test(res.error || ''));
+    setShow(undefined);
   },
 };
 

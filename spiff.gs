@@ -23,6 +23,23 @@ var SPIFF_TTL_OK     = 900;   // 15 min. SPIFF's own refresh trigger is hourly, 
 var SPIFF_TTL_FAIL   = 120;   // Cache FAILURES too, briefly — see spiffFetchRaw_.
 
 /**
+ * Is the SPIFF row switched on for the kiosk?
+ *
+ * DEFAULT OFF. A SPIFF programme is a vendor arrangement that is not always running — SPIFF had
+ * exactly one live on 2026-08-29 — so defaulting on would put an empty row on most cards at most
+ * stores, which is worse than no row. Directors turn it on in Settings for the periods it matters.
+ *
+ * Stored as TEXT 'true'/'false' and compared as a string: the suite rule exists because a Sheets
+ * or Properties round-trip turns booleans into text, and `Boolean('false')` is true.
+ */
+function spiffShowEnabled_() {
+  try {
+    return String(PropertiesService.getScriptProperties()
+      .getProperty(GC_SPIFF_SHOW_KEY) || 'false') === 'true';
+  } catch (e) { return false; }
+}
+
+/**
  * SPIFF's /exec URL, from GX Core kv key `spiffProgress`.
  *
  * Read from kv rather than hardcoded so a SPIFF redeploy is a config change in the
@@ -188,6 +205,10 @@ function spiffLeadProgram_(entry) {
  * anyway — comparing 44905 to '44905' is exactly the silent miss this join exists to avoid.
  */
 function spiffForStore_(store) {
+  // Off means OFF: return before the fetch, so a disabled toggle costs nothing per kiosk poll
+  // and doubles as the kill switch if SPIFF ever starts misbehaving.
+  if (!spiffShowEnabled_()) return { ok: false, error: 'SPIFF row disabled in Settings', byId: {} };
+
   var raw = spiffFetchRaw_();
   if (!raw.ok) return { ok: false, error: raw.error, byId: {} };
 
@@ -236,7 +257,15 @@ function diagSpiff_(storeSlug) {
   var pp     = currentPPStart_();
   var coreId = coreStoreId_(store);
   var rows   = spiffFilterRows_(raw.rows, coreId, pp.ppStartStr, pp.ppEndStr);
-  var res    = spiffForStore_(store);
+  // Deliberately NOT spiffForStore_ — that short-circuits when the row is switched off, and the
+  // whole point of this route is checking the data BEFORE switching it on.
+  var idx    = spiffIndexByEmployee_(rows);
+  var byId   = Object.create(null);
+  Object.keys(idx).forEach(function (id) {
+    var pick = spiffLeadProgram_(idx[id]);
+    if (pick && pick.lead) byId[id] = pick;
+  });
+  var res    = { byId: byId };
 
   var roster = (getEmployeeRoster_() || {})[storeSlug] || [];
   var known  = Object.create(null);
@@ -253,6 +282,7 @@ function diagSpiff_(storeSlug) {
   return {
     ok:              true,
     store:           storeSlug,
+    showSpiff:       spiffShowEnabled_(),   // the usual answer to "why is there no row"
     coreStoreId:     coreId,
     payPeriod:       pp.ppStartStr + ' … ' + pp.ppEndStr,
     refreshedAt:     raw.refreshed_at || '',
@@ -261,6 +291,12 @@ function diagSpiff_(storeSlug) {
     peopleWithSpiff: Object.keys(res.byId).length,
     matchedToRoster: matched,
     notOnRoster:     orphan,
-    cards:           res.byId,
+    cards:           Object.keys(res.byId).reduce(function (o, id) {
+                       var p = res.byId[id];
+                       o[id] = { vendor: p.lead.vendor, program: p.lead.name, units: p.lead.units,
+                                 target: p.lead.target, hit: p.lead.hit, earned: p.lead.earned,
+                                 totalEarned: p.totalEarned, more: p.more };
+                       return o;
+                     }, Object.create(null)),
   };
 }
