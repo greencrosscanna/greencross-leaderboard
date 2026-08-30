@@ -895,6 +895,87 @@ function refreshTargetsAll() {
 // ═══════════════════════════════════════════════════════════════════════════════
 var GC_GOAL_LEDGER_PREFIX = 'GC_GOAL_LEDGER_';   // + 'yyyy-mm-dd' periodStart → frozen goal shape
 
+// ── Publishing AHEAD of the open period (2026-08-30, Sky-approved) ────────────────────────────────
+// Until now the ledger ENDED at the currently-open period: 21 unbroken 14-day periods from
+// 2025-11-10 to 2026-08-30 and nothing after. That was fine while Sales read a budget spreadsheet
+// for its month view. It no longer is — Sales (v2.541+) treats frozen period goals as authoritative
+// for week/month/YTD and its pgTotal() returns NULL rather than a partial sum if ANY date in the
+// window has no period. A calendar month spans 2–4 of our pay periods, so with zero lookahead the
+// month view could only ever resolve on the days when the open period happened to reach the month
+// end. Everything else silently fell back to `frozen_goals` — a snapshot of the RETIRED GX2 budget
+// workbook, taken at severance, which will never change again and already disagreed with these
+// numbers by +7.2% overall and ~40% for Portland Rd.
+//
+// HOW FAR AHEAD. Sky approved "one period ahead, so the ledger always covers the whole current
+// month." Those two clauses do not agree, and the second is the requirement. Enumerating every day
+// of 2026–2027 against the real 14-day grid: covering the current calendar month needs 0 more
+// periods on 25% of days, 1 on 46%, 2 on 28% and 3 on 0.7% (e.g. 2026-08-01, when the open period
+// is 07-20..08-02 and August still has the 3rd, 17th and 31st to cover). A flat "one ahead" would
+// therefore leave Sales on the frozen snapshot for 28% of all days. So the count is DERIVED from
+// the month end rather than fixed — with a floor of 1 (Sky's number, and it also guarantees ≥14
+// days of forward cover for the week view, whose window can straddle into next month) and a ceiling
+// of 3, which is the arithmetic worst case for a 14-day period against a 31-day month.
+//
+// WHY IT IS SAFE TO PUBLISH A TARGET FOR A PERIOD THAT HAS NOT HAPPENED: these are TARGETS, not
+// actuals. A projected period carries the STANDING goal — the same max(rolling, YoY) + stretch, or
+// manual override, that the open period carries — and is rewritten by every nightly run until it
+// opens, at which point currentPeriodGoalShape_ replaces it with the authoritative computation for
+// that period's own rolling window. It is never written locked, so every one of those rewrites is
+// permitted; see writeGoalLedger_, which refuses to lock anything that has not closed.
+var PP_LOOKAHEAD_MIN = 1;   // Sky's floor: always at least one period ahead
+var PP_LOOKAHEAD_MAX = 3;   // ceiling: worst case to cover a 31-day month with 14-day periods
+
+/**
+ * How many FUTURE pay periods to publish so the ledger covers every day of `todayStr`'s calendar
+ * month, clamped to [PP_LOOKAHEAD_MIN, PP_LOOKAHEAD_MAX].
+ *
+ * PURE — takes the period start and today's PT date as strings and returns a number, so the
+ * lookahead can be pinned by a test without Properties, GX Core or a clock. Dates are compared as
+ * TEXT and shifted with ptDateShift_ (whole calendar days), never by ms arithmetic: a period that
+ * contains a DST change is 14 calendar days but 335 or 337 hours, and that is exactly the bug that
+ * put five backfilled periods in GX Core a day early.
+ *
+ * @param {string} curStartStr  current period start, 'YYYY-MM-DD'
+ * @param {string} todayStr     today in PT, 'YYYY-MM-DD'
+ */
+function periodsAheadFor_(curStartStr, todayStr) {
+  var y = Number(todayStr.slice(0, 4)), m = Number(todayStr.slice(5, 7));
+  var lastDay  = new Date(Date.UTC(y, m, 0)).getUTCDate();   // day 0 of next month = last of this
+  var monthEnd = todayStr.slice(0, 7) + '-' + ('0' + lastDay).slice(-2);
+  var k = PP_LOOKAHEAD_MIN;
+  // Coverage with k future periods ends at curStart + PP_DAYS*(k+1) - 1.
+  while (k < PP_LOOKAHEAD_MAX && ptDateShift_(curStartStr, PP_DAYS * (k + 1) - 1) < monthEnd) k++;
+  return k;
+}
+
+/**
+ * A FUTURE period's ledger entry, projected from the current period's shape.
+ *
+ * The standing goal IS the projection: manual overrides and stretch are standing values, and the
+ * rolling/YoY shape cannot be recomputed for a period whose 12-period lookback would have to include
+ * the still-open one (a half-finished period would drag the average down and publish an understated
+ * target — the exact failure Sales' refusal of partial windows exists to prevent). So this copies
+ * the shape and re-keys it to the future window, and the nightly run corrects it right up until the
+ * period opens.
+ *
+ * `stores` is DEEP-COPIED, not aliased: writeGoalLedger_ stamps flags on the entry and each entry is
+ * stored under its own key, and two periods sharing one mutable object is how a later edit to one
+ * silently rewrites the other.
+ *
+ * `projected: true` is LOCAL-ONLY. ledgerEntryToRows_ builds the GX Core row from named fields, so
+ * the flag never reaches the shared `period_goals` schema — the column contract is unchanged, and
+ * `locked: false` is already the signal a consumer needs for "not final".
+ */
+function projectedPeriodGoalShape_(shape, periodStartStr) {
+  return {
+    periodStart: periodStartStr,
+    periodEnd:   ptDateShift_(periodStartStr, PP_DAYS - 1),
+    stores:      JSON.parse(JSON.stringify(shape.stores || {})),
+    computedAt:  shape.computedAt,
+    projected:   true
+  };
+}
+
 /** Normalize a dowAvg (object or array keyed 0=Sun..6=Sat) to a plain 7-element number array. */
 function normDow_(dowAvg) {
   if (!dowAvg) return null;
@@ -966,6 +1047,20 @@ function rowsToLedgerEntry_(rows, periodStart) {
  * refuses to overwrite an already-locked row (skippedLocked), enforcing option-(a) on the shared side too.
  */
 function writeGoalLedger_(props, entry, locked) {
+  // A LOCK IS PERMANENT. GX Core refuses to overwrite a locked row and there is no unlock route, so
+  // locking is only ever correct for a period that has already CLOSED. Since this ledger started
+  // publishing FUTURE periods, a stray lock would freeze a PROJECTED number onto a period that has
+  // not happened — permanently — and Sales would read it as authoritative for a month that had not
+  // been worked yet. Every lock in the app passes through this one function, so the refusal lives
+  // here rather than at each call site, and it THROWS rather than quietly writing an unlocked row:
+  // a caller that asked to freeze a period must not be allowed to believe it succeeded.
+  if (locked) {
+    var curStart = currentPPStart_(props).ppStartStr;
+    if (!(String(entry.periodStart) < curStart)) {
+      throw new Error('refusing to LOCK period ' + entry.periodStart + ' — it has not closed (the '
+        + 'current period starts ' + curStart + '), and a lock cannot be undone');
+    }
+  }
   entry.locked = !!locked;
   if (locked && !entry.lockedAt) entry.lockedAt = new Date().toISOString();
   props.setProperty(GC_GOAL_LEDGER_PREFIX + entry.periodStart, JSON.stringify(entry));
@@ -1026,8 +1121,21 @@ function pushLocalLedgerToCentral_() {
 /**
  * Producer entry point — called from the 3am refreshTargetsAll trigger (and safe to call
  * opportunistically). (1) refresh the CURRENT open period; (2) lock the last couple of now-closed
- * periods so their as-of goal is frozen. A period captured while open is simply locked in place; a
- * period never captured (pre-deploy) is skipped, not fabricated.
+ * periods so their as-of goal is frozen; (3) publish enough FUTURE periods to cover the current
+ * calendar month. A period captured while open is simply locked in place; a period never captured
+ * (pre-deploy) is skipped, not fabricated.
+ *
+ * refreshTargetsAll is the carrier for all three, deliberately: it already runs nightly at 3am PT,
+ * it already recomputes the targets these shapes are built from, and it already carries the
+ * goal_publications publish immediately afterwards. A second schedule would be a second clock to
+ * drift out of step with the first.
+ *
+ * THE DAY A PERIOD ROLLS, nothing special happens, and that is the design. The newly-current period
+ * already exists — written unlocked as a projection on each of the previous nights — so step (1)
+ * finds it, sees it is not locked, and overwrites it with currentPeriodGoalShape_: the authoritative
+ * computation against that period's own rolling window, with the `projected` flag gone. Step (2)
+ * then locks the period that just closed. Publishing ahead is a HEAD START on a number, never a
+ * commitment to it.
  */
 function refreshGoalLedger_() {
   var props = getProps_();
@@ -1036,13 +1144,38 @@ function refreshGoalLedger_() {
   if (!existingCur || !existingCur.locked) writeGoalLedger_(props, shape, false);   // keep current fresh
 
   var cur = currentPPStart_(props);
-  var locked = [];
+  var locked = [], notLocked = [];
   for (var k = 1; k <= 2; k++) {
     var startStr = Utilities.formatDate(new Date(ppShift_(cur.ppStartMs, -k)), STORE_TZ, 'yyyy-MM-dd');
     var e = getFrozenPeriodGoal_(startStr);
-    if (e && !e.locked) { writeGoalLedger_(props, e, true); locked.push(startStr); }
+    if (!e || e.locked) continue;
+    // A closed period still carrying `projected` means the nightly run never fired ONCE during the
+    // fourteen days it was open, so the only numbers we hold for it are the ones we guessed before
+    // it started. Locking that would freeze a projection as though it were the as-of truth. Leave it
+    // UNLOCKED and name it in the return: still readable by Sales, still correctable by a backfill,
+    // and it will lock the moment a real shape replaces it. (Before lookahead this case could not
+    // arise — an un-refreshed period simply had no row at all and was skipped here.)
+    if (e.projected) { notLocked.push(startStr); continue; }
+    writeGoalLedger_(props, e, true); locked.push(startStr);
   }
-  return { ok: true, current: shape.periodStart, lockedNow: locked };
+
+  // ── Forward: publish future periods, ALWAYS unlocked ────────────────────────────────────────────
+  // Each is rewritten on every run until it opens, which is what makes this correctable rather than
+  // write-once. An already-locked future period is impossible via writeGoalLedger_ — but if one is
+  // ever found (a hand-written row in the shared tab), it is reported and left alone rather than
+  // overwritten, because GX Core would refuse the write anyway and a silent skip reads as a success.
+  var aheadN  = periodsAheadFor_(cur.ppStartStr, ptNow_().dateStr);
+  var ahead = [], aheadLocked = [];
+  for (var f = 1; f <= aheadN; f++) {
+    var fStart = ptDateShift_(cur.ppStartStr, PP_DAYS * f);
+    var fx = getFrozenPeriodGoal_(fStart);
+    if (fx && fx.locked) { aheadLocked.push(fStart); continue; }
+    writeGoalLedger_(props, projectedPeriodGoalShape_(shape, fStart), false);
+    ahead.push(fStart);
+  }
+
+  return { ok: true, current: shape.periodStart, lockedNow: locked, leftUnlocked: notLocked,
+           ahead: ahead, aheadSkippedLocked: aheadLocked };
 }
 
 // ── As-of goal reconstruction (for backfilling periods that closed before the ledger existed) ──────
@@ -1107,6 +1240,21 @@ function yoyGoalShapeAsOf_(ppStartMs) {
  */
 function backfillPeriodGoal_(periodStart) {
   var props = getProps_();
+  // This route writes LOCKED, and ?action=goalbackfill&pp=… takes the period start from a query
+  // string. goalbackfillbulk only ever walks backwards, but a hand-typed pp= does not have to — and
+  // now that the ledger runs AHEAD of the open period, a mistyped future date would land on a real
+  // projected row and freeze it forever. Refuse anything that has not closed, with a message rather
+  // than the throw from writeGoalLedger_, because this one is reached by a human with a URL.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(periodStart))) {
+    return { ok: false, error: 'pp must be a YYYY-MM-DD period start', periodStart: periodStart };
+  }
+  var curStart = currentPPStart_(props).ppStartStr;
+  if (!(String(periodStart) < curStart)) {
+    return { ok: false, periodStart: periodStart, currentPeriodStart: curStart,
+             error: 'refusing to backfill ' + periodStart + ' — a backfill writes LOCKED and that '
+                  + 'period has not closed. The open period and everything after it are kept fresh '
+                  + 'by refreshGoalLedger_ and must stay editable.' };
+  }
   var existing = getFrozenPeriodGoal_(periodStart);
   if (existing && existing.locked) return { ok: true, skipped: 'already locked', periodStart: periodStart };
 
