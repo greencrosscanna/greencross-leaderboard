@@ -48,6 +48,11 @@ const GC_EXCLUDED_KEY       = 'GC_EXCLUDED_JSON';   // array of excluded employe
 const GC_ROLES_KEY           = 'GC_ROLES_JSON';          // { nameKey: 'budtender'|'asst_manager'|'store_manager' }
 const ROLE_LABELS = { budtender: 'Budtender', asst_manager: 'Asst. Manager', store_manager: 'Store Manager' };
 const GC_MANUAL_PP_KEY      = 'GC_MANUAL_PP_GOALS_JSON'; // slug→final PP goal overrides
+// Kiosk display: show the SPIFF sell-through row on staff cards. Stored as TEXT 'true'/'false'
+// per the suite rule (booleans are text; read with a truthy check, never === true). Default
+// OFF -- SPIFF is a vendor programme that is not always running, and an empty row on every
+// card is worse than no row at all.
+const GC_SPIFF_SHOW_KEY     = 'GC_SPIFF_SHOW';
 const GC_AVATAR_CONFIGS_KEY  = 'GC_AVATAR_CONFIGS_JSON'; // { nameKey: { ...avatar_config } }
 const GC_HOURLY_DIST_KEY     = 'GC_HOURLY_DIST_JSON';   // per-store same-DOW hourly revenue weights, cached per day
 const GC_EOM_KEY             = 'gc_eom_current';         // { employeeKey, since } — Employee of the Month
@@ -411,6 +416,16 @@ function doGet(e) {
       if (!_etSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
       if ((params.secret || '') !== _etSecret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
       return jsonOut(diagEmpTargets_(params.store || STORES[0].slug, params.dow), params.callback);
+    }
+
+    // Secret-gated, read-only: what SPIFF is returning for one store and how much of it
+    // survives the window filter and the roster join. Exists for the same reason as
+    // emptargetdiag: "why is there no tick on this card" is only answerable from the inputs.
+    if (params.action === 'spiffdiag') {
+      var _spSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+      if (!_spSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
+      if ((params.secret || '') !== _spSecret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
+      return jsonOut(diagSpiff_(params.store || STORES[0].slug), params.callback);
     }
 
     // Secret-gated, read-only: which pacing layer is actually answering per store --
@@ -1497,6 +1512,7 @@ function getSettings_(params) {
     avatarConfigs:    resolveAvatarConfigs_(allEmployees, getAvatarConfigs_()),
     eom:              getEomCurrent_(),  // { employeeKey, since } | null
     roles:            getRoles_(),
+    showSpiff:        spiffShowEnabled_(),   // kiosk staff cards show the SPIFF row
   };
 }
 
@@ -1586,6 +1602,17 @@ function saveSettings_(params) {
       _c.remove('gc_dirall_v2_pp'); _c.remove('gc_dirall_v2_mtd');
     } catch (e) {}
     Logger.log('[discountTarget] saved: ' + newT + '%');
+  }
+
+  // Kiosk SPIFF row on/off. Compared against the STRING 'true' rather than coerced, so a stray
+  // 'false' cannot read as truthy -- the classic text-boolean trap this suite has a rule about.
+  if (params.showSpiff !== undefined) {
+    var _showSpiff = String(params.showSpiff) === 'true';
+    props.setProperty(GC_SPIFF_SHOW_KEY, _showSpiff ? 'true' : 'false');
+    // The standings payload carries the row and is cached per store; without this the toggle
+    // appears to do nothing for up to a minute and somebody clicks it again.
+    bustDisplay = true;
+    Logger.log('[showSpiff] saved: ' + _showSpiff);
   }
 
   if (bustDisplay) gxBustDisplayCaches_();
