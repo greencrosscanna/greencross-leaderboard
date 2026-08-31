@@ -1043,10 +1043,10 @@ function doGet(e) {
       requireRole_(auth, ['owner','director']);
       return jsonOut(adminSetUser(params), params.callback);
     }
-    if (params.action === 'setstorekeys') {
-      requireRole_(auth, ['owner','director']);
-      return jsonOut(adminSetStoreKeys(params), params.callback);
-    }
+    // setstorekeys was REMOVED 2026-08-31. This app no longer stores a Dutchie key: it asks GX Core
+    // for one over ?action=dutchie_keys and caches it for ten minutes. A route that writes a
+    // property nothing reads is not harmless -- it is a loaded gun for whoever finds it and
+    // concludes that rotating here does something.
 
     // ── Historical EOD snapshots ───────────────────────────
     if (params.action === 'historicaldir') {
@@ -1165,11 +1165,10 @@ function bootstrapStorePlans() {
 }
 
 function bootstrapStoreKeys() {
-  // ⚠️  API keys removed from source — keys are stored in ScriptProperties
-  // under DUTCHIE_STORE_KEYS_JSON.  To update a key use the setstorekeys
-  // HTTP action (director/owner role required) or set the property directly
-  // in the GAS Script Editor → Project Settings → Script Properties.
-  Logger.log('bootstrapStoreKeys: keys are managed in ScriptProperties — nothing to do here.');
+  // Keys are not managed here AT ALL any more (2026-08-31). GX Core holds the only copy; this app
+  // fetches one per ten minutes over ?action=dutchie_keys and stores nothing. To rotate, set
+  // DUTCHIE_STORE_KEYS_JSON in GX CORE -- doing it here would change nothing anywhere.
+  Logger.log('bootstrapStoreKeys: nothing to do — GX Core is the only holder of Dutchie keys.');
 }
 
 // ============================================================

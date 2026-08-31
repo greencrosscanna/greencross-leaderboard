@@ -311,26 +311,11 @@ function adminSetUser(params) {
   );
 }
 
-/**
- * Write DUTCHIE_STORE_KEYS_JSON to ScriptProperties.
- * Params: keys — JSON string of { store_id: apiKey, ... }  (GX Core store_id slugs)
- * Auth:   director token required
+/* adminSetStoreKeys was REMOVED 2026-08-31, with the setstorekeys route that called it.
+ * This app stores no Dutchie key. GX Core holds the only copy and hands one out over
+ * ?action=dutchie_keys, gated by GX_CONNECTOR_SECRET. Writing DUTCHIE_STORE_KEYS_JSON here would
+ * update a property nothing reads, which is worse than doing nothing: it looks like a rotation.
  */
-function adminSetStoreKeys(params) {
-  if (!params.keys) return { ok: false, error: 'keys param required' };
-  let parsed;
-  try {
-    parsed = JSON.parse(params.keys);
-  } catch(e) {
-    return { ok: false, error: 'keys must be valid JSON: ' + e.message };
-  }
-  if (typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { ok: false, error: 'keys must be a JSON object' };
-  }
-  PropertiesService.getScriptProperties().setProperty('DUTCHIE_STORE_KEYS_JSON', JSON.stringify(parsed));
-  Logger.log('Store keys updated: ' + Object.keys(parsed).join(', '));
-  return { ok: true, stores: Object.keys(parsed) };
-}
 
 // ============================================================
 //  WRITE AUTHORIZATION — re-check the GRANT, not just the signature
@@ -351,7 +336,7 @@ var GX_WRITE_ACTIONS = [
   'clearmanualgoal', 'goalbackfill', 'goalbackfillbulk', 'goalpush', 'installeodguard',
   'recalculategoals', 'recalculateyoygoals', 'refreshdiscounts', 'refreshtargets', 'saveavatar',
   'savediscountsettings', 'saveincentive', 'savemanualgoals', 'savesettings', 'setplan',
-  'setstorekeys', 'setuptrigger', 'setuser', 'syncemployees',
+  'setuptrigger', 'setuser', 'syncemployees',
 ];
 // `bugreport` is deliberately NOT here: filing a bug is how someone reports being broken, and it
 // must not be the thing that refuses them. `renew` is not here either -- refusing to renew a
