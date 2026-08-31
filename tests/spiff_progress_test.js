@@ -60,6 +60,7 @@ function row(over) {
     program_name: 'Green Cross - Test4',
     start_date: '2026-08-17',
     end_date:   '2026-08-30',
+    status:     'active',
   }, over || {});
 }
 
@@ -199,6 +200,70 @@ const tests = {
     setShow('True');
     _eq_('"True" is not on (case matters)', M.spiffShowEnabled_(), false);
     setShow(undefined);
+  },
+
+  /* CLOSED PROGRAMMES. spiffFilterRows_ keeps anything whose window overlaps, and a closed
+     programme keeps its dates — so on 2026-08-30 the closed "BeGoat Energy Drinks" (Aug 1 →
+     Aug 31) drew on 23 of 40 live cards while SPIFF showed exactly one programme running.
+     SPIFF added `status` (draft|active|closed) that day; this is the field, not a proxy. */
+  closedProgrammesAreDropped() {
+    const running = row();
+    const closed  = row({ program_id: 'begoat-0826', status: 'closed',
+                          program_name: 'BeGoat Energy Drinks', vendor: 'BeGOAT',
+                          start_date: '2026-08-01', end_date: '2026-08-31',
+                          units: 7, target: 3 });
+    const kept = M.spiffActiveRows_([running, closed]);
+    _eq_('one row survives', kept.length, 1);
+    _eq_('and it is the running one', kept[0].program_name, 'Green Cross - Test4');
+
+    /* The closed row DOES pass the window filter — proving spiffActiveRows_ is what drops it
+       and not a date accident, so this fails if the call is ever quietly removed. */
+    _eq_('closed row overlaps the pay period',
+         M.spiffFilterRows_([closed], 'bend', PP_START, PP_END).length, 1);
+  },
+
+  /* draft is not active either — a programme being written must not reach the kiosk. */
+  onlyActiveSurvives() {
+    ['closed', 'draft', 'ACTIVEX', 'inactive'].forEach(function (st) {
+      _eq_(st + ' is dropped', M.spiffActiveRows_([row(), row({ status: st })]).length, 1);
+    });
+    _eq_('case and padding are tolerated on the real value',
+         M.spiffActiveRows_([row({ status: ' Active ' })]).length, 1);
+  },
+
+  /* UNKNOWN IS NOT ACTIVE. A cached row whose programme vanished from the programs tab comes
+     back with status '' and its id in orphan_program_ids. Showing a programme nobody can look
+     up is worse than showing none — but only once OTHER rows prove the field is populated. */
+  orphanRowsAreDroppedWhenTheFieldIsPresent() {
+    const orphan = row({ program_id: 'gone-0001', status: '' });
+    _eq_('orphan dropped alongside a real active row',
+         M.spiffActiveRows_([row(), orphan]).length, 1);
+    _eq_('missing field dropped too',
+         M.spiffActiveRows_([row(), row({ status: undefined })]).length, 1);
+    _eq_('null dropped too',
+         M.spiffActiveRows_([row(), row({ status: null })]).length, 1);
+  },
+
+  /* FAILS SAFE, and note the ASYMMETRY with the orphan rule: a missing status only means
+     "not active" when something else proves SPIFF is still sending the field. If NOTHING
+     carries it, the field regressed — blanking the SPIFF row on every card at every store
+     would be far worse than showing a stale programme, so the filter stands down. */
+  losingTheFieldEntirelyDegradesRatherThanBlanks() {
+    const none = [row({ status: '' }), row({ status: undefined }), row({ status: null })];
+    _eq_('no statuses anywhere → nothing is dropped', M.spiffActiveRows_(none).length, 3);
+    _eq_('empty input is safe', M.spiffActiveRows_([]).length, 0);
+    _eq_('null input is safe',  M.spiffActiveRows_(null).length, 0);
+  },
+
+  /* pay_period must NOT be consulted. It was the original stopgap signal and SPIFF still
+     sends it; a closed programme carrying a stamp, or an active one missing it, must now
+     follow `status` alone. This is what stops the inference creeping back in. */
+  payPeriodIsNoLongerTheSignal() {
+    const activeNoStamp = row({ status: 'active', pay_period: '' });
+    _eq_('active with no stamp is KEPT', M.spiffActiveRows_([activeNoStamp]).length, 1);
+    const closedStamped = row({ status: 'closed', pay_period: '2026-08-17 - 2026-08-30' });
+    _eq_('closed with a stamp is DROPPED',
+         M.spiffActiveRows_([row(), closedStamped]).length, 1);
   },
 
   /* Off means no fetch at all — the switch is also the kill switch if SPIFF misbehaves.

@@ -139,6 +139,58 @@ function spiffFilterRows_(rows, coreStoreId, ppStartStr, ppEndStr) {
 }
 
 /**
+ * Keep only rows whose programme SPIFF says is ACTIVE.
+ *
+ * WHY THIS EXISTS. spiffFilterRows_ keeps a row whose programme WINDOW overlaps the pay
+ * period, and nothing else. A closed programme keeps its dates, so it keeps passing: on
+ * 2026-08-30 SPIFF had exactly one programme running ("Green Cross - Test4") while the
+ * CLOSED "BeGoat Energy Drinks" — dated Aug 1 → Aug 31 — still overlapped and drew on 23
+ * of 40 live kiosk cards, mostly as a "+1 more" hanging off somebody else's row.
+ *
+ * `status` IS A REAL FIELD NOW. This shipped first as an inference off `pay_period` being
+ * stamped, because the payload carried nothing else to go on. SPIFF added the field the
+ * same day (engine @68, 59b5c9b, in reply to our note): every row carries
+ * status = draft | active | closed, RESOLVED AT READ TIME by joining the programs tab —
+ * not stored on the cached row, which matters, because the hourly sweep is active-only and
+ * a stored column would read 'active' forever for a programme closed since its last
+ * refresh. Verified live 2026-08-30: 38 active (Test4) / 25 closed (BeGoat), the identical
+ * split the inference was producing, so this swap was a no-op on screen and correct by
+ * contract rather than by luck.
+ *
+ * WE FILTER HERE RATHER THAN ASKING FOR ?status=active. SPIFF also offers a server-side
+ * filter, and it trims its own by_employee totals in the same call. We do not use it, for
+ * one reason: it answers ok:false when NOTHING is active, and spiffFetchRaw_ treats ok:false
+ * as a failure — cached for SPIFF_TTL_FAIL (2 min) instead of SPIFF_TTL_OK (15 min). "No
+ * programme is running this fortnight" is a normal steady state, not an outage, and routing
+ * it through the failure path would put a constantly-polled kiosk into a permanent 2-minute
+ * refetch loop and log an error every time. The totals argument does not apply to us either:
+ * spiffIndexByEmployee_ sums `earned` over the rows we KEEP, so filtering here fixes the
+ * inflation without reading SPIFF's by_employee at all.
+ *
+ * UNKNOWN IS NOT ACTIVE. If a cached row's programme has vanished from the programs tab,
+ * SPIFF reports status '' and names the id in `orphan_program_ids`. An orphan fails the
+ * equality below and is dropped — SPIFF's own recommendation, and the safe reading on a
+ * kiosk: showing a programme nobody can look up is worse than showing none.
+ *
+ * FAILS SAFE. If NO row carries a status at all, the field is GONE — a SPIFF regression, not
+ * a fortnight where everything is closed — and we return the rows untouched rather than
+ * blanking the SPIFF row on every card at every store. That degrades to the old behaviour (a
+ * closed programme may reappear), which is a visible cosmetic wrong rather than a silent
+ * empty kiosk. Note the asymmetry with the orphan rule above: an absent status is only
+ * treated as "not active" when OTHER rows prove the field is being populated.
+ */
+function spiffActiveRows_(rows) {
+  var all = rows || [];
+  var hasField = all.some(function (r) {
+    return r && String(r.status == null ? '' : r.status).trim() !== '';
+  });
+  if (!hasField) return all;
+  return all.filter(function (r) {
+    return r && String(r.status == null ? '' : r.status).trim().toLowerCase() === 'active';
+  });
+}
+
+/**
  * Group filtered rows by SPIFF's employee_id.
  *
  * THE JOIN: SPIFF's employee_id is DUTCHIE'S numeric id (44905), not a GX Core slug —
@@ -213,7 +265,9 @@ function spiffForStore_(store) {
   if (!raw.ok) return { ok: false, error: raw.error, byId: {} };
 
   var pp   = currentPPStart_();
-  var rows = spiffFilterRows_(raw.rows, coreStoreId_(store), pp.ppStartStr, pp.ppEndStr);
+  // Closed programmes first, then this store's window — order is irrelevant to the result
+  // but this way the store filter never has to reason about staleness.
+  var rows = spiffFilterRows_(spiffActiveRows_(raw.rows), coreStoreId_(store), pp.ppStartStr, pp.ppEndStr);
   var idx  = spiffIndexByEmployee_(rows);
 
   var byId = Object.create(null);

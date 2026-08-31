@@ -7,6 +7,10 @@
  *   • OVERSHOOT. The live programme on 2026-08-29 was 110 units against a target of 55.
  *     Unclamped that is a bar at 200% of its container. The printed count must still say
  *     110/55 — clamping the DRAWING must not clamp the TRUTH.
+ *   • OVERSHOOT IS STILL VISIBLE (2026-08-30). Clamping alone made 110/55 and 55/55 draw
+ *     the SAME picture, with only the printed count separating them. The target hash now
+ *     slides left to 100/rawPct% so the bar itself carries "beaten, by this much" — the
+ *     same over-target language .emp-bar uses on the sales bar directly above it.
  *   • ZERO. 0 of 5 has to draw an empty track; the empty bar is the prompt to sell.
  *     A row that renders nothing at zero would hide every SPIFF nobody has started.
  *   • THE PAYOUT. "$25" beside an unhit programme reads as money already banked.
@@ -32,7 +36,12 @@ vm.createContext(ctx);
 ['esc', 'spiffRow'].forEach((n) => vm.runInContext(grabGC(n), ctx));
 const GC = ctx.GC;
 
-const barPct   = (h) => { const m = h.match(/width:(\d+)%/); return m ? +m[1] : null; };
+/* The fill is ANIMATED now (inline width starts at 0%, animateBars sets it from
+   data-final), so the drawn length lives in data-final — reading `width:` here would
+   report 0 for every row and pass regardless of the maths. */
+const barPct   = (h) => { const m = h.match(/data-final="(\d+)%"/); return m ? +m[1] : null; };
+const markPct  = (h) => { const m = h.match(/emp-spiff-mark" style="left:(\d+)%/); return m ? +m[1] : null; };
+const isOver   = (h) => h.indexOf('emp-spiff-bar-wrap bar-over') > -1;
 /* Nothing should render ticks any more — this guards the removal, so a future revert
    that reintroduces them has to update this suite deliberately rather than by accident. */
 const hasTicks = (h) => h.indexOf('emp-spiff-tick') > -1;
@@ -85,6 +94,61 @@ const tests = {
     const t = GC.spiffRow(sp({ units: 9, target: 5, hit: true }));
     _eq_('small overshoot also caps', barPct(t), 100);
     _ok_('true count still printed',  t.indexOf('9/5') > -1);
+  },
+
+  /* THE HASH IS WHAT MAKES THE OVERSHOOT VISIBLE. Without it 110/55 and 55/55 are the
+     same full bar; with it the hash sits at the fraction of the run the target was. */
+  overTargetSlidesTheHash() {
+    const h = GC.spiffRow(sp());              // 110 of 55 = 200% -> hash at 50%
+    _ok_('flagged over',   isOver(h));
+    _eq_('hash at 50%',    markPct(h), 50);
+    _ok_('glow start set', h.indexOf('--mark-pct:50%') > -1);
+
+    const q = GC.spiffRow(sp({ units: 20, target: 5, hit: true }));  // 400% -> 25%
+    _eq_('4x over puts the hash at 25%', markPct(q), 25);
+  },
+
+  /* At or under target the hash would sit on the bar's own end and say nothing. */
+  atOrUnderTargetDrawsNoHash() {
+    const exact = GC.spiffRow(sp({ units: 55, target: 55, hit: true }));
+    _eq_('exactly on target fills the bar', barPct(exact), 100);
+    _ok_('and draws no hash',   markPct(exact) === null);
+    _ok_('and is not bar-over', !isOver(exact));
+
+    const under = GC.spiffRow(sp({ units: 2, target: 5, hit: false }));
+    _ok_('under draws no hash',   markPct(under) === null);
+    _ok_('under is not bar-over', !isOver(under));
+
+    const zero = GC.spiffRow(sp({ units: 0, target: 0, hit: false }));
+    _ok_('degenerate target draws no hash', markPct(zero) === null);
+  },
+
+  /* STARTED MUST NOT LOOK LIKE NOT-STARTED. A SPIFF target is a unit count over a
+     fortnight, so real cards sit in single-digit percent for days — live on 2026-08-30
+     had 2/127, which drew a ~4px fill that was indistinguishable from an empty track.
+     `has-progress` carries the CSS floor; it must key off UNITS, not the rounded pct,
+     or 2/127 rounding toward zero would take the floor away with it. */
+  startedIsDistinguishableFromNotStarted() {
+    const started = GC.spiffRow(sp({ units: 2, target: 127, hit: false, earned: 0, totalEarned: 0 }));
+    _ok_('tiny progress is flagged', started.indexOf('has-progress') > -1);
+    _eq_('and still draws its true 2%', barPct(started), 2);
+
+    const none = GC.spiffRow(sp({ units: 0, target: 127, hit: false, earned: 0, totalEarned: 0 }));
+    _ok_('zero is NOT flagged — the empty track is the prompt', none.indexOf('has-progress') === -1);
+    _eq_('and stays at 0%', barPct(none), 0);
+
+    /* Rounds to 0% but a unit HAS been sold: the flag must survive the rounding. */
+    const sliver = GC.spiffRow(sp({ units: 1, target: 400, hit: false, earned: 0, totalEarned: 0 }));
+    _eq_('rounds to 0%',           barPct(sliver), 0);
+    _ok_('but is still flagged',   sliver.indexOf('has-progress') > -1);
+  },
+
+  /* The whole point of the change: the SPIFF bar speaks the sales bar's language. */
+  sharesTheSalesBarTreatment() {
+    const h = GC.spiffRow(sp({ units: 2, target: 5, hit: false }));
+    _ok_('fill is animated from data-final', h.indexOf('data-final="40%"') > -1);
+    _ok_('starts collapsed so it can animate', h.indexOf('width:0%') > -1);
+    _ok_('bar sits in a positioned wrap',      h.indexOf('emp-spiff-bar-wrap') > -1);
   },
 
   payoutOnlyOnceEarned() {

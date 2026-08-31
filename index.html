@@ -2146,19 +2146,90 @@ body.kiosk-bg {
 .emp-spiff-count { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
 .emp-spiff-more  { color: var(--text-mute); font-weight: 500; }
 
-/* One bar at every target size — see GC.spiffRow for why the ticks went. Slightly taller
-   than a hairline so it still reads as a fill from across the room. */
+/* One bar at every target size — see GC.spiffRow for why the ticks went.
+
+   SAME BAR LANGUAGE AS THE SALES BAR ABOVE IT (2026-08-30). Two progress bars on one
+   card were teaching two vocabularies: the sales bar charges up with a gradient, marks
+   the target with a hash, and glows past it; the SPIFF bar was a flat block that
+   clamped at 100%. Clamping lost the whole overshoot signal — the live programme at
+   110/55 drew IDENTICALLY to one at 55/55, and the only thing separating them was the
+   printed count. Now both bars mean the same things in the same places: a full bar is
+   "target met", a hash sitting left of the end is "beaten, by that much".
+
+   Geometry matches .emp-bar exactly (4px/2px, not the old 7px/4px) so the two read as
+   one system rather than as two components that happen to sit on the same card. */
+.emp-spiff-bar-wrap { position: relative; }
 .emp-spiff-bar {
-  height: 7px; border-radius: 4px;
-  background: var(--surface-2); overflow: hidden;
+  height: 4px; border-radius: 2px;
+  background: var(--border); overflow: hidden;
 }
+/* Charge-up gradient, dim → full at the target point. --mark-pct is 100% until the
+   target is beaten, so an under-target fill grades across its whole width.
+
+   The ramp starts BRIGHTER than the sales bar's 0.20 (2026-08-30, from live data). A
+   SPIFF target is a unit count over a fortnight, so real cards sit at single-digit
+   percentages for days — live had three under 10%, one at 2/127. At that width the
+   fill is ~4px and almost all of it is the dim end of the ramp, so "started" rendered
+   the same as "not started". The sales bar has the same property but a store is rarely
+   at 2% of a DAILY target, so it never surfaced there. */
 .emp-spiff-bar > span {
-  display: block; height: 100%; border-radius: 4px;
-  background: var(--green);
+  display: block; height: 100%; border-radius: 2px;
+  background: linear-gradient(to right,
+    rgba(74, 222, 128, 0.45) 0%,
+    var(--green) var(--mark-pct, 100%)
+  );
+  transition: width 1s ease-out;
 }
 
-/* Hit: the payout is the point, so the fill goes gold to match the badge. */
-.emp-spiff.hit .emp-spiff-bar > span { background: var(--gold); }
+/* A floor so any nonzero sell-through is legible at kiosk distance. Gated on a class
+   rather than applied to every fill, because 0 of N must still draw a genuinely EMPTY
+   track — that empty bar is the prompt to sell, and a floor on it would turn "nobody
+   has started" into "somebody has", which is the one thing this row must not say. */
+.emp-spiff-bar-wrap.has-progress .emp-spiff-bar > span { min-width: 6px; }
+.emp-spiff.hit .emp-spiff-bar-wrap.has-progress .emp-spiff-bar > span { min-width: 0; }
+
+/* Hit: the payout is the point, so the fill goes gold to match the badge — same
+   charge-up gradient, gold ramp. Every over-target row is also a hit row (over ⇒
+   units > target ⇒ hit), so gold is the only colour the overshoot treatment below
+   ever draws; there is deliberately no green over-target path here. */
+.emp-spiff.hit .emp-spiff-bar > span {
+  background: linear-gradient(to right,
+    rgba(212, 168, 71, 0.45) 0%,
+    var(--gold) var(--mark-pct, 100%)
+  );
+}
+
+/* Target hash — same geometry as .emp-bar-mark. Drawn only when the target is beaten;
+   at or under target it would sit on the bar's own end and say nothing. */
+.emp-spiff-mark {
+  position: absolute;
+  top: -3px; bottom: -3px;
+  width: 1.5px;
+  background: var(--gold);
+  border-radius: 1px;
+  opacity: 0.7;
+  box-shadow: 0 0 4px var(--gold-3);
+  pointer-events: none;
+}
+
+/* Over target: the stretch past the hash glows, exactly as the sales bar does.
+   overflow:hidden on .emp-spiff-bar would clip the box-shadow, so lift it. */
+.emp-spiff-bar-wrap.bar-over .emp-spiff-bar { overflow: visible; }
+.emp-spiff-bar-wrap.bar-over .emp-spiff-bar > span { position: relative; }
+.emp-spiff-bar-wrap.bar-over .emp-spiff-bar > span::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: var(--mark-pct, 100%);
+  right: 0;
+  background: var(--gold);
+  border-radius: 0 2px 2px 0;
+  animation: spiffGlowPulse 2s ease-in-out infinite;
+}
+@keyframes spiffGlowPulse {
+  0%, 100% { box-shadow: 0 0 4px var(--gold-3), 0 0 8px var(--gold-3); }
+  50%      { box-shadow: 0 0 6px var(--gold), 0 0 14px var(--gold-3); }
+}
 .emp-spiff-paid {
   color: var(--gold-bright); font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -3531,7 +3602,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      slideshow bar at 9999, so nothing here contests it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.667';
+window.GC = window.GC || {}; GC.VERSION = 'v1.668';
 
 // ── GX Core web-app URL — ONE definition ──
 // This was previously a `var` inside loadChangelogFromGXCore(), i.e. function-scoped, while the
@@ -4116,9 +4187,19 @@ GC.arcTick = function(f, cx, cy, r, halfWidth) {
  * The rules that survive from the tick version:
  *   • ZERO IS DRAWN. 0 of 6 renders an empty track, not nothing. A SPIFF nobody can see is a
  *     SPIFF nobody sells; the empty bar is the prompt.
- *   • OVERSHOOT DOES NOT OVERFLOW. The live programme on 2026-08-29 was 110 units against a
- *     target of 55. The bar clamps at 100% and the true count is printed beside it, so
- *     "110/55" stays legible without a bar twice the width of its container.
+ *   • OVERSHOOT DOES NOT OVERFLOW — BUT IT IS STILL VISIBLE. The live programme on
+ *     2026-08-29 was 110 units against a target of 55. The bar still clamps at 100% (a bar
+ *     twice its container's width is not a bar) and the true count is still printed beside
+ *     it. What changed on 2026-08-30: the TARGET HASH slides left to 100/rawPct%, so 110/55
+ *     draws a full bar with the hash at the halfway point and the stretch past it glowing.
+ *     Before this, 110/55 and 55/55 drew the same picture and only the printed count told
+ *     them apart — the bar was carrying no information once the target was met.
+ *
+ *   • IT IS THE SALES BAR'S LANGUAGE, NOT ITS OWN. Same gradient charge-up, same hash,
+ *     same glow, same 1s fill animation as .emp-bar directly above it on the card. The head
+ *     row already prints vendor + count + payout, so the sales bar's riding %-tick is NOT
+ *     copied down here — it would print the count a second time on a 4px row and need 18px
+ *     of headroom it does not have.
  *   • THE PAYOUT ONLY APPEARS ONCE EARNED. Showing "$25" next to an unhit programme would
  *     read as money already banked.
  *
@@ -4131,7 +4212,15 @@ GC.spiffRow = function(sp) {
   var target = Math.max(0, +sp.target || 0);
   var hit    = !!sp.hit;
   // Clamp for DRAWING only — `units` stays intact for the printed count.
-  var pct    = target > 0 ? Math.round((Math.min(units, target) / target) * 100) : 0;
+  // Under/at target: the bar fills proportionally, no hash, no glow.
+  // Over target:     the bar is full and the hash slides left to show by how much,
+  //                  mirroring .emp-bar's over-target behaviour exactly.
+  var rawPct  = target > 0 ? Math.round((units / target) * 100) : 0;
+  var over    = rawPct > 100;
+  var pct     = over ? 100 : rawPct;
+  var markPct = over ? Math.round(100 / rawPct * 100) : null;
+  // --mark-pct drives BOTH the gradient's full-brightness point and the ::after glow start.
+  var fillStyle = over ? 'width:0%; --mark-pct:' + markPct + '%' : 'width:0%';
 
   var label = sp.vendor || sp.program || 'SPIFF';
   var count = target > 0 ? (units + '/' + target) : String(units);
@@ -4153,7 +4242,10 @@ GC.spiffRow = function(sp) {
     +   '<span class="emp-spiff-count">' + esc(count) + '</span>'
     +   paidHtml
     + '</div>'
-    + '<div class="emp-spiff-bar"><span style="width:' + pct + '%"></span></div>'
+    + '<div class="emp-spiff-bar-wrap' + (over ? ' bar-over' : '') + (units > 0 ? ' has-progress' : '') + '">'
+    +   '<div class="emp-spiff-bar"><span style="' + fillStyle + '" data-final="' + pct + '%"></span></div>'
+    +   (markPct !== null ? '<div class="emp-spiff-mark" style="left:' + markPct + '%"></div>' : '')
+    + '</div>'
     + '</div>';
 };
 
@@ -10259,9 +10351,12 @@ var kiosk = (function() {
   }
 
   // ── Animate employee bars ──────────────────────────────
+  // Both bars on the card fill together: the sales bar and the SPIFF sell-through bar
+  // below it now share the same treatment, so they must also share the same kick — a
+  // SPIFF bar left at its inline width:0% would render as a permanently empty track.
   function animateBars() {
     setTimeout(function() {
-      document.querySelectorAll('.emp-bar span[data-final]').forEach(function(span) {
+      document.querySelectorAll('.emp-bar span[data-final], .emp-spiff-bar span[data-final]').forEach(function(span) {
         span.style.width = span.getAttribute('data-final');
       });
       document.querySelectorAll('.emp-bar-tick[data-final]').forEach(function(tick) {
