@@ -28,20 +28,48 @@ const CORE_STORES = [
   { store_id: 'river-rd',    display_name: 'River',      dutchie_name: 'River Rd'    },
 ];
 
-/** Load dutchie_fetch.gs + dutchie_proxy.gs with DUTCHIE_STORE_KEYS_JSON set to `keysObj`. */
-function build(keysObj) {
+/* Load the app with GX CORE returning `keysObj` from ?action=dutchie_keys.
+ *
+ * Changed 2026-08-31: the keys used to come from this project's own DUTCHIE_STORE_KEYS_JSON, one of
+ * five copies in the suite. GX Core is now the only holder, so the thing to stub is the HTTP call,
+ * not the property. `localProp` lets a test ALSO plant a local property, which is how we prove the
+ * old copy is genuinely dead rather than merely unused.
+ */
+function build(keysObj, opts) {
+  opts = opts || {};
   const props = {
     getProperty: function (k) {
-      return k === 'DUTCHIE_STORE_KEYS_JSON' ? JSON.stringify(keysObj) : null;
+      if (k === 'GX_CONNECTOR_SECRET') return opts.noSecret ? null : 'test-connector-secret';
+      if (k === 'DUTCHIE_STORE_KEYS_JSON') return opts.localProp ? JSON.stringify(opts.localProp) : null;
+      return null;
     },
     setProperty: function () {}, deleteProperty: function () {}, getProperties: function () { return {}; },
   };
+  const body = keysObj === null
+    ? JSON.stringify({ ok: false, error: 'no keys resolved for any store' })
+    : JSON.stringify({ ok: true, keys: keysObj, count: Object.keys(keysObj).length });
   return H.load(['dutchie_fetch.gs', 'dutchie_proxy.gs', 'discounts.gs'], {
-    stubs: { PropertiesService: {
-      getScriptProperties: function () { return props; },
-      getUserProperties:   function () { return props; },
-      getDocumentProperties: function () { return props; },
-    } },
+    stubs: {
+      PropertiesService: {
+        getScriptProperties: function () { return props; },
+        getUserProperties:   function () { return props; },
+        getDocumentProperties: function () { return props; },
+      },
+      // Cache always misses here: every test should exercise the real fetch path, not a warm copy.
+      CacheService: {
+        getScriptCache: function () {
+          return { get: function () { return null; }, put: function () {} };
+        },
+      },
+      UrlFetchApp: {
+        fetch: function (url) {
+          if (String(url).indexOf('action=dutchie_keys') === -1) throw new Error('unexpected fetch: ' + url);
+          return { getResponseCode: function () { return 200; }, getContentText: function () { return body; } };
+        },
+        fetchAll: function () { return []; },
+      },
+      Utilities: Object.assign({}, (H.stdStubs && H.stdStubs.Utilities) || {}, { sleep: function () {} }),
+    },
   });
 }
 
@@ -76,6 +104,32 @@ function test_lookupResolvesThroughStoreId() {
   _eq_('portland kiosk -> portland-rd',   S.getDutchieStoreKey_('portland'),  'key-portland');
 }
 
+function test_theLocalPropertyIsNoLongerASourceOfKeys() {
+  // THE NEW INVARIANT (2026-08-31). A leftover local DUTCHIE_STORE_KEYS_JSON must be inert. If this
+  // ever passes keys through again, the suite is back to five copies and the next rotation misses
+  // one — which is precisely how the May leak survived a cleanup pass.
+  const S = build(null, { localProp: {
+    'bend': 'STALE', 'center': 'STALE', 'commercial': 'STALE',
+    'hillsboro': 'STALE', 'portland-rd': 'STALE', 'river-rd': 'STALE',
+  } });
+  let served = 0, threw = 0;
+  ['baseline', 'century', 'center', 'commercial', 'portland', 'river'].forEach(function (slug) {
+    try { if (S.getDutchieStoreKey_(slug) === 'STALE') served++; } catch (e) { threw++; }
+  });
+  _eq_('a leftover local property serves nothing', served, 0);
+  _eq_('and every store fails closed instead', threw, 6);
+}
+
+function test_noConnectorSecretFailsClosedAndSaysWhich() {
+  // The deploy secret must NOT work here. If someone "fixes" a missing connector secret by falling
+  // back to it, any spoke holding the deploy secret can trade it for live POS credentials.
+  const S = build(BY_STORE_ID, { noSecret: true });
+  let msg = '';
+  try { S.getDutchieStoreKey_('century'); } catch (e) { msg = e.message; }
+  _ok_('names the connector secret, not the deploy secret', /GX_CONNECTOR_SECRET/.test(msg));
+  _ok_('does not suggest the deploy secret as a fallback', !/GX_DEPLOY_SECRET/.test(msg));
+}
+
 function test_theOldNameKeyedPropertyNowFailsClosed() {
   // THE REGRESSION GUARD. This is the exact JSON the property held before 2026-08-29 — keyed by
   // Dutchie name, with Bend/Hillsboro transposed. It must now resolve to NOTHING rather than
@@ -84,7 +138,7 @@ function test_theOldNameKeyedPropertyNowFailsClosed() {
     'Hillsboro': 'key-that-serves-bend', 'Center': 'k', 'Commercial': 'k',
     'Bend': 'key-that-serves-hillsboro', 'Portland Rd': 'k', 'River': 'k',
   };
-  const S = build(LEGACY_BY_NAME);
+  const S = build(LEGACY_BY_NAME);   // GX Core answering in the OLD name vocabulary
   let threw = 0;
   ['baseline', 'century', 'center', 'commercial', 'portland', 'river'].forEach(function (slug) {
     try { S.getDutchieStoreKey_(slug); } catch (e) { threw++; }
@@ -123,6 +177,8 @@ function test_aMissingStoreIdThrowsRatherThanReturningUndefined() {
 H.run('store_credential_key', {
   test_everyStoreIdIsOneCoreActuallyPublishes,
   test_displayPairingMatchesCore,
+  test_theLocalPropertyIsNoLongerASourceOfKeys,
+  test_noConnectorSecretFailsClosedAndSaysWhich,
   test_lookupResolvesThroughStoreId,
   test_theOldNameKeyedPropertyNowFailsClosed,
   test_storesCarriesNoNameKeyedCredentialField,
