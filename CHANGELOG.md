@@ -47,7 +47,7 @@ real signal.
 
 ### 🖥 Frontend (index.html)
 - **Shared helpers** (de-duplicated): `GC.renderKpiBlock`, `GC.discountCell`,
-  `GC.sparklineCell`; standardised the five copies of the local `e()` escape alias.
+  `GC.sparklineCell`; standardized the five copies of the local `e()` escape alias.
   Fixed a latent `NaN%` bug in the leaderboard KPI deltas in the process.
 - **`GC.state`** — sort / filter / period selections now persist across
   navigation within a browser session (sessionStorage); cleared on logout.
