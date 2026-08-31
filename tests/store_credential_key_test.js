@@ -2,10 +2,10 @@
 //  Dutchie credentials are keyed by GX Core store_id — and only by store_id.
 //
 //  WHY THIS EXISTS (2026-08-29)
-//  This project's DUTCHIE_STORE_KEYS_JSON labelled its keys by Dutchie store NAME, and its labels
+//  This project's DUTCHIE_STORE_KEYS_JSON labeled its keys by Dutchie store NAME, and its labels
 //  had Bend and Hillsboro TRANSPOSED relative to GX Core, Inventory and Sales. dutchie_proxy.gs
 //  compensated with a second, opposite swap (slug 'century' -> dutchieName 'Hillsboro'), so the
-//  kiosk was correct only because two errors cancelled. Anyone who "fixed" either half in isolation
+//  kiosk was correct only because two errors canceled. Anyone who "fixed" either half in isolation
 //  broke it — which is exactly what PR #8 did on 2026-08-26.
 //
 //  Keyed by store_id there is no direction left to get backwards: store_id is Core-owned, matches

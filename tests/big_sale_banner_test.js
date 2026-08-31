@@ -147,7 +147,7 @@ function eq(a, b, msg) {
   if (a !== b) throw new Error((msg || 'value') + ': expected ' + JSON.stringify(b) + ' got ' + JSON.stringify(a));
 }
 
-// ── Baseline behaviour ──────────────────────────────────────────────────────────────────────────
+// ── Baseline behavior ──────────────────────────────────────────────────────────────────────────
 
 t('a fresh big sale shows the banner', () => {
   const x = make();
@@ -244,7 +244,7 @@ t('a new sale inside the 1.3s fade is not stripped by the old fade timer', () =>
   x.api.note(x.sale('Marco', 1200, 0));   // lands during the fade
   x.api.apply();
   eq(x.shown(), true, 'new banner up');
-  eq(x.fading(), false, 'fade cancelled');
+  eq(x.fading(), false, 'fade canceled');
 
   x.flushFades();                     // whatever the old pass left queued fires now
   eq(x.shown(), true, 'new banner survives the old fade timeout');

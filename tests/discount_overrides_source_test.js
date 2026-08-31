@@ -119,7 +119,7 @@ function test_fallback_is_reported_on_the_settings_payload_() {
   _eq_('and its state', out.discretionary[0].excluded, true);
 }
 
-// ── 3. Reads are memoised — the hot path calls this per discount line ──
+// ── 3. Reads are memoized — the hot path calls this per discount line ──
 function test_memoised_per_execution_() {
   let calls = 0;
   const props = {};

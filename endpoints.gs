@@ -162,7 +162,7 @@ function getExcluded_() {
 
 /**
  * Job titles, keyed by nameKey. GX Core only; Crew is the only editor.
- * role_title is free text there, so it is normalised to the three values this app switches on.
+ * role_title is free text there, so it is normalized to the three values this app switches on.
  * Anything that does not map (Director, Intake Manager) is left out, and the caller defaults it.
  */
 function getRoles_() {
@@ -280,7 +280,7 @@ function gxEomFromCore_() {
   } catch (e) { gxRosterWarn_(e); return undefined; }   // unreadable -> let the local value stand
 }
 
-/** Normalise a Dutchie name into a lookup key (lowercase, no periods/quotes, spaces→underscore). */
+/** Normalize a Dutchie name into a lookup key (lowercase, no periods/quotes, spaces→underscore). */
 function nameToKey_(name) {
   return (name || '').toLowerCase().replace(/["'`]/g, '').replace(/\./g, '').replace(/\s+/g, '_').trim();
 }
@@ -878,7 +878,7 @@ function getDirectorAlerts(pre) {
  * cutoff is always false, so nothing was ever deleted and the property grew without
  * bound toward the 9KB-per-value ScriptProperties limit, at which point setProperty
  * throws inside the leaderboard payload. Anchoring on the date at the END of the key
- * also means an entry in any other shape is unrecognised, and dropped rather than kept
+ * also means an entry in any other shape is unrecognized, and dropped rather than kept
  * forever -- which is what clears the entries left behind by the shared-key era.
  *
  * @param {Object} cache
@@ -1617,7 +1617,7 @@ function getStoreLeaderboard(store, params) {
       leadingSince:  i === 0 ? leaderLeadingSince : '',
       target:        target,
       // null when SPIFF has no row for this person — which is NOT the same as a row at zero.
-      // Someone at 0 of 5 still gets a card row; only "no programme at all" is absent.
+      // Someone at 0 of 5 still gets a card row; only "no program at all" is absent.
       spiff:         _spiff.byId[String(emp.id || '')] || null,
       note:          null,
     };
@@ -1837,7 +1837,7 @@ function resolveAvatarConfigs_(employees, rawConfigs) {
  *
  * A `seed` is stamped INTO avatar_config, pinned to employee_number, so a rename cannot regenerate a
  * different face. Crew used to do that stamping and this app did not, which is why it now happens in
- * GXCore.setAvatar for every writer (Core v225). Pass the config through untouched so it is honoured.
+ * GXCore.setAvatar for every writer (Core v225). Pass the config through untouched so it is honored.
  */
 function getAvatarConfigs_() {
   var out = Object.create(null);
@@ -1888,7 +1888,7 @@ function clearAvatarConfig_(params) {
  * was being written from two apps — Crew and here — each wrapping gxUpsertEmployee in its own
  * read-merge-write. Same row, same field, two implementations that did not agree: Crew's pinned the
  * avatar seed to employee_number, retried lock contention and verified that a clear actually landed;
- * this one did none of those. Which behaviour a staff member got depended on which app they happened
+ * this one did none of those. Which behavior a staff member got depended on which app they happened
  * to be standing in front of. GXCore.setAvatar is that logic once, in the app that owns the row
  * (Core v225). Ownership is by LAYER: gx-theme renders, GX Core writes, Crew manages staff, and this
  * app keeps the kiosk entry point staff actually reach — #/avatar is not going away, and who may
@@ -1901,7 +1901,7 @@ function clearAvatarConfig_(params) {
  * Dutchie id and employee number in one avatar save that day. That reasoning was correct and is now
  * handled inside the library: setAvatar patches through gxUpsertEmployee, which treats '' as "leave
  * this column alone", and a removal passes clear='avatar_config' and then re-reads to confirm the
- * field is empty. The defence moved; it was not dropped. The pin still matters — setAvatar does not
+ * field is empty. The defense moved; it was not dropped. The pin still matters — setAvatar does not
  * exist before v225 — so re-pin AND deploy before assuming this call resolves.
  */
 function gxWriteAvatarToCore_(nameKey, configStr) {
@@ -2137,7 +2137,7 @@ function incentiveDefaults_() {
 
 /* GX CORE HOLDS THE THRESHOLDS NOW (kv `incentiveThresholds`), because they are not Leaderboard's.
  * GX Crew owns compensation and edits them there; this app still READS them, both for the incentive
- * payload and — the part that is easy to miss — for the kiosk's discount colouring, which takes its
+ * payload and — the part that is easy to miss — for the kiosk's discount coloring, which takes its
  * target from budtender.discountMaxPct. Two copies of that number means the board grades staff
  * against a goal nobody set on it.
  *

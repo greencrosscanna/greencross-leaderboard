@@ -32,7 +32,7 @@ const { _eq_, _ok_ } = H;
 
 // ── The corrupt shape the DST bug left in GX Core ────────────
 // All five mis-dated rows, each keyed a day early, plus a correctly-keyed
-// neighbour from after the 2026-03-08 spring-forward. The 03-01 row is the
+// neighbor from after the 2026-03-08 spring-forward. The 03-01 row is the
 // tell: fifteen days carrying a fourteen-day total. Every one of these is a
 // real period_start/period_end pair read out of live period_goals on
 // 2026-08-25 — the fixture has to carry all five or the assertions below
@@ -93,7 +93,7 @@ function test_allFiveMisdatedStartsReadAsUnfrozen() {
   });
 }
 
-// ── The behaviour that must NOT regress ──────────────────────
+// ── The behavior that must NOT regress ──────────────────────
 function test_correctlyKeyedRowStillResolves() {
   const S = mod();
   const fz = S.getFrozenPeriodGoal_('2026-03-16');

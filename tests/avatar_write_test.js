@@ -25,7 +25,7 @@
 //  rest of the employee record. That blanking is not hypothetical — on 2026-08-20 a partial avatar
 //  write under an old library pin reduced a live employee to an id and a status, losing their name,
 //  home store, role, Dutchie id and employee number. gxWriteAvatarToCore_ used to defend against it
-//  by building a COMPLETE row; that defence now lives inside the library, so the assertion has to
+//  by building a COMPLETE row; that defense now lives inside the library, so the assertion has to
 //  follow it here or the migration silently drops the only check that ever caught it.
 //
 //  Part A cannot catch a blanking (its setAvatar is a spy) and Part B cannot run everywhere. Neither
@@ -216,7 +216,7 @@ function test_failuresKeepTheShapeTheUiRenders_() {
   res = S.saveAvatarConfig_({ nameKey: 'casey_nguyen', config: CFG_STR });
   // The pin is the likely cause of a throw here: setAvatar does not exist before Core v225.
   _eq_('a throw is caught, not propagated', res.ok, false);
-  _ok_('and is labelled as a Core failure', /GX Core write failed: Library not found/.test(res.error || ''));
+  _ok_('and is labeled as a Core failure', /GX Core write failed: Library not found/.test(res.error || ''));
 
   fresh();
   spySetAvatar(undefined);

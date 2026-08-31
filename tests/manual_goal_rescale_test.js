@@ -9,7 +9,7 @@
 //  a fourteen-day period. Anything else silently shows a goal
 //  nobody set.
 //
-//  The rescale used to normalise on g.ppGoal, which is only the
+//  The rescale used to normalize on g.ppGoal, which is only the
 //  same thing when 2 x sum(dowAvg) == ppGoal. That identity
 //  breaks whenever the 12-period window is missing days (ppGoal
 //  falls, the per-weekday means do not) or carries an extra one
@@ -18,7 +18,7 @@
 //  $41,500 goal in Dec 2025 / Jan 2026, and has run 0.7% light
 //  since 2026-04-27.
 //
-//  The fixtures below are those measured shapes. Normalising on
+//  The fixtures below are those measured shapes. Normalizing on
 //  the shape's own two-week total makes the sum exact by
 //  construction, which is what these assert.
 //
@@ -74,7 +74,7 @@ function test_window_missing_days() {
 
   const r = S.resolveEffectiveGoal_('portland', gr, {}, 0.01, { portland: String(MANUAL) });
   _approx_('the shape still sums to the override', periodSum(r.g.dowAvg), MANUAL, 0.01);
-  _ok_('and does NOT overshoot the way ppGoal-normalising did',
+  _ok_('and does NOT overshoot the way ppGoal-normalizing did',
        periodSum(r.g.dowAvg) < MANUAL * 1.001);
 }
 
@@ -101,7 +101,7 @@ function test_shape_is_preserved() {
 }
 
 function test_no_shape_falls_back_to_ppGoal() {
-  // A store with no day-of-week profile has nothing to normalise on. It must not
+  // A store with no day-of-week profile has nothing to normalize on. It must not
   // divide by zero or return NaN targets — ppGoal is the only basis left.
   const gr = { ppGoal: 30000 };
   const r  = S.resolveEffectiveGoal_('portland', gr, {}, 0, { portland: String(MANUAL) });

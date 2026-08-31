@@ -56,7 +56,7 @@ function gxRoster_() {
   try {
     CacheService.getScriptCache().put(GC_GX_ROSTER_CACHE_KEY,
       JSON.stringify(built), GC_GX_ROSTER_TTL_SEC);
-  } catch (e) { /* cache is an optimisation, not a requirement */ }
+  } catch (e) { /* cache is an optimization, not a requirement */ }
   return (_gxRosterMemo_ = built);
 }
 

@@ -167,9 +167,9 @@ t('localStorage denied: seeds in memory and does not loop',()=>{
   x.tick(); x.tick(); eq(x.reloads,1,'no loop');
 });
 
-t('a formatter reporting midnight as hour 24 is normalised to 0',()=>{
+t('a formatter reporting midnight as hour 24 is normalized to 0',()=>{
   // Node's en-CA gives '00', but hour12:false maps to hourCycle h24 in some engines, which renders
-  // midnight as '24'. Unnormalised that is >= PT_HOUR, so every kiosk would reload at MIDNIGHT --
+  // midnight as '24'. Unnormalized that is >= PT_HOUR, so every kiosk would reload at MIDNIGHT --
   // stores are still closing, and the day has only just rolled. Substitute such a formatter.
   const x=make();
   const RealDTF=Intl.DateTimeFormat;

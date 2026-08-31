@@ -105,7 +105,7 @@ function listUsers_() {
  *     the wrong shop's kiosk
  * At the time of writing ALL TEN performance grants have default_store empty, so every store manager
  * would land somewhere wrong. Hence gxSessionUsable_: a GX Core result is only accepted when it
- * translates cleanly. Anything else falls back to local, which is exactly today's behaviour.
+ * translates cleanly. Anything else falls back to local, which is exactly today's behavior.
  *
  * Directors need no store, so they move to shared sign-on now. Managers follow automatically once
  * users.default_store is filled in on the GX Core side -- no code change needed here.
@@ -146,7 +146,7 @@ function loginUser(params) {
  *
  * Measured here before fixing: GX_ROLE_TO_LOCAL['constructor'] and GX_STOREID_TO_SLUG['__proto__']
  * were both truthy. toString and valueOf missed only because the call sites lowercase first, which
- * is luck, not a defence -- 'constructor' and '__proto__' are already lowercase.
+ * is luck, not a defense -- 'constructor' and '__proto__' are already lowercase.
  *
  * Use this anywhere a map decides something, rather than trusting the lookup.
  */
@@ -333,7 +333,7 @@ function adminSetStoreKeys(params) {
 }
 
 // ============================================================
-//  WRITE AUTHORISATION — re-check the GRANT, not just the signature
+//  WRITE AUTHORIZATION — re-check the GRANT, not just the signature
 // ============================================================
 
 /**
@@ -341,7 +341,7 @@ function adminSetStoreKeys(params) {
  * read and is deliberately left alone.
  *
  * The list is of WRITES rather than of reads on purpose. Miss a write and it merely keeps today's
- * behaviour (signature-only); misclassify a READ as a write and a Core hiccup blanks a board at
+ * behavior (signature-only); misclassify a READ as a write and a Core hiccup blanks a board at
  * open. The failure modes are not symmetric, so the list that fails safe is the one we maintain.
  *
  * NEW WRITE ACTION? ADD IT HERE.

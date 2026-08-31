@@ -50,7 +50,7 @@ const ROLE_LABELS = { budtender: 'Budtender', asst_manager: 'Asst. Manager', sto
 const GC_MANUAL_PP_KEY      = 'GC_MANUAL_PP_GOALS_JSON'; // slug→final PP goal overrides
 // Kiosk display: show the SPIFF sell-through row on staff cards. Stored as TEXT 'true'/'false'
 // per the suite rule (booleans are text; read with a truthy check, never === true). Default
-// OFF -- SPIFF is a vendor programme that is not always running, and an empty row on every
+// OFF -- SPIFF is a vendor program that is not always running, and an empty row on every
 // card is worse than no row at all.
 const GC_SPIFF_SHOW_KEY     = 'GC_SPIFF_SHOW';
 const GC_AVATAR_CONFIGS_KEY  = 'GC_AVATAR_CONFIGS_JSON'; // { nameKey: { ...avatar_config } }
@@ -254,7 +254,7 @@ function doGet(e) {
      here means an edit silently does nothing until the instance recycles. Cleared per request. */
   _incThreshCache_ = null;
   /* Same reason, same fix: the discretionary-discount OVERRIDES moved to GX Core kv `discountRules`
-     (2026-08-30) and GX Crew edits them there. They are memoised per execution because
+     (2026-08-30) and GX Crew edits them there. They are memoized per execution because
      isExcludedDiscount_ runs per discount line per transaction — so the memo has to be dropped here
      or a warm kiosk instance keeps scoring against rules Crew already changed. */
   resetDiscountMemos_();
@@ -465,7 +465,7 @@ function doGet(e) {
     const auth = requireAuth_(params);
     if (!auth.ok) return jsonOut(auth, params.callback);
 
-    // ── Write authorisation: ONE chokepoint, so it cannot be forgotten per endpoint ──
+    // ── Write authorization: ONE chokepoint, so it cannot be forgotten per endpoint ──
     // The signature above proves who you are; it does not prove you still have access. This
     // re-checks the GRANT in GX Core for mutating actions only. Reads fall straight through and
     // still fail open, so a Core hiccup can never blank a board at open. Ships dark (dry-run) --

@@ -27,7 +27,7 @@ const { _eq_, _ok_ } = H;
 const ANCHOR = '2026-05-11';            // a PDT date — the shipped default
 const PROPS  = { getProperty: function () { return null; } };
 
-// currentPPStart_ memoises into a module-level cache (one GAS execution =
+// currentPPStart_ memoizes into a module-level cache (one GAS execution =
 // one period), so each probe needs a freshly loaded module — exactly what a
 // new invocation gets in production.
 function ppOn(ptDateStr) {
@@ -144,7 +144,7 @@ function test_everyStartIsAWholeNumberOfPeriodsFromAnchor() {
 
 // ── periodStartForDate_: maps a day to its period KEY ────────
 // This is what decides which frozen goal a given day is scored against, so an
-// off-by-one here silently scores a day against the neighbouring period's goal.
+// off-by-one here silently scores a day against the neighboring period's goal.
 function test_periodStartForDate_() {
   const M = H.load(['goals.gs', 'dutchie_proxy.gs']);
   H.setNow(M.ptDateToUtcMs_('2026-08-25') + 12 * 3600000);

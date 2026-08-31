@@ -12,7 +12,7 @@ const H = require('./_harness.js');
 const { _eq_, _ok_, _approx_ } = H;
 
 const S = H.load(['endpoints.gs', 'dutchie_proxy.gs'], {
-  // currentPPStart_ memoises into a file-level var; reach it the same way
+  // currentPPStart_ memoizes into a file-level var; reach it the same way
   // runAllTests does, so a stale memo can't make a later case assert nothing.
   extraExports: '"resetPPCache": function () { _ppStartCache_ = null; _propsCache_ = null; }',
 });

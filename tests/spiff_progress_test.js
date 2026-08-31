@@ -14,7 +14,7 @@
  *      which reassigns money on a rename.
  *
  *   3. TREATING ZERO AS ABSENT. Somebody at 2 of 5 has earned 0 and must still get a card row;
- *      that half-filled row is the entire point of the feature. Only "no programme at all"
+ *      that half-filled row is the entire point of the feature. Only "no program at all"
  *      is absent.
  *
  * Per tests/_harness.js's rule these never reimplement — spiff.gs is read off disk and the real
@@ -77,7 +77,7 @@ const tests = {
          M.spiffFilterRows_([row({ store_id: ' Bend ' })], 'bend', PP_START, PP_END).length, 1);
   },
 
-  /* THE CREW BUG. A programme counts when its window OVERLAPS the pay period — it is not
+  /* THE CREW BUG. A program counts when its window OVERLAPS the pay period — it is not
      required to line up with it, and its pay_period STRING is never consulted. */
   windowOverlapNotStringMatch() {
     const f = (o) => M.spiffFilterRows_([row(o)], 'bend', PP_START, PP_END).length;
@@ -95,7 +95,7 @@ const tests = {
   },
 
   /* A row we cannot place in time is dropped rather than guessed at: showing a tick for a
-     programme that may have ended last month is worse than showing none. */
+     program that may have ended last month is worse than showing none. */
   undatedRowsAreDropped() {
     const f = (o) => M.spiffFilterRows_([row(o)], 'bend', PP_START, PP_END).length;
     _eq_('no start_date', f({ start_date: '' }), 0);
@@ -119,7 +119,7 @@ const tests = {
     const idx = M.spiffIndexByEmployee_([row()]);
     _ok_('numeric id is indexed under its string form', !!idx['44905']);
     _eq_('earned carried', idx['44905'].earned, 25);
-    _eq_('one programme',  idx['44905'].programs.length, 1);
+    _eq_('one program',  idx['44905'].programs.length, 1);
     _eq_('no rows -> empty index', Object.keys(M.spiffIndexByEmployee_([])).length, 0);
     _eq_('row with no employee_id is skipped',
          Object.keys(M.spiffIndexByEmployee_([row({ employee_id: '' })])).length, 0);
@@ -131,11 +131,11 @@ const tests = {
     _ok_('somebody short of target is present', !!idx['44905']);
     _eq_('their earned is zero, not missing', idx['44905'].earned, 0);
     const lead = M.spiffLeadProgram_(idx['44905']);
-    _eq_('and they still get a lead programme', lead.lead.units, 2);
+    _eq_('and they still get a lead program', lead.lead.units, 2);
     _eq_('with the target to fill toward',      lead.lead.target, 5);
   },
 
-  /* Several programmes: lead with the one still in reach, not an arbitrary first row. */
+  /* Several programs: lead with the one still in reach, not an arbitrary first row. */
   leadProgramPrefersTheOneStillInReach() {
     const idx = M.spiffIndexByEmployee_([
       row({ program_id: 'a', units: 110, target: 55, hit: true,  earned: 25 }),
@@ -143,9 +143,9 @@ const tests = {
       row({ program_id: 'c', units: 8,   target: 10, hit: false, earned: 0  }),
     ]);
     const pick = M.spiffLeadProgram_(idx['44905']);
-    _eq_('closest unhit programme leads', pick.lead.program_id, 'c');
+    _eq_('closest unhit program leads', pick.lead.program_id, 'c');
     _eq_('the other two are counted, not hidden', pick.more, 2);
-    _eq_('total earned sums every programme', pick.totalEarned, 25);
+    _eq_('total earned sums every program', pick.totalEarned, 25);
   },
 
   /* Nothing left to chase — show the win rather than an arbitrary row. */
@@ -160,7 +160,7 @@ const tests = {
   },
 
   emptyEntryHasNoLead() {
-    _eq_('no programmes -> null', M.spiffLeadProgram_({ programs: [] }), null);
+    _eq_('no programs -> null', M.spiffLeadProgram_({ programs: [] }), null);
     _eq_('undefined entry -> null', M.spiffLeadProgram_(undefined), null);
   },
 
@@ -172,9 +172,9 @@ const tests = {
       row({ program_id: 'y', units: 3, target: 6, hit: false, earned: 0 }),
     ]);
     const pick = M.spiffLeadProgram_(idx['44905']);
-    _eq_('the real programme leads', pick.lead.program_id, 'y');
+    _eq_('the real program leads', pick.lead.program_id, 'y');
   },
-  /* THE SWITCH. Default OFF: a SPIFF programme is a vendor arrangement that is not always
+  /* THE SWITCH. Default OFF: a SPIFF program is a vendor arrangement that is not always
      running — there was exactly one live on 2026-08-29 — so defaulting on would put an empty
      bar on most cards at most stores. */
   spiffRowIsOffUntilSwitchedOn() {
@@ -202,9 +202,9 @@ const tests = {
     setShow(undefined);
   },
 
-  /* CLOSED PROGRAMMES. spiffFilterRows_ keeps anything whose window overlaps, and a closed
-     programme keeps its dates — so on 2026-08-30 the closed "BeGoat Energy Drinks" (Aug 1 →
-     Aug 31) drew on 23 of 40 live cards while SPIFF showed exactly one programme running.
+  /* CLOSED PROGRAMS. spiffFilterRows_ keeps anything whose window overlaps, and a closed
+     program keeps its dates — so on 2026-08-30 the closed "BeGoat Energy Drinks" (Aug 1 →
+     Aug 31) drew on 23 of 40 live cards while SPIFF showed exactly one program running.
      SPIFF added `status` (draft|active|closed) that day; this is the field, not a proxy. */
   closedProgrammesAreDropped() {
     const running = row();
@@ -222,7 +222,7 @@ const tests = {
          M.spiffFilterRows_([closed], 'bend', PP_START, PP_END).length, 1);
   },
 
-  /* draft is not active either — a programme being written must not reach the kiosk. */
+  /* draft is not active either — a program being written must not reach the kiosk. */
   onlyActiveSurvives() {
     ['closed', 'draft', 'ACTIVEX', 'inactive'].forEach(function (st) {
       _eq_(st + ' is dropped', M.spiffActiveRows_([row(), row({ status: st })]).length, 1);
@@ -231,8 +231,8 @@ const tests = {
          M.spiffActiveRows_([row({ status: ' Active ' })]).length, 1);
   },
 
-  /* UNKNOWN IS NOT ACTIVE. A cached row whose programme vanished from the programs tab comes
-     back with status '' and its id in orphan_program_ids. Showing a programme nobody can look
+  /* UNKNOWN IS NOT ACTIVE. A cached row whose program vanished from the programs tab comes
+     back with status '' and its id in orphan_program_ids. Showing a program nobody can look
      up is worse than showing none — but only once OTHER rows prove the field is populated. */
   orphanRowsAreDroppedWhenTheFieldIsPresent() {
     const orphan = row({ program_id: 'gone-0001', status: '' });
@@ -247,7 +247,7 @@ const tests = {
   /* FAILS SAFE, and note the ASYMMETRY with the orphan rule: a missing status only means
      "not active" when something else proves SPIFF is still sending the field. If NOTHING
      carries it, the field regressed — blanking the SPIFF row on every card at every store
-     would be far worse than showing a stale programme, so the filter stands down. */
+     would be far worse than showing a stale program, so the filter stands down. */
   losingTheFieldEntirelyDegradesRatherThanBlanks() {
     const none = [row({ status: '' }), row({ status: undefined }), row({ status: null })];
     _eq_('no statuses anywhere → nothing is dropped', M.spiffActiveRows_(none).length, 3);
@@ -256,7 +256,7 @@ const tests = {
   },
 
   /* pay_period must NOT be consulted. It was the original stopgap signal and SPIFF still
-     sends it; a closed programme carrying a stamp, or an active one missing it, must now
+     sends it; a closed program carrying a stamp, or an active one missing it, must now
      follow `status` alone. This is what stops the inference creeping back in. */
   payPeriodIsNoLongerTheSignal() {
     const activeNoStamp = row({ status: 'active', pay_period: '' });
@@ -268,7 +268,7 @@ const tests = {
 
   /* THE DIAGNOSTIC MUST AGREE WITH THE KIOSK. diagSpiff_ deliberately does not call
      spiffForStore_ (that short-circuits when the row is off), so it rebuilds the chain by
-     hand — and for one deploy it rebuilt the OLD one, reporting closed programmes the kiosk
+     hand — and for one deploy it rebuilt the OLD one, reporting closed programs the kiosk
      had already stopped drawing. It is read exactly when somebody is deciding whether to
      switch the row on, so a stale answer there is the most expensive kind. */
   diagUsesTheSameFilterChainAsTheKiosk() {

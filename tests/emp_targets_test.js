@@ -162,7 +162,7 @@ function test_pruneKeepsOtherStoresSameDay() {
 
 function test_pruneDropsLegacyShapes() {
   // Left over from when this key was shared with refreshTargetsAll's
-  // { slug: { ppTarget } } — unrecognised, so cleared rather than kept forever.
+  // { slug: { ppTarget } } — unrecognized, so cleared rather than kept forever.
   const cache = {
     'commercial:dow:2026-08-28': { a: 1 },
     'commercial':                { ppTarget: 90218 },

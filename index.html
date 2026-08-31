@@ -2151,7 +2151,7 @@ body.kiosk-bg {
    SAME BAR LANGUAGE AS THE SALES BAR ABOVE IT (2026-08-30). Two progress bars on one
    card were teaching two vocabularies: the sales bar charges up with a gradient, marks
    the target with a hash, and glows past it; the SPIFF bar was a flat block that
-   clamped at 100%. Clamping lost the whole overshoot signal — the live programme at
+   clamped at 100%. Clamping lost the whole overshoot signal — the live program at
    110/55 drew IDENTICALLY to one at 55/55, and the only thing separating them was the
    printed count. Now both bars mean the same things in the same places: a full bar is
    "target met", a hash sitting left of the end is "beaten, by that much".
@@ -2190,7 +2190,7 @@ body.kiosk-bg {
 
 /* Hit: the payout is the point, so the fill goes gold to match the badge — same
    charge-up gradient, gold ramp. Every over-target row is also a hit row (over ⇒
-   units > target ⇒ hit), so gold is the only colour the overshoot treatment below
+   units > target ⇒ hit), so gold is the only color the overshoot treatment below
    ever draws; there is deliberately no green over-target path here. */
 .emp-spiff.hit .emp-spiff-bar > span {
   background: linear-gradient(to right,
@@ -3569,7 +3569,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
           kiosk downloaded a dev-only script it can never use.
        2. A RELATIVE src cannot resolve on a GAS-served page -- HtmlService sandboxes the document to a
           different origin -- so on that path the guard was silently ABSENT rather than inert. Nothing
-          signalled it, which is worse than the 404.
+          signaled it, which is worse than the 404.
 
      Loading it only on localhost fixes both: production never makes the request at all, and the URL is
      absolute so it resolves from any origin, GAS included. Nothing to commit per repo, which also
@@ -3614,7 +3614,7 @@ window.GC = window.GC || {}; GC.VERSION = 'v1.671';
 // fine without it. Hoisted here so there is one definition, above every consumer.
 window.GXCORE_URL = 'https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec';
 
-// One GXClient for GX Core, memoised. GXClient carries the retry the bare /exec second hop needs
+// One GXClient for GX Core, memoized. GXClient carries the retry the bare /exec second hop needs
 // (it 404s on ~6% of rapid calls), so nothing here should hand-roll a JSONP call. Returns null if
 // gx-theme has not loaded, and every caller is expected to cope rather than throw.
 GC.gxCore = (function () {
@@ -4118,7 +4118,7 @@ GC.expectedFrac = function(shape) {
       if (hh < h)       ef += w;
       else if (hh === h) ef += w * (m / 60);
     }
-    // Shapes are normalised to 1.0 server-side; renormalise defensively so a partial
+    // Shapes are normalized to 1.0 server-side; renormalize defensively so a partial
     // curve cannot report a fraction of the wrong scale.
     if (!(total > 0)) return linear;
     ef = ef / total;
@@ -4159,7 +4159,7 @@ GC.paceFrac = function(shape, serverFrac) {
 
 /**
  * A tick across the gauge arc at fraction f (0..1), as SVG line coords. The arc is the
- * semicircle "M 22 122 A 98 98 0 0 1 218 122" — centre (120,122), r 98, swept left to
+ * semicircle "M 22 122 A 98 98 0 0 1 218 122" — center (120,122), r 98, swept left to
  * right — so f maps onto π…0 and the tick is drawn along the radius, spanning the stroke.
  */
 GC.arcTick = function(f, cx, cy, r, halfWidth) {
@@ -4187,7 +4187,7 @@ GC.arcTick = function(f, cx, cy, r, halfWidth) {
  * The rules that survive from the tick version:
  *   • ZERO IS DRAWN. 0 of 6 renders an empty track, not nothing. A SPIFF nobody can see is a
  *     SPIFF nobody sells; the empty bar is the prompt.
- *   • OVERSHOOT DOES NOT OVERFLOW — BUT IT IS STILL VISIBLE. The live programme on
+ *   • OVERSHOOT DOES NOT OVERFLOW — BUT IT IS STILL VISIBLE. The live program on
  *     2026-08-29 was 110 units against a target of 55. The bar still clamps at 100% (a bar
  *     twice its container's width is not a bar) and the true count is still printed beside
  *     it. What changed on 2026-08-30: the TARGET HASH slides left to 100/rawPct%, so 110/55
@@ -4200,7 +4200,7 @@ GC.arcTick = function(f, cx, cy, r, halfWidth) {
  *     row already prints vendor + count + payout, so the sales bar's riding %-tick is NOT
  *     copied down here — it would print the count a second time on a 4px row and need 18px
  *     of headroom it does not have.
- *   • THE PAYOUT ONLY APPEARS ONCE EARNED. Showing "$25" next to an unhit programme would
+ *   • THE PAYOUT ONLY APPEARS ONCE EARNED. Showing "$25" next to an unhit program would
  *     read as money already banked.
  *
  * @param {Object} sp { vendor, program, units, target, hit, earned, totalEarned, more }
@@ -4214,7 +4214,7 @@ GC.spiffRow = function(sp) {
   // Clamp for DRAWING only — `units` stays intact for the printed count.
   // Under/at target: the bar fills proportionally, no hash, no glow.
   // Over target:     the bar is full and the hash slides left to show by how much,
-  //                  mirroring .emp-bar's over-target behaviour exactly.
+  //                  mirroring .emp-bar's over-target behavior exactly.
   var rawPct  = target > 0 ? Math.round((units / target) * 100) : 0;
   var over    = rawPct > 100;
   var pct     = over ? 100 : rawPct;
@@ -4225,7 +4225,7 @@ GC.spiffRow = function(sp) {
   var label = sp.vendor || sp.program || 'SPIFF';
   var count = target > 0 ? (units + '/' + target) : String(units);
 
-  // `earned` is the lead programme's payout; `totalEarned` covers the others folded into
+  // `earned` is the lead program's payout; `totalEarned` covers the others folded into
   // "+N more", so the two never contradict each other on the same card.
   var paidAmt  = hit ? (+sp.totalEarned || +sp.earned || 0) : 0;
   var paidHtml = paidAmt > 0
@@ -4336,7 +4336,7 @@ GC.discountSeverity = function(rate) {
 };
 
 /**
- * Renders a discount-rate table cell with colour-coded severity bar.
+ * Renders a discount-rate table cell with color-coded severity bar.
  * Used in store leaderboard, staff table, and the lb module.
  * @param {number} rate  Discount rate as a decimal (e.g. 0.054 = 5.4%)
  * @return {string} HTML string
@@ -5443,7 +5443,7 @@ GC.router = (function() {
     // after navigating away, and avoids duplicate clock/refresh intervals.
     _runLeaveHandlers();
 
-    // Normalise: strip leading #, ensure leading /
+    // Normalize: strip leading #, ensure leading /
     var raw = (hash || '').replace(/^#/, '') || '/login';
     if (raw === '' || raw === '/') raw = '/login';
 
@@ -5572,7 +5572,7 @@ GC.views = {
 <script>
 // ============================================================
 //  Green Cross — Director View
-//  Renders /director — all-stores command centre
+//  Renders /director — all-stores command center
 //
 //  Data flow:
 //    GC.views.renderDirector()
@@ -5833,7 +5833,7 @@ var director = (function() {
 
   // ── Render: Loading ────────────────────────────────────
   function renderLoading(activeTab) {
-    // The nav is FULL-BLEED: it sits outside .app-page, which is a centred, max-width, padded
+    // The nav is FULL-BLEED: it sits outside .app-page, which is a centered, max-width, padded
     // content wrapper. Rendered inside it the bar was inset by 24px and pushed down 14px, so
     // Dashboard and History did not line up with Standings or butt against the top of the page.
     return renderHeader(null, activeTab || 'dashboard')
@@ -6392,7 +6392,7 @@ var director = (function() {
 
   // ── Render: Today Aggregate Row ───────────────────────
   // Three widgets matching the kiosk hero cards — Goal arc, Pace gauge, Hourly chart.
-  // SVG math identical to kiosk so the visuals are recognisable cross-view.
+  // SVG math identical to kiosk so the visuals are recognizable cross-view.
 
   var DIR_ARC_LEN = 308; // π × 98 ≈ 308  (same arc as kiosk)
 
@@ -6420,7 +6420,7 @@ var director = (function() {
       : '<div class="kstat-v num">' + GC.fmtCurrency(today.toGo || 0) + '</div>';
     var toGoLabel  = overGoal > 0 ? 'Over Goal' : 'To Go';
 
-    // Time remaining label with zone colour
+    // Time remaining label with zone color
     var remMins = (function() {
       var m = remStr.match(/^(\d+):(\d+)$/);
       return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null;
@@ -6595,7 +6595,7 @@ var director = (function() {
       + '<div class="eom-prompt-icon">★</div>'
       + '<div class="eom-prompt-body">'
       + '  <div class="eom-prompt-title">Set Employee of the Month for ' + monthName + '</div>'
-      + '  <div class="eom-prompt-sub">It\'s the 1st — don\'t forget to recognise your top performer.</div>'
+      + '  <div class="eom-prompt-sub">It\'s the 1st — don\'t forget to recognize your top performer.</div>'
       + '</div>'
       + '<button class="eom-prompt-link" id="eomPromptGoBtn">Go to Settings →</button>'
       + '<button class="eom-prompt-dismiss" id="eomPromptDismiss" title="Dismiss">✕</button>'
@@ -6616,7 +6616,7 @@ var director = (function() {
     var range  = sum && sum.dateRange
       ? GC.fmtDateRange(sum.dateRange.from, sum.dateRange.to) : '';
 
-    // The nav is FULL-BLEED: it sits outside .app-page, which is a centred, max-width, padded
+    // The nav is FULL-BLEED: it sits outside .app-page, which is a centered, max-width, padded
     // content wrapper. Rendered inside it the bar was inset by 24px and pushed down 14px, so
     // Dashboard and History did not line up with Standings or butt against the top of the page.
     return renderHeader(data, 'dashboard')
@@ -7307,7 +7307,7 @@ var director = (function() {
     var todayObj    = buildHistTodayObj(histStores);
     var storeList   = buildHistStores(histStores);
 
-    // The nav is FULL-BLEED: it sits outside .app-page, which is a centred, max-width, padded
+    // The nav is FULL-BLEED: it sits outside .app-page, which is a centered, max-width, padded
     // content wrapper. Rendered inside it the bar was inset by 24px and pushed down 14px, so
     // Dashboard and History did not line up with Standings or butt against the top of the page.
     return renderHeader(null, 'history')
@@ -7976,7 +7976,7 @@ table.inc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-w
 .stnm-row {
   flex: 1 1 0; min-height: 0;
   display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto auto;
-  /* space-evenly, not center: rows stretch to fill the screen, so centring leaves a bald
+  /* space-evenly, not center: rows stretch to fill the screen, so centering leaves a bald
      patch above the store name and below the bar. Even distribution uses the height. */
   align-content: space-evenly; gap: 3px 8px;
   border: 1px solid var(--border, #222b27); border-radius: 10px; padding: 8px 10px;
@@ -9306,7 +9306,7 @@ var kiosk = (function() {
     return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
   }
 
-  // CSS class for time-remaining colour coding
+  // CSS class for time-remaining color coding
   function timeZoneClass(label) {
     var mins = parseLabelMins(label);
     if (mins === null) return '';
@@ -9492,7 +9492,7 @@ var kiosk = (function() {
 
       var amtId = 'kioskEmpAmt' + s.rank;
 
-      // SPIFF sell-through, when this person has a programme running this pay period.
+      // SPIFF sell-through, when this person has a program running this pay period.
       // s.spiff is null when SPIFF has NO row for them — which is not the same as a row
       // at zero: somebody at 0 of 5 still draws the empty ticks, because an unstarted
       // SPIFF nobody can see is an unsold SPIFF.
@@ -10551,9 +10551,9 @@ var kiosk = (function() {
         leadingSince:    s.leadingSince   || '',
         target:          s.target         || 0,
         personalBestPct: s.personalBestPct || null,
-        // SPIFF sell-through, or null when this person has no programme running. `|| null`
-        // rather than a default object on purpose: null means "no programme", and a row at
-        // zero units is a REAL programme that must still draw its empty ticks.
+        // SPIFF sell-through, or null when this person has no program running. `|| null`
+        // rather than a default object on purpose: null means "no program", and a row at
+        // zero units is a REAL program that must still draw its empty ticks.
         spiff:           s.spiff          || null,
         note:            s.note           || null,
       };
@@ -10688,7 +10688,7 @@ var kiosk = (function() {
     var card = document.querySelector('.goal-card');
     if (card) card.classList.toggle('store-closed', closed);
 
-    // Update the status label + time-zone colour
+    // Update the status label + time-zone color
     var lblEl = document.getElementById('kioskTimeRemaining');
     if (lblEl) {
       lblEl.textContent = label || '—';
@@ -11632,7 +11632,7 @@ var settings = (function() {
       +   '<input type="checkbox" id="setShowSpiff"' + (on ? ' checked' : '') + '>'
       +   '<span class="settings-toggle-body">'
       +     '<span class="settings-toggle-label">Include SPIFF</span>'
-      +     '<span class="settings-toggle-sub">Adds a row to each staff card showing units sold toward the vendor\'s SPIFF target, and the payout once they hit it. Numbers come from the SPIFF app. Leave off when no programme is running — otherwise every card carries an empty bar.</span>'
+      +     '<span class="settings-toggle-sub">Adds a row to each staff card showing units sold toward the vendor\'s SPIFF target, and the payout once they hit it. Numbers come from the SPIFF app. Leave off when no program is running — otherwise every card carries an empty bar.</span>'
       +   '</span>'
       + '</label>'
       + '<div class="settings-save-status" id="showSpiffStatus"></div>'
@@ -12054,7 +12054,7 @@ GC.views.renderAvatar = (function() {
     // .app-page adds 14px/40px padding, and .gxava-full puts min-height:100vh on the root INSIDE
     // it — so the two together measure 100vh + 54px and hand a kiosk a scrollbar it never had.
     // Dropping it costs 14px of top padding and nothing else: the component's own header and grid
-    // already carry the 24px side gutter and the 1080px centred max-width, so the header and both
+    // already carry the 24px side gutter and the 1080px centered max-width, so the header and both
     // cards land on exactly the same x as before (measured: left 266 / 180, width 1080).
     var host = document.createElement('div');
     host.className = 'gxava-full';
@@ -12077,7 +12077,7 @@ GC.views.renderAvatar = (function() {
        <head> and <body> — ~29KB and roughly 185ms warm, over a second on a cold CDN edge — paid by
        EVERY page load including the kiosk, which runs all day and never opens a picker.
        Loading it here is also FASTER for the one route that does want it: the download runs in
-       parallel with fetchAvatarData rather than serialising ahead of it. */
+       parallel with fetchAvatarData rather than serializing ahead of it. */
     Promise.all([GC.api.fetchAvatarData(), GXAvatar.loadPicker()])
       .then(function(results) {
         var data = results[0];
@@ -12315,7 +12315,7 @@ GC.nightlyRefresh = (function() {
       timeZone: GC.PT_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', hour12: false
     }).formatToParts(new Date()).forEach(function(x) { p[x.type] = x.value; });
-    // hourCycle h23 renders midnight as '24' in some engines -- normalise so 24 -> 0.
+    // hourCycle h23 renders midnight as '24' in some engines -- normalize so 24 -> 0.
     var h = parseInt(p.hour, 10) % 24;
     return { day: p.year + '-' + p.month + '-' + p.day, hour: h };
   }
