@@ -96,7 +96,6 @@ function onOpen() {
     .addItem('1. Pull employees from Dutchie', 'pullEmployeesFromDutchie')
     .addSeparator()
     .addItem('2. Push users to dashboard', 'pushUsersToApp')
-    .addItem('2b. Push store keys to dashboard', 'pushStoreKeysToDashboard')
     .addSeparator()
     .addItem('Setup sheet (first run)', 'setupSheet')
     .addItem('Validate rows', 'validateRows')
@@ -392,62 +391,24 @@ function pushUsersToApp() {
   showToast_(pushed + ' users synced, ' + skipped + ' skipped, ' + errors + ' errors.', 'Push Complete');
 }
 
-// ── Push store keys to dashboard ──────────────────────────────
-// Writes DUTCHIE_STORE_KEYS_JSON to the dashboard's ScriptProperties
-// via a dedicated admin endpoint.
+// ── Push store keys to dashboard — RETIRED 2026-08-31 ──────────
+// This pushed the Store Keys tab into the dashboard's ScriptProperties via the setstorekeys route.
+// Both are gone: the dashboard stores no Dutchie key, GX Core holds the only copy, and the route
+// that wrote the property was removed with it.
+//
+// This is the button that made a rotation look done when it was not. It reads a SHEET, so it served
+// whatever was last typed there -- and on 2026-08-31 that was still the revoked set. Someone pasting
+// fresh keys into the dashboard and then clicking here would have overwritten them with dead ones,
+// which is indistinguishable from "the new keys did not work".
+//
+// TO ROTATE: set DUTCHIE_STORE_KEYS_JSON in GX CORE. Nowhere else, and nothing to click here.
 function pushStoreKeysToDashboard() {
-  if (GC_PERF_WEB_APP_URL === 'REPLACE_WITH_DEPLOYED_WEB_APP_URL') {
-    showToast_('Set GC_PERF_WEB_APP_URL first.', 'Config Error'); return;
-  }
-  if (ADMIN_TOKEN === 'REPLACE_WITH_DIRECTOR_TOKEN') {
-    showToast_('Set ADMIN_TOKEN first.', 'Config Error'); return;
-  }
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const keysSheet = ss.getSheetByName(KEYS_SHEET);
-  if (!keysSheet || keysSheet.getLastRow() < 2) {
-    showToast_('Store Keys tab is empty. Run Setup first.', 'Error'); return;
-  }
-
-  // Build the JSON from the sheet (store_id → key). Column A is the GX Core store_id.
-  const keysObj = readStoreKeysFromSheet_();
-  if (!Object.keys(keysObj).length) {
-    showToast_('No API keys found in the Store Keys tab.', 'Error'); return;
-  }
-  const known = STORES.map(function(st) { return st.storeId; });
-  const unknown = Object.keys(keysObj).filter(function(k) { return known.indexOf(k) === -1; });
-  if (unknown.length) {
-    // Fail loudly. A stale NAME left in column A would push a key the dashboard can never look up,
-    // and the kiosk would fail closed with no clue why.
-    showToast_('Column A must hold GX Core store_ids. Unrecognised: ' + unknown.join(', '), 'Error');
-    return;
-  }
-
-  const payload = JSON.stringify(keysObj);
-
-  try {
-    const url = GC_PERF_WEB_APP_URL
-      + '?action=setstorekeys'
-      + '&token=' + encodeURIComponent(ADMIN_TOKEN)
-      + '&keys=' + encodeURIComponent(payload);
-
-    const resp   = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-    const result = JSON.parse(resp.getContentText());
-
-    if (result.ok) {
-      const now = new Date();
-      const ts  = Utilities.formatDate(now, 'America/Los_Angeles', 'M/d/yy h:mm a');
-      keysSheet.getRange(2, 5, rows.length, 1).setValue(ts);
-      showToast_('Store keys pushed successfully.', 'Done');
-    } else {
-      showToast_('Error: ' + (result.error || 'Unknown'), 'Error');
-    }
-  } catch(e) {
-    showToast_('Error: ' + e.message, 'Error');
-  }
+  showToast_('Retired. Dutchie keys live only in GX Core now — rotate them there. '
+           + 'The Store Keys tab is historical and should be cleared.', 'Not used any more');
+  return { ok: false, retired: true,
+           reason: 'GX Core is the only holder of Dutchie keys; the setstorekeys route was removed' };
 }
 
-// ── Validate rows ──────────────────────────────────────────────
 function validateRows() {
   const ss         = SpreadsheetApp.getActiveSpreadsheet();
   const usersSheet = ss.getSheetByName(USERS_SHEET);
