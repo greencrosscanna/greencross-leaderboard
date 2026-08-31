@@ -1231,12 +1231,22 @@ function getStoreToday(store, params) {
   try { _frozen = JSON.parse(_props.getProperty(_freezeK) || '{}'); } catch (e) {}
   let _freezeDirty = false;
 
+  // NEVER FREEZE A ZERO. A failed Dutchie call is indistinguishable from a quiet hour downstream —
+  // fetchTxnPagesByKey_ returns [] on a non-200 or a parse error — so an outage made every completed
+  // hour read $0, and the freeze locked those zeros in for the rest of the day. That is the "hourly
+  // data is missing from when the app was down" bug: the sales were in Dutchie the whole time, but
+  // 12p/1p/2p stayed empty on the kiosk long after it recovered.
+  //
+  // A zero is exactly the value freezing has no reason to protect: the freeze exists so a settled
+  // hour's bar can't drift, and $0 has nothing to drift from. If the hour really was empty, deriving
+  // it live returns $0 anyway. Treating a stored 0 as "not frozen yet" also HEALS a day already
+  // poisoned by an outage — the real number lands on the next poll, no migration needed.
   const dispRev = Object.create(null);
   for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
     const liveRev = Math.round((hourMap[h] || { revenue: 0 }).revenue);
     if (!isPreOpen && h < nowHour) {           // completed hour → serve/lock the frozen value
-      if (_frozen[h] == null) { _frozen[h] = liveRev; _freezeDirty = true; }
-      dispRev[h] = _frozen[h];
+      if (!(_frozen[h] > 0) && liveRev > 0) { _frozen[h] = liveRev; _freezeDirty = true; }
+      dispRev[h] = _frozen[h] > 0 ? _frozen[h] : liveRev;
     } else {
       dispRev[h] = liveRev;                    // current/future/pre-open → live
     }
@@ -1339,14 +1349,26 @@ function getStoreToday(store, params) {
     };
   }
 
+  // What counts as a "big" sale. Rides in from the client (GC.THRESHOLDS.bigTransactionMin) so there
+  // is one source for it; the default only matters to a caller that doesn't send one. Declared up here
+  // because BOTH big-sale surfaces below read it — the standing trophy and the 15-minute window list.
+  const bigMin = Number(params && params.bigMin) > 0 ? Number(params.bigMin) : 100;
+
   // Biggest single transaction of the day. The kiosk shows this as a standing "Biggest Sale"
   // trophy, so it has to be the real day's best — the 10-item ticker seed can't tell you that,
   // and a kiosk restarted at 5pm would otherwise crown an afternoon sale.
+  //
+  // It also has to CLEAR THE BAR. This used to be an unconditional max, so on a slow morning the
+  // trophy crowned whatever the day's largest ticket happened to be — a $68 sale wearing "BIGGEST
+  // SALE" reads as a joke on the kiosk and devalues the trophy on the day it IS earned. Same floor
+  // as the banner/flame treatment (bigMin, the client's GC.THRESHOLDS.bigTransactionMin), so all
+  // three big-sale surfaces agree on what counts as big. Below the floor there is simply no trophy.
   function topSaleToday_() {
     let best = null;
     for (let i = 0; i < txns.length; i++) {
       const tx = txns[i];
       if (gxIsExcluded_(txEmployee_(tx))) continue;
+      if (txTotal_(tx) < bigMin) continue;
       if (!best || txTotal_(tx) > best.price) best = makeTicker_(tx);
     }
     return best;
@@ -1356,11 +1378,8 @@ function getStoreToday(store, params) {
   // Big sales still inside the kiosk's reward window. The kiosk paints its big-sale treatment
   // from the SALE'S timestamp rather than from when the event happened to arrive, so a reload —
   // or a slideshow rotation coming back around — restores the banner and the seller's flame with
-  // the right time left on them. The threshold rides in from the client
-  // (GC.THRESHOLDS.bigTransactionMin) so there is one source for it; the default only matters to
-  // a caller that doesn't send one.
+  // the right time left on them. Uses the same bigMin floor as the trophy above.
   const BIG_SALE_WINDOW_MIN = 15;
-  const bigMin = Number(params && params.bigMin) > 0 ? Number(params.bigMin) : 100;
   function recentBigSales_() {
     // Transaction stamps are local-time strings, so build the cutoff as the same kind of string
     // and compare lexicographically — the same trick the sinceTs cursor uses.

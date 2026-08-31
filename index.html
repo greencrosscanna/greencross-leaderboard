@@ -6438,7 +6438,8 @@ var director = (function() {
       + '<div class="kcard-label">Daily Goal' + remSpan + '</div>'
       + '<div class="dir-gauge-wrap">'
       +   '<svg width="200" height="108" viewBox="0 0 240 130" style="overflow:visible">'
-      +     '<path d="M 22 122 A 98 98 0 0 1 218 122" stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="butt"/>'
+      // Round cap — same gauge as the kiosk's, so the track ends the same way there.
+      +     '<path d="M 22 122 A 98 98 0 0 1 218 122" stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="round"/>'
       +     '<path d="M 22 122 A 98 98 0 0 1 218 122" stroke="rgb(38,89,57)" stroke-width="14" fill="none"'
       +       ' stroke-linecap="round" stroke-dasharray="308" stroke-dashoffset="' + paceOffset + '"'
       +       ' style="transition:stroke-dashoffset 1.4s cubic-bezier(.2,.7,.3,1)"/>'
@@ -9246,8 +9247,10 @@ var kiosk = (function() {
       + '<div class="kcard-label">' + cardLabel + '</div>'
       + '<div class="gauge-wrap">'
       + '  <svg width="240" height="130" viewBox="0 0 240 130">'
+      // Round cap, matching the arcs that ride on top of it — a butt cap left the track's
+      // right end a flat cut against three rounded ends everywhere else on the gauge.
       + '    <path d="M 22 122 A 98 98 0 0 1 218 122"'
-      + '          stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="butt"/>'
+      + '          stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="round"/>'
       + '    <path id="kioskPaceArc"'
       + '          d="M 22 122 A 98 98 0 0 1 218 122"'
       + '          stroke="rgb(38,89,57)" stroke-width="14" fill="none" stroke-linecap="round"'
@@ -10950,8 +10953,14 @@ var kiosk = (function() {
 
   // Adopt a sale as today's best if it beats what we're holding. Returns true when it's a
   // new record (so the caller can pulse the tile).
+  //
+  // The trophy has a FLOOR, not just a maximum: a sale has to clear bigTransactionMin to wear
+  // "Biggest Sale" at all. Every seed path funnels through here — the server's answer, the ticker,
+  // and this kiosk's own localStorage — so the floor is applied once, and a sub-threshold record
+  // saved by an older build is dropped on the next mount rather than living out the day.
   function considerTopSale_(sale, pulse) {
     if (!sale || !(sale.price > 0)) return false;
+    if (sale.price < GC.THRESHOLDS.bigTransactionMin) return false;
     if (_topSale && _topSale.price >= sale.price) return false;
     _topSale = { who: sale.who || '', whoKey: sale.whoKey || '', price: sale.price, ts: sale.ts || '' };
     saveTopSale_(_topSale);
@@ -10980,7 +10989,9 @@ var kiosk = (function() {
   function seedTopSale_(storeData) {
     _topSale = null;
     var stored = loadTopSale_();
-    if (stored && stored.price > 0) _topSale = stored;
+    // Through considerTopSale_, not a direct assign — the stored record has to clear the same
+    // floor as a live one, so yesterday's build's $68 doesn't come back on reload.
+    if (stored) considerTopSale_(stored, false);
     if (storeData && storeData.topSale) considerTopSale_(storeData.topSale, false);
     ((storeData && storeData.ticker) || []).forEach(function(t) { considerTopSale_(t, false); });
   }
