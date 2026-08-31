@@ -266,6 +266,23 @@ const tests = {
          M.spiffActiveRows_([row(), closedStamped]).length, 1);
   },
 
+  /* THE DIAGNOSTIC MUST AGREE WITH THE KIOSK. diagSpiff_ deliberately does not call
+     spiffForStore_ (that short-circuits when the row is off), so it rebuilds the chain by
+     hand — and for one deploy it rebuilt the OLD one, reporting closed programmes the kiosk
+     had already stopped drawing. It is read exactly when somebody is deciding whether to
+     switch the row on, so a stale answer there is the most expensive kind. */
+  diagUsesTheSameFilterChainAsTheKiosk() {
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'spiff.gs'), 'utf8');
+    const body = src.slice(src.indexOf('function diagSpiff_'));
+    const end  = body.indexOf('\n}');
+    const diag = body.slice(0, end);
+    _ok_('diagSpiff_ filters to active rows', /spiffActiveRows_\s*\(/.test(diag));
+    _ok_('and does NOT filter raw.rows by store directly',
+         !/spiffFilterRows_\s*\(\s*raw\.rows/.test(diag));
+    _ok_('reports what it dropped', /rowsNotActive/.test(diag));
+  },
+
   /* Off means no fetch at all — the switch is also the kill switch if SPIFF misbehaves.
      UrlFetchApp.fetch throws in the harness, so reaching the network here would fail loudly. */
   offSkipsTheFetchEntirely() {

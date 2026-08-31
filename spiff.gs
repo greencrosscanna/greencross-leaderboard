@@ -310,7 +310,14 @@ function diagSpiff_(storeSlug) {
 
   var pp     = currentPPStart_();
   var coreId = coreStoreId_(store);
-  var rows   = spiffFilterRows_(raw.rows, coreId, pp.ppStartStr, pp.ppEndStr);
+  /* SAME FILTER CHAIN AS THE KIOSK, in the same order — spiffActiveRows_ then the store window.
+     This route existed to answer "what would the kiosk draw", and for one deploy it did not:
+     it called spiffFilterRows_ on raw.rows, so closed programmes it had just been taught to
+     drop still appeared here. A diagnostic that disagrees with the thing it diagnoses is worse
+     than no diagnostic — it is read precisely when somebody is deciding whether to switch the
+     row ON, which is the moment a false answer costs the most. */
+  var active = spiffActiveRows_(raw.rows);
+  var rows   = spiffFilterRows_(active, coreId, pp.ppStartStr, pp.ppEndStr);
   // Deliberately NOT spiffForStore_ — that short-circuits when the row is switched off, and the
   // whole point of this route is checking the data BEFORE switching it on.
   var idx    = spiffIndexByEmployee_(rows);
@@ -341,6 +348,19 @@ function diagSpiff_(storeSlug) {
     payPeriod:       pp.ppStartStr + ' … ' + pp.ppEndStr,
     refreshedAt:     raw.refreshed_at || '',
     rowsInCache:     (raw.rows || []).length,
+    /* Dropped as not-active, named rather than silently missing: "SPIFF says 63 rows and the
+       kiosk shows 38" is a question somebody will ask, and this is the answer. A count of 0
+       when the cache holds closed programmes means the status field went missing and the
+       fail-safe in spiffActiveRows_ stood down. */
+    rowsNotActive:   (raw.rows || []).length - (active || []).length,
+    statusesInCache: (function () {
+                       var c = Object.create(null);
+                       (raw.rows || []).forEach(function (r) {
+                         var k = String((r && r.status) == null ? '' : r.status).trim() || '(none)';
+                         c[k] = (c[k] || 0) + 1;
+                       });
+                       return c;
+                     })(),
     rowsThisStore:   rows.length,
     peopleWithSpiff: Object.keys(res.byId).length,
     matchedToRoster: matched,
