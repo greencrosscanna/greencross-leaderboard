@@ -67,7 +67,7 @@ function buildSnapshotRow_(date, store, data) {
 }
 
 /**
- * Normalise a date cell read from a Sheets getValues() call.
+ * Normalize a date cell read from a Sheets getValues() call.
  * Sheets auto-converts 'YYYY-MM-DD' strings to Date objects; this
  * always returns a 'YYYY-MM-DD' string regardless of which form it was.
  */

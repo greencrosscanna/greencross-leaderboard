@@ -10,7 +10,7 @@ const H = require('./_harness.js');
 const { _eq_, _ok_, _approx_ } = H;
 
 const S = H.load(['dutchie_proxy.gs'], {
-  // currentPPStart_ memoises into _ppStartCache_ for the life of one GAS
+  // currentPPStart_ memoizes into _ppStartCache_ for the life of one GAS
   // execution. Every case must clear it — runAllTests does this once at the
   // top, and a stale memo would make the second case assert nothing at all.
   extraExports: '"resetPPCache": function () { _ppStartCache_ = null; _propsCache_ = null; }',
@@ -77,7 +77,7 @@ function test_ppStartCache_() {
     _ok_('memo returns the same object within one execution', S.currentPPStart_() === first);
 
     // Same execution, clock moved into the NEXT period: the memo is expected to
-    // win. That is the documented per-execution behaviour, and it is why every
+    // win. That is the documented per-execution behavior, and it is why every
     // test has to reset it.
     H.setNow(Date.UTC(2026, 5, 25, 19, 0, 0));
     _eq_('memo survives a clock move', S.currentPPStart_().ppStartMs, first.ppStartMs);

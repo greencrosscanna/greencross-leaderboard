@@ -14,7 +14,7 @@ function getStorePlans_() {
   return JSON.parse(raw || '{}');
 }
 
-/** Returns the nickname map { nameKey: displayName }, with keys normalised (no periods). */
+/** Returns the nickname map { nameKey: displayName }, with keys normalized (no periods). */
 /**
  * Nicknames, keyed by nameKey. GX Core only — Crew owns them.
  *
@@ -590,7 +590,7 @@ function resolveEffectiveGoal_(slug, gr, gy, stretch, manuals) {
       // The basis is the shape's own two-week total, NOT g.ppGoal. No consumer reads the override
       // figure directly: GX Core's period_goals carries dow_targets, and Sales expands those per date
       // and adds them up. So the number that has to come out right is the SUM of the seven targets
-      // over fourteen days — and normalising on ppGoal only lands there when 2 x sum(dowAvg) happens
+      // over fourteen days — and normalizing on ppGoal only lands there when 2 x sum(dowAvg) happens
       // to equal ppGoal.
       //
       // It does not always. ppGoal is the mean of twelve period TOTALS, while dowAvg is a mean per
@@ -603,7 +603,7 @@ function resolveEffectiveGoal_(slug, gr, gy, stretch, manuals) {
       // flipped — one extra day in the 168 is the steady -0.7% that store has carried since
       // 2026-04-27.
       //
-      // Normalising on the shape makes the identity true by construction rather than hoping the
+      // Normalizing on the shape makes the identity true by construction rather than hoping the
       // window is clean. ppGoal stays the fallback only for a store with no shape at all, where
       // there is nothing else to divide by.
       var dowSum = 0;
@@ -726,7 +726,7 @@ function getDailyGoals_() {
 /**
  * 'YYYY-MM' scope for a getDailyGoals_() payload, derived from the payload's OWN month/year so the
  * label can never disagree with the thing it labels (getDailyGoals_ returns month as 'Aug', not 8).
- * Returns null on an unrecognisable month — publishing under a guessed scope is worse than not
+ * Returns null on an unrecognizable month — publishing under a guessed scope is worse than not
  * publishing, because a wrong scope is indistinguishable from a right one at the read end.
  */
 function scopeForGoalPayload_(payload) {

@@ -103,7 +103,7 @@ function refreshDiscountRegistryIfStale_(maxAgeHours) {
 // ── Per-execution memoized reads ──
 // The hot path must never hit Dutchie, and — since 2026-08-30 — must never hit GX Core per
 // transaction either. isExcludedDiscount_ runs once per DISCOUNT LINE per transaction
-// (txDiscountBudtender_, dutchie_fetch.gs), so an unmemoised GXCore.getKv would be a sheet read
+// (txDiscountBudtender_, dutchie_fetch.gs), so an unmemoized GXCore.getKv would be a sheet read
 // through a bound library thousands of times per aggregation. Read once, reuse for the execution.
 var _discRegMemo_ = null, _discCfgMemo_ = null;
 

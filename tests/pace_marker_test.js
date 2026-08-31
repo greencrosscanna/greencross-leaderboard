@@ -57,10 +57,10 @@ console.log('\n— GC.expectedFrac —');
   for (let h = 8; h < 22; h++) flat[h] = 1 / 14;
   near('a flat curve reproduces linear', GC.expectedFrac(flat), GC.dayFrac(), 1e-9);
 
-  // Weights are renormalised, so scaling the whole curve changes nothing.
+  // Weights are renormalized, so scaling the whole curve changes nothing.
   const scaled = {};
   for (let h = 8; h < 22; h++) scaled[h] = BACKLOADED[h] * 37;
-  near('un-normalised curve gives the same answer', GC.expectedFrac(scaled), GC.expectedFrac(BACKLOADED), 1e-9);
+  near('un-normalized curve gives the same answer', GC.expectedFrac(scaled), GC.expectedFrac(BACKLOADED), 1e-9);
 
   const f = GC.expectedFrac(BACKLOADED);
   ok('stays within 0..1', f >= 0 && f <= 1);
@@ -102,10 +102,10 @@ console.log('\n— GC.chainShape —');
 
 console.log('\n— GC.arcTick geometry —');
 {
-  // The kiosk arc: "M 22 122 A 98 98 0 0 1 218 122" — centre (120,122), r 98, left to right.
+  // The kiosk arc: "M 22 122 A 98 98 0 0 1 218 122" — center (120,122), r 98, left to right.
   const mid = GC.arcTick(0.5, 120, 122, 98, 8);
-  near('half way is straight up: x centred', +mid.x1, 120, 0.01);
-  ok('half way is straight up: above the centre', +mid.y1 < 122 && +mid.y2 < 122);
+  near('half way is straight up: x centered', +mid.x1, 120, 0.01);
+  ok('half way is straight up: above the center', +mid.y1 < 122 && +mid.y2 < 122);
   eq('the tick is vertical there', mid.x1, mid.x2);
 
   const start = GC.arcTick(0, 120, 122, 98, 8);

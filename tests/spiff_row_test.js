@@ -2,9 +2,9 @@
 /* GC.spiffRow — the SPIFF sell-through row drawn on a kiosk staff card (index.html).
  *
  * The rendering decisions worth locking down, all of which look fine in the one case that
- * exists today and break on the next programme SPIFF creates:
+ * exists today and break on the next program SPIFF creates:
  *
- *   • OVERSHOOT. The live programme on 2026-08-29 was 110 units against a target of 55.
+ *   • OVERSHOOT. The live program on 2026-08-29 was 110 units against a target of 55.
  *     Unclamped that is a bar at 200% of its container. The printed count must still say
  *     110/55 — clamping the DRAWING must not clamp the TRUTH.
  *   • OVERSHOOT IS STILL VISIBLE (2026-08-30). Clamping alone made 110/55 and 55/55 draw
@@ -13,7 +13,7 @@
  *     same over-target language .emp-bar uses on the sales bar directly above it.
  *   • ZERO. 0 of 5 has to draw an empty track; the empty bar is the prompt to sell.
  *     A row that renders nothing at zero would hide every SPIFF nobody has started.
- *   • THE PAYOUT. "$25" beside an unhit programme reads as money already banked.
+ *   • THE PAYOUT. "$25" beside an unhit program reads as money already banked.
  *
  * Per tests/_harness.js's rule this never reimplements: the real GC.spiffRow body is
  * extracted from the shipped index.html and run (same approach as pace_marker_test.js).
@@ -160,7 +160,7 @@ const tests = {
     _ok_('and is styled as hit', hit.indexOf('emp-spiff hit') > -1);
   },
 
-  /* A card leads with one programme; the rest are counted, never silently dropped. */
+  /* A card leads with one program; the rest are counted, never silently dropped. */
   extraProgrammesAreCounted() {
     const h = GC.spiffRow(sp({ more: 2, totalEarned: 60 }));
     _ok_('says how many more', h.indexOf('+2 more') > -1);
@@ -176,7 +176,7 @@ const tests = {
     _ok_('escaped instead',     h.indexOf('&lt;img') > -1);
   },
 
-  /* Degenerate data from a misconfigured programme must not throw on the kiosk. */
+  /* Degenerate data from a misconfigured program must not throw on the kiosk. */
   zeroTargetDoesNotDivideByZero() {
     const h = GC.spiffRow(sp({ units: 3, target: 0, hit: false, earned: 0, totalEarned: 0 }));
     _ok_('renders something', h.length > 0);
@@ -187,7 +187,7 @@ const tests = {
   missingFieldsFallBack() {
     const h = GC.spiffRow({ units: 1, target: 4 });
     _ok_('renders with no vendor', h.length > 0);
-    _ok_('labelled SPIFF',         h.indexOf('SPIFF') > -1);
+    _ok_('labeled SPIFF',         h.indexOf('SPIFF') > -1);
     _eq_('bar still drawn at 25%', barPct(h), 25);
   },
 };

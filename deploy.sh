@@ -113,7 +113,7 @@ if [ -f "$SECRET_FILE" ]; then
   # open the file" HTML page instead of JSON. The old form here was a single `curl -sL … | head -c 300`
   # whose output was printed and then followed, unconditionally, by "✅ Done". So a miss printed 300
   # characters of truncated Drive HTML next to a green tick and the release went UNRECORDED — worse
-  # than the shared script's old behaviour, which at least dumped something obviously wrong.
+  # than the shared script's old behavior, which at least dumped something obviously wrong.
   #
   # Observed for real on 2026-08-26: greencross-crew hit exactly this and filed nothing while the
   # terminal looked healthy. The shared gx-theme deploy.sh was fixed that day; THIS repo carries its

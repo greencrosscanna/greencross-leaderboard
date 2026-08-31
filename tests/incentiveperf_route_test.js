@@ -9,7 +9,7 @@
 //  here failed silently the first time it was written, or would pay somebody wrongly if it
 //  regressed — and none of it shows up as an error at the call site.
 //
-//  These are SOURCE assertions rather than behavioural ones. The route's body is three lines
+//  These are SOURCE assertions rather than behavioral ones. The route's body is three lines
 //  of property lookup around getIncentiveData_, which is covered by endpoints_test; what is
 //  worth pinning is its PLACEMENT and its SHAPE, and both are structural facts about the file.
 // ============================================================
@@ -31,7 +31,7 @@ ok('requireAuth_ chokepoint still exists (this test is meaningless without it)',
 
 /* THE BUG THIS TEST WAS WRITTEN FOR. Everything below `const auth = requireAuth_(params)` is
    rejected as "not signed in" before it is reached. A machine caller carrying a deploy secret
-   and no session therefore gets an auth error from a route that authorises itself perfectly
+   and no session therefore gets an auth error from a route that authorizes itself perfectly
    well — and the error names the wrong problem, so the hunt starts in the wrong repo.
    publishgoals sits above the line for exactly this reason. */
 ok('sits ABOVE the requireAuth_ chokepoint — a secret-only caller has no session',

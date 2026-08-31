@@ -25,7 +25,7 @@ var SPIFF_TTL_FAIL   = 120;   // Cache FAILURES too, briefly — see spiffFetchR
 /**
  * Is the SPIFF row switched on for the kiosk?
  *
- * DEFAULT OFF. A SPIFF programme is a vendor arrangement that is not always running — SPIFF had
+ * DEFAULT OFF. A SPIFF program is a vendor arrangement that is not always running — SPIFF had
  * exactly one live on 2026-08-29 — so defaulting on would put an empty row on most cards at most
  * stores, which is worse than no row. Directors turn it on in Settings for the periods it matters.
  *
@@ -51,7 +51,7 @@ function spiffEngineUrl_() {
 }
 
 /**
- * Fetch SPIFF's progress cache, memoised in CacheService.
+ * Fetch SPIFF's progress cache, memoized in CacheService.
  *
  * NEVER THROWS, and never lets a SPIFF problem reach the kiosk. Every failure
  * returns { ok:false, error } and the caller renders staff cards without SPIFF —
@@ -116,7 +116,7 @@ function spiffFetchRaw_() {
  * covers. Matching pay_period as a string is the trap described in spiffFetchRaw_.
  *
  * Dates are compared as TEXT 'YYYY-MM-DD', per the suite rule: they arrive as text from
- * SPIFF (fixed there 2026-08-29, spiff f640a8c, after Date objects normalised in LA time
+ * SPIFF (fixed there 2026-08-29, spiff f640a8c, after Date objects normalized in LA time
  * shifted the window a day) and lexicographic order on that format IS chronological order.
  * No Date object is constructed here, so there is nothing for a timezone to shift.
  *
@@ -139,11 +139,11 @@ function spiffFilterRows_(rows, coreStoreId, ppStartStr, ppEndStr) {
 }
 
 /**
- * Keep only rows whose programme SPIFF says is ACTIVE.
+ * Keep only rows whose program SPIFF says is ACTIVE.
  *
- * WHY THIS EXISTS. spiffFilterRows_ keeps a row whose programme WINDOW overlaps the pay
- * period, and nothing else. A closed programme keeps its dates, so it keeps passing: on
- * 2026-08-30 SPIFF had exactly one programme running ("Green Cross - Test4") while the
+ * WHY THIS EXISTS. spiffFilterRows_ keeps a row whose program WINDOW overlaps the pay
+ * period, and nothing else. A closed program keeps its dates, so it keeps passing: on
+ * 2026-08-30 SPIFF had exactly one program running ("Green Cross - Test4") while the
  * CLOSED "BeGoat Energy Drinks" — dated Aug 1 → Aug 31 — still overlapped and drew on 23
  * of 40 live kiosk cards, mostly as a "+1 more" hanging off somebody else's row.
  *
@@ -152,7 +152,7 @@ function spiffFilterRows_(rows, coreStoreId, ppStartStr, ppEndStr) {
  * same day (engine @68, 59b5c9b, in reply to our note): every row carries
  * status = draft | active | closed, RESOLVED AT READ TIME by joining the programs tab —
  * not stored on the cached row, which matters, because the hourly sweep is active-only and
- * a stored column would read 'active' forever for a programme closed since its last
+ * a stored column would read 'active' forever for a program closed since its last
  * refresh. Verified live 2026-08-30: 38 active (Test4) / 25 closed (BeGoat), the identical
  * split the inference was producing, so this swap was a no-op on screen and correct by
  * contract rather than by luck.
@@ -161,21 +161,21 @@ function spiffFilterRows_(rows, coreStoreId, ppStartStr, ppEndStr) {
  * filter, and it trims its own by_employee totals in the same call. We do not use it, for
  * one reason: it answers ok:false when NOTHING is active, and spiffFetchRaw_ treats ok:false
  * as a failure — cached for SPIFF_TTL_FAIL (2 min) instead of SPIFF_TTL_OK (15 min). "No
- * programme is running this fortnight" is a normal steady state, not an outage, and routing
+ * program is running this fortnight" is a normal steady state, not an outage, and routing
  * it through the failure path would put a constantly-polled kiosk into a permanent 2-minute
  * refetch loop and log an error every time. The totals argument does not apply to us either:
  * spiffIndexByEmployee_ sums `earned` over the rows we KEEP, so filtering here fixes the
  * inflation without reading SPIFF's by_employee at all.
  *
- * UNKNOWN IS NOT ACTIVE. If a cached row's programme has vanished from the programs tab,
+ * UNKNOWN IS NOT ACTIVE. If a cached row's program has vanished from the programs tab,
  * SPIFF reports status '' and names the id in `orphan_program_ids`. An orphan fails the
  * equality below and is dropped — SPIFF's own recommendation, and the safe reading on a
- * kiosk: showing a programme nobody can look up is worse than showing none.
+ * kiosk: showing a program nobody can look up is worse than showing none.
  *
  * FAILS SAFE. If NO row carries a status at all, the field is GONE — a SPIFF regression, not
  * a fortnight where everything is closed — and we return the rows untouched rather than
- * blanking the SPIFF row on every card at every store. That degrades to the old behaviour (a
- * closed programme may reappear), which is a visible cosmetic wrong rather than a silent
+ * blanking the SPIFF row on every card at every store. That degrades to the old behavior (a
+ * closed program may reappear), which is a visible cosmetic wrong rather than a silent
  * empty kiosk. Note the asymmetry with the orphan rule above: an absent status is only
  * treated as "not active" when OTHER rows prove the field is being populated.
  */
@@ -265,7 +265,7 @@ function spiffForStore_(store) {
   if (!raw.ok) return { ok: false, error: raw.error, byId: {} };
 
   var pp   = currentPPStart_();
-  // Closed programmes first, then this store's window — order is irrelevant to the result
+  // Closed programs first, then this store's window — order is irrelevant to the result
   // but this way the store filter never has to reason about staleness.
   var rows = spiffFilterRows_(spiffActiveRows_(raw.rows), coreStoreId_(store), pp.ppStartStr, pp.ppEndStr);
   var idx  = spiffIndexByEmployee_(rows);
@@ -312,7 +312,7 @@ function diagSpiff_(storeSlug) {
   var coreId = coreStoreId_(store);
   /* SAME FILTER CHAIN AS THE KIOSK, in the same order — spiffActiveRows_ then the store window.
      This route existed to answer "what would the kiosk draw", and for one deploy it did not:
-     it called spiffFilterRows_ on raw.rows, so closed programmes it had just been taught to
+     it called spiffFilterRows_ on raw.rows, so closed programs it had just been taught to
      drop still appeared here. A diagnostic that disagrees with the thing it diagnoses is worse
      than no diagnostic — it is read precisely when somebody is deciding whether to switch the
      row ON, which is the moment a false answer costs the most. */
@@ -350,7 +350,7 @@ function diagSpiff_(storeSlug) {
     rowsInCache:     (raw.rows || []).length,
     /* Dropped as not-active, named rather than silently missing: "SPIFF says 63 rows and the
        kiosk shows 38" is a question somebody will ask, and this is the answer. A count of 0
-       when the cache holds closed programmes means the status field went missing and the
+       when the cache holds closed programs means the status field went missing and the
        fail-safe in spiffActiveRows_ stood down. */
     rowsNotActive:   (raw.rows || []).length - (active || []).length,
     statusesInCache: (function () {

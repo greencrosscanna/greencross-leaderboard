@@ -52,7 +52,7 @@ function mod(nowIso) {
   };
 
   // GX Core period_goals, keyed store|period_start, with the real "locked is
-  // immutable" behaviour from gx_core.gs gxUpsertPeriodGoals.
+  // immutable" behavior from gx_core.gs gxUpsertPeriodGoals.
   const central = Object.create(null);
   const skippedLocked = [];
 

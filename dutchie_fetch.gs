@@ -4,14 +4,67 @@
 //  aggregation functions that process transaction arrays.
 // ============================================================
 
+/* ─── KEYS COME FROM GX CORE. THIS APP STORES NONE. ──────────────────────────────────────────────
+ *
+ * Until 2026-08-31 this read a local DUTCHIE_STORE_KEYS_JSON, one of five copies across the suite.
+ * Rotating the six POS keys meant five paste jobs in two different spellings, and the May leak was
+ * a copy nobody remembered. GX Core now holds them alone; this asks for them.
+ *
+ * WHY THIS APP GETS THE KEY RATHER THAN PROXIED DATA, when the other spokes call
+ * ?action=dutchie_inventory and never see a credential: the engine below fires every store in one
+ * UrlFetchApp.fetchAll(), and fetchAllStoresTransactionsMulti_ builds 26 pay periods x 6 stores =
+ * 156 requests in a single batch. Proxying that would make it 156 round trips through one Apps
+ * Script web app, moving transaction JSON twice, against a 6-minute budget. The kiosk keeps its
+ * fast path; what it no longer keeps is a stored copy.
+ *
+ * FAILS CLOSED, with no local fallback. A fallback property is exactly the fifth copy this change
+ * exists to delete: it would sit unread and unrotated until the day it was read, and then serve a
+ * dead key. If GX Core cannot be reached the kiosk shows an error, which is the honest outcome.
+ * ------------------------------------------------------------------------------------------------ */
+const GXCORE_EXEC_KEYS_ = 'https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec';
+const GX_KEYS_CACHE_KEY_ = 'gx_dutchie_keys';
+const GX_KEYS_CACHE_S_   = 600;   // 10 min. A rotation reaches the kiosk within one window; a Core
+                                  // round trip on every kiosk request is the latency we are avoiding.
+let _gxKeyMemo_ = null;           // per-execution; a GAS execution is short-lived
+
+function gxDutchieKeyMap_() {
+  if (_gxKeyMemo_) return _gxKeyMemo_;
+
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get(GX_KEYS_CACHE_KEY_);
+  if (hit) { try { return (_gxKeyMemo_ = JSON.parse(hit)); } catch (e) {} }
+
+  // NOT the deploy secret. GX Core refuses it on this route on purpose — the deploy secret is held
+  // by five spokes and gates dozens of routes, and this is the one route that returns credentials.
+  const secret = PropertiesService.getScriptProperties().getProperty('GX_CONNECTOR_SECRET');
+  if (!secret) throw new Error('GX_CONNECTOR_SECRET is not set on this script — cannot reach GX Core for Dutchie keys');
+
+  const url = GXCORE_EXEC_KEYS_ + '?action=dutchie_keys&connector_secret=' + encodeURIComponent(secret);
+  let lastErr = '';
+  for (let i = 0; i < 5; i++) {
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    let data = null;
+    try { data = JSON.parse(resp.getContentText()); } catch (e) { lastErr = 'unparseable body'; }
+    if (data && data.ok === true && data.keys && Object.keys(data.keys).length) {
+      cache.put(GX_KEYS_CACHE_KEY_, JSON.stringify(data.keys), GX_KEYS_CACHE_S_);
+      return (_gxKeyMemo_ = data.keys);
+    }
+    // A refusal is final — retrying a bad secret just burns the budget and buries the real message.
+    if (data && data.ok === false) throw new Error('GX Core dutchie_keys: ' + data.error);
+    lastErr = lastErr || 'no keys in response';
+    Utilities.sleep(400);   // the /exec second hop 404s on ~6% of rapid calls; same retry as GXClient
+  }
+  throw new Error('GX Core dutchie_keys unreachable after 5 tries — ' + lastErr);
+}
+
 function getDutchieStoreKey_(slug) {
-  const props = PropertiesService.getScriptProperties();
-  const keys  = JSON.parse(props.getProperty('DUTCHIE_STORE_KEYS_JSON') || '{}');
   const store = STORES.find(s => s.slug === slug);
   if (!store) throw new Error('Unknown store: ' + slug);
   // Keyed by GX Core store_id — see the STORES comment in dutchie_proxy.gs for why this is not a name.
+  // GX Core hands the map back already keyed this way, so the Dutchie label never reaches this app.
+  const keys = gxDutchieKeyMap_();
   const key = Object.prototype.hasOwnProperty.call(keys, store.storeId) ? keys[store.storeId] : null;
-  if (!key) throw new Error('No Dutchie key for store_id: ' + store.storeId + '. Set DUTCHIE_STORE_KEYS_JSON in Script Properties.');
+  if (!key) throw new Error('GX Core has no Dutchie key for store_id: ' + store.storeId);
   return key;
 }
 
