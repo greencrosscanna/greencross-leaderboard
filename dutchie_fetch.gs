@@ -863,6 +863,36 @@ function aggregateByHour_(txns) {
   return hours;
 }
 
+/**
+ * Pace, damped so an empty denominator can't scream.
+ *
+ * Pace is (sales so far − expected so far) / expected so far. The gap on top is honest; the
+ * problem is what it is divided by. Center expects 4.2% of its day done by 10:00 — on an $8,000
+ * goal that is a $335 bar — so a single $270 order over an ordinary morning read as +81%. It
+ * swung the other way just as hard: a store with no 9am customer read −100%. Nothing was
+ * miscalculated. The base was a rounding error.
+ *
+ * So the DENOMINATOR never falls below PACE_FLOOR_FRAC of the day's goal. The numerator is left
+ * alone — it stays the true dollars ahead or behind — so direction is never inverted and a store
+ * that is ahead still reads ahead; only the magnitude stops shouting. Center's 10am example lands
+ * at +17% instead of +81%.
+ *
+ * The floor unbinds on its own: once the day's real expectation passes the floor (Center: about
+ * 12:30pm) max() returns paceGoal and this is bit-for-bit the number it always was. Afternoons
+ * and evenings — most of the trading day — are untouched. A store with no daily goal is
+ * unaffected, since the floor is a fraction of a goal it does not have.
+ *
+ * ONE definition on purpose: the kiosk, the director strip, the standings and the wall all read
+ * pace, and a damping rule with four homes rots the moment one of them moves.
+ * (Sky's call, 2026-09-01, after "is Center St really +80%, seems way off" — he picked 20%
+ * from a table of 10/20/33/100.)
+ */
+var PACE_FLOOR_FRAC = 0.20;
+function pacedAgainstFloor_(sales, paceGoal, dailyGoal) {
+  var base = Math.max(paceGoal, (dailyGoal || 0) * PACE_FLOOR_FRAC);
+  return base > 0.5 ? r3_((sales - paceGoal) / base) : 0;
+}
+
 /** Rounding helpers */
 function r2_(n) { return Math.round(n * 100)  / 100; }
 function r1_(n) { return Math.round(n * 10)   / 10;  }

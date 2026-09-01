@@ -6517,11 +6517,15 @@ var director = (function() {
       + '<div class="kcard-label">' + (projectedPace != null ? 'Projected · vs. Plan' : 'Pace · vs. Plan') + '</div>'
       + '<div class="dir-gauge-wrap">'
       +   '<svg width="200" height="108" viewBox="0 0 240 130" style="overflow:visible">'
-      +     '<path d="M 22 122 A 98 98 0 0 1 218 122" stroke="#232a27" stroke-width="10" fill="none" stroke-linecap="butt"/>'
-      +     '<path d="M 22 122 A 98 98 0 0 1 71 37"   stroke="var(--red)"   stroke-width="10" fill="none" stroke-linecap="butt" opacity="0.62"/>'
-      +     '<path d="M 71 37  A 98 98 0 0 1 169 37"  stroke="var(--amber)" stroke-width="10" fill="none" stroke-linecap="butt" opacity="0.62"/>'
-      +     '<path d="M 169 37 A 98 98 0 0 1 218 122" stroke="var(--green)" stroke-width="10" fill="none" stroke-linecap="butt" opacity="0.62"/>'
-      +     '<line x1="120" y1="18" x2="120" y2="26" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>'
+      // Geometry is the KIOSK's pace gauge, to the unit — stroke-width 14 and round caps, not the
+      // 10/butt this card used to draw. Same viewBox, so the only difference left between the two
+      // is the width/height it is scaled into. It is the same gauge on two screens and it should
+      // not read as two different components; the Daily Goal card beside it was already round.
+      +     '<path d="M 22 122 A 98 98 0 0 1 218 122" stroke="#232a27" stroke-width="14" fill="none" stroke-linecap="round"/>'
+      +     '<path d="M 22 122 A 98 98 0 0 1 71 37"   stroke="var(--red)"   stroke-width="14" fill="none" stroke-linecap="round" opacity="0.62"/>'
+      +     '<path d="M 71 37  A 98 98 0 0 1 169 37"  stroke="var(--amber)" stroke-width="14" fill="none" stroke-linecap="round" opacity="0.62"/>'
+      +     '<path d="M 169 37 A 98 98 0 0 1 218 122" stroke="var(--green)" stroke-width="14" fill="none" stroke-linecap="round" opacity="0.62"/>'
+      +     '<line x1="120" y1="14" x2="120" y2="22" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>'
       +     '<g id="dirPaceTick" style="transform-origin:120px 122px;transform:rotate(' + deg + 'deg);transition:transform 1.4s cubic-bezier(.2,.7,.3,1)">'
       +       '<rect x="113" y="11" width="14" height="26" rx="7" fill="#0a0e0d" opacity="0.55"/>'
       +       '<rect x="115" y="13" width="10" height="22" rx="5" fill="#e6ece9" stroke="#0a0e0d" stroke-width="1.5"/>'

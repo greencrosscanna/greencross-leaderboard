@@ -369,7 +369,9 @@ function getDirectorToday(byStoreToday) {
   // slow morning doesn't read as behind. Fraction of the day expected so far = totalPaceGoal / totalGoal.
   const paceGoal   = totalPaceGoal > 0 ? totalPaceGoal : totalGoal * dayFrac;
   const _expFrac   = totalGoal > 0 ? paceGoal / totalGoal : dayFrac;
-  const pace       = paceGoal > 0.5 ? r3_((totalRevenue - paceGoal) / paceGoal) : 0;
+  // Denominator floored at PACE_FLOOR_FRAC of the day (see pacedAgainstFloor_) so a near-zero
+  // morning base can't turn one order into a headline. paceGap stays the TRUE dollar gap.
+  const pace       = pacedAgainstFloor_(totalRevenue, paceGoal, totalGoal);
   const paceGap    = paceGoal > 0.5 ? r2_(totalRevenue - paceGoal) : 0;  // + ahead, − behind
   const toGo       = Math.max(0, totalGoal - totalRevenue);
   const MIN_PROJ_HOURS = 2;
@@ -526,7 +528,7 @@ function getDirectorStores(params, pre) {
     const dayFrac      = elapsed / STORE_HOURS;
     const expectedFrac = expectedSalesFrac_(store, nowLocalHour, nowLocalMinute, dayFrac);
     const paceGoal     = dailyGoal * expectedFrac;
-    const todayPace    = paceGoal > 0.5 ? r3_((aggToday.sales - paceGoal) / paceGoal) : 0;
+    const todayPace    = pacedAgainstFloor_(aggToday.sales, paceGoal, dailyGoal);
 
     // Projected EOD: extrapolate along the DOW-weighted curve; requires 2+ hours of data
     const MIN_PROJ_HOURS = 2;
@@ -1196,7 +1198,7 @@ function getStoreToday(store, params) {
   // Pre-open: pace = how far above/below yesterday's goal the final result was
   const pace = isPreOpen
     ? (dailyGoal > 0 ? r3_((agg.sales - dailyGoal) / dailyGoal) : 0)
-    : (paceGoal > 0.5 ? r3_((agg.sales - paceGoal) / paceGoal) : 0);
+    : pacedAgainstFloor_(agg.sales, paceGoal, dailyGoal);
   const pctToGoal = dailyGoal > 0 ? r3_(agg.sales / dailyGoal) : 0;
 
   // Time remaining label
