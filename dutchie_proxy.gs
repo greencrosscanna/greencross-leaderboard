@@ -425,6 +425,46 @@ function doGet(e) {
     // store. Same secret as incentiveperf. Exists because the target is a per-person
     // rolling average, so "why is X's target above Y's" is only answerable from the
     // inputs — and clasp run is unavailable here, so diagnostics ship as web actions.
+    /* Read-only inventory of the FROZEN closed-period snapshots.
+     *
+     * Incentive is being extracted from this app. These snapshots are the one piece of it that
+     * exists ONLY here: GC_INC_PERF_v2_<ppStart> in this project's Script Properties, written once
+     * when a period closes and deliberately never recomputed, because they are the numbers that
+     * paid people. Crew's imported history covers 2025-08-04..2026-08-16 from the payout PDFs, so
+     * anything AFTER that date has no second copy anywhere.
+     *
+     * Nothing can be safely deleted from this app until that set is known, so this names it. It
+     * returns period keys, row counts and totals — never a person, never an amount per person. */
+    if (params.action === 'frozenperiods') {
+      var _fpSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+      if (!_fpSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
+      if ((params.secret || '') !== _fpSecret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
+      var _fpProps = PropertiesService.getScriptProperties().getProperties();
+      var _fpOut = [];
+      Object.keys(_fpProps).forEach(function (k) {
+        if (k.indexOf('GC_INC_PERF_') !== 0) return;
+        var row = { key: k, period: k.replace(/^GC_INC_PERF_v?\d*_?/, ''), bytes: String(_fpProps[k] || '').length };
+        try {
+          var parsed = JSON.parse(_fpProps[k]);
+          row.stores = parsed && parsed.stores ? Object.keys(parsed.stores).length : null;
+          row.sellers = parsed && parsed.sellers ? Object.keys(parsed.sellers).length
+                      : (parsed && parsed.budtenders ? parsed.budtenders.length : null);
+          row.top_keys = parsed ? Object.keys(parsed).slice(0, 8) : [];
+        } catch (e) { row.parse_error = String(e.message || e); }
+        _fpOut.push(row);
+      });
+      _fpOut.sort(function (a, b) { return String(a.period).localeCompare(String(b.period)); });
+      // The line that matters for the extraction: which of these Crew's imported history does NOT cover.
+      var CREW_HISTORY_THROUGH = '2026-08-16';
+      var _fpOnlyHere = _fpOut.filter(function (r) { return r.period > CREW_HISTORY_THROUGH; })
+                              .map(function (r) { return r.period; });
+      return jsonOut({ ok: true, count: _fpOut.length, periods: _fpOut,
+                       crew_history_through: CREW_HISTORY_THROUGH,
+                       exists_only_here: _fpOnlyHere,
+                       note: 'exists_only_here is what a migration must carry; the rest is duplicated in crew_incentive_history' },
+                     params.callback);
+    }
+
     if (params.action === 'emptargetdiag') {
       var _etSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
       if (!_etSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
