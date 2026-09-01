@@ -443,7 +443,13 @@ function doGet(e) {
       var _fpOut = [];
       Object.keys(_fpProps).forEach(function (k) {
         if (k.indexOf('GC_INC_PERF_') !== 0) return;
-        var row = { key: k, period: k.replace(/^GC_INC_PERF_v?\d*_?/, ''), bytes: String(_fpProps[k] || '').length };
+        /* STRIP ONLY A REAL VERSION SEGMENT. The first cut used /^GC_INC_PERF_v?\d*_?/, and on the
+           one v1-format key (GC_INC_PERF_2026-06-22, no `v`) the \d* ate the YEAR, yielding
+           '-06-22'. That period sorts below every real date, so it would silently drop out of
+           exists_only_here — the single field this route exists to produce. It did not change
+           today's answer only because that period predates Crew's history cutoff. A tool that
+           decides which payroll data gets migrated must not have a parser that can lose a year. */
+        var row = { key: k, period: k.replace(/^GC_INC_PERF_(v\d+_)?/, ''), bytes: String(_fpProps[k] || '').length };
         try {
           var parsed = JSON.parse(_fpProps[k]);
           row.stores = parsed && parsed.stores ? Object.keys(parsed.stores).length : null;
