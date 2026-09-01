@@ -435,6 +435,25 @@ function doGet(e) {
      *
      * Nothing can be safely deleted from this app until that set is known, so this names it. It
      * returns period keys, row counts and totals — never a person, never an amount per person. */
+    /* Hand ONE frozen period over verbatim, so it can be archived in GX Core as the fixture the
+     * engine port is validated against. Deliberately one period per call and never a bulk dump:
+     * this is per-person sales data behind a compensation number, and a route that returns all 29
+     * at once is a route somebody eventually calls by accident. */
+    if (params.action === 'frozenperiod') {
+      var _f1Secret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+      if (!_f1Secret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
+      if ((params.secret || '') !== _f1Secret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
+      var _f1Start = String(params.pp_start || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(_f1Start)) return jsonOut({ ok: false, error: 'pp_start required (YYYY-MM-DD)' }, params.callback);
+      var _f1All = PropertiesService.getScriptProperties().getProperties();
+      // Accept either key generation: the v1 keys predate the v2 aggregation and still hold real periods.
+      var _f1Key = ['GC_INC_PERF_v2_' + _f1Start, 'GC_INC_PERF_' + _f1Start]
+        .filter(function (k) { return _f1All[k]; })[0];
+      if (!_f1Key) return jsonOut({ ok: false, error: 'no frozen snapshot for ' + _f1Start }, params.callback);
+      return jsonOut({ ok: true, pp_start: _f1Start, key: _f1Key,
+                       bytes: String(_f1All[_f1Key]).length, payload: _f1All[_f1Key] }, params.callback);
+    }
+
     if (params.action === 'frozenperiods') {
       var _fpSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
       if (!_fpSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
