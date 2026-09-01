@@ -3602,7 +3602,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      slideshow bar at 9999, so nothing here contests it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.691';
+window.GC = window.GC || {}; GC.VERSION = 'v1.692';
 
 // ── GX Core web-app URL — ONE definition ──
 // This was previously a `var` inside loadChangelogFromGXCore(), i.e. function-scoped, while the
@@ -3624,6 +3624,40 @@ GC.gxCore = (function () {
     return _c;
   };
 })();
+
+// ── Sibling-app URLs ─────────────────────────────────────────────────────────
+// GX Core's `apps` registry is the source of truth for where each app lives, the same way
+// `stores` is for stores — so a moved app is one Command Center edit, not a redeploy of every
+// spoke. The constants below are the OFFLINE FALLBACK only: without them a GX Core blip would
+// turn a cross-app button into a dead click.
+GC.APP_URLS = {
+  crew:       'https://greencrosscanna.github.io/greencross-crew/',
+  inventory:  'https://greencrosscanna.github.io/greencross-inventory/',
+  sales:      'https://greencrosscanna.github.io/greencross-sales/',
+  pricecards: 'https://greencrosscanna.github.io/greencross-price-cards/',
+  spiff:      'https://greencrosscanna.github.io/greencross-spiff/'
+};
+
+// Refresh the map from GX Core. Fire-and-forget: callers read GC.APP_URLS synchronously so a
+// click never waits on the network (and never trips a popup blocker for opening a tab late).
+GC.loadAppUrls = function () {
+  var c = GC.gxCore();
+  if (!c) return;
+  c.jsonp('apps', {}).then(function (r) {
+    if (!r || !r.ok || !r.apps) return;
+    r.apps.forEach(function (a) {
+      if (a && a.slug && a.url) GC.APP_URLS[a.slug] = a.url;
+    });
+  }).catch(function () { /* fallback map stands */ });
+};
+
+// Open a sibling app in a new tab. Called synchronously from a click handler on purpose.
+GC.openApp = function (slug) {
+  var url = GC.APP_URLS[slug];
+  if (!url) return false;
+  window.open(url, '_blank', 'noopener');
+  return true;
+};
 
 // Maintenance gate. Guarded on the global because gx-theme loads by URL from GitHub Pages: a bad
 // minute of that CDN must not take the kiosk with it. Un-gates itself within ~20s of the flags
@@ -4955,6 +4989,10 @@ GC.api = (function() {
   // Non-mutating actions. Anything NOT listed here is blocked when served from localhost until you
   // arm writes (banner button / ?arm=1 / GXDev.arm()). Add new READS here; leave writes off the list.
   window.GX_DEV_READS = [
+    // 'apps' is GX Core's app registry — where each sibling app lives. Read by GC.loadAppUrls()
+    // on boot so a cross-app button (the EoM banner's "Set in GX Crew") points at the URL the
+    // Command Center holds rather than a constant baked in here.
+    'apps',
     'aggticker', 'directoralerts', 'directorall', 'directorstaff', 'directorstores',
     'directorsummary', 'discountsettings', 'getavatardata', 'getsettings', 'gxstores',
     'historicaldir', 'incentive', 'leaderboardstaff', 'login', 'renew', 'standings',
@@ -6029,12 +6067,17 @@ var director = (function() {
     sorted.forEach(function(s) {
       var td      = s.today;
       var hasProj = td.projectedPace != null;
-      var pctNum  = hasProj ? td.projectedPace : td.pace;
+      // Until ~2 hours of sales exist the backend has no EOD projection (MIN_PROJ_HOURS in
+      // endpoints.gs), and this used to print an em dash for every store. Today's PACE is always
+      // there — the dot beside it has always been colored by exactly this number — so show it
+      // instead of a dash. The strip read "— — — — — —" for the first two hours of every day
+      // while the store table directly beneath it showed real percentages for the same stores.
+      var pctNum  = hasProj ? td.projectedPace : (td.pace || 0);
       var dotCls  = GC.paceDotClass(pctNum);
       var pctCls  = pctNum >= 0.005 ? 'up' : pctNum <= -0.005 ? 'down' : 'flat';
-      var pctStr  = hasProj
-        ? (pctNum >= 0 ? '+' : '−') + Math.abs(Math.round(pctNum * 100)) + '%'
-        : '—';
+      var pctStr  = (pctNum >= 0 ? '+' : '−') + Math.abs(Math.round(pctNum * 100)) + '%';
+      var pctTip  = hasProj ? 'Projected end of day vs. daily goal'
+                            : 'Pace so far vs. daily goal (projection needs 2h of sales)';
       var revenue = GC.fmtCurrency(td.revenue);
       var subLbl  = hasProj
         ? e(revenue) + ' · proj ' + e(GC.fmtCurrency(td.projected))
@@ -6045,7 +6088,7 @@ var director = (function() {
         + '<span class="ss-name">' + e(s.name) + '</span>'
         + '<span class="ss-sub">' + subLbl + '</span>'
         + '</div>'
-        + '<span class="ss-pct ' + pctCls + '">' + e(pctStr) + '</span>'
+        + '<span class="ss-pct ' + pctCls + '" title="' + e(pctTip) + '">' + e(pctStr) + '</span>'
         + '</div>';
     });
     html += '</div>';
@@ -6457,9 +6500,11 @@ var director = (function() {
     var deg      = (clamped / DIR_PACE_RANGE) * 90;
     var zone     = deg <= -30 ? 'red' : deg >= 30 ? 'green' : 'amber';
     var zoneColor = zone === 'red' ? 'var(--red)' : zone === 'green' ? 'var(--green)' : 'var(--amber)';
-    var pctStr   = projectedPace != null
-      ? (displayPace >= 0 ? '+' : '−') + Math.abs(Math.round(displayPace * 100)) + '%'
-      : '—';
+    // Same rule as the status strip above: with no projection yet the NEEDLE was still swinging
+    // to today's real pace while the big readout said "—", so the gauge pointed at a number it
+    // refused to print. Always print what the needle is pointing at; the label below and the
+    // card title say which of the two it is.
+    var pctStr   = (displayPace >= 0 ? '+' : '−') + Math.abs(Math.round(displayPace * 100)) + '%';
     var subLabel = projectedPace != null
       ? (zone === 'red' ? 'Proj. behind plan' : zone === 'green' ? 'Proj. ahead of plan' : 'Proj. near plan')
       : (zone === 'red' ? 'Behind plan' : zone === 'green' ? 'Ahead of plan' : 'Near plan');
@@ -6469,7 +6514,7 @@ var director = (function() {
     var gapLabel = paceGap >= 0 ? 'Ahead of pace' : 'Behind pace';
 
     return '<div class="dir-today-card">'
-      + '<div class="kcard-label">Projected · vs. Plan</div>'
+      + '<div class="kcard-label">' + (projectedPace != null ? 'Projected · vs. Plan' : 'Pace · vs. Plan') + '</div>'
       + '<div class="dir-gauge-wrap">'
       +   '<svg width="200" height="108" viewBox="0 0 240 130" style="overflow:visible">'
       +     '<path d="M 22 122 A 98 98 0 0 1 218 122" stroke="#232a27" stroke-width="10" fill="none" stroke-linecap="butt"/>'
@@ -6486,7 +6531,7 @@ var director = (function() {
       +   '<div class="dir-gauge-sub" style="color:' + zoneColor + '">' + e(subLabel) + '</div>'
       + '</div>'
       + '<div class="kcard-stats">'
-      +   '<div class="kstat"><div class="kstat-v num">' + e(GC.fmtCurrency(proj)) + '</div><div class="kstat-l">Projected</div></div>'
+      +   '<div class="kstat"><div class="kstat-v num">' + (hasProj ? e(GC.fmtCurrency(proj)) : '—') + '</div><div class="kstat-l">Projected</div></div>'
       +   '<div class="kstat"><div class="kstat-v num" style="color:' + zoneColor + '">' + e(gapAmt) + '</div><div class="kstat-l">' + e(gapLabel) + '</div></div>'
       + '</div>'
       + '</div>';
@@ -6584,7 +6629,7 @@ var director = (function() {
       + '  <div class="eom-prompt-title">Set Employee of the Month for ' + monthName + '</div>'
       + '  <div class="eom-prompt-sub">It\'s the 1st — don\'t forget to recognize your top performer.</div>'
       + '</div>'
-      + '<button class="eom-prompt-link" id="eomPromptGoBtn">Go to Settings →</button>'
+      + '<button class="eom-prompt-link" id="eomPromptGoBtn">Set in GX Crew →</button>'
       + '<button class="eom-prompt-dismiss" id="eomPromptDismiss" title="Dismiss">✕</button>'
       + '</div>';
   }
@@ -6928,11 +6973,13 @@ var director = (function() {
     // History date picker
     wireHistoryControls();
 
-    // EOM prompt banner — "Go to Settings" + dismiss
+    // EOM prompt banner — "Set in GX Crew" + dismiss.
+    // Employee of the Month is set in GX Crew now — the picker left this app's Settings view when
+    // EoM moved to Crew, so "Go to Settings" was sending Sky to a screen that no longer has it.
     var eomGoBtn = document.getElementById('eomPromptGoBtn');
     if (eomGoBtn) eomGoBtn.addEventListener('click', function() {
       dismissEomPrompt();
-      GC.router.navigate('#/settings');
+      if (!GC.openApp('crew')) GC.router.navigate('#/settings');
     });
     var eomDismiss = document.getElementById('eomPromptDismiss');
     if (eomDismiss) eomDismiss.addEventListener('click', dismissEomPrompt);
@@ -11622,6 +11669,7 @@ GC.nightlyRefresh = (function() {
 document.addEventListener('DOMContentLoaded', function() {
   GC.router.init();
   GC.loadStoreColors();     // overlay live GX Core store colors (single source)
+  GC.loadAppUrls();         // overlay live GX Core sibling-app URLs (single source)
   GC.nightlyRefresh.start();  // always-on screens reload themselves at 04:00 PT
 });
 </script>
