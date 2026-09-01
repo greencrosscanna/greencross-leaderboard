@@ -157,7 +157,7 @@ function fetchTxnPagesByKey_(reqs) {
 /** Retail-only filter + chronological sort applied to a raw transaction array. */
 function filterRetailSorted_(rawTxns) {
   return (rawTxns || [])
-    .filter(function(tx) { return tx.transactionType === 'Retail'; })
+    .filter(isRetailSale_)
     .sort(function(a, b) {
       const ta = a.transactionDateLocalTime || a.transactionDate || '';
       const tb = b.transactionDateLocalTime || b.transactionDate || '';
@@ -375,7 +375,7 @@ function getHourlyDistLocal_(store) {
       let data;
       try { data = JSON.parse(resp.getContentText()); } catch(e) { return; }
       const txns = (Array.isArray(data) ? data : (data.transactions || data.data || []))
-        .filter(tx => tx.transactionType === 'Retail');
+        .filter(isRetailSale_);
       txns.forEach(function(tx) {
         const ts = tx.transactionDateLocalTime || tx.transactionDate || '';
         if (!ts || ts.length < 14) return;
@@ -492,7 +492,7 @@ function primeHourlyDistLocal_(stores) {
     let data;
     try { data = JSON.parse(resp.getContentText()); } catch(e) { return; }
     const txns = (Array.isArray(data) ? data : (data.transactions || data.data || []))
-      .filter(function(tx) { return tx.transactionType === 'Retail'; });
+      .filter(isRetailSale_);
     const slug = slugForReq[idx];
     txns.forEach(function(tx) {
       const ts = tx.transactionDateLocalTime || tx.transactionDate || '';
@@ -538,7 +538,7 @@ function fetchAllStoresTransactions_(range) {
   const result = {};
   STORES.forEach(function(store) {
     result[store.slug] = (byKey[store.slug] || []).filter(function(tx) {
-      return tx.transactionType === 'Retail';
+      return isRetailSale_(tx);
     });
   });
   return result;
@@ -574,7 +574,7 @@ function fetchAllStoresTransactionsMulti_(ranges) {
     const result = {};
     STORES.forEach(function(store) {
       result[store.slug] = (byKey[ri + ':' + store.slug] || []).filter(function(tx) {
-        return tx.transactionType === 'Retail';
+        return isRetailSale_(tx);
       });
     });
     return result;
@@ -611,6 +611,23 @@ function initials_(name) {
     .map(p => p[0].toUpperCase())
     .join('')
     .slice(0, 2);
+}
+
+/* A VOID IS NOT A SALE, and seven places here forgot to say so.
+ *
+ * Every filter in this app tested `transactionType === 'Retail'` and stopped there. A voided
+ * transaction is still typed Retail — it carries isVoid — so cancelled sales were counted as
+ * revenue everywhere: the kiosk, the goal computation, and the incentive figures people are paid on.
+ *
+ * Measured 2026-08-31 while reconciling the incentive engine against GX Core's port, one fortnight
+ * (2026-08-17..08-30) across six stores: 403.93 of voided transactions counted as sales. bend alone
+ * carried 72.00 across two of them. It is small per period and it has been wrong the whole time.
+ *
+ * GX Core's gxIsRetail_ has always had both halves. This is the same definition, named once here so
+ * the next filter cannot forget the second half — which is exactly how this happened.
+ */
+function isRetailSale_(tx) {
+  return !!tx && tx.transactionType === 'Retail' && !tx.isVoid;
 }
 
 // Safely extract numeric fields from a transaction.
@@ -815,7 +832,7 @@ function byStoreAggCached_(range, hardRefresh) {
     });
     const byKey = fetchTxnPagesByKey_(reqs);
     liveReqs.forEach(function(r, i) {
-      const txns = (byKey[String(i)] || []).filter(function(t) { return t.transactionType === 'Retail'; });
+      const txns = (byKey[String(i)] || []).filter(isRetailSale_);
       const agg  = aggregateTransactions_(txns);
       perStore[r.slug].push(agg);
       if (r.settled) { try { cache.put(r.key, JSON.stringify(agg), 21600); } catch(e) {} }  // lock ~6h; trigger keeps warm
