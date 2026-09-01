@@ -227,14 +227,49 @@ function getHourlyDistCached_(store) {
  * hourly curve — completed hours in full + a partial current hour. This is what pace + projection should use
  * so a slow morning isn't read as "behind." Falls back to the linear dayFrac when the curve isn't warm.
  */
+/* ─── GX Core reads that CANNOT be library calls ─────────────────────────────────────────────────
+ *
+ * GXCore.getHourlyShape() and GXCore.expectedSalesFrac() were called as library functions here, and
+ * could never have worked: both reach gxDutchieAuth_ -> gxDutchieKeys_ -> getScriptProperties(),
+ * which scopes to the CALLING project. From this app that looks for Dutchie keys we no longer hold
+ * (and never should have), so every call threw.
+ *
+ * Nothing looked broken because all three call sites wrap the call in try/catch and fall back to the
+ * local curve. So the "shared pacing engine, one source of truth across Leaderboard + Sales" has
+ * never once answered, and both apps have silently run their own local shapes the whole time. The
+ * comment claiming Core's values were "verified to match our local values to the decimal" was
+ * comparing the fallback against itself.
+ *
+ * The routes run AS GX Core and work. The local fallback STAYS — it is genuinely useful when Core is
+ * unreachable, and removing it would turn a degraded kiosk into a blank one.
+ * ------------------------------------------------------------------------------------------------ */
+function gxCoreRoute_(action, params) {
+  const secret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+  if (!secret) throw new Error('GX_DEPLOY_SECRET is not set on this script — cannot reach GX Core');
+  let url = GXCORE_EXEC_KEYS_ + '?action=' + encodeURIComponent(action)
+          + '&secret=' + encodeURIComponent(secret);
+  Object.keys(params || {}).forEach(k => {
+    if (params[k] == null || params[k] === '') return;
+    url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+  });
+  for (let i = 0; i < 3; i++) {          // fewer tries than the key fetch: this has a local fallback
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    let data = null;
+    try { data = JSON.parse(resp.getContentText()); } catch (e) {}
+    if (data && data.ok === true) return data;
+    if (data && data.ok === false) throw new Error(action + ': ' + (data.error || 'refused'));
+    Utilities.sleep(300);
+  }
+  throw new Error('GX Core ' + action + ' unreachable');
+}
+
 function expectedSalesFrac_(store, nowHour, nowMinute, dayFrac) {
   // Primary: GX Core shared pacing engine (cache-only, linear fallback when cold — verified to match our
   // local values to the decimal). One source of truth across Leaderboard + Sales.
   try {
-    if (typeof GXCore !== 'undefined' && typeof GXCore.expectedSalesFrac === 'function') {
-      const f = GXCore.expectedSalesFrac(coreStoreId_(store), nowHour, nowMinute, dayFrac);
-      if (typeof f === 'number' && isFinite(f) && f > 0) return f;
-    }
+    const r = gxCoreRoute_('expected_frac', { store: coreStoreId_(store), hour: nowHour, minute: nowMinute });
+    const f = r && r.frac;
+    if (typeof f === 'number' && isFinite(f) && f > 0) return f;
   } catch (e) { Logger.log('expectedSalesFrac_: Core call failed, using local — ' + e); }
   // Local fallback (cache-only; reads the Core-mirrored local cache): linear dayFrac when cold.
   const dist = getHourlyDistCached_(store);
@@ -286,10 +321,9 @@ function pruneHourlyDistCache_(cache, todayStr) {
  */
 function getHourlyDist_(store) {
   try {
-    if (typeof GXCore !== 'undefined' && typeof GXCore.getHourlyShape === 'function') {
-      const shape = GXCore.getHourlyShape(coreStoreId_(store));
-      if (shape && Object.keys(shape).length) return shape;
-    }
+    const r = gxCoreRoute_('hourly_shape', { store: coreStoreId_(store) });
+    const shape = r && r.shape;
+    if (shape && Object.keys(shape).length) return shape;
   } catch (e) { Logger.log('getHourlyDist_: Core getHourlyShape failed, using local — ' + e); }
   return getHourlyDistLocal_(store);
 }
@@ -389,7 +423,7 @@ function primeHourlyDist_(stores) {
   // mirror each shape into our LOCAL cache so the kiosk's cache-only reader (getHourlyDistCached_) stays
   // instant. One fetch path — Core's — so we no longer pull the same-DOW history from Dutchie ourselves.
   try {
-    if (typeof GXCore !== 'undefined' && typeof GXCore.getHourlyShape === 'function') {
+    {
       const props = PropertiesService.getScriptProperties();
       let cache = {};
       try { cache = JSON.parse(props.getProperty(GC_HOURLY_DIST_KEY) || '{}'); } catch (e) {}
@@ -400,7 +434,8 @@ function primeHourlyDist_(stores) {
         const ck = store.slug + ':' + dow + ':' + now.dateStr;
         if (cache[ck]) return;   // already mirrored today
         try {
-          const shape = GXCore.getHourlyShape(coreStoreId_(store));
+          const r = gxCoreRoute_('hourly_shape', { store: coreStoreId_(store) });
+          const shape = r && r.shape;
           if (shape && Object.keys(shape).length) { cache[ck] = shape; wrote = true; }
         } catch (e) {}
       });
@@ -885,15 +920,19 @@ function diagPace_() {
   const elapsed = Math.max(0, Math.min(nowHour + nowMinute / 60 - STORE_OPEN_HOUR, STORE_HOURS));
   const dayFrac = elapsed / STORE_HOURS;
 
-  const coreAvailable = (typeof GXCore !== 'undefined'
-    && typeof GXCore.expectedSalesFrac === 'function');
+  /* "Available" used to mean typeof GXCore.expectedSalesFrac === 'function' — which was TRUE, and
+     told you nothing: the function exists, it simply cannot run from this project. That is why this
+     diagnostic reported a healthy Core layer while every kiosk read silently used the local curve.
+     Availability is now the deploy secret, which is what the route actually needs. */
+  const coreAvailable = !!PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
 
   const rows = STORES.map(function(store) {
     // Layer 1 — GX Core shared engine.
     let coreFrac = null, coreErr = '';
     if (coreAvailable) {
       try {
-        const f = GXCore.expectedSalesFrac(coreStoreId_(store), nowHour, nowMinute, dayFrac);
+        const r = gxCoreRoute_('expected_frac', { store: coreStoreId_(store), hour: nowHour, minute: nowMinute });
+        const f = r && r.frac;
         if (typeof f === 'number' && isFinite(f) && f > 0) coreFrac = f;
       } catch (e) { coreErr = String(e.message || e); }
     }
