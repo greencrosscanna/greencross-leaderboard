@@ -1017,6 +1017,13 @@ function diagPace_() {
       curveWarm:    !!dist,
       coreErr:      coreErr,
       paceGoal:     Math.round(dailyGoal * effective),
+      // What pace ACTUALLY divides by. Before ~12:30 that is the floor, not paceGoal, and a
+      // diagnostic that reports only paceGoal would send the next reader chasing a denominator
+      // the code stopped using. floored=true is the whole answer to "why is this number calm".
+      paceBase:     Math.round(Math.max(dailyGoal * effective, dailyGoal * PACE_FLOOR_FRAC)),
+      paceFloor:    Math.round(dailyGoal * PACE_FLOOR_FRAC),
+      floorFrac:    PACE_FLOOR_FRAC,
+      floored:      effective < PACE_FLOOR_FRAC,
       shape:        dist || null,
     };
   });
