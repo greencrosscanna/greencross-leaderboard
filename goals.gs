@@ -268,7 +268,7 @@ function getPPSeries_(slug, n) {
   }
   var byKey  = fetchTxnPagesByKey_(reqs);
   var series = reqs.map(function(r) {
-    var txns  = (byKey[r.key] || []).filter(function(t) { return t.transactionType === 'Retail'; });
+    var txns  = (byKey[r.key] || []).filter(isRetailSale_);   // isVoid too — see dutchie_fetch.gs
     var total = 0;
     txns.forEach(function(t) { total += txNet_(t); });
     return {
