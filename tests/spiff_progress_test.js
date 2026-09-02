@@ -196,7 +196,7 @@ const tests = {
       _eq_('"' + v + '" is not on', M.spiffShowEnabled_(), false);
     });
     /* Not even a near-miss of the real value: a stray 'True' is a config typo, and silently
-       honouring it would hide the typo until somebody wondered why the kiosk changed. */
+       honoring it would hide the typo until somebody wondered why the kiosk changed. */
     setShow('True');
     _eq_('"True" is not on (case matters)', M.spiffShowEnabled_(), false);
     setShow(undefined);

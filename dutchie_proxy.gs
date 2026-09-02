@@ -309,7 +309,7 @@ function doGet(e) {
     if (params.action === 'initapikey') {
       var props = PropertiesService.getScriptProperties();
       if (props.getProperty('GC_API_READONLY_KEY')) {
-        return jsonOut({ ok: false, error: 'Already initialised' }, params.callback);
+        return jsonOut({ ok: false, error: 'Already initialized' }, params.callback);
       }
       var k = (params.key || '').trim();
       if (!k) return jsonOut({ ok: false, error: 'Missing key param' }, params.callback);
@@ -1069,7 +1069,7 @@ function doGet(e) {
     // 'saveeom' removed: Employee of the Month is set in Crew and stored in GX Core as cfg.eom,
     // keyed on employee_id. Nothing in this app writes it any more, and leaving a live write route
     // for a value this app no longer owns is how two sources of truth come back. The read path
-    // (getEomCurrent_) still honours the old GC_EOM_KEY property, but only if Crew has never
+    // (getEomCurrent_) still honors the old GC_EOM_KEY property, but only if Crew has never
     // written cfg.eom -- which it now has.
 
     if (params.action === 'saveavatar') {
