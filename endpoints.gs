@@ -1123,6 +1123,93 @@ function diagEmpTargets_(storeSlug, dowOverride) {
 // STORE / KIOSK ENDPOINTS
 // ============================================================
 
+/**
+ * How far the by-hour bars may sit ABOVE the live day total before the snapshot is judged stale.
+ * This is a rounding allowance and nothing more: every hour is Math.round-ed on its own, so a full
+ * open-to-close chart can drift up to ~$0.50 per hour away from the un-rounded day total. One dollar
+ * per hour is that, doubled. Deliberately NOT a percentage — a percentage of a big day is a large
+ * number of real dollars, and the whole point is that the chart may never out-claim the headline.
+ */
+function hourFreezeTolerance_(hours) { return Math.max(1, hours); }
+
+/**
+ * What each hour's bar shows, reconciling the frozen snapshot against the live fetch.
+ *
+ * Pure on purpose — no clock, no ScriptProperties, no Dutchie — so tests/hour_freeze_test.js can
+ * drive the cases that only ever happen once a day on a live kiosk.
+ *
+ * TWO RULES, AND THEY PULL IN OPPOSITE DIRECTIONS.
+ *
+ * 1. NEVER FREEZE A ZERO. A failed Dutchie call is indistinguishable from a quiet hour downstream —
+ *    fetchTxnPagesByKey_ returns [] on a non-200 or a parse error — so an outage made every completed
+ *    hour read $0 and the freeze locked those zeros in for the rest of the day. That is the "hourly
+ *    data is missing from when the app was down" bug: the sales were in Dutchie the whole time, but
+ *    12p/1p/2p stayed empty on the kiosk long after it recovered. A zero is exactly the value
+ *    freezing has no reason to protect — the freeze exists so a settled hour's bar can't drift, and
+ *    $0 has nothing to drift from.
+ *
+ * 2. THE BARS MAY NEVER OUT-CLAIM THE DAY TOTAL. Every transaction lands in exactly one bucket, so
+ *    the bars can only sum to LESS than the day (a sale outside store hours is charted nowhere) —
+ *    never more. Sky, 2026-09-02: River read $266 sold while the 9a bar alone read $636.
+ *
+ *    The snapshot was written once, on the first read after the hour closed, and never revisited.
+ *    Anything that removes money from a settled hour afterwards — a ticket voided out of the retail
+ *    set, a return posted against the original sale — drops the day total and leaves the bar behind.
+ *    Freezing was only ever meant to stop a bar WOBBLING; it was never meant to outrank the number
+ *    printed six inches above it, and a kiosk the whole staff reads has to agree with itself.
+ *
+ *    So when the bars over-claim, the settled hours are re-snapshotted from live. Only DOWNWARD, and
+ *    only from a non-zero live hour, which is rule 1 doing its job on the way back: a fetch that lost
+ *    an hour reports $0 for it and is refused as evidence, exactly as it is when freezing.
+ *
+ * @param {Object} hourMap  live { hour: {revenue} } from aggregateByHour_
+ * @param {Object} frozen   the stored snapshot ({} on the first read of the day)
+ * @param {Object} o        { openHour, closeHour, nowHour, isPreOpen, dayTotal }
+ * @return {{dispRev:Object, frozen:Object, dirty:boolean, healed:boolean}}
+ */
+function hourFreezeDisplay_(hourMap, frozen, o) {
+  const openHour  = o.openHour, closeHour = o.closeHour;
+  const nowHour   = o.nowHour,  isPreOpen = !!o.isPreOpen;
+  const dayTotal  = Number(o.dayTotal) || 0;
+
+  // Copy, dropping anything non-positive: a stored 0 means "not frozen yet" (rule 1), and keeping it
+  // as a key would make `f[h] > 0` and the heal below disagree about what is snapshotted.
+  const f = {};
+  Object.keys(frozen || {}).forEach(function (k) {
+    const n = Number(frozen[k]);
+    if (n > 0) f[k] = n;
+  });
+
+  const settled = function (h) { return !isPreOpen && h < nowHour; };
+
+  const live = {}, disp = {};
+  let dirty = false, healed = false;
+  for (let h = openHour; h < closeHour; h++) {
+    live[h] = Math.round(((hourMap && hourMap[h]) || { revenue: 0 }).revenue || 0);
+    if (settled(h)) {                          // completed hour → serve/lock the frozen value
+      if (!(f[h] > 0) && live[h] > 0) { f[h] = live[h]; dirty = true; }
+      disp[h] = f[h] > 0 ? f[h] : live[h];
+    } else {
+      disp[h] = live[h];                       // current/future/pre-open → live
+    }
+  }
+
+  let shown = 0;
+  for (let h = openHour; h < closeHour; h++) shown += disp[h];
+
+  if (!isPreOpen && shown - dayTotal > hourFreezeTolerance_(closeHour - openHour)) {
+    for (let h = openHour; h < closeHour; h++) {
+      if (!settled(h)) continue;
+      if (!(live[h] > 0)) continue;            // rule 1, in reverse: a zero is not evidence
+      if (live[h] >= disp[h]) continue;        // heals DOWN only
+      f[h] = live[h]; disp[h] = live[h];
+      dirty = true; healed = true;
+    }
+  }
+
+  return { dispRev: disp, frozen: f, dirty: dirty, healed: healed };
+}
+
 function getStoreToday(store, params) {
   // Cache full responses for 55 seconds (skip when sinceTs polling — those need live data)
   const isSincePoll = params && params.sinceTs;
@@ -1233,25 +1320,21 @@ function getStoreToday(store, params) {
   try { _frozen = JSON.parse(_props.getProperty(_freezeK) || '{}'); } catch (e) {}
   let _freezeDirty = false;
 
-  // NEVER FREEZE A ZERO. A failed Dutchie call is indistinguishable from a quiet hour downstream —
-  // fetchTxnPagesByKey_ returns [] on a non-200 or a parse error — so an outage made every completed
-  // hour read $0, and the freeze locked those zeros in for the rest of the day. That is the "hourly
-  // data is missing from when the app was down" bug: the sales were in Dutchie the whole time, but
-  // 12p/1p/2p stayed empty on the kiosk long after it recovered.
-  //
-  // A zero is exactly the value freezing has no reason to protect: the freeze exists so a settled
-  // hour's bar can't drift, and $0 has nothing to drift from. If the hour really was empty, deriving
-  // it live returns $0 anyway. Treating a stored 0 as "not frozen yet" also HEALS a day already
-  // poisoned by an outage — the real number lands on the next poll, no migration needed.
-  const dispRev = Object.create(null);
-  for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
-    const liveRev = Math.round((hourMap[h] || { revenue: 0 }).revenue);
-    if (!isPreOpen && h < nowHour) {           // completed hour → serve/lock the frozen value
-      if (!(_frozen[h] > 0) && liveRev > 0) { _frozen[h] = liveRev; _freezeDirty = true; }
-      dispRev[h] = _frozen[h] > 0 ? _frozen[h] : liveRev;
-    } else {
-      dispRev[h] = liveRev;                    // current/future/pre-open → live
-    }
+  // Both freeze rules — never snapshot a zero, and never let the bars out-claim the day total —
+  // live in hourFreezeDisplay_ above, where they are pure and under test.
+  const _hf = hourFreezeDisplay_(hourMap, _frozen, {
+    openHour:  STORE_OPEN_HOUR,
+    closeHour: STORE_CLOSE_HOUR,
+    nowHour:   nowHour,
+    isPreOpen: isPreOpen,
+    dayTotal:  agg.sales,
+  });
+  const dispRev = _hf.dispRev;
+  _frozen      = _hf.frozen;
+  _freezeDirty = _hf.dirty;
+  if (_hf.healed) {
+    Logger.log('[hourfreeze] ' + store.slug + ' ' + _today + ': bars out-claimed the day total — '
+      + 'settled hours re-snapshotted from live (day $' + agg.sales + ')');
   }
   if (_freezeDirty) {
     try {

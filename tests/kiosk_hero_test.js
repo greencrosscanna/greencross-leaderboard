@@ -163,10 +163,14 @@ function test_nonzero_hours_still_freeze() {
   _eq_('a late txn does NOT move a settled hour',
        hourRow(S.getStoreToday(STORE, {}), '11a').revenue, 300);
 
+  // ...but a RETURN does, downward. This assertion used to read "nor does a return" — 300 on a
+  // $240 day — and that is precisely the bug Sky reported on 2026-09-02: River's kiosk showed $266
+  // sold with the 9a bar alone at $636. Freezing protects a settled bar from drift; it was never a
+  // licence to out-claim the headline number six inches above it. Down to live, never up.
   atPT(15, 5);
   S.setTxns([txn(11, 15, 300), txn(11, 50, 90), txn(11, 55, -150)]);
-  _eq_('nor does a return',
-       hourRow(S.getStoreToday(STORE, {}), '11a').revenue, 300);
+  _eq_('a return pulls a settled hour back down to the day it belongs to',
+       hourRow(S.getStoreToday(STORE, {}), '11a').revenue, 240);
 
   // The CURRENT hour is still live.
   atPT(15, 30);

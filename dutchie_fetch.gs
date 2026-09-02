@@ -1037,3 +1037,85 @@ function diagPace_() {
     stores: rows,
   };
 }
+
+/**
+ * Why the "Today by hour" bars disagree with the SOLD number, for one store (or every store).
+ *
+ * The bars for COMPLETED hours are served from a per-store-per-day snapshot in ScriptProperties;
+ * SOLD is always live. Those are the two numbers that can drift apart, and until this route existed
+ * neither of them could be read from outside the kiosk — the whole reason Sky's 2026-09-02 report
+ * ("River shows $266 sold, the 9a bar shows $636") could not be confirmed from a shell.
+ *
+ * Calls the SHIPPED hourFreezeDisplay_ rather than re-deriving the rule, so it reports the logic
+ * that is running rather than a hand-copy of it. Pure read: it writes no snapshot and no cache.
+ *
+ * @param  {string} slug  a store slug, or '' for all stores
+ * @return {Object}
+ */
+function diagHourFreeze_(slug) {
+  const want = String(slug || '').trim().toLowerCase();
+  const list = want ? STORES.filter(s => s.slug === want) : STORES.slice();
+  if (want && !list.length) return { ok: false, error: 'unknown store: ' + want };
+
+  const { hour: nowHour, minute: nowMinute } = ptHourNow_();
+  const isPreOpen = nowHour < STORE_OPEN_HOUR;
+  const today     = ptNow_().dateStr;
+  const props     = getProps_();
+
+  const rows = list.map(function (store) {
+    const range = isPreOpen
+      ? (function () {
+          const startMs = ptDateToUtcMs_(today);
+          return { fromUTC: new Date(startMs - 24 * 3600000).toISOString(),
+                   toUTC:   new Date(startMs - 1).toISOString() };
+        })()
+      : getDateRange_('today');
+
+    const txns    = fetchStoreTransactions_(store.slug, range.fromUTC, range.toUTC);
+    const agg     = aggregateTransactions_(txns);
+    const hourMap = aggregateByHour_(txns);
+
+    const key = 'GC_HOURFREEZE_' + store.slug + '_' + today;
+    let frozen = {};
+    try { frozen = JSON.parse(props.getProperty(key) || '{}'); } catch (e) {}
+
+    const hf = hourFreezeDisplay_(hourMap, frozen, {
+      openHour: STORE_OPEN_HOUR, closeHour: STORE_CLOSE_HOUR,
+      nowHour: nowHour, isPreOpen: isPreOpen, dayTotal: agg.sales,
+    });
+
+    const liveByHour = {}, shownByHour = {};
+    let liveSum = 0, shownSum = 0;
+    for (let h = STORE_OPEN_HOUR; h < STORE_CLOSE_HOUR; h++) {
+      const lv = Math.round((hourMap[h] || { revenue: 0 }).revenue);
+      liveByHour[h]  = lv;               liveSum  += lv;
+      shownByHour[h] = hf.dispRev[h];    shownSum += hf.dispRev[h];
+    }
+
+    return {
+      store:        store.slug,
+      dayTotal:     agg.sales,           // what the SOLD tile reads
+      transactions: agg.transactions,
+      barsTotal:    shownSum,            // what the chart adds up to
+      // The number that answers the report on its own. Positive = the chart is claiming money the
+      // day does not have, which is never legitimate: every txn lands in exactly one bucket.
+      overClaim:    Math.round((shownSum - agg.sales) * 100) / 100,
+      liveTotal:    liveSum,
+      tolerance:    hourFreezeTolerance_(STORE_CLOSE_HOUR - STORE_OPEN_HOUR),
+      // healed=true means the snapshot on disk is stale RIGHT NOW and the next kiosk read will
+      // rewrite it. This route does not write it — reading a diagnostic must not change the app.
+      healed:       hf.healed,
+      snapshotKey:  key,
+      snapshot:     frozen,              // what is stored (completed hours only)
+      live:         liveByHour,          // what Dutchie says now
+      shown:        shownByHour,         // what the kiosk would draw
+    };
+  });
+
+  return {
+    ok: true,
+    now: { hour: nowHour, minute: nowMinute, date: today, isPreOpen: isPreOpen },
+    storeHours: { open: STORE_OPEN_HOUR, close: STORE_CLOSE_HOUR },
+    stores: rows,
+  };
+}

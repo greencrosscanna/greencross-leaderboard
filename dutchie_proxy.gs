@@ -517,6 +517,19 @@ function doGet(e) {
       return jsonOut(diagPace_(), params.callback);
     }
 
+    // Secret-gated, read-only: why the "Today by hour" bars disagree with the SOLD number.
+    // The bars for completed hours come from a per-store-per-day snapshot in ScriptProperties while
+    // SOLD is always live, so those are the two numbers to put side by side — plus the live hour
+    // buckets they are meant to agree with. Calls the SHIPPED hourFreezeDisplay_ rather than
+    // re-deriving the rule here: a diagnostic that rebuilds the logic reports the logic it carries,
+    // not the one running. WRITES NOTHING — the healed snapshot is shown, not persisted.
+    if (params.action === 'hourdiag') {
+      var _hdSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+      if (!_hdSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
+      if ((params.secret || '') !== _hdSecret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
+      return jsonOut(diagHourFreeze_(params.store || ''), params.callback);
+    }
+
     // ── Read-only goals for Sales Dashboard (API key auth) ─
     if (params.action === 'goals') {
       var storedKey = PropertiesService.getScriptProperties().getProperty('GC_API_READONLY_KEY');
