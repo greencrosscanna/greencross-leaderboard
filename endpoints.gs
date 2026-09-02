@@ -2226,13 +2226,53 @@ function getIncentiveData_(ppStartParam, forceRefresh) {
   // hard-refresh must never change them. forceRefresh is ignored for completed
   // periods; only the CURRENT (open, still-settling) period is fetched live.
   var perfKey = 'GC_INC_PERF_v2_' + ppStartStr;   // v2: full-store aggregation (includes managers/excluded sellers)
+  /* The SCHEME the frozen numbers were scored against, frozen beside them. Deliberately NOT under
+     the GC_INC_PERF_ prefix: `frozenperiods` globs that prefix to inventory the snapshots that
+     exist only in this app, and a scheme key landing in that list would be reported as a pay period
+     with no rows and no total. */
+  var schemeKey = 'GC_INC_SCHEME_' + ppStartStr;
   var perf = null, fromCache = false;
   if (!isCurrent) {
     try { var c = props.getProperty(perfKey); if (c) { perf = JSON.parse(c); fromCache = true; } } catch(e) {}
   }
   if (!perf) {
     perf = computeIncentivePerf_(props, selMs);
-    if (!isCurrent) { try { props.setProperty(perfKey, JSON.stringify(perf)); } catch(e) {} }
+    if (!isCurrent) {
+      try { props.setProperty(perfKey, JSON.stringify(perf)); } catch(e) {}
+      /* Written in the same breath as the performance, because a scheme recorded later is a scheme
+         that may already have moved. Best-effort: failing to store it costs an `unrecorded` label
+         on one period, not the snapshot. */
+      try { props.setProperty(schemeKey, JSON.stringify(getIncentiveThresholds_())); } catch(e) {}
+    }
+  }
+
+  /* ── A PERIOD IS SCORED AGAINST THE RULES THAT APPLIED TO IT ────────────────────────────────
+   *
+   * Performance freezes for a completed period — computed once, cached forever, "these numbers paid
+   * people". The GOAL freezes too (asOfPeriodGoal_, above). The THRESHOLDS did not: they were read
+   * live for every period, so editing the discount goal today silently re-scored every fortnight
+   * already paid. Same bug class as the goal one this file already fixed, one field along.
+   *
+   * THREE ANSWERS, NOT TWO. The 28 snapshots taken before this change have no recorded scheme, and
+   * nobody wrote down what it was. Substituting today's is exactly the bug; substituting the
+   * defaults would be a different wrong number stated just as confidently. So an unknown scheme is
+   * reported as unknown and `thresholds` comes back null — a consumer that cannot score a period
+   * must find that out from the payload rather than by scoring it wrongly. GX Crew already reached
+   * the same conclusion for its 27 imported periods: with no frozen scheme, nothing is marked as
+   * having hit a target. */
+  var thresholds = null, thresholdsSource = 'live';
+  if (isCurrent) {
+    thresholds = getIncentiveThresholds_();
+  } else {
+    var frozenScheme = null;
+    try { frozenScheme = JSON.parse(props.getProperty(schemeKey) || 'null'); } catch(e) {}
+    /* The same completeness test getIncentiveThresholds_ applies. A half-written scheme scores some
+       rows and not others, which is worse than none: the payload looks authoritative throughout. */
+    if (frozenScheme && frozenScheme.budtender && frozenScheme.manager && frozenScheme.admin) {
+      thresholds = frozenScheme; thresholdsSource = 'frozen';
+    } else {
+      thresholds = null; thresholdsSource = 'unrecorded';
+    }
   }
 
   // ── Overlay the mutable bits fresh: goal target, saved inputs, thresholds ──
@@ -2263,7 +2303,10 @@ function getIncentiveData_(ppStartParam, forceRefresh) {
     managers:   managers,
     budtenders: perf.budtenders,
     saved:      allInputs[ppStartStr] || {},   // { nameKey: { att, spiff } }
-    thresholds: getIncentiveThresholds_(),
+    thresholds: thresholds,
+    /* 'live' (open period) · 'frozen' (the scheme this period was scored against) · 'unrecorded'
+       (closed before the scheme was frozen — thresholds is null and the period cannot be scored). */
+    thresholds_source: thresholdsSource,
   };
 }
 
