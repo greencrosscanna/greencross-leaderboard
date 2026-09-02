@@ -38,7 +38,7 @@ const ADMIN_TOKEN = 'REPLACE_WITH_DIRECTOR_TOKEN';
 //     dashboard's Script Properties. Never paste a key into this file.
 //   • DUTCHIE_TO_SLUG mapped 'Hillsboro'→baseline and 'Bend'→century. That is INVERTED: measurement
 //     (2026-08-28, unanimous 6/6 per store) and three independent sources — GX Core's stores tab,
-//     Inventory and Sales — all agree the key labelled 'Bend' serves the Hillsboro/Baseline store.
+//     Inventory and Sales — all agree the key labeled 'Bend' serves the Hillsboro/Baseline store.
 //     This file was the last written artefact still asserting the wrong direction, and it is exactly
 //     the "documentary source" that got trusted over measurement in PR #8. Keyed by store_id there
 //     is no direction left to get backwards.

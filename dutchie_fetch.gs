@@ -616,7 +616,7 @@ function initials_(name) {
 /* A VOID IS NOT A SALE, and seven places here forgot to say so.
  *
  * Every filter in this app tested `transactionType === 'Retail'` and stopped there. A voided
- * transaction is still typed Retail — it carries isVoid — so cancelled sales were counted as
+ * transaction is still typed Retail — it carries isVoid — so canceled sales were counted as
  * revenue everywhere: the kiosk, the goal computation, and the incentive figures people are paid on.
  *
  * Measured 2026-08-31 while reconciling the incentive engine against GX Core's port, one fortnight
