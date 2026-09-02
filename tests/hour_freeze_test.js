@@ -131,7 +131,36 @@ function test_a_stored_zero_reads_as_unfrozen() {
   _eq_('and is snapshotted',    r.frozen[9], 250);
 }
 
+// ── 8. A snapshot that knows the future is not today's ───────
+// Read off River's live kiosk on 2026-09-02 at 10:53am: the Sep 2 snapshot
+// held all fourteen hours of Sep 1, including 11a-9p, which had not
+// happened yet. A request that straddled midnight stamped a finished day
+// with the next day's date. Only completed hours are ever written, so a
+// future hour in the snapshot is proof the whole thing belongs elsewhere.
+function test_a_snapshot_holding_future_hours_is_discarded() {
+  const poisoned = { 8: 123, 9: 636, 10: 246, 11: 456, 12: 330, 13: 199, 14: 311,
+                     15: 327, 16: 487, 17: 241, 18: 306, 19: 419, 20: 194, 21: 233 };
+  const r = run(hours({ 8: 143, 9: 123, 10: 88 }), poisoned, 10, 354.57);
+
+  _eq_('9a is the new day, not $636',   r.dispRev[9], 123);
+  _eq_('8a is the new day too',         r.dispRev[8], 143);
+  _eq_('an hour still to come is $0',   r.dispRev[15], 0);
+  _ok_('yesterday is gone from the snapshot', r.frozen[15] === undefined);
+  _eq_('and today is snapshotted afresh', r.frozen[9], 123);
+  _ok_('the corrected snapshot is written', r.dirty);
+}
+
+// The ordinary case must not trip it: everything stored is a finished hour.
+function test_a_normal_snapshot_survives() {
+  const r = run(hours({ 9: 400, 10: 300, 11: 50 }), { 9: 400, 10: 300 }, 11, 750);
+  _eq_('9a holds',  r.dispRev[9], 400);
+  _eq_('10a holds', r.dispRev[10], 300);
+  _ok_('nothing rewritten', !r.dirty);
+}
+
 H.run('hour_freeze', {
+  test_a_snapshot_holding_future_hours_is_discarded,
+  test_a_normal_snapshot_survives,
   test_the_river_case,
   test_a_late_sale_still_does_not_move_a_settled_bar,
   test_rounding_noise_is_not_a_stale_snapshot,

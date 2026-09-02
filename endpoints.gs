@@ -10,10 +10,14 @@
  * All calendar math is done in local (Portland) time, then converted to UTC.
  *
  * @param  {string} period  'today' | 'wtd' | 'mtd' | 'qtd' | 'ytd'
+ * @param  {Object} [ptPinned]  a ptNow_() already taken by the caller. Pass it whenever the caller
+ *   reads the clock more than once in a request: this function is normally called BEFORE a Dutchie
+ *   fetch and the caller's other reads come after it, so leaving each read to find its own "now"
+ *   lets a request straddle midnight and mix two days. See the note in getStoreToday.
  * @return {Object} { fromUTC, toUTC, fromLocal, toLocal, daysElapsed, totalDays, period }
  */
-function getDateRange_(period) {
-  const pt = ptNow_();
+function getDateRange_(period, ptPinned) {
+  const pt = ptPinned || ptNow_();
   const { year: y, month: m, day: d, dateStr: todayStr } = pt;
 
   // PT midnight today → UTC ms (DST-correct)
@@ -1182,8 +1186,24 @@ function hourFreezeDisplay_(hourMap, frozen, o) {
 
   const settled = function (h) { return !isPreOpen && h < nowHour; };
 
-  const live = {}, disp = {};
   let dirty = false, healed = false;
+
+  /* A SNAPSHOT THAT KNOWS THE FUTURE IS NOT THIS DAY'S. Only a COMPLETED hour is ever written, so an
+     entry for an hour that has not finished yet cannot have come from today. It came from a request
+     that straddled midnight: started at 23:59:5x, read hour 23, fetched that day, then finished after
+     midnight and stamped the whole finished day with tomorrow's date. That is the write that put all
+     fourteen hours of Sep 1 — 9a at $636 — into River's Sep 2 snapshot.
+     getStoreToday now pins one clock read per request, which stops it happening again. This is the
+     second lock, and the one that cleans up a day already poisoned: discard the WHOLE snapshot, not
+     just the impossible hours, because one bad write produced all of them. */
+  let fromAnotherDay = false;
+  Object.keys(f).forEach(function (k) { if (!settled(Number(k))) fromAnotherDay = true; });
+  if (fromAnotherDay) {
+    Object.keys(f).forEach(function (k) { delete f[k]; });
+    dirty = true;
+  }
+
+  const live = {}, disp = {};
   for (let h = openHour; h < closeHour; h++) {
     live[h] = Math.round(((hourMap && hourMap[h]) || { revenue: 0 }).revenue || 0);
     if (settled(h)) {                          // completed hour → serve/lock the frozen value
@@ -1222,16 +1242,34 @@ function getStoreToday(store, params) {
     }
   }
 
-  const { hour: nowHour, minute: nowMinute } = ptHourNow_();
+  /* ONE CLOCK READ, PINNED FOR THE WHOLE REQUEST — and this is not tidiness.
+   *
+   * This function used to read the clock four separate times: the hour here, the date for the
+   * "today" fetch range, the day-of-week for the goal, and the date in the by-hour freeze key
+   * further down. A Dutchie fetch sits between the first and the last, so those reads are SECONDS
+   * apart, and one night a second they straddle midnight.
+   *
+   * A request that starts at 23:59:5x reads hour 23 and fetches YESTERDAY's full day — correctly,
+   * that is still yesterday — then finishes after midnight and stamps the result with TOMORROW's
+   * date. Every hour 8..21 is "completed" against hour 23, so the whole of yesterday gets frozen
+   * into today's by-hour snapshot, and the kiosk opens showing a finished day it never had. That is
+   * what Sky saw on 2026-09-02: River read $266 sold while the 9a bar read $636, and the snapshot
+   * held all fourteen hours of Sep 1 under the Sep 2 key. The kiosk polls every 30-60s, so it walks
+   * into that window most nights.
+   *
+   * Whatever instant this request belongs to, it belongs to ONE of them. */
+  const _pt       = ptNow_();
+  const nowHour   = _pt.hour;
+  const nowMinute = _pt.minute;
 
   // Pre-open: before 8 am show previous day's final stats so openers can
   // see what the closing shift accomplished without fetching empty today data.
   const isPreOpen = nowHour < STORE_OPEN_HOUR;
 
-  const todayR = getDateRange_('today');
+  const todayR = getDateRange_('today', _pt);
 
   // Yesterday's UTC window (DST-correct)
-  const todayStartMs = ptDateToUtcMs_(ptNow_().dateStr);
+  const todayStartMs = ptDateToUtcMs_(_pt.dateStr);
   const ydayMs       = todayStartMs - 24 * 60 * 60 * 1000;
   const ydayRange    = {
     fromUTC: new Date(ydayMs).toISOString(),
@@ -1267,7 +1305,7 @@ function getStoreToday(store, params) {
 
   // Goal: use yesterday's DOW when pre-open so % reflects how yesterday did
   // vs yesterday's target. Pre-open DOW: (today.dow + 6) % 7 (e.g. Mon→Sun).
-  const todayDow    = ptNow_().dow;
+  const todayDow    = _pt.dow;
   const yesterdayDow = (todayDow + 6) % 7;
   const dailyGoal = isPreOpen
     ? getDailyGoalForDow_(store.slug, yesterdayDow)
@@ -1313,7 +1351,7 @@ function getStoreToday(store, params) {
   // txns / in-place return adjustments shift a finished hour). The first pull after an hour completes
   // snapshots it; later pulls read the snapshot. Only the CURRENT hour stays live; the daily total
   // (agg.sales) still nets returns. Snapshot is per-store-per-day; yesterday's key is pruned on write.
-  const _today    = ptNow_().dateStr;
+  const _today    = _pt.dateStr;
   const _freezeK  = 'GC_HOURFREEZE_' + store.slug + '_' + _today;
   const _props    = getProps_();
   let _frozen = Object.create(null);

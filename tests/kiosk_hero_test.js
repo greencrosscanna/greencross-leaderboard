@@ -55,6 +55,9 @@ const S = H.load(['endpoints.gs', 'dutchie_proxy.gs', 'dutchie_fetch.gs'], {
   // shadowed by its declaration. Reassign the binding from inside instead.
   extraExports:
     '"setTxns": function (rows) { fetchStoreTransactions_ = function () { return rows; }; },' +
+    // The Dutchie fetch is where a request spends its seconds, so it is where a request crosses
+    // midnight. This lets a case put a clock tick INSIDE the fetch — see test_midnight_straddle.
+    '"setTxnsFn": function (fn) { fetchStoreTransactions_ = fn; },' +
     '"resetCaches": function () { _propsCache_ = null; _ppStartCache_ = null; }',
 });
 
@@ -191,6 +194,48 @@ function test_a_real_zero_hour_is_still_zero() {
   _eq_('and still does on the next poll', hourRow(S.getStoreToday(STORE, {}), '11a').revenue, 0);
 }
 
+// ── 6. A request may not straddle midnight ───────────────────
+// THE ACTUAL CAUSE of Sky's 2026-09-02 report, read off the live kiosk:
+// River's snapshot for Sep 2 held all fourteen hours of Sep 1 (9a = $636)
+// while the day itself had sold $267.
+//
+// getStoreToday read the clock four times and a Dutchie fetch sits between
+// the first read and the last. A request that starts at 23:59:5x reads
+// hour 23, correctly fetches that day, finishes after midnight, and stamps
+// the result with TOMORROW's date — so every hour 8..21 counts as
+// "completed" against hour 23 and the whole day freezes into the next
+// day's snapshot. The kiosk polls every 30-60s; it walks into that window
+// most nights.
+function test_midnight_straddle() {
+  Object.keys(store_).forEach(function (k) { delete store_[k]; });
+
+  const full = [txn(9, 15, 636), txn(13, 5, 400), txn(19, 40, 500)];
+
+  // 23:59:58 on the 31st. The fetch returns the 31st's real day and takes
+  // four seconds — landing the rest of the request on the 1st.
+  H.setNow(Date.UTC(2026, 7, 31, 23 + 7, 59, 58));
+  S.resetCaches();
+  S.setTxnsFn(function () {
+    H.setNow(Date.UTC(2026, 8, 1, 0 + 7, 0, 2));   // midnight rolls over mid-request
+    return full;
+  });
+  S.getStoreToday(STORE, {});
+
+  _eq_('the finished day is not filed under the next one',
+       store_['GC_HOURFREEZE_century_2026-09-01'], undefined);
+  _ok_('it is filed under the day it happened',
+       !!store_['GC_HOURFREEZE_century_2026-08-31']);
+
+  // And the next morning is clean: 9a is whatever the 1st actually did,
+  // not the 31st's $636.
+  atPT(0, 0);   // back to a normal frozen clock for anything after this
+  H.setNow(Date.UTC(2026, 8, 1, 10 + 7, 6, 0));    // 10:06am on the 1st
+  S.resetCaches();
+  S.setTxns([txn(9, 20, 197), txn(10, 1, 70)]);
+  const morning = S.getStoreToday(STORE, {});
+  _eq_('9a reads the new day', hourRow(morning, '9a').revenue, 197);
+}
+
 try {
   H.run('kiosk_hero', {
     test_trophy_floor,
@@ -198,6 +243,7 @@ try {
     test_outage_does_not_freeze_zero,
     test_nonzero_hours_still_freeze,
     test_a_real_zero_hour_is_still_zero,
+    test_midnight_straddle,
   });
 } finally {
   H.setNow(null);
