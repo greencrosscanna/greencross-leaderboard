@@ -62,7 +62,7 @@ Replace the needle-with-line with a **single tick mark riding on the arc itself*
 
 **Layout, top to bottom:**
 
-1. **Background track** — same neutral grey arc as Daily Goal
+1. **Background track** — same neutral gray arc as Daily Goal
 2. **3-zone color band** layered on top of the track, opacity ~0.62, split into thirds:
    - Red:   from `(22, 122)` to `(71, 37)` — leftmost third
    - Amber: from `(71, 37)` to `(169, 37)` — middle third
