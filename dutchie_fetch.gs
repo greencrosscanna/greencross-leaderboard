@@ -356,12 +356,30 @@ function pruneHourlyDistCache_(cache, todayStr) {
  * (getHourlyShape — ported verbatim from this file, values verified identical). Falls back to the
  * local Dutchie compute below if Core is unavailable. Consolidates the shape source across apps.
  */
-function getHourlyDist_(store) {
+/* All curves in one call, memoized per execution — including the failure, for the same reason
+ * coreFracs_ above does it. gxCoreRoute_ retries three times with sleeps, so a Core outage used to
+ * cost every store its own three attempts of dead waiting on a single render.
+ * `stores=all` rather than a per-store ask: this is called in loops, and the second store through
+ * would otherwise pay a second round trip for a payload the first one could have carried. */
+var _CORE_SHAPES_MEMO = null;
+
+function coreShapes_() {
+  if (_CORE_SHAPES_MEMO) return _CORE_SHAPES_MEMO.shapes;
+  var shapes = null;
   try {
-    const r = gxCoreRoute_('hourly_shape', { store: coreStoreId_(store) });
-    const shape = r && r.shape;
+    var r = gxCoreRoute_('hourly_shape', { stores: 'all' });
+    if (r && r.shapes) shapes = r.shapes;
+  } catch (e) { Logger.log('coreShapes_: Core batch failed, using local — ' + e); }
+  _CORE_SHAPES_MEMO = { shapes: shapes };
+  return shapes;
+}
+
+function getHourlyDist_(store) {
+  var all = coreShapes_();
+  if (all) {
+    const shape = all[coreStoreId_(store)];
     if (shape && Object.keys(shape).length) return shape;
-  } catch (e) { Logger.log('getHourlyDist_: Core getHourlyShape failed, using local — ' + e); }
+  }
   return getHourlyDistLocal_(store);
 }
 
@@ -466,16 +484,34 @@ function primeHourlyDist_(stores) {
       try { cache = JSON.parse(props.getProperty(GC_HOURLY_DIST_KEY) || '{}'); } catch (e) {}
       const now = ptNow_();
       const dow = new Date(ptDateToUtcMs_(now.dateStr)).getDay();
+      /* ONE call for every store still missing, not one call each.
+         hourly_shape was 15% of everything reaching GX Core, second only to expected_frac, and this
+         loop was half of it. Asking for only the MISSING stores matters as much as batching: on a
+         normal day the cache is already warm and this costs nothing at all, so the batch is not a
+         fixed daily tax. A cold store is eight parallel Dutchie fetches inside GX Core, which is why
+         the route caps how many curves one call may build. */
       let wrote = false;
-      (stores || []).forEach(function(store) {
-        const ck = store.slug + ':' + dow + ':' + now.dateStr;
-        if (cache[ck]) return;   // already mirrored today
-        try {
-          const r = gxCoreRoute_('hourly_shape', { store: coreStoreId_(store) });
-          const shape = r && r.shape;
-          if (shape && Object.keys(shape).length) { cache[ck] = shape; wrote = true; }
-        } catch (e) {}
+      const missing = (stores || []).filter(function (store) {
+        return !cache[store.slug + ':' + dow + ':' + now.dateStr];
       });
+      if (missing.length) {
+        let shapes = null;
+        try {
+          const r = gxCoreRoute_('hourly_shape', {
+            stores: missing.map(function (store) { return coreStoreId_(store); }).join(','),
+          });
+          shapes = (r && r.shapes) || null;
+        } catch (e) { shapes = null; }   // remembered as null: no per-store retry storm below
+        if (shapes) {
+          missing.forEach(function (store) {
+            const shape = shapes[coreStoreId_(store)];
+            if (shape && Object.keys(shape).length) {
+              cache[store.slug + ':' + dow + ':' + now.dateStr] = shape;
+              wrote = true;
+            }
+          });
+        }
+      }
       if (wrote) {
         cache = pruneHourlyDistCache_(cache, now.dateStr);
         try { props.setProperty(GC_HOURLY_DIST_KEY, JSON.stringify(cache)); } catch (e) {}

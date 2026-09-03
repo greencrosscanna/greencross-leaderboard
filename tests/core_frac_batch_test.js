@@ -31,6 +31,8 @@ const ok = (m, c) => { c ? (pass++, console.log('  ok  ' + m)) : (fail++, consol
 const FRACS = { bend: 0.11, center: 0.15, commercial: 0.13,
                 hillsboro: 0.14, 'portland-rd': 0.09, 'river-rd': 0.09 };
 
+const SHAPES = Object.keys(FRACS).reduce((o, id) => { o[id] = { 10: 0.4, 11: 0.6 }; return o; }, {});
+
 /* `mode` decides how the fake GX Core behaves. Every fetch is recorded, so "how many round trips did
  * a render cost" is the thing under test, not an implementation detail. */
 function ctxFor(mode, props) {
@@ -40,6 +42,12 @@ function ctxFor(mode, props) {
     if (mode === 'down') throw new Error('GX Core unreachable');
     if (mode === 'refuse') {
       return { getContentText: () => JSON.stringify({ ok: false, error: 'refused' }), getResponseCode: () => 200 };
+    }
+    if (String(url).indexOf('hourly_shape') >= 0) {
+      return {
+        getResponseCode: () => 200,
+        getContentText: () => JSON.stringify({ ok: true, count: 6, shapes: SHAPES }),
+      };
     }
     return {
       getResponseCode: () => 200,
@@ -150,6 +158,48 @@ console.log('\nOne call for every store');
   ctx.coreStoreId_ = s => s.slug;
   const v = ctx.expectedSalesFrac_({ slug: 'not-a-store' }, 11, 0, 0.44);
   ok('a store absent from the batch falls back rather than returning 0/NaN', v === 0.44);
+}
+
+console.log('\nThe curve itself — one call, not one per store');
+
+/* hourly_shape was 15% of everything reaching GX Core, second only to expected_frac, because this
+   app asked per store in two places: getHourlyDist_ on demand, and the daily mirror loop. */
+{
+  const ctx = ctxFor('ok');
+  ctx.coreStoreId_ = s => s.slug;
+  // guarded: a build without the batch falls through to the local builder, which throws for an
+  // unknown store and would end the run rather than failing this assertion.
+  STORES.forEach(s => { try { ctx.getHourlyDist_(s); } catch (e) {} });
+  const n = ctx.__calls.filter(u => u.indexOf('hourly_shape') >= 0).length;
+  ok(`six curves cost ONE GX Core call (made ${n})`, n === 1);
+  ok('and it asks for every store at once', ctx.__calls.some(u => /hourly_shape/.test(u) && /stores=all/.test(u)));
+}
+
+/* Repeated asks in one execution are free — this runs inside loops. */
+{
+  const ctx = ctxFor('ok');
+  ctx.coreStoreId_ = s => s.slug;
+  for (let i = 0; i < 15; i++) STORES.forEach(s => { try { ctx.getHourlyDist_(s); } catch (e) {} });
+  const n = ctx.__calls.filter(u => u.indexOf('hourly_shape') >= 0).length;
+  ok(`90 asks still cost ONE call (made ${n})`, n === 1);
+}
+
+/* A FAILED BATCH IS REMEMBERED, same as the fracs — gxCoreRoute_ retries three times with sleeps,
+   so without this an outage cost every store its own three attempts on one render. */
+{
+  const ctx = ctxFor('down');
+  ctx.coreStoreId_ = s => s.slug;
+  STORES.forEach(s => { try { ctx.getHourlyDist_(s); } catch (e) {} });
+  const n = ctx.__calls.filter(u => u.indexOf('hourly_shape') >= 0).length;
+  ok(`a Core outage is attempted ONCE per execution, not once per store (fetches=${n})`, n <= 3);
+}
+
+/* The value must still arrive, and fall through to the local builder when it does not. */
+{
+  const ctx = ctxFor('ok');
+  ctx.coreStoreId_ = s => s.slug;
+  let shape = null; try { shape = ctx.getHourlyDist_({ slug: 'center' }); } catch (e) {}
+  ok('the curve comes back from the batch', shape && shape[11] === 0.6);
 }
 
 console.log(`\n  ${pass} passed, ${fail} failed\n`);
