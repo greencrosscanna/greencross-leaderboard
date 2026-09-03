@@ -263,14 +263,51 @@ function gxCoreRoute_(action, params) {
   throw new Error('GX Core ' + action + ' unreachable');
 }
 
+/* ALL STORES IN ONE CALL, MEMOIZED PER EXECUTION — including the failure.
+ *
+ * expectedSalesFrac_ is called from four places, several inside per-store loops, and it used to make
+ * its OWN GX Core round trip every time. GX Core's request telemetry (v291) measured what that cost:
+ * expected_frac was 46% of ALL traffic hitting GX Core, the single largest caller of anything, with
+ * hourly_shape another 9%. Six stores meant six /exec round trips per refresh, and kiosks poll
+ * constantly by design.
+ *
+ * That is also why the kiosk was the app stuck on a 75-day-old cache on the morning of 2026-09-03,
+ * while spiff — which makes one call — loaded fine: /exec has intermittent bad spells, each trip
+ * is an independent roll against them, and six rolls per refresh is six chances to lose.
+ *
+ * MEMOIZING THE FAILURE MATTERS AS MUCH AS THE BATCHING. gxCoreRoute_ retries three times with
+ * sleeps between, so a Core outage previously cost six stores x three attempts of dead waiting on
+ * every single render, and the kiosk sat there for it. Now one failed batch is remembered for the
+ * rest of the execution and every store falls straight through to the local curve. This is the same
+ * lesson GX Core itself learned the night before, when a failing hourly shape cached nothing and so
+ * re-armed its own retry on every render until it had drained the shared urlfetch quota.
+ *
+ * Keyed by hour:minute so a long execution that crosses a minute boundary re-prices rather than
+ * serving a stale pace. Execution-scoped, like every other memo here — nothing persists. */
+var _CORE_FRACS_MEMO = null;
+
+function coreFracs_(nowHour, nowMinute) {
+  var key = nowHour + ':' + nowMinute;
+  if (_CORE_FRACS_MEMO && _CORE_FRACS_MEMO.key === key) return _CORE_FRACS_MEMO.fracs;
+  var fracs = null;
+  try {
+    var r = gxCoreRoute_('expected_frac', { stores: 'all', hour: nowHour, minute: nowMinute });
+    if (r && r.fracs) fracs = r.fracs;
+  } catch (e) {
+    Logger.log('coreFracs_: GX Core batch failed, using local curves — ' + e);
+  }
+  _CORE_FRACS_MEMO = { key: key, fracs: fracs };   // null is cached too — see above
+  return fracs;
+}
+
 function expectedSalesFrac_(store, nowHour, nowMinute, dayFrac) {
   // Primary: GX Core shared pacing engine (cache-only, linear fallback when cold — verified to match our
   // local values to the decimal). One source of truth across Leaderboard + Sales.
-  try {
-    const r = gxCoreRoute_('expected_frac', { store: coreStoreId_(store), hour: nowHour, minute: nowMinute });
-    const f = r && r.frac;
+  var _f = coreFracs_(nowHour, nowMinute);
+  if (_f) {
+    const f = _f[coreStoreId_(store)];
     if (typeof f === 'number' && isFinite(f) && f > 0) return f;
-  } catch (e) { Logger.log('expectedSalesFrac_: Core call failed, using local — ' + e); }
+  }
   // Local fallback (cache-only; reads the Core-mirrored local cache): linear dayFrac when cold.
   const dist = getHourlyDistCached_(store);
   if (!dist) return dayFrac;
@@ -977,10 +1014,14 @@ function diagPace_() {
     // Layer 1 — GX Core shared engine.
     let coreFrac = null, coreErr = '';
     if (coreAvailable) {
+      // Reads the SAME batch expectedSalesFrac_ uses, so this row reports what the kiosk actually
+      // got. Asking separately here would both re-introduce the per-store round trip this change
+      // removes and let the diagnostic disagree with the thing it is diagnosing.
       try {
-        const r = gxCoreRoute_('expected_frac', { store: coreStoreId_(store), hour: nowHour, minute: nowMinute });
-        const f = r && r.frac;
+        const all = coreFracs_(nowHour, nowMinute);
+        const f = all && all[coreStoreId_(store)];
         if (typeof f === 'number' && isFinite(f) && f > 0) coreFrac = f;
+        else if (!all) coreErr = 'GX Core batch unavailable';
       } catch (e) { coreErr = String(e.message || e); }
     }
 
