@@ -64,6 +64,14 @@ fetch gx-brain-notes.sh    .claude/gx-brain-notes.sh    || true
 fetch gx-posttool-tests.sh .claude/gx-posttool-tests.sh || true
 fetch deploy.sh          deploy.sh                 || true
 fetch serve.py           serve.py                  || true
+# serve.js is a SECOND DOOR, not a replacement — serve.py stays and still works from a terminal, from
+# CI, from anywhere started by a shell. The managed dev-server launcher is the case it does not cover:
+# it spawns as a child of Claude's disclaimer helper, and in that context every APPLE-SIGNED binary is
+# denied the whole TCC-protected tree. Measured 2026-09-02 at the same instant on the same launcher:
+# /bin/ls BLOCKED, /bin/cat BLOCKED, /usr/bin/python3 BLOCKED, /opt/homebrew/bin/node OK. Not a Dropbox
+# problem (Documents and Desktop fail identically) and NOT fixable with Full Disk Access — Sky granted
+# it at three levels and restarted, with no change. Do not send anyone round that loop again.
+fetch serve.js           serve.js                  || true
 fetch gx-preflight.sh    gx-preflight.sh           || true
 fetch gxengine.sh        gxengine.sh               || true
 # chmod each file individually with an explicit mode. "chmod +x a b c" is subject to umask and skips
@@ -85,7 +93,7 @@ fetch gxengine.sh        gxengine.sh               || true
 # `sh` for exactly this reason -- gx-preflight, theme-preflight and run-tests alike. Keep it that way:
 # a hook that depends on a mode bit is a hook this filesystem can switch off without telling you.
 _notexec=""
-for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py gx-preflight.sh gxengine.sh; do
+for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh; do
   [ -f "$f" ] || continue
   chmod 755 "$f" 2>/dev/null || true
   [ -x "$f" ] || _notexec="$_notexec $f"
@@ -106,7 +114,7 @@ done
 # So `update-index` alone does NOT make it stick — 4f01457 proves that; the very next commit undid it.
 # The habit is the fix, which is why the message below leads with the habit.
 _badmode=""
-for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py gx-preflight.sh gxengine.sh; do
+for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh; do
   [ -f "$f" ] || continue
   case "$(git ls-files -s "$f" 2>/dev/null | awk '{print $1}')" in
     100644) [ -x "$f" ] && _badmode="$_badmode $f" ;;
@@ -125,6 +133,51 @@ if [ -n "$_notexec" ]; then
   echo "  ✗ NOT EXECUTABLE after chmod:$_notexec"
   echo "    The pre-push hook execs gx-preflight.sh, so this breaks every push until fixed:"
   echo "      chmod 755$_notexec && git update-index --chmod=+x$_notexec"
+fi
+
+# ── WILL clasp PUSH serve.js INTO THE APPS SCRIPT PROJECT? ─────────────────────────────────
+# serve.js is the FIRST ROOT-LEVEL .js FILE THIS SCRIPT HAS EVER PLACED, and that single fact is the
+# whole story. clasp pushes .js/.gs/.ts/.html/.json and ignores every other extension, so deploy.sh,
+# gx-preflight.sh, gxengine.sh (.sh) and serve.py (.py) were never candidates no matter what a repo's
+# .claspignore said. Eight months of syncing proved nothing about this case; it just never arose.
+#
+# When it does arise the failure is maximally confusing: clasp ships serve.js as serve.gs, where
+# `#!/usr/bin/env node` on line 1 is a parse error that fails the ENTIRE push — backend fix and all —
+# pointing at a file the deployer never touched and did not know existed. Sales hit exactly that on
+# 2026-09-03 on an unrelated fix. It is armed by the file LANDING, not by the change being deployed.
+#
+# .claspignore is deliberately NOT a synced file (it is per-project truth: rootDir, which .gs files
+# are real, which are separate bound projects). So this script CANNOT fix it for a spoke. What it can
+# do is speak at the only moment anyone is looking — when the file lands — rather than leaving it to
+# be discovered one broken deploy at a time. This is the fourth instance of the identical mechanism:
+# tests/ (2026-08-22), design_handoff_*/ (2026-08-25), then sales and inventory today.
+#
+# RESOLVE rootDir, DO NOT STRING-COMPARE IT. "." and "./" and an absolute path all mean the repo root;
+# "apps-script" means serve.js is outside the push scope entirely and there is nothing to warn about.
+# Comparing literally against "." reports apps-script repos as armed, which is a false alarm in a
+# warning nobody can act on — and a false alarm here teaches people to ignore the true one.
+if [ -f .clasp.json ] && [ -f serve.js ]; then
+  _rootdir=$(sed -n 's/.*"rootDir"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' .clasp.json | head -1)
+  [ -n "$_rootdir" ] || _rootdir="."
+  _rootabs=$(cd "$_rootdir" 2>/dev/null && pwd -P) || _rootabs=""
+  if [ -n "$_rootabs" ] && [ "$_rootabs" = "$(pwd -P)" ]; then
+    # In scope. Two shapes of .claspignore keep it out, and BOTH are in use across the suite:
+    #   a denylist naming the file      (inventory, sales)
+    #   an allowlist of `**` + !include (performance) — excludes serve.js without ever mentioning it
+    _safe=""
+    if [ -f .claspignore ]; then
+      _ci=$(sed 's/#.*//' .claspignore | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
+      printf '%s\n' "$_ci" | grep -qx 'serve\.js' && _safe="named"
+      if [ -z "$_safe" ] && printf '%s\n' "$_ci" | grep -qx '\*\*' \
+         && ! printf '%s\n' "$_ci" | grep -qx '!serve\.js'; then _safe="allowlist"; fi
+    fi
+    if [ -z "$_safe" ]; then
+      echo "  ! serve.js is inside clasp's push scope here and .claspignore does not exclude it."
+      echo "    Your NEXT backend deploy will fail with a parse error naming serve.gs, whatever that"
+      echo "    deploy is carrying. One line fixes it, before you forget this warning:"
+      echo "      printf '\n# Node dev server, synced from gx-theme. rootDir is the repo root and\n# nothing here excludes JS by extension, so clasp would push this as serve.gs,\n# where the node shebang is a parse error that fails the WHOLE push.\nserve.js\n' >> .claspignore"
+    fi
+  fi
 fi
 
 # Install preflight as a pre-push hook so dev leftovers (fixtures on, writes armed, @devonly blocks,

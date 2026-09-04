@@ -159,19 +159,56 @@ try:
 except Exception: print('')" 2>/dev/null)"
   [ -n "$EXEC_URL" ] && break
 done
-LV=""
+# WHAT THE ANSWER SHOULD BE: the GXCore version this repo pins, read from the manifest clasp just
+# pushed. Located via .clasp.json's rootDir because the spokes disagree — crew and spiff keep theirs
+# in apps-script/, the rest at the repo root.
+ROOT_DIR="$(python3 -c "
+import json
+try: print(json.load(open('.clasp.json')).get('rootDir') or '.')
+except Exception: print('.')" 2>/dev/null)"
+WANT_LV="$(python3 -c "
+import json, os
+try:
+    d = json.load(open(os.path.join('''$ROOT_DIR''', 'appsscript.json')))
+    for l in (d.get('dependencies') or {}).get('libraries') or []:
+        if l.get('userSymbol') == 'GXCore': print(int(l.get('version'))); break
+except Exception: pass" 2>/dev/null)"
+
+# POLL UNTIL THE ANSWER IS THE VERSION WE JUST PINNED — not until the app answers at all.
+#
+# This used to break on the first SUCCESSFUL read, and a warm Apps Script instance serving the
+# pre-deploy snapshot is a successful read. It answers with the OLD version, both loops break, and
+# that number is recorded as what the app is running. The 12 attempts only ever protected against no
+# answer; the stale-but-present case is the one that actually fires, and it is worse, because an
+# empty read prints a warning while a stale read records a wrong number and looks like a clean deploy.
+#
+# Measured 2026-09-04 (crew): gxengine recorded lib_version 299 at 03:07:16 with the correct sha;
+# health calls at 03:07:31, :33 and :35 answered 299, 300, 300. The instance flipped seconds later.
+# core_pins is documented here and in the hub CLAUDE.md as the only reliable answer to what an app is
+# running — a systematically stale value defeats the whole point, and it is intermittent (inventory
+# recorded 300 correctly minutes earlier), which is how it gets explained away as "it'll catch up".
+#
+# There is now a real wait between attempts. The old loop retried instantly, so 12 attempts elapsed in
+# about as long as one; the warm window is a minute or two, so a retry that does not wait cannot span it.
+LV=""; LV_SEEN=""
 if [ -n "$EXEC_URL" ]; then
   for _ in $(seq 1 12); do
+    READ=""
     for route in libversion health; do
-      LV="$(curl -sL --max-time 12 "$EXEC_URL?action=$route" 2>/dev/null | python3 -c "
+      READ="$(curl -sL --max-time 12 "$EXEC_URL?action=$route" 2>/dev/null | python3 -c "
 import json,sys
 try: d=json.load(sys.stdin)
 except Exception: raise SystemExit
 for k in ('gxcore','lib','lib_version'):
     if isinstance(d.get(k),(int,float)): print(int(d[k])); break" 2>/dev/null)"
-      [ -n "$LV" ] && break
+      [ -n "$READ" ] && break
     done
-    [ -n "$LV" ] && break
+    if [ -n "$READ" ]; then
+      LV_SEEN="$READ"
+      # No manifest pin to compare against (an unbound engine): the first answer is all there is.
+      { [ -z "$WANT_LV" ] || [ "$READ" = "$WANT_LV" ]; } && { LV="$READ"; break; }
+    fi
+    sleep 5
   done
 fi
 ROWS="[{\"app\":\"$APP\",\"deployed_sha\":\"$HEAD_SHA\"$([ -n "$LV" ] && echo ",\"lib_version\":$LV")}]"
@@ -183,10 +220,21 @@ if [ -z "$LV" ]; then
   # Apps Script instance serves the old snapshot for a minute or two after a redeploy, so the poll
   # right after deploying can come back empty. An error that names the wrong cause costs somebody a
   # real investigation.
-  echo "! could not read this app's live GXCore version."
-  echo "  Tried cfg.${APP}EngineUrl then cfg.${APP}ExecUrl. Either neither key is set, or the route"
-  echo "  did not answer — most often a warm instance still serving the pre-deploy snapshot."
-  echo "  Recording the sha without it; run ./gxpins.sh --record in a minute or two."
+  if [ -n "$LV_SEEN" ]; then
+    # The app ANSWERED, just never with the version we pinned. Recording LV_SEEN here is precisely
+    # the bug this loop was rewritten for, so the version is deliberately left unrecorded: a gap you
+    # can see beats a number you cannot trust.
+    echo "! this app answered, but never with the version this repo pins."
+    echo "  pinned in appsscript.json: v${WANT_LV:-?}   last live answer: v$LV_SEEN"
+    echo "  Almost always a warm instance still serving the pre-deploy snapshot — it usually flips"
+    echo "  within a minute. The sha is recorded; the VERSION is not, on purpose."
+    echo "  Re-run ./gxpins.sh --record shortly, and check it reads v${WANT_LV:-?} before believing it."
+  else
+    echo "! could not read this app's live GXCore version."
+    echo "  Tried cfg.${APP}EngineUrl then cfg.${APP}ExecUrl. Either neither key is set, or the route"
+    echo "  did not answer — most often a warm instance still serving the pre-deploy snapshot."
+    echo "  Recording the sha without it; run ./gxpins.sh --record in a minute or two."
+  fi
 fi
 RESP="$(curl -sL --max-time 20 -G "$GXCORE" \
   --data-urlencode action=record_pins \
