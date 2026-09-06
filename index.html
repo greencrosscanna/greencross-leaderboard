@@ -3388,6 +3388,13 @@ body.kiosk-bg {
 }
 
 /* ── Card actions (right-side button group) ─────────────── */
+/* Per-store reload chips. Secondary to the "all screens" button above them — smaller, quieter,
+   and wrapping, so a seventh shop just flows onto the next line. */
+.kiosk-reload-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }
+.kiosk-reload-label { font-size:12px; color:var(--text-mute); margin-right:2px; }
+.kiosk-reload-chip { background:var(--bg); color:var(--text-dim); border:1px solid var(--border); border-radius:999px; font:inherit; font-size:12px; padding:5px 13px; cursor:pointer; }
+.kiosk-reload-chip:hover:not(:disabled) { color:var(--text); border-color:var(--green); }
+.kiosk-reload-chip:disabled { opacity:0.5; cursor:default; }
 .settings-card-actions {
   display: flex;
   flex-direction: column;
@@ -3833,6 +3840,45 @@ document.addEventListener('gx-topnav:action', function(e) {
 // Hard refresh — re-pull every day live from Dutchie and re-lock closed days
 // (retroactive-return case). Sequential to avoid overloading GAS. NEVER touches
 // frozen Incentive history. Clears client caches, then reloads.
+/* Reload the kiosk wall displays. `store` is a slug, or 'all'.
+ *
+ * This does NOT reload the page you are standing on — you are on Settings, the kiosks are elsewhere.
+ * So the only feedback available is what this says, which is why it reports the stores it actually
+ * reached rather than a bare "done": the whole point of the button is that you cannot see the screen
+ * you just fixed. */
+GC.reloadKiosks = function(btn, store) {
+  var status = document.getElementById('kioskReloadStatus');
+  var orig   = btn ? btn.innerHTML : '';
+  var label  = store === 'all' ? 'all screens' : ((GC.STORES[store] || {}).name || store);
+
+  if (btn) { btn.disabled = true; btn.innerHTML = 'Sending…'; }
+  if (status) { status.className = 'settings-save-status'; status.textContent = ''; }
+
+  var restore = function () { if (btn) { btn.disabled = false; btn.innerHTML = orig; } };
+
+  GC.api.gasCall('kioskrefresh', store === 'all' ? {} : { store: store })
+    .then(function (r) {
+      restore();
+      if (!r || r.ok === false) {
+        var why = (r && r.error) || 'the server refused the request';
+        if (status) { status.className = 'settings-save-status err'; status.textContent = '⚠️ Could not reload ' + label + ' — ' + why; }
+        if (GC.toast) GC.toast('Kiosk reload failed: ' + why, 'error');
+        return;
+      }
+      var reached = (r.caches_cleared || []).map(function (s) { return (GC.STORES[s] || {}).name || s; });
+      var msg = 'Sent to ' + (reached.length ? reached.join(', ') : label)
+              + ' — screens reload within about a minute.';
+      if (status) { status.className = 'settings-save-status ok'; status.textContent = '✓ ' + msg; }
+      if (GC.toast) GC.toast(msg, 'success');
+    })
+    .catch(function (err) {
+      restore();
+      var why = (err && err.message) || String(err);
+      if (status) { status.className = 'settings-save-status err'; status.textContent = '⚠️ Could not reach the server — ' + why; }
+      if (GC.toast) GC.toast('Kiosk reload failed: ' + why, 'error');
+    });
+};
+
 GC.hardRefresh = function(btn) {
   if (!GC.api || !GC.api.fetchDirectorAll) return;
   var orig = btn ? btn.innerHTML : '';
@@ -11088,6 +11134,44 @@ var settings = (function() {
       + '</div>';
   }
 
+  /* ── Kiosk screens ────────────────────────────────────────────────────────────────────────────
+   * Reload the wall displays from here, because the alternative is driving to the store or
+   * remembering a curl command — and nobody remembers the curl command.
+   *
+   * Its own card, next to Data rather than inside it: Data re-pulls numbers from Dutchie and is
+   * slow and rare; this reloads a SCREEN and is fast and occasional. Filing them together would put
+   * a one-minute full re-pull one button away from "the display looks stuck", which is how the
+   * wrong one gets pressed.
+   *
+   * Store list comes from GC.STORES, which the Command Center feeds — so a new shop appears here
+   * with no edit. Never hardcode stores. */
+  function renderKioskCard() {
+    var chips = GC.STORE_SLUGS.map(function (slug) {
+      var s = GC.STORES[slug] || {};
+      return '<button class="kiosk-reload-chip" data-store="' + e(slug) + '" '
+        + 'onclick="GC.reloadKiosks(this, \'' + e(slug) + '\')">' + e(s.name || slug) + '</button>';
+    }).join('');
+
+    return '<div class="settings-card">'
+      + '<div class="settings-card-head"><div>'
+      +   '<div class="settings-card-title">Kiosk screens</div>'
+      +   '<div class="settings-card-sub">Reloads the wall displays and clears their cached data, so '
+      +     'they come back with fresh numbers. Screens pick it up on their next check &mdash; about a '
+      +     'minute. A screen that is switched off or offline reloads when it comes back. '
+      +     '<strong>Nothing is recalculated and no data changes</strong> &mdash; this only refreshes what '
+      +     'is being displayed.</div>'
+      + '</div></div>'
+      + '<div class="settings-card-actions">'
+      +   '<button class="btn-secondary" id="settingsReloadKiosks" onclick="GC.reloadKiosks(this, \'all\')">'
+      +     '↻ Reload all kiosk screens</button>'
+      + '</div>'
+      + '<div class="kiosk-reload-row">'
+      +   '<span class="kiosk-reload-label">Or just one:</span>' + chips
+      + '</div>'
+      + '<div class="settings-save-status" id="kioskReloadStatus"></div>'
+      + '</div>';
+  }
+
   // ── Kiosk display ─────────────────────────────────────────
   // Currently one switch. It is its own card rather than a row inside Data because Data is about
   // re-pulling from Dutchie and this is about what the kiosk draws — and because the next display
@@ -11116,6 +11200,7 @@ var settings = (function() {
       + '<div class="settings-body">'
       +   renderGoalsSection(data)
       +   renderDisplayCard(data)
+      +   renderKioskCard()
       +   renderDataCard()
       + '</div>'
       + '</div>';
