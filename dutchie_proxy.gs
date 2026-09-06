@@ -719,6 +719,14 @@ function doGet(e) {
       return jsonOut(getAggTicker_(), params.callback);
     }
 
+    // Floor-operated refresh: anyone who can see this store's kiosk can drop its cached response.
+    // requireStore_ does the scoping (a store manager gets their own store only). See bustKioskCache_
+    // for why this is NOT gated as a write.
+    if (params.action === 'kioskbust') {
+      var _kbStore = requireStore_(auth, params.store);
+      return jsonOut(bustKioskCache_(_kbStore.slug), params.callback);
+    }
+
     // ── Store / Kiosk endpoints ────────────────────────────
     if (params.action === 'storetoday') {
       const store    = requireStore_(auth, params.store);
@@ -1388,6 +1396,42 @@ function kioskRefreshMap_() {
 function kioskRefreshToken_(slug) {
   var m = kioskRefreshMap_();
   return String(m.all || '0') + ':' + String(m[String(slug || '')] || '0');
+}
+
+/* Clear ONE store's 55-second response caches, on behalf of somebody standing in front of the
+ * screen. This is the floor's version of the remote reload above, and it is deliberately a
+ * different, weaker thing:
+ *
+ *   kioskrefresh  reloads every screen showing a store, and is owner/director only.
+ *   kioskbust     drops one store's cached response so the NEXT read is fresh. It reloads nobody
+ *                 else's screen and changes no data.
+ *
+ * WHY IT IS NOT IN GX_WRITE_ACTIONS. It writes nothing — it forgets. Listing it there would make it
+ * fail closed when GX Core is unreachable, and "GX Core is unreachable" is one of the situations
+ * where a budtender is standing at a wrong-looking board wanting to refresh it. A gate that fails
+ * exactly when the tool is needed is not a gate, it is a trap.
+ *
+ * requireStore_ still applies at the route, so a store manager can only bust their own store.
+ *
+ * The cooldown is not about abuse, it is about a WEDGED KIOSK. If a screen ever ends up reloading in
+ * a loop, without this each cycle would drop the cache and force a fresh Dutchie fetch — turning one
+ * broken screen into sustained load on the API that is very possibly the thing already failing. */
+function bustKioskCache_(slug) {
+  var cache = CacheService.getScriptCache();
+  var guard = 'kioskbust:' + slug;
+  if (cache.get(guard)) {
+    return { ok: true, store: slug, cleared: false,
+             note: 'Already refreshed a moment ago — reloading against that.' };
+  }
+  cache.put(guard, '1', 10);   // one real bust per store per 10s
+  try {
+    cache.removeAll(['storeToday:' + slug, 'storeLB:' + slug]);
+  } catch (e) {
+    Logger.log('[kioskbust] ' + slug + ' failed: ' + e);
+    return { ok: false, error: 'Could not clear the cache: ' + (e && e.message || e) };
+  }
+  Logger.log('[kioskbust] ' + slug + ' cleared by request');
+  return { ok: true, store: slug, cleared: true, note: 'Next read comes fresh from Dutchie.' };
 }
 
 function bumpKioskRefresh_(slug) {

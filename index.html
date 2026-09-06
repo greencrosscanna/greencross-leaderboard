@@ -502,7 +502,15 @@ html, body {
   to { stroke-dashoffset: 0; }
 }
 
-.stale-banner { position:fixed; top:0; left:0; right:0; z-index:500; background:rgba(220,150,0,0.92); color:#000; font-size:11px; font-weight:700; text-align:center; padding:4px 12px; letter-spacing:0.05em; backdrop-filter:blur(4px); }
+.stale-banner { position:fixed; top:0; left:0; right:0; z-index:500; background:rgba(220,150,0,0.92); color:#000; font-size:11px; font-weight:700; text-align:center; padding:4px 12px; letter-spacing:0.05em; backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; gap:12px; }
+/* Sits inside the amber banner, so it is dark-on-amber rather than themed — it has to read as a
+   control against that background in both light and dark. */
+.stale-refresh-btn { background:rgba(0,0,0,0.82); color:#fff; border:0; border-radius:4px; font:inherit; font-size:10px; letter-spacing:0.06em; padding:3px 10px; cursor:pointer; white-space:nowrap; }
+.stale-refresh-btn:hover:not(:disabled) { background:#000; }
+.stale-refresh-btn:disabled { opacity:0.55; cursor:default; }
+.unavail-refresh-btn { background:var(--green, #3ea55f); color:#fff; border:0; border-radius:6px; font:inherit; font-size:14px; font-weight:700; letter-spacing:0.04em; padding:11px 26px; cursor:pointer; }
+.unavail-refresh-btn:hover:not(:disabled) { filter:brightness(1.1); }
+.unavail-refresh-btn:disabled { opacity:0.55; cursor:default; }
 .ver-badge { font-size:10px; color:var(--text-mute); opacity:0.55; padding:1px 5px; background:transparent; border:1px solid var(--border); border-radius:3px; font-family:monospace; letter-spacing:0.03em; margin-left:4px; vertical-align:middle; }
 
 /* Bug report: the button, modal and 21 local .bug-* rules that used to live here are now
@@ -4994,7 +5002,7 @@ GC.api = (function() {
     // Command Center holds rather than a constant baked in here.
     'apps',
     'aggticker', 'directoralerts', 'directorall', 'directorstaff', 'directorstores',
-    'directorsummary', 'discountsettings', 'getavatardata', 'getsettings', 'gxstores',
+    'directorsummary', 'discountsettings', 'getavatardata', 'getsettings', 'gxstores', 'kioskbust',
     'historicaldir', 'incentive', 'leaderboardstaff', 'login', 'renew', 'standings',
     'storebadges', 'storeleaderboard', 'storetoday',
     // version_history feeds the What's New / changelog modal. It is a READ, and it was missing:
@@ -8153,6 +8161,10 @@ function kioskDataError_(rawData) {
   return null;
 }
 
+// Inline onclick target for the "Refresh now" buttons. On GC.views because the markup that calls it
+// is generated inside the kiosk module and an onclick can only reach globals.
+GC.views.forceKioskRefresh = function() { kiosk.forceRefresh(kioskRouteSlug_()); };
+
 GC.views.renderKiosk = function(slug) {
   var app = document.getElementById('app');
   if (!app) return;
@@ -8290,7 +8302,29 @@ var kiosk = (function() {
       el.className = 'stale-banner';
       document.body.insertBefore(el, document.body.firstChild);
     }
-    el.textContent = '⚠ ' + msg;
+    // The button lives HERE rather than permanently in the header on purpose: it appears exactly
+    // when it is useful and is invisible the rest of the time, so it is obvious to someone looking
+    // at a wrong board and not a thing to idly poke at on a screen the public can reach.
+    el.innerHTML = '<span>⚠ ' + e(msg) + '</span>'
+      + '<button class="stale-refresh-btn" onclick="GC.views.forceKioskRefresh()">Refresh now</button>';
+  }
+
+  /* Somebody is standing at the screen and wants it fixed now. Two steps, in this order:
+   *   1. ask the server to forget this store's 55-second cached response, so the reload cannot be
+   *      served the very payload that looks wrong;
+   *   2. hard-reload the page.
+   * Step 2 happens whether or not step 1 succeeds — if the backend is unreachable, a plain reload is
+   * still strictly better than the button doing nothing, and "nothing visibly happened" is the worst
+   * possible response to someone who already thinks the screen is broken. */
+  function forceRefresh(slug) {
+    var btn = document.querySelector('.stale-refresh-btn, .unavail-refresh-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Refreshing…'; }
+    var done = function () { window.location.reload(); };
+    // Belt and braces: reload even if the call hangs past the JSONP timeout.
+    var failsafe = setTimeout(done, 8000);
+    GC.api.gasCall('kioskbust', { store: slug || _slug || kioskRouteSlug_() })
+      .then(function () { clearTimeout(failsafe); done(); })
+      .catch(function () { clearTimeout(failsafe); done(); });
   }
 
   function _clearStaleBanner() {
@@ -8328,7 +8362,9 @@ var kiosk = (function() {
       + '<div style="font-size:14px;max-width:520px;margin:0 auto 6px">'
       + 'This screen is not showing today&rsquo;s sales. It is not a $0 day &mdash; the numbers '
       + 'could not be loaded.</div>'
-      + '<div style="font-size:12px;opacity:.65">Retrying every 30 seconds · ' + e(String(why || '')) + '</div>'
+      + '<div style="font-size:12px;opacity:.65;margin-bottom:20px">Retrying every 30 seconds · '
+      + e(String(why || '')) + '</div>'
+      + '<button class="unavail-refresh-btn" onclick="GC.views.forceKioskRefresh()">Refresh now</button>'
       + '</div>';
     _painted = null;
 
@@ -10754,6 +10790,7 @@ var kiosk = (function() {
     renderLoading:   renderLoading,
     showUnavailable: showUnavailable,
     markStale:       markStale,
+    forceRefresh:    forceRefresh,
     init:            init,
     normalize:       normalizeKioskData_,
     refreshHourly:   refreshHourly,
