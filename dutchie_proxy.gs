@@ -530,6 +530,18 @@ function doGet(e) {
       return jsonOut(diagHourFreeze_(params.store || ''), params.callback);
     }
 
+    // Remote kiosk reload. Secret-gated and placed ABOVE requireAuth_ on purpose: the reason to
+    // reach for this is usually that a kiosk is showing something wrong, and needing to be signed
+    // in on the right machine first is exactly the friction that makes a remote tool useless at the
+    // moment it is wanted. There is a session-gated twin below for the same action, so a signed-in
+    // owner/director can fire it from the app without a secret. ?store=river (or omit for all).
+    if (params.action === 'kioskrefresh' && params.secret) {
+      var _krSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+      if (!_krSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
+      if (params.secret !== _krSecret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
+      return jsonOut(bumpKioskRefresh_(params.store), params.callback);
+    }
+
     // ── Read-only goals for Sales Dashboard (API key auth) ─
     if (params.action === 'goals') {
       var storedKey = PropertiesService.getScriptProperties().getProperty('GC_API_READONLY_KEY');
@@ -572,6 +584,13 @@ function doGet(e) {
     if (params.action === 'listusers') {
       requireRole_(auth, ['owner','director']);
       return jsonOut(listUsers_(), params.callback);
+    }
+
+    // Session-gated twin of the secret route above — so a signed-in owner/director can reload the
+    // wall screens from the app on their phone, standing anywhere.
+    if (params.action === 'kioskrefresh') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(bumpKioskRefresh_(params.store), params.callback);
     }
 
     // ── EOD guardrail (sales-cache tripwire) ───────────────
@@ -1339,6 +1358,69 @@ function installWarmupTrigger() {
     .create();
 
   Logger.log('[warmup] Trigger installed — fires daily at UTC 15:xx (~7:50am PT)');
+}
+
+// ── Remote kiosk refresh ─────────────────────────────────────────────────────
+/* A kiosk is a screen bolted to a wall in another building. When it needs a reload — after a
+ * deploy, after a wedged view, after a session that has to be re-established — there is nobody
+ * standing next to it, and asking a budtender mid-shift to find a keyboard is not a plan.
+ *
+ * So the reload RIDES THE POLL THE KIOSK ALREADY MAKES. Every storetoday response carries a
+ * refreshToken; the kiosk remembers the one it booted with and reloads itself when the value
+ * changes. That choice is deliberate over a push channel: there is no connection to keep alive, no
+ * new failure mode on the kiosk's critical path, and a screen that was asleep, offline, or mid-
+ * outage picks the change up on its next successful poll instead of having missed the only
+ * announcement. Latency is one poll — about a minute — which is the right trade for a wall display.
+ *
+ * Scoped per store with 'all' as a wildcard, because "reload River" and "reload everything, I just
+ * shipped" are different asks and the second should not cost six calls.
+ */
+var GC_KIOSK_REFRESH_KEY = 'GC_KIOSK_REFRESH';
+
+function kioskRefreshMap_() {
+  try { return JSON.parse(getProps_().getProperty(GC_KIOSK_REFRESH_KEY) || '{}'); }
+  catch (e) { return {}; }
+}
+
+/** The token one store's kiosk compares against: the all-stores stamp AND its own, so bumping
+ *  either reloads it. Per-store rather than global so a slideshow rotating six stores doesn't read
+ *  each new store's differing token as "someone asked for a refresh" and reload on every slide. */
+function kioskRefreshToken_(slug) {
+  var m = kioskRefreshMap_();
+  return String(m.all || '0') + ':' + String(m[String(slug || '')] || '0');
+}
+
+function bumpKioskRefresh_(slug) {
+  var target = String(slug || 'all').trim().toLowerCase() || 'all';
+  if (target !== 'all' && !STORES.some(function (s) { return s.slug === target; })) {
+    return { ok: false, error: 'unknown store: ' + target + ' — use a slug (' +
+             STORES.map(function (s) { return s.slug; }).join(', ') + ') or "all"' };
+  }
+
+  var m = kioskRefreshMap_();
+  m[target] = Date.now();
+  getProps_().setProperty(GC_KIOSK_REFRESH_KEY, JSON.stringify(m));
+
+  // Drop the 55-second response caches too. Without this the reloaded page can be served the same
+  // cached payload it was already showing, which makes a refresh that "worked" look like it did
+  // nothing — the exact failure that sends someone driving to the store anyway.
+  var busted = [];
+  try {
+    var cache = CacheService.getScriptCache();
+    var slugs = target === 'all' ? STORES.map(function (s) { return s.slug; }) : [target];
+    busted = slugs.slice();
+    cache.removeAll(slugs.map(function (s) { return 'storeToday:' + s; })
+             .concat(slugs.map(function (s) { return 'storeLB:' + s; })));
+  } catch (e) { Logger.log('[kioskrefresh] cache bust failed: ' + e); }
+
+  return {
+    ok: true,
+    target: target,
+    caches_cleared: busted,
+    token: target === 'all' ? null : kioskRefreshToken_(target),
+    note: 'Kiosks reload on their next poll — within about a minute. A screen that is offline ' +
+          'right now picks it up when it reconnects.',
+  };
 }
 
 // ── Bug reporter ─────────────────────────────────────────────

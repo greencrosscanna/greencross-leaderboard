@@ -105,7 +105,39 @@ function dutchieFetch_(storeKey, path, queryParams) {
  * @return {Object} { key: rawTxns[] } — UNFILTERED, UNSORTED raw transactions.
  *                  Callers apply the Retail filter (and any sort) themselves.
  */
+/* ─── A FAILED FETCH MUST NOT LOOK LIKE AN EMPTY ONE ─────────────────────────────────────────────
+ *
+ * This function used to answer a Dutchie non-200, or an unparseable body, with byKey[key] = [] —
+ * the exact same value a store with no sales yet returns. Every caller then aggregated zero, and
+ * the kiosk drew a complete, confident board reading $0. No error, nothing in the execution log
+ * (doGet SUCCEEDED — it returned a well-formed payload of zeros), nothing in api_health.
+ *
+ * That is what River Rd showed from 2pm on 2026-09-05 until close, while Dutchie's own closing
+ * report for the day read $7,251.27 across 167 transactions. The morning survived on screen only
+ * because hourFreezeDisplay_ had already written those hours to the snapshot; every hour after the
+ * failure was served live, so every hour after the failure read zero. Sky looked at 9pm and saw
+ * real bars up to 2pm and nothing after — which is the signature of exactly this, and the reason
+ * it could not be reproduced from a desk the next morning.
+ *
+ * The fix is not to guess a value. It is to make the two cases DISTINGUISHABLE, so a caller that
+ * cannot honestly report a number says so instead of reporting zero. Execution-scoped, reset per
+ * call, because that is the only lifetime a fetch result is meaningful over.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────── */
+var _TXN_FETCH_FAILS_ = [];
+
+/** [{ key, why }] for the keys that FAILED in the most recent fetchTxnPagesByKey_ call. */
+function txnFetchFailures_() { return _TXN_FETCH_FAILS_; }
+
+/** Message prefix that marks "Dutchie did not answer" as distinct from any other throw, so the
+ *  kiosk can tell a data outage from a bug and say the right thing to the floor. */
+var DUTCHIE_UNAVAILABLE_ = 'DUTCHIE_UNAVAILABLE';
+
+function isDutchieUnavailable_(e) {
+  return String((e && e.message) || e || '').indexOf(DUTCHIE_UNAVAILABLE_) === 0;
+}
+
 function fetchTxnPagesByKey_(reqs) {
+  _TXN_FETCH_FAILS_ = [];
   const httpReqs = reqs.map(function(r) {
     const qs = [
       'FromDateUTC=' + encodeURIComponent(r.fromUTC),
@@ -138,11 +170,16 @@ function fetchTxnPagesByKey_(reqs) {
       byKey[r.key] = [];
       if (resp.getResponseCode() !== 200) {
         Logger.log('Dutchie ' + resp.getResponseCode() + ' for ' + r.key);
+        _TXN_FETCH_FAILS_.push({ key: r.key, why: 'Dutchie HTTP ' + resp.getResponseCode() });
         continue;
       }
       var data;
       try { data = JSON.parse(resp.getContentText()); }
-      catch(e) { Logger.log('Parse error for ' + r.key + ': ' + e.message); continue; }
+      catch(e) {
+        Logger.log('Parse error for ' + r.key + ': ' + e.message);
+        _TXN_FETCH_FAILS_.push({ key: r.key, why: 'unreadable Dutchie response' });
+        continue;
+      }
       var page = Array.isArray(data) ? data : (data.transactions || data.data || []);
       byKey[r.key] = page;
       if (page.length === DUTCHIE_TAKE) {
@@ -182,6 +219,14 @@ function fetchStoreTransactions_(storeSlug, fromUTC, toUTC) {
   const byKey = fetchTxnPagesByKey_([
     { key: storeSlug, storeKey: storeKey, fromUTC: fromUTC, toUTC: toUTC }
   ]);
+  // THROW rather than return []. This is the single-store path — the kiosk, the leaderboard, the
+  // EOD snapshot — so there is exactly one request in flight and its failure is unambiguous. An
+  // empty array here would be indistinguishable from a store that has genuinely sold nothing yet,
+  // and every caller downstream would publish that zero as fact. See the note on _TXN_FETCH_FAILS_.
+  // A store with no sales still returns HTTP 200 and an empty list, so this never fires on a quiet
+  // morning — only on an answer Dutchie did not actually give us.
+  const fail = _TXN_FETCH_FAILS_[0];
+  if (fail) throw new Error(DUTCHIE_UNAVAILABLE_ + ': ' + storeSlug + ' — ' + fail.why);
   return filterRetailSorted_(byKey[storeSlug]);
 }
 
@@ -904,11 +949,19 @@ function byStoreAggCached_(range, hardRefresh) {
       return { key: String(i), storeKey: getDutchieStoreKey_(r.slug), fromUTC: r.fromUTC, toUTC: r.toUTC };
     });
     const byKey = fetchTxnPagesByKey_(reqs);
+    const failedKeys = {};
+    txnFetchFailures_().forEach(function(f) { failedKeys[f.key] = f.why; });
     liveReqs.forEach(function(r, i) {
+      const failed = failedKeys[String(i)];
       const txns = (byKey[String(i)] || []).filter(isRetailSale_);
       const agg  = aggregateTransactions_(txns);
       perStore[r.slug].push(agg);
-      if (r.settled) { try { cache.put(r.key, JSON.stringify(agg), 21600); } catch(e) {} }  // lock ~6h; trigger keeps warm
+      // NEVER LOCK IN A ZERO WE DID NOT MEASURE. This is a multi-store, multi-day batch, so one
+      // store's failure must not abort the other five — but caching its $0 for six hours would
+      // outlive the outage that caused it and keep answering long after Dutchie recovered. A day
+      // we failed to read is left uncached so the next pass re-reads it.
+      if (r.settled && !failed) { try { cache.put(r.key, JSON.stringify(agg), 21600); } catch(e) {} }  // lock ~6h; trigger keeps warm
+      else if (failed) Logger.log('[byStoreAggCached_] ' + r.slug + ' ' + failed + ' — $0 NOT cached');
     });
   }
 

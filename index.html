@@ -3602,7 +3602,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      slideshow bar at 9999, so nothing here contests it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.711';
+window.GC = window.GC || {}; GC.VERSION = 'v1.712';
 
 // ── GX Core web-app URL — ONE definition ──
 // This was previously a `var` inside loadChangelogFromGXCore(), i.e. function-scoped, while the
@@ -8132,6 +8132,27 @@ function kioskRouteSlug_() {
   return m ? m[1] : '';
 }
 
+/* ── A RESPONSE THAT FAILED IS NOT DATA ───────────────────────────────────────────────────────
+ *
+ * normalizeKioskData_ defaults every missing field to 0 / '' / [], which is right for a payload
+ * that is merely thin and catastrophic for one that is an error. Handed { ok:false }, it produces
+ * a complete, well-formed board reading $0 sold, 0%, no ticker — and the kiosk paints it with the
+ * same confidence as a real day. Nothing rejects, so the .catch never runs; nothing looks broken
+ * anywhere. River Rd ran like that from 2pm to close on 2026-09-05 in front of the whole floor.
+ *
+ * So: check before painting, and when the answer is bad, say so instead of inventing zeros. The
+ * one thing this must never do is show a number it was not given. ── */
+function kioskDataError_(rawData) {
+  if (!rawData) return 'No response from the server';
+  var t = rawData.today;
+  if (!t) return 'No response from the server';
+  if (t.ok === false) return t.error || 'The server refused the request';
+  // A payload with no revenue FIELD is not the same as one reporting $0 of revenue. The first is a
+  // shape we do not recognize; the second is a quiet morning and perfectly valid.
+  if (t.revenue === undefined && t.today === undefined) return 'Unrecognized response from the server';
+  return null;
+}
+
 GC.views.renderKiosk = function(slug) {
   var app = document.getElementById('app');
   if (!app) return;
@@ -8147,6 +8168,8 @@ GC.views.renderKiosk = function(slug) {
   GC.api.fetchKioskAll(slug)
     .then(function(rawData) {
       if (kioskRouteSlug_() !== slug) return;      // slideshow moved on — this paint is for a store we left
+      var bad = kioskDataError_(rawData);
+      if (bad) { kiosk.showUnavailable(slug, bad); return; }
       var data = kiosk.normalize(rawData);
       app.innerHTML = kiosk.render(data, slug);
       kiosk.init(data, slug);
@@ -8155,13 +8178,14 @@ GC.views.renderKiosk = function(slug) {
       // until the 60s poll. No-op when the first paint already had targets.
       GC.api.fetchStoreToday(slug).then(function(td) {
         if (kioskRouteSlug_() !== slug) return;
+        if (!td || td.ok === false) return;         // same rule: never repaint bars from an error
         kiosk.refreshHourly(td);
       }).catch(function() {});
     })
     .catch(function(err) {
       console.error('[kiosk] fetch failed:', err);
       if (kioskRouteSlug_() !== slug) return;      // do not paint one store's failure over another store
-      app.innerHTML = '<div style="padding:40px;color:var(--text-dim)">Failed to load store data.</div>';
+      kiosk.showUnavailable(slug, (err && err.message) || 'Could not reach the server');
     });
 };
 
@@ -8240,6 +8264,95 @@ var kiosk = (function() {
       + '<div style="font-size:13px;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">'
       + e(name) + ' · Loading…</div>'
       + '</div>';
+  }
+
+  // ══ DATA UNAVAILABLE ══════════════════════════════════════════════════════════════════════════
+  // The three functions below exist to enforce one rule: the kiosk shows numbers it was given, or
+  // it shows nothing and says why. It never shows a number it made up.
+  //
+  // There are two shapes of "nothing", and they want opposite treatment:
+  //   • nothing YET (the first load failed)  → a plain panel saying so, and keep retrying.
+  //   • nothing NEW (a poll failed mid-day)  → LEAVE THE BOARD ALONE and mark it stale. The last
+  //     real numbers, clearly labelled as of a time, beat both a blank screen and a fresh $0.
+  // The second is the one that bit us: the old code took a failed poll and wrote zeros over a
+  // perfectly good board, once a minute, for seven hours.
+
+  var _painted       = null;   // slug whose board is currently on screen, or null
+  var _retryTimer    = null;   // re-attempt of a failed first load
+  var _staleSince    = null;   // Date the data stopped updating, or null when healthy
+  var RETRY_MS       = 30000;
+
+  function _staleBanner(msg) {
+    var el = document.getElementById('kioskStaleBanner');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'kioskStaleBanner';
+      el.className = 'stale-banner';
+      document.body.insertBefore(el, document.body.firstChild);
+    }
+    el.textContent = '⚠ ' + msg;
+  }
+
+  function _clearStaleBanner() {
+    var el = document.getElementById('kioskStaleBanner');
+    if (el) el.remove();
+    _staleSince = null;
+  }
+
+  /** A poll failed. Keep every number that is already on screen; say how old it is. */
+  function markStale(why) {
+    if (!_staleSince) _staleSince = new Date();
+    var mins = Math.max(1, Math.round((Date.now() - _staleSince.getTime()) / 60000));
+    _staleBanner('Live data unavailable — showing numbers from ' + mins + ' min ago. Retrying…'
+      + (why ? ' (' + why + ')' : ''));
+  }
+
+  /** Nothing to show at all. Say so plainly and keep trying — a kiosk has nobody to press reload. */
+  function showUnavailable(slug, why) {
+    // A board already on screen is worth more than this message; downgrade to the stale banner.
+    if (_painted === slug && document.getElementById('kioskGoalSold')) {
+      markStale(why);
+      return;
+    }
+    var app = document.getElementById('app');
+    if (!app) return;
+    var name = slug ? slug.charAt(0).toUpperCase() + slug.slice(1) : 'Store';
+    app.innerHTML =
+      '<div style="padding:64px 40px;text-align:center;color:var(--text-dim)">'
+      + '<div style="font-size:13px;letter-spacing:1.5px;text-transform:uppercase;opacity:.7;margin-bottom:14px">'
+      + e(name) + '</div>'
+      + '<div style="font-size:26px;font-weight:700;color:var(--text);margin-bottom:10px">'
+      + 'Live data unavailable</div>'
+      // Deliberately NOT "$0" and deliberately not blank: the floor needs to know the screen is
+      // wrong, not wonder whether they have sold nothing all afternoon.
+      + '<div style="font-size:14px;max-width:520px;margin:0 auto 6px">'
+      + 'This screen is not showing today&rsquo;s sales. It is not a $0 day &mdash; the numbers '
+      + 'could not be loaded.</div>'
+      + '<div style="font-size:12px;opacity:.65">Retrying every 30 seconds · ' + e(String(why || '')) + '</div>'
+      + '</div>';
+    _painted = null;
+
+    clearTimeout(_retryTimer);
+    _retryTimer = setTimeout(function() {
+      if (kioskRouteSlug_() === slug) GC.views.renderKiosk(slug);
+    }, RETRY_MS);
+  }
+
+  // ── Remote reload ────────────────────────────────────────────────────────────────────────────
+  // Every storetoday response carries a refreshToken. Remember the one this store booted with; when
+  // the server hands back a different one, someone asked for a reload, so reload. Tracked PER SLUG
+  // because the token embeds the store — a slideshow rotating six stores would otherwise read each
+  // new store's different token as a refresh request and reload on every slide, forever.
+  GC._kioskRefreshTokens = GC._kioskRefreshTokens || {};
+
+  function checkRemoteRefresh(slug, token) {
+    if (!token || !slug) return;
+    var prev = GC._kioskRefreshTokens[slug];
+    GC._kioskRefreshTokens[slug] = token;
+    if (prev && prev !== token) {
+      console.log('[kiosk] remote refresh requested — reloading');
+      window.location.reload();
+    }
   }
 
   // ── Render: Header ─────────────────────────────────────
@@ -9432,6 +9545,12 @@ var kiosk = (function() {
     _slug      = slug;
     _storeName = (data.today.store && data.today.store.name) || slug || '';
 
+    // A real board is on screen — cancel any pending retry and drop the stale warning.
+    _painted = slug;
+    clearTimeout(_retryTimer); _retryTimer = null;
+    _clearStaleBanner();
+    checkRemoteRefresh(slug, data.today.refreshToken);
+
     // Full roster + badges — kept for leaderboard refresh re-renders
     _onShift       = data.today.onShift || [];
     _badges        = data.badges.badges || [];
@@ -9483,6 +9602,9 @@ var kiosk = (function() {
       clearTimeout(_bigSaleFade);  _bigSaleFade  = null;
       clearTimeout(_topSaleTimer); _topSaleTimer = null;
       clearTimeout(_rareDropTimer); _rareDropTimer = null;
+      clearTimeout(_retryTimer);   _retryTimer   = null;
+      _painted = null;
+      _clearStaleBanner();          // position:fixed on <body> — it outlives #app if not removed
       _confettiRunning = false;
       if (_confettiResize) { window.removeEventListener('resize', _confettiResize); _confettiResize = null; }
       if (_tickerResize)   { window.removeEventListener('resize', _tickerResize);   _tickerResize   = null; }
@@ -9789,6 +9911,10 @@ var kiosk = (function() {
         peakHour:      td.peakHour      || null,
         peakRevenue:   td.peakRevenue   || 0,
         latestTxnTs:   td.latestTxnTs   || '',
+        // Carried through so init() can arm the remote-reload watcher. Not defaulted to a value:
+        // an absent token must stay absent, or the first poll that DOES carry one reads as a change
+        // and reloads the kiosk for no reason.
+        refreshToken:  td.refreshToken,
         // GAS ticker: {who,qty,price,ts} → {time,firstName,desc,amount}
         ticker: (td.ticker || []).map(function(t) {
           if (t.firstName !== undefined) return t; // already normalized
@@ -10099,6 +10225,17 @@ var kiosk = (function() {
       GC.api.fetchStoreToday(slug, { sinceTs: _lastTxnTs })
         .then(function(resp) {
           if (kioskRouteSlug_() !== slug) return;   // in flight when we navigated away
+
+          /* THE SEVEN-HOUR BUG LIVED HERE. A JSONP error payload — an expired session, a Dutchie
+             outage, anything answering { ok:false } — RESOLVES, so the .catch below never fired.
+             The response then fell through the isUpdate branch into the full-response path, where
+             normalizeKioskData_ defaulted every field to 0 and updateNumbers animated the board
+             down to $0 sold / 0% / no time left. Once a minute. Silently. For as long as it lasted.
+             A poll that failed must change NOTHING except the freshness label. */
+          if (!resp || resp.ok === false) { markStale(resp && resp.error); return; }
+          _clearStaleBanner();
+          checkRemoteRefresh(slug, resp.refreshToken);
+
           if (resp.isUpdate) {
             // Delta response: inject new ticker items + update numbers
             if (resp.newTicker && resp.newTicker.length) {
@@ -10119,6 +10256,7 @@ var kiosk = (function() {
         })
         .catch(function(err) {
           console.warn('[kiosk] ticker poll failed:', err);
+          markStale('connection');
         });
     }, 60000);
 
@@ -10130,6 +10268,10 @@ var kiosk = (function() {
           // renderStaffGrid also reads _storeName / _badges / _eomKey, which the next store's mount
           // has already overwritten. Letting it through splices two stores into one grid.
           if (kioskRouteSlug_() !== slug) return;
+          // Same rule as the ticker poll: an error payload normalizes to an EMPTY staff array, and
+          // repainting from it wipes the whole leaderboard rather than leaving yesterday's standings
+          // up. Keep what is on screen.
+          if (!lb || lb.ok === false) { markStale(lb && lb.error); return; }
           var data = normalizeKioskData_({
             today:       {},
             leaderboard: lb,
@@ -10608,11 +10750,13 @@ var kiosk = (function() {
   }
 
   return {
-    render:        render,
-    renderLoading: renderLoading,
-    init:          init,
-    normalize:     normalizeKioskData_,
-    refreshHourly: refreshHourly,
+    render:          render,
+    renderLoading:   renderLoading,
+    showUnavailable: showUnavailable,
+    markStale:       markStale,
+    init:            init,
+    normalize:       normalizeKioskData_,
+    refreshHourly:   refreshHourly,
     _hideRareDrop: _hideRareDrop,
   };
 

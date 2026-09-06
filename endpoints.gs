@@ -1554,6 +1554,10 @@ function getStoreToday(store, params) {
       hourly:            hourly,
       topSale:           topSale,
       bigSales:          bigSales,
+      // Remote reload signal. It rides the DELTA response as well as the full one, and this is the
+      // copy that actually does the work: the full response is cached 55s, the delta poll is not,
+      // so a kiosk sitting on one store all day sees a bump within one poll. See bumpKioskRefresh_.
+      refreshToken:      kioskRefreshToken_(store.slug),
     };
   }
 
@@ -1595,6 +1599,7 @@ function getStoreToday(store, params) {
     bigSales:           bigSales,
     latestTxnTs:        latestTxnTs,
     lastUpdated:        new Date().toISOString(),
+    refreshToken:       kioskRefreshToken_(store.slug),
   };
 
   // Store in GAS cache for 55 seconds (full loads only — sinceTs polls bypass this)

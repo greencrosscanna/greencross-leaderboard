@@ -334,6 +334,10 @@ function adminSetUser(params) {
 var GX_WRITE_ACTIONS = [
   'applydiscounttargets', 'backfillsnapshots', 'bootstrapdirectors', 'bustdist', 'clearavatar',
   'clearmanualgoal', 'goalbackfill', 'goalbackfillbulk', 'goalpush', 'installeodguard',
+  // kioskrefresh writes a Script Property, so it belongs here. Note this gates only the SESSION
+  // route; the secret-gated twin sits above requireAuth_ and is unaffected — deliberately, since
+  // it is the escape hatch for the case where GX Core is the thing that is down.
+  'kioskrefresh',
   'recalculategoals', 'recalculateyoygoals', 'refreshdiscounts', 'refreshtargets', 'saveavatar',
   'savediscountsettings', 'saveincentive', 'savemanualgoals', 'savesettings', 'setplan',
   'setuptrigger', 'setuser', 'syncemployees',
