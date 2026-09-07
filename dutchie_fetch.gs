@@ -329,31 +329,41 @@ function gxCoreRoute_(action, params) {
  *
  * Keyed by hour:minute so a long execution that crosses a minute boundary re-prices rather than
  * serving a stale pace. Execution-scoped, like every other memo here — nothing persists. */
-var _CORE_FRACS_MEMO = null;
+/* RETIRED 2026-09-07 — coreFracs_ and its expected_frac round trip.
+ *
+ * It batched six round trips into one, which was the right fix at the time and is recorded above. What
+ * the telemetry then showed is that even one call per render was the largest single load on GX Core:
+ * 59.7% of all calls, 55% of execution. The call is gone rather than batched further, because the
+ * number it fetched is derivable from a curve this app already mirrors — see expectedSalesFrac_.
+ *
+ * The history above is kept deliberately. It explains why the mirror exists and why the kiosk reads it
+ * cache-only, and a future session that deletes primeHourlyDist_ as "unused warming" would take the
+ * pacing curve with it. */
 
-function coreFracs_(nowHour, nowMinute) {
-  var key = nowHour + ':' + nowMinute;
-  if (_CORE_FRACS_MEMO && _CORE_FRACS_MEMO.key === key) return _CORE_FRACS_MEMO.fracs;
-  var fracs = null;
-  try {
-    var r = gxCoreRoute_('expected_frac', { stores: 'all', hour: nowHour, minute: nowMinute });
-    if (r && r.fracs) fracs = r.fracs;
-  } catch (e) {
-    Logger.log('coreFracs_: GX Core batch failed, using local curves — ' + e);
-  }
-  _CORE_FRACS_MEMO = { key: key, fracs: fracs };   // null is cached too — see above
-  return fracs;
-}
-
+/* THE CURVE IS THE SHARED TRUTH; THE FRACTION IS JUST A CLOCK APPLIED TO IT — 2026-09-07.
+ *
+ * This used to ask GX Core for the FRACTION on every render, then fall back to the mirrored curve.
+ * Both layers computed the same number from the same curve with the same arithmetic — Core's
+ * expectedSalesFrac and the loop below are line-for-line identical, and both run 8..22 (GX_HOURLY_OPEN
+ * / STORE_OPEN_HOUR are both 8, CLOSE both 22). The only difference was a /exec round trip per render,
+ * on a kiosk that polls constantly.
+ *
+ * Measured on GX Core 2026-09-07 over 24h: expected_frac was 59.7% of ALL calls reaching Core and 55%
+ * of its total execution time — the largest single consumer of the shared brain, by a distance.
+ *
+ * The mirror it now reads is not a degraded copy. primeHourlyDist_ pulls the CANONICAL shape from
+ * Core (batched, missing stores only) and refreshDirectorCache runs it every 5 minutes, so the local
+ * cache holds Core's own curve within minutes of midnight and stays warm all day. One shared source of
+ * truth is preserved exactly — we fetch the INPUT once a day instead of the OUTPUT once a minute.
+ *
+ * THE COLD WINDOW IS OUTSIDE TRADING HOURS. The cache key carries the date, so it turns over at
+ * midnight and is re-warmed by the next 5-minute trigger. Stores open at 08:00. Nothing staff-facing
+ * reads a cold curve.
+ *
+ * Layer 3 — the linear dayFrac — is unchanged and still catches a genuinely missing curve. */
 function expectedSalesFrac_(store, nowHour, nowMinute, dayFrac) {
-  // Primary: GX Core shared pacing engine (cache-only, linear fallback when cold — verified to match our
-  // local values to the decimal). One source of truth across Leaderboard + Sales.
-  var _f = coreFracs_(nowHour, nowMinute);
-  if (_f) {
-    const f = _f[coreStoreId_(store)];
-    if (typeof f === 'number' && isFinite(f) && f > 0) return f;
-  }
-  // Local fallback (cache-only; reads the Core-mirrored local cache): linear dayFrac when cold.
+  // The Core-mirrored curve (cache-only, by design: a fetch on the kiosk render path is what drained
+  // the shared urlfetch quota on 2026-09-02). Linear dayFrac when it is genuinely cold.
   const dist = getHourlyDistCached_(store);
   if (!dist) return dayFrac;
   let ef = 0;
@@ -401,8 +411,9 @@ function pruneHourlyDistCache_(cache, todayStr) {
  * (getHourlyShape — ported verbatim from this file, values verified identical). Falls back to the
  * local Dutchie compute below if Core is unavailable. Consolidates the shape source across apps.
  */
-/* All curves in one call, memoized per execution — including the failure, for the same reason
- * coreFracs_ above does it. gxCoreRoute_ retries three times with sleeps, so a Core outage used to
+/* All curves in one call, memoized per execution — including the failure. Since expected_frac was
+ * retired this is the ONLY GX Core call on the pacing path, and it runs once a day rather than once a
+ * render. gxCoreRoute_ retries three times with sleeps, so a Core outage used to
  * cost every store its own three attempts of dead waiting on a single render.
  * `stores=all` rather than a per-store ask: this is called in loops, and the second store through
  * would otherwise pay a second round trip for a payload the first one could have carried. */
@@ -1093,28 +1104,20 @@ function diagPace_() {
   const elapsed = Math.max(0, Math.min(nowHour + nowMinute / 60 - STORE_OPEN_HOUR, STORE_HOURS));
   const dayFrac = elapsed / STORE_HOURS;
 
-  /* "Available" used to mean typeof GXCore.expectedSalesFrac === 'function' — which was TRUE, and
-     told you nothing: the function exists, it simply cannot run from this project. That is why this
-     diagnostic reported a healthy Core layer while every kiosk read silently used the local curve.
-     Availability is now the deploy secret, which is what the route actually needs. */
+  /* TWO LAYERS NOW, NOT THREE — the per-render expected_frac call was retired 2026-09-07.
+     What used to be "Layer 1, GX Core" and "Layer 2, the local curve" were never two answers: both
+     applied the same arithmetic to the same curve, one of them over a round trip. What matters to a
+     reader of this diagnostic is unchanged and is the only question it was ever asked — IS THE PACE
+     WEIGHTED, OR IS IT THE LINEAR RAMP? So it still reports that, and now also reports whether the
+     curve it used is Core's canonical one or a locally computed fallback, which is the distinction
+     that actually remains.
+     Availability is still read from the deploy secret rather than from a function existing: the old
+     `typeof GXCore.expectedSalesFrac === 'function'` was TRUE while every call threw, and reported a
+     healthy Core layer for months. */
   const coreAvailable = !!PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
 
   const rows = STORES.map(function(store) {
-    // Layer 1 — GX Core shared engine.
-    let coreFrac = null, coreErr = '';
-    if (coreAvailable) {
-      // Reads the SAME batch expectedSalesFrac_ uses, so this row reports what the kiosk actually
-      // got. Asking separately here would both re-introduce the per-store round trip this change
-      // removes and let the diagnostic disagree with the thing it is diagnosing.
-      try {
-        const all = coreFracs_(nowHour, nowMinute);
-        const f = all && all[coreStoreId_(store)];
-        if (typeof f === 'number' && isFinite(f) && f > 0) coreFrac = f;
-        else if (!all) coreErr = 'GX Core batch unavailable';
-      } catch (e) { coreErr = String(e.message || e); }
-    }
-
-    // Layer 2 — the local mirrored curve (cache-only, same reader the kiosk uses).
+    // The curve the kiosk actually reads — cache-only, same reader, no fetch from a diagnostic.
     const dist = getHourlyDistCached_(store);
     let localFrac = null;
     if (dist) {
@@ -1125,11 +1128,12 @@ function diagPace_() {
       }
       localFrac = ef > 0 ? ef : null;
     }
+    const coreFrac = null, coreErr = coreAvailable ? '' : 'GX_DEPLOY_SECRET unset — curves cannot be mirrored';
 
     // What the kiosk actually gets, and therefore which layer answered.
     const effective = expectedSalesFrac_(store, nowHour, nowMinute, dayFrac);
-    const source = (coreFrac !== null && Math.abs(effective - coreFrac) < 1e-9) ? 'gxcore'
-                 : (localFrac !== null && Math.abs(effective - localFrac) < 1e-9) ? 'local-curve'
+    const source = (localFrac !== null && Math.abs(effective - localFrac) < 1e-9)
+                 ? (dist ? 'mirrored-curve' : 'local-curve')
                  : 'LINEAR-FALLBACK';
 
     const dailyGoal = getDailyGoal_(store.slug);
