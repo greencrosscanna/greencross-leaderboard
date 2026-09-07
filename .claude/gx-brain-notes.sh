@@ -1,8 +1,18 @@
 #!/bin/sh
 # ─── SHARED SessionStart hook (source of truth) ──────────────────────────────────────────────────
-# Surface pending brain-notes addressed to THIS app from GX Core's central inbox (brain_notes). Cross-app
-# handoffs AND bugs — which now ride the notes rail (gxIngestBug emits a 🐞 note to the owning chat) — reach
-# the acting chat here, whichever chat wrote them. Fails silent (no secret / offline).
+# Surface what needs THIS app: pending brain-notes from GX Core's central inbox (brain_notes) for
+# cross-app handoffs, and this app's OPEN BUGS read straight from the bug board (bug_reports).
+# Fails silent (no secret / offline).
+#
+# BUGS ARE FETCHED, NOT FORWARDED (decided 2026-09-06). Filing a bug used to also emit a 🐞 note to the
+# owning chat, because this hook read notes and nothing else — so a bug that did not become a note
+# reached nobody. That made one problem carry two records with two lifecycles: the display_name bug on
+# 2026-09-06 had to be parked as a note AND left open as a bug, and closing one said nothing about the
+# other. The doorbell was doing the filing cabinet's job. Now the board is the single record and this
+# hook rings its own doorbell by asking for it.
+#
+# ORDER MATTERS IF THIS IS EVER UNDONE: this half — reading bugs directly — has to be live in every
+# spoke BEFORE Core stops emitting the notes, or bugs go silent in the gap.
 #
 # Every spoke uses THIS script; the ONLY per-repo edit is the APP= line. Copy it to
 # <repo>/.claude/gx-brain-notes.sh and set APP to the app's GX key. To change the hook, edit it HERE and
@@ -33,12 +43,19 @@ gx_fetch() {
 # REQUIRES GX Core to have shipped `open` (getNotes, 2026-08-25). Against an older Core, `open` matches
 # no note and returns [] with no error, and this hook would print "nothing needs you" over a full inbox.
 # That is why this file ships only AFTER the Core deploy, never alongside it.
-gx_fetch notes open | python3 -c '
+# Both boards in one banner. A failed fetch becomes null rather than empty, so the renderer can tell
+# "asked, nothing there" from "could not ask" instead of printing an all-clear over an unread inbox.
+_NOTES=$(gx_fetch notes open)
+_BUGS=$(gx_fetch bugs '')
+printf '{"notes_doc":%s,"bugs_doc":%s}' "${_NOTES:-null}" "${_BUGS:-null}" | python3 -c '
 import sys, json
 try: d = json.load(sys.stdin)
 except Exception: sys.exit(0)
-notes = d.get("notes") or []
-if not notes: sys.exit(0)
+nd = d.get("notes_doc") or {}
+bd = d.get("bugs_doc") or {}
+notes = nd.get("notes") or []
+bugs = bd.get("bugs") or []
+if not notes and not bugs: sys.exit(0)
 # ASKS FIRST, IN FULL. FYIs collapse to a list of subjects.
 # The board grew faster than it drained because most notes were acknowledgments — they still had to be
 # read and resolved while asking for nothing. A banner that prints a 2,500-character "done" note at the
@@ -65,7 +82,7 @@ blocked = [n for n in notes if str(n.get("status", "")).strip().lower() == "bloc
 rest = [n for n in notes if n not in blocked]
 asks = [n for n in rest if not is_fyi(n)]
 fyis = [n for n in rest if is_fyi(n)]
-app = d.get("app", "this app")
+app = nd.get("app") or bd.get("app") or "this app"
 if asks:
     print("\U0001F4CB Brain notes — %d NEEDING YOU for %s%s:" % (
         len(asks), app, (" (+%d done, below)" % len(fyis)) if fyis else ""))
@@ -77,6 +94,8 @@ if asks:
         if body: print("      " + body.replace("\n", "\n      "))
 elif blocked:
     print("\U0001F4CB Brain notes — nothing NEW for %s (%d blocked, below)." % (app, len(blocked)))
+elif bugs:
+    print("\U0001F4CB Brain notes — nothing new for %s; open bugs below." % app)
 else:
     print("\U0001F4CB Brain notes — nothing needs you for %s." % app)
 if blocked:
@@ -94,6 +113,16 @@ if fyis:
     print("  %d marked done (\u2705) — skim or ignore; they auto-close after 7 days:" % len(fyis))
     for n in fyis:
         print("      %s  (from %s)  [%s]" % (n.get("title", "").lstrip("\u2705 ").strip(), n.get("from_app") or "?", n.get("id", "")))
-if asks: print("  \u2192 run /gxbrain to act on these; resolve_note when done.")
+if bugs:
+    # SEVERITY AND SUBJECT, id last — same rule as the notes above. The bug board is the record, so
+    # this is a pointer to it, not a copy of it: no body, because the full report is one call away and
+    # a banner that reprints it every session is how people learn to scroll past the banner.
+    print("  \U0001F41E %d OPEN BUG%s for %s \u2014 from the bug board, not the notes rail:" % (
+        len(bugs), "" if len(bugs) == 1 else "S", app))
+    for b in bugs:
+        print("      sev %s \u00b7 %s  (%s)  [%s]" % (
+            b.get("severity") or "normal", b.get("title", ""), b.get("status") or "new", b.get("id", "")))
+    print("      \u2192 bug_update id=\u2026 status=resolved when it is actually fixed.")
+if asks or bugs: print("  \u2192 run /gxbrain to act on these; resolve_note / bug_update when done.")
 ' 2>/dev/null
 exit 0
