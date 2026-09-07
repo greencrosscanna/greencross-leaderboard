@@ -86,3 +86,37 @@ on the kiosk throwing.
 **What to build next — `/gxwhatsnext`:** run `/gxwhatsnext` in this chat to pull this app's next prioritized work — the Command Center's dependency-ordered build sequence, filtered to this app — so you can build here without switching to the CC. It reads the app key above automatically.
 
 **Close the loop when you're done:** When a dispatched or `/gxwhatsnext`-started task's goals look met — the moment you'd naturally say "that should do it" — proactively tell Sky and **offer to ship/close it out; don't wait to be asked.** Shipping (spoke apps: open/return the PR → `dev_update … status=in_review`; on merge → `dev_ship`; `core-admin` deploys directly → `dev_ship`) auto-completes the Asana to-do and clears it from the Command Center. Find the job via `dev_queue` (filtered to this app) when you need its id for the `curl` — but **refer to it by its `title`, never its id**. `job_mtg9vyxs_ewd9` means nothing to Sky; every job carries the to-do text in the same response the id came from, so say that instead, summarized if it's long ("the employee email column"). Same for `bug_…` and note ids. **Then re-list what's open, numbered `[1] [2] [3]…`, instead of proposing a next task** — re-fetch `action=whats_next` (the board moved while you worked) and let Sky pick by number rather than from memory.
+
+
+## The HUB is core-admin's — send a note, don't edit (rule from Sky, 2026-09-02 · applied here 2026-09-06)
+
+**Never edit `greencross-command-center` or `greencross-gx-theme` from this chat.** Both belong to
+core-admin. It is here because it was broken, not because it was theorized.
+
+On 2026-09-02 a spoke session made a small, correct, tested fix to GX Core and put it on a branch for
+Sky to merge, because Core library cuts are PR-gated. **Another Claude session had the same repo open
+at the same time.** These repos are Dropbox-synced, so the two sessions shared one working tree and
+one HEAD: the branch was switched out from under the first session, its commit landed on `main`
+instead, and the other session pushed `main` and shipped it. The change went out as library v284 with
+no PR and no review. The code was fine — that is the point. Nothing failed, nothing warned, and the
+gate on the highest-stakes repo in the suite simply was not there that time.
+
+Two sessions cannot share a git checkout. Neither can see the other, `git checkout -b` is not atomic
+against a second process, and the loser finds out afterwards by reading the log.
+
+**So from Leaderboard: `add_note` to `core-admin` with what you need and why, and stop.** Requests are welcome
+and quick, and the hub session holds the repo alone while it works.
+
+**Where the line is, because over-applying this is its own failure:**
+
+- **Reading the hub is fine and often necessary** — `gx_core.gs` is the source of truth for every
+  route Leaderboard calls, and guessing a payload shape instead of reading it is how this suite invented a
+  `spiff_payouts` tab that never existed. Read freely; run `./gxpins.sh`; diff against it.
+- **Calling GX Core's HTTP routes is not editing it.** `deploy.sh`, `gxengine.sh`, `set_config`,
+  `bug_update`, `resolve_note`, `add_note` and the rest are the documented interface, secret-gated and
+  designed for exactly this. Changing a *setting* through `set_config` is a config change Leaderboard owns;
+  changing *code* is not.
+- **Do not restyle a shared component from inside Leaderboard either.** A local rule that beats `.gx-btn-green`
+  wins here and silently diverges from the other five — that is how the suite ended up with six
+  different login screens. The test is *"should all six get this?"*
+- **Leaderboard's own engine and repo are still yours.** `clasp push` / `./deploy.sh` here touch only this app.
