@@ -126,6 +126,19 @@ else
   echo "  ✓ no credential literals in tracked files"
 fi
 
+# AMERICAN ENGLISH, on the lines this push ADDS. Sky's standing rule, and it was broken on 2026-09-07
+# by a session that had the rule loaded in front of it the whole time — so it gets a gate like every
+# other property here that has to stay true. Added lines only: existing text is a NAME as often as it
+# is prose, and renaming names for a spelling breaks things. See gx-usenglish.sh for the word list and
+# why it is deliberately short.
+if [ -x ./gx-usenglish.sh ]; then
+  if ./gx-usenglish.sh; then
+    echo "  ✓ American English on added lines"
+  else
+    FAIL=1
+  fi
+fi
+
 # Cache-buster: if the app JS changed but ?v=NN did not, staff keep the cached old file.
 # Same MAJOR.MINOR-aware pattern as deploy.sh — keep the two in step. Not a live bug here (only the
 # filename is used, via ${JS%%\?*}, so a truncated version was never read), but two copies of one
