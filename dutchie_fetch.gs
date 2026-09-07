@@ -756,7 +756,13 @@ function initials_(name) {
  * the next filter cannot forget the second half — which is exactly how this happened.
  */
 function isRetailSale_(tx) {
-  return !!tx && tx.transactionType === 'Retail' && !tx.isVoid;
+  /* CASE-INSENSITIVE, because GX Core's gxIsRetail_ is — found by the revenue-rules contract test,
+     2026-09-07. This read `=== 'Retail'` exactly, so a payload spelling it 'retail' would have been
+     dropped as not-a-sale by this app while Core counted it, and the kiosk would quietly show a
+     fraction of the day's revenue with nothing erroring. Dutchie sends 'Retail' today, so this was
+     latent rather than live — which is the only reason it survived to be found by a test instead of
+     by a bad morning. */
+  return !!tx && String(tx.transactionType || '').toLowerCase() === 'retail' && !tx.isVoid;
 }
 
 // Safely extract numeric fields from a transaction.
