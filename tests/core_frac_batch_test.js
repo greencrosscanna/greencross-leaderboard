@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* One GX Core call for every store — coreFracs_ / expectedSalesFrac_ in dutchie_fetch.gs.
+/* NO GX Core call for the fraction; ONE for the curve — expectedSalesFrac_ in dutchie_fetch.gs.
  *
  * expectedSalesFrac_ is called from four places, several inside per-store loops, and it used to make
  * its OWN GX Core round trip every time. GX Core's request telemetry measured the bill on
@@ -11,13 +11,18 @@
  * while spiff, which makes one call, loaded fine: /exec has intermittent bad spells, every trip is
  * an independent roll against them, and six rolls per refresh is six chances to lose.
  *
+ * BATCHING WAS NOT THE END OF IT. On 2026-09-07 the same telemetry over a full day showed that even
+ * one call per render made expected_frac 59.7% of ALL calls reaching Core and 55% of its execution —
+ * still the largest single load on the shared brain. So the call is gone, not batched further: the
+ * fraction is derivable from a curve this app already mirrors from Core daily.
+ *
  * What must stay true:
- *   · ONE Core call prices every store, however many times expectedSalesFrac_ is asked;
- *   · a FAILED batch is remembered too — gxCoreRoute_ retries three times with sleeps, so an outage
- *     used to cost six stores x three attempts of dead waiting on every render;
- *   · the local curve and the linear fallback are untouched, so a Core outage degrades exactly as
- *     it did before;
- *   · crossing a minute re-prices, rather than serving a stale pace.
+ *   · the fraction costs ZERO Core round trips, however many times it is asked;
+ *   · it equals what GX Core's own expectedSalesFrac would return for the same curve — asserted
+ *     against a verbatim copy of the shipped function, not assumed;
+ *   · the linear fallback still catches a genuinely missing curve, and never a zero;
+ *   · the CURVE is still fetched from Core, once, batched — that call is the shared source of truth
+ *     and must not follow the fraction out the door.
  *
  * Per tests/_harness.js's rule this never reimplements: it loads the shipped .gs and calls the real
  * function. UrlFetchApp is stubbed so every Core round trip is counted.
@@ -77,87 +82,102 @@ function ctxFor(mode, props) {
 
 const STORES = Object.keys(FRACS).map(id => ({ slug: id }));
 
-console.log('\nOne call for every store');
+console.log('\nNo call at all for the fraction');
 
-/* THE POINT OF THE CHANGE. Six stores, one round trip. */
-{
-  const ctx = ctxFor('ok');
-  ctx.coreStoreId_ = s => s.slug;                  // bypass the registry map; not what is under test
-  const out = STORES.map(s => ctx.expectedSalesFrac_(s, 11, 0, 0.5));
-  const coreCalls = ctx.__calls.filter(u => u.indexOf('expected_frac') >= 0);
-  ok(`six stores cost ONE GX Core call (made ${coreCalls.length})`, coreCalls.length === 1);
-  ok('and it asks for every store at once', /stores=all/.test(coreCalls[0] || ''));
-  ok('each store still gets its own value', out[0] === 0.11 && out[5] === 0.09);
-  ok('no per-store store= parameter is sent any more', !/[?&]store=/.test(coreCalls[0] || ''));
-}
-
-/* Repeated asks within one execution must be free — four call sites exist. */
+/* THE CHANGE, 2026-09-07: expectedSalesFrac_ makes NO GX Core round trip.
+ *
+ * It used to batch six trips into one, which this file was written to protect and which the header
+ * above still records. GX Core's telemetry then measured what even ONE call per render cost:
+ * expected_frac was 59.7% of ALL calls reaching Core over 24h and 55% of its execution time — the
+ * largest single load on the shared brain.
+ *
+ * It is gone rather than batched further, because the number was always derivable here. The curve is
+ * mirrored from Core daily (primeHourlyDist_, run every 5 minutes by refreshDirectorCache) and the
+ * arithmetic below is line-for-line Core's own. One source of truth is preserved — the CURVE is the
+ * truth, and the fraction is a clock applied to it. */
 {
   const ctx = ctxFor('ok');
   ctx.coreStoreId_ = s => s.slug;
   for (let i = 0; i < 20; i++) STORES.forEach(s => ctx.expectedSalesFrac_(s, 11, 0, 0.5));
   const n = ctx.__calls.filter(u => u.indexOf('expected_frac') >= 0).length;
-  ok(`120 asks still cost ONE call (made ${n})`, n === 1);
+  ok(`120 asks cost ZERO expected_frac calls (made ${n})`, n === 0);
+  ok('and no GX Core round trip of any kind on the pacing path',
+     ctx.__calls.filter(u => u.indexOf('hourly_shape') >= 0).length === 0);
 }
 
-/* A FAILED BATCH IS REMEMBERED. This is the resilience half, and it matters as much as the batching:
-   gxCoreRoute_ retries three times with sleeps, so without this an outage cost six stores x three
-   attempts of dead waiting on every single render, with the kiosk sitting there for it. */
+/* THE EQUIVALENCE THE CHANGE RESTS ON, asserted rather than assumed.
+ *
+ * Deleting the Core call is only safe if the local answer IS Core's answer. So this runs GX Core's
+ * expectedSalesFrac — pasted verbatim from gx_dutchie.gs:949, the shipped source — over the same
+ * curve and demands the same number. Both loops run 8..22 (GX_HOURLY_OPEN and STORE_OPEN_HOUR are
+ * both 8, CLOSE both 22); if either side ever moves, this fails rather than drifting quietly.
+ *
+ * A pasted copy is exactly what tests/_harness.js warns against for the code UNDER test, and is the
+ * right thing here: the point is to compare two independent implementations, so the reference has to
+ * be independent. */
 {
-  const ctx = ctxFor('down');
-  ctx.coreStoreId_ = s => s.slug;
-  // no seeded curve, so the real getHourlyDistCached_ returns null → linear fallback
-  const out = STORES.map(s => ctx.expectedSalesFrac_(s, 11, 0, 0.5));
-  const n = ctx.__calls.filter(u => u.indexOf('expected_frac') >= 0).length;
-  ok(`a Core outage is attempted ONCE per execution, not once per store (fetches=${n})`, n <= 3);
-  ok('every store falls back to the linear fraction', out.every(v => v === 0.5));
-}
+  const CURVE = { 8: 0, 9: 0.02, 10: 0.05, 11: 0.09, 12: 0.16, 13: 0.12 };
+  const OPEN = 8, CLOSE = 22;
+  function coreExpectedSalesFrac(dist, nowHour, nowMinute, dayFrac) {   // gx_dutchie.gs:949
+    if (!dist) return dayFrac;
+    let ef = 0;
+    for (let h = OPEN; h < CLOSE; h++) {
+      if (h < nowHour)        ef += (dist[h] || 0);
+      else if (h === nowHour) ef += (dist[h] || 0) * (nowMinute / 60);
+    }
+    return ef > 0 ? ef : dayFrac;
+  }
 
-/* A refusal (ok:false) is a failure too, and must not be retried per store either. */
-{
-  const ctx = ctxFor('refuse');
-  ctx.coreStoreId_ = s => s.slug;
-  STORES.forEach(s => ctx.expectedSalesFrac_(s, 11, 0, 0.5));
-  const n = ctx.__calls.filter(u => u.indexOf('expected_frac') >= 0).length;
-  ok(`a refused batch is also remembered (fetches=${n})`, n <= 3);
-}
-
-/* THE FALLBACK CHAIN IS UNCHANGED — a Core outage must degrade exactly as it did before. */
-{
-  const CURVE = { 8: 0, 9: 0.02, 10: 0.05, 11: 0.09, 12: 0.16 };
-  // Build the key getHourlyDistCached_ actually looks up: slug:dow:YYYY-MM-DD in Pacific.
   const probe = ctxFor('ok');
   const now = probe.ptNow_();
   const dow = new Date(probe.ptDateToUtcMs_(now.dateStr)).getDay();
   const seeded = {};
   seeded[probe.GC_HOURLY_DIST_KEY] = JSON.stringify({ ['center:' + dow + ':' + now.dateStr]: CURVE });
 
-  const ctx = ctxFor('down', seeded);
-  const v = ctx.expectedSalesFrac_({ slug: 'center' }, 11, 30, 0.99);
-  const want = 0.02 + 0.05 + 0.09 * 0.5;           // hours before 11, plus half of hour 11
-  ok(`the local mirrored curve still answers when Core is down (${v.toFixed(4)} vs ${want.toFixed(4)})`,
-     Math.abs(v - want) < 1e-9);
-  ok('and it did NOT silently fall through to the linear fraction', Math.abs(v - 0.99) > 1e-9);
+  let same = 0, checked = 0;
+  const ctx = ctxFor('down', seeded);     // 'down' proves it needs no Core even when Core is there
+  for (const [h, m] of [[9, 0], [10, 30], [11, 0], [11, 30], [12, 45], [13, 59]]) {
+    const mine = ctx.expectedSalesFrac_({ slug: 'center' }, h, m, 0.99);
+    const theirs = coreExpectedSalesFrac(CURVE, h, m, 0.99);
+    checked++;
+    if (Math.abs(mine - theirs) < 1e-12) same++;
+  }
+  ok(`the local answer matches GX Core's own arithmetic at every hour tested (${same}/${checked})`,
+     same === checked);
+  ok('and it is not just returning the linear fallback',
+     Math.abs(ctx.expectedSalesFrac_({ slug: 'center' }, 11, 30, 0.99) - 0.99) > 1e-9);
 }
 
-/* CROSSING A MINUTE RE-PRICES. A memo keyed only by store would serve a stale pace to a long
-   execution; pace is a function of the clock. */
+/* THE CLOCK STILL MOVES THE NUMBER. The old memo was keyed by hour:minute so a long execution could
+   not serve a stale pace; that memo is gone, but the property it protected must survive it. */
 {
-  const ctx = ctxFor('ok');
-  ctx.coreStoreId_ = s => s.slug;
-  ctx.expectedSalesFrac_({ slug: 'bend' }, 11, 0, 0.5);
-  ctx.expectedSalesFrac_({ slug: 'bend' }, 11, 1, 0.5);      // one minute later
-  const n = ctx.__calls.filter(u => u.indexOf('expected_frac') >= 0).length;
-  ok(`a new minute re-prices rather than serving a stale pace (calls=${n})`, n === 2);
+  const CURVE = { 8: 0, 9: 0.02, 10: 0.05, 11: 0.09, 12: 0.16 };
+  const probe = ctxFor('ok');
+  const now = probe.ptNow_();
+  const dow = new Date(probe.ptDateToUtcMs_(now.dateStr)).getDay();
+  const seeded = {};
+  seeded[probe.GC_HOURLY_DIST_KEY] = JSON.stringify({ ['bend:' + dow + ':' + now.dateStr]: CURVE });
+  const ctx = ctxFor('down', seeded);
+  const a = ctx.expectedSalesFrac_({ slug: 'bend' }, 11, 0, 0.5);
+  const b = ctx.expectedSalesFrac_({ slug: 'bend' }, 11, 30, 0.5);
+  ok(`a later minute prices higher (${a.toFixed(4)} → ${b.toFixed(4)})`, b > a);
 }
 
-/* A store missing from the batch must fall through, not become zero or NaN — the pace bar is what
-   staff read, and a silent zero reads as "you have sold nothing". */
+/* THE FALLBACK CHAIN IS UNCHANGED — a genuinely missing curve still degrades to the linear ramp
+   rather than to zero. The pace bar is what staff read, and a silent zero reads as "you have sold
+   nothing". This is the one behavior that must survive every rewrite of this file. */
+{
+  const ctx = ctxFor('down');            // no seeded curve → getHourlyDistCached_ returns null
+  const out = STORES.map(s => ctx.expectedSalesFrac_(s, 11, 0, 0.5));
+  ok('every store falls back to the linear fraction', out.every(v => v === 0.5));
+  ok('and it did not reach for GX Core to rescue itself',
+     ctx.__calls.filter(u => u.indexOf('expected_frac') >= 0).length === 0);
+}
 {
   const ctx = ctxFor('ok');
   ctx.coreStoreId_ = s => s.slug;
   const v = ctx.expectedSalesFrac_({ slug: 'not-a-store' }, 11, 0, 0.44);
-  ok('a store absent from the batch falls back rather than returning 0/NaN', v === 0.44);
+  ok('an unknown store falls back rather than returning 0/NaN', v === 0.44);
 }
 
 console.log('\nThe curve itself — one call, not one per store');
