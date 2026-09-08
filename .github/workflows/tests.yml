@@ -31,7 +31,7 @@ jobs:
       GX_SIBLING_TOKEN: ${{ secrets.GX_SIBLING_TOKEN }}
     steps:
       - name: Check out greencross-leaderboard
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: greencross-leaderboard
 
@@ -41,7 +41,7 @@ jobs:
       - name: Check out greencross-command-center
         if: env.GX_SIBLING_TOKEN != ''
         continue-on-error: true
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: greencrosscanna/greencross-command-center
           path: greencross-command-center
@@ -50,7 +50,7 @@ jobs:
       - name: Check out greencross-inventory
         if: env.GX_SIBLING_TOKEN != ''
         continue-on-error: true
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: greencrosscanna/greencross-inventory
           path: greencross-inventory
@@ -59,13 +59,13 @@ jobs:
       - name: Check out greencross-sales
         if: env.GX_SIBLING_TOKEN != ''
         continue-on-error: true
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: greencrosscanna/greencross-sales
           path: greencross-sales
           token: ${{ secrets.GX_SIBLING_TOKEN }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '20'
 
