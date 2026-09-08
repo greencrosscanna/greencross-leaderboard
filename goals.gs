@@ -191,7 +191,7 @@ function getOrComputeGoals_(forceRecompute) {
       dowBuckets[dow].push(allByDay[day]);
     });
 
-    var flatDaily = ppGoal > 0 ? Math.round(ppGoal / PP_DAYS) : 0;
+    var flatDaily = ppGoal > 0 ? Math.round(ppGoal / ppDays_()) : 0;
     var dowAvg = {};
     for (var d = 0; d <= 6; d++) {
       var vals = dowBuckets[d];
@@ -365,7 +365,7 @@ function getOrComputeYoYGoals_(forceRecompute) {
         var dow = parseInt(Utilities.formatDate(d, STORE_TZ, 'u'), 10) % 7;
         dowBuckets[dow].push(allByDay[day]);
       });
-      var flatD = ppAvg > 0 ? ppAvg / PP_DAYS : 0;
+      var flatD = ppAvg > 0 ? ppAvg / ppDays_() : 0;
       var dAvg = {};
       for (var d = 0; d <= 6; d++) {
         var vals = dowBuckets[d];
@@ -389,7 +389,7 @@ function getOrComputeYoYGoals_(forceRecompute) {
     var dowAvgY1 = dowAvgByStore[store.slug]     || {};
 
     var ppGoal    = Math.round(ppY1);
-    var flatDaily = ppGoal > 0 ? Math.round(ppGoal / PP_DAYS) : 0;
+    var flatDaily = ppGoal > 0 ? Math.round(ppGoal / ppDays_()) : 0;
 
     var dowAvg = {};
     for (var d = 0; d <= 6; d++) {
@@ -608,7 +608,7 @@ function resolveEffectiveGoal_(slug, gr, gy, stretch, manuals) {
       // there is nothing else to divide by.
       var dowSum = 0;
       if (g.dowAvg) for (var k = 0; k <= 6; k++) dowSum += (g.dowAvg[k] || 0);
-      var basis = dowSum > 0 ? dowSum * (PP_DAYS / 7) : (g.ppGoal || 1);
+      var basis = dowSum > 0 ? dowSum * (ppDays_() / 7) : (g.ppGoal || 1);
       var scale = manualPP / basis;
       var scaledAvg = {};
       if (g.dowAvg) {
@@ -641,7 +641,7 @@ function getDailyGoalLive_(slug) {
     var g   = res.g;
     if (g && g.dowAvg) {
       var dow  = ptNow_().dow;
-      var base = g.dowAvg[dow] || Math.round((g.ppGoal || 0) / PP_DAYS);
+      var base = g.dowAvg[dow] || Math.round((g.ppGoal || 0) / ppDays_());
       return Math.round(base * (1 + res.stretch));
     }
   } catch(e) { Logger.log('getDailyGoalLive_ error: ' + e.message); }
@@ -692,7 +692,7 @@ function getDailyGoals_() {
       var res = resolveGoal_(s.slug), g = res.g, stretch = res.stretch;
       for (var d2 = 0; d2 <= 6; d2++) {
         if (g && g.dowAvg) {
-          var base = g.dowAvg[d2] || Math.round((g.ppGoal || 0) / PP_DAYS);
+          var base = g.dowAvg[d2] || Math.round((g.ppGoal || 0) / ppDays_());
           dow.push(Math.round(base * (1 + stretch)));
         } else {
           var plan = (getStorePlans_())[s.slug] || {};
@@ -792,7 +792,7 @@ function getDailyGoalForDow_(slug, dow) {
     var res = resolveGoal_(slug);
     var g   = res.g;
     if (g && g.dowAvg) {
-      var base = g.dowAvg[dow] || Math.round((g.ppGoal || 0) / PP_DAYS);
+      var base = g.dowAvg[dow] || Math.round((g.ppGoal || 0) / ppDays_());
       return Math.round(base * (1 + res.stretch));
     }
   } catch(e) { Logger.log('getDailyGoalForDow_ error: ' + e.message); }
@@ -819,7 +819,7 @@ function getPayPeriodTarget_(slug) {
 function getPeriodGoal_(slug, period, range) {
   const pp = getPayPeriodTarget_(slug);
   if (!pp) return 0;
-  const daily = pp / PP_DAYS;
+  const daily = pp / ppDays_();
   if (period === 'today') return Math.round(daily);
   if (period === 'pp')    return Math.round(pp);
   const elapsed = (range && range.daysElapsed) || 0;
@@ -880,7 +880,7 @@ function refreshTargetsAll() {
   const cache  = {};
   const report = {};
   STORES.forEach(s => {
-    const ppTarget = Math.round(netBySlug[s.slug] / lookbackDays * PP_DAYS);
+    const ppTarget = Math.round(netBySlug[s.slug] / lookbackDays * ppDays_());
     cache[s.slug]  = { ppTarget, computedAt: new Date().toISOString() };
     report[s.slug] = ppTarget;
     Logger.log('[targets] ' + s.slug + ': net=' + Math.round(netBySlug[s.slug])
@@ -965,8 +965,8 @@ function periodsAheadFor_(curStartStr, todayStr) {
   var lastDay  = new Date(Date.UTC(y, m, 0)).getUTCDate();   // day 0 of next month = last of this
   var monthEnd = todayStr.slice(0, 7) + '-' + ('0' + lastDay).slice(-2);
   var k = PP_LOOKAHEAD_MIN;
-  // Coverage with k future periods ends at curStart + PP_DAYS*(k+1) - 1.
-  while (k < PP_LOOKAHEAD_MAX && ptDateShift_(curStartStr, PP_DAYS * (k + 1) - 1) < monthEnd) k++;
+  // Coverage with k future periods ends at curStart + PP length*(k+1) - 1.
+  while (k < PP_LOOKAHEAD_MAX && ptDateShift_(curStartStr, ppDays_() * (k + 1) - 1) < monthEnd) k++;
   return k;
 }
 
@@ -991,7 +991,7 @@ function periodsAheadFor_(curStartStr, todayStr) {
 function projectedPeriodGoalShape_(shape, periodStartStr) {
   return {
     periodStart: periodStartStr,
-    periodEnd:   ptDateShift_(periodStartStr, PP_DAYS - 1),
+    periodEnd:   ptDateShift_(periodStartStr, ppDays_() - 1),
     stores:      JSON.parse(JSON.stringify(shape.stores || {})),
     computedAt:  shape.computedAt,
     projected:   true
@@ -1189,7 +1189,7 @@ function refreshGoalLedger_() {
   var aheadN  = periodsAheadFor_(cur.ppStartStr, ptNow_().dateStr);
   var ahead = [], aheadLocked = [];
   for (var f = 1; f <= aheadN; f++) {
-    var fStart = ptDateShift_(cur.ppStartStr, PP_DAYS * f);
+    var fStart = ptDateShift_(cur.ppStartStr, ppDays_() * f);
     var fx = getFrozenPeriodGoal_(fStart);
     if (fx && fx.locked) { aheadLocked.push(fStart); continue; }
     writeGoalLedger_(props, projectedPeriodGoalShape_(shape, fStart), false);
@@ -1221,7 +1221,7 @@ function aggregateRangesToGoal_(fetched) {
       var d = new Date(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10)), 12));
       dowBuckets[parseInt(Utilities.formatDate(d, STORE_TZ, 'u'), 10) % 7].push(allByDay[day]);
     });
-    var flatDaily = ppGoal > 0 ? Math.round(ppGoal / PP_DAYS) : 0;
+    var flatDaily = ppGoal > 0 ? Math.round(ppGoal / ppDays_()) : 0;
     var dowAvg = {};
     for (var d = 0; d <= 6; d++) {
       var vals = dowBuckets[d];
@@ -1318,7 +1318,7 @@ function periodStartForDate_(dateStr) {
   // Counted in whole PT calendar days, then in whole periods. Dividing a raw ms difference by a
   // nominal PP_MS mis-rounds by an hour across a DST change and can pick the adjacent period.
   var days = Math.round((cur.ppStartMs - ptDateToUtcMs_(dateStr)) / 86400000);
-  var k    = Math.ceil(days / PP_DAYS);
+  var k    = Math.ceil(days / ppDays_());
   if (k < 0) k = 0;
   return Utilities.formatDate(new Date(ppShift_(cur.ppStartMs, -k)), STORE_TZ, 'yyyy-MM-dd');
 }

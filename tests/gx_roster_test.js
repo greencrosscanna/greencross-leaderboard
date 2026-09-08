@@ -83,7 +83,7 @@ const S = H.load(['gx_roster.gs', 'dutchie_proxy.gs', 'endpoints.gs', 'dutchie_f
       getStores:    function () { return CORE_STORES; },
     },
   },
-  extraExports: '"resetPPCache": function () { _ppStartCache_ = null; _propsCache_ = null; _gxRosterMemo_ = null; }',
+  extraExports: '"resetPPCache": function () { _ppStartCache_ = null; _propsCache_ = null; _ppCfgCache_ = null; _gxRosterMemo_ = null; }',
 });
 
 function RealDateUTC(y, m, d, h, mi, se) { return Date.UTC(y, m, d, h, mi, se); }

@@ -2126,7 +2126,7 @@ function getStandings_(hardRefresh) {
   var ppStartStr = pp.ppStartStr;
   var ppEndStr   = pp.ppEndStr;
   var todayStr   = Utilities.formatDate(new Date(nowMs),                 STORE_TZ, 'yyyy-MM-dd');
-  var daysTotal  = PP_DAYS;
+  var daysTotal  = ppDays_();
   // Which day of the period today is — counted in PT CALENDAR days. Dividing elapsed ms by DAY_MS
   // is an hour out for the rest of any period containing a DST change, which flips this to the
   // wrong day for the hour either side of midnight.

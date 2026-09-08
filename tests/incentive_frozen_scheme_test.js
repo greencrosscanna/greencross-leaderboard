@@ -79,7 +79,7 @@ function build(seed) {
       gxRosterWarn_: () => {},
       aggregateTransactions_: () => ({ byEmployee: {}, storeTotal: {} }),
     },
-    extraExports: '"resetPPCache": function () { _ppStartCache_ = null; _propsCache_ = null; _incThreshCache_ = null; }',
+    extraExports: '"resetPPCache": function () { _ppStartCache_ = null; _propsCache_ = null; _ppCfgCache_ = null; _incThreshCache_ = null; }',
   });
   S.resetPPCache();
   return { S, props };

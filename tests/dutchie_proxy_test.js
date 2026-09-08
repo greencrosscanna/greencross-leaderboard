@@ -13,7 +13,7 @@ const S = H.load(['dutchie_proxy.gs'], {
   // currentPPStart_ memoizes into _ppStartCache_ for the life of one GAS
   // execution. Every case must clear it — runAllTests does this once at the
   // top, and a stale memo would make the second case assert nothing at all.
-  extraExports: '"resetPPCache": function () { _ppStartCache_ = null; _propsCache_ = null; }',
+  extraExports: '"resetPPCache": function () { _ppStartCache_ = null; _propsCache_ = null; _ppCfgCache_ = null; }',
 });
 
 const DAY_MS = 24 * 60 * 60 * 1000;

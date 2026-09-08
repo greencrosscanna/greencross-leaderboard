@@ -31,6 +31,7 @@ const GC_STORE_PLANS_KEY    = 'GC_STORE_PLANS_JSON';
 const GC_STREAKS_KEY        = 'GC_STREAKS_JSON';
 const GC_EMPLOYEES_KEY      = 'GC_STORE_EMPLOYEES_JSON';
 const GC_PAY_PERIOD_ANCHOR  = 'GC_PAY_PERIOD_ANCHOR'; // stored as "YYYY-MM-DD" local date
+const PP_ANCHOR_DEFAULT     = '2026-05-11';           // LAST-RESORT anchor; see payPeriodCfg_
 const GC_NICKNAMES_KEY       = 'GC_NICKNAMES_JSON';
 // Store-level rolling PP targets, written nightly by refreshTargetsAll. It owns this
 // property outright: it rebuilds the whole object and setProperty REPLACES, so anything
@@ -58,7 +59,7 @@ const GC_HOURLY_DIST_KEY     = 'GC_HOURLY_DIST_JSON';   // per-store same-DOW ho
 const GC_EOM_KEY             = 'gc_eom_current';         // { employeeKey, since } — Employee of the Month
 const GC_INCENTIVE_INPUTS_KEY = 'GC_INCENTIVE_INPUTS_JSON';  // { ppStart: { nameKey: { att:bool, spiff:num } } }
 const GC_INCENTIVE_THRESH_KEY = 'GC_INCENTIVE_THRESH_JSON';  // editable bonus thresholds (see incentiveDefaults_)
-const PP_DAYS                = 14;     // pay-period length in days
+const PP_DAYS_DEFAULT        = 14;     // pay-period length — LAST-RESORT default; see payPeriodCfg_
 const TARGET_LOOKBACK_MONTHS = 6;      // rolling lookback for target calculation
 const DUTCHIE_TAKE           = 5000;   // Take param sent to Dutchie; also the truncation-warning threshold
 const STORE_TODAY_TTL_S      = 55;     // GAS CacheService TTL for storeToday / storeLB responses
@@ -114,6 +115,7 @@ const CHUNK_SIZE = 90000; // bytes per chunk
 var _goalsCache_    = null;
 var _yoyGoalsCache_ = null;
 var _ppStartCache_  = null;   // currentPPStart_() result for this execution
+var _ppCfgCache_    = null;   // payPeriodCfg_() result for this execution
 var _propsCache_    = null;   // getProps_() — ScriptProperties singleton per execution
 
 // ── Pay-period helpers ───────────────────────────────────────────────────────
@@ -128,7 +130,84 @@ function getProps_() {
 }
 
 /**
- * Returns the CURRENT pay period's boundaries. Reads the anchor once per GAS execution and
+ * The pay-period calendar — anchor date and length — resolved ONCE per execution.
+ *
+ * GX Core's `kv` is the registry: cfg.payPeriodAnchor and cfg.payPeriodDays. Crew and SPIFF
+ * already read it. Leaderboard did not — it read its own Script Property, falling back to a
+ * string literal that happened to match. Four apps agreeing by coincidence, not construction.
+ *
+ * WHY THIS APP IS THE DANGEROUS ONE. Leaderboard is not a consumer of pay periods, it is the
+ * PUBLISHER: it writes period_goals and publishes goal_publications, which Sales and Crew
+ * inherit. So the app whose boundaries everyone else adopts was deriving them from a value
+ * nobody else could see or edit. The day the anchor moves in the Command Center, Crew and SPIFF
+ * follow it and this app does not — and it then publishes goals for a fortnight payroll is not
+ * running. Silently: every app reads its configured source correctly, and a date that is merely
+ * WRONG still parses. (Filed by core-admin 2026-09-04; Sky's decision the same day.)
+ *
+ * BOTH VALUES, not just the anchor. The two used to move by different mechanisms — the anchor is
+ * a Script Property (global, live, no deploy) while the length was a code constant needing a push
+ * and a redeploy. So a cadence change could HALF-APPLY: anchor moves instantly, length lags, and
+ * in between the calendar matches neither the old nor the new one, with nothing erroring.
+ *
+ * FALLBACK ORDER: GX Core → this project's Script Property → the literal default, the same shape
+ * the stores registry has to its local table. A kiosk that cannot reach GX Core must still show a
+ * board, so a failure here is logged and survived, never thrown.
+ *
+ * The LIBRARY call, not HTTP: GXCore.getKv runs in-process. ?action=config over UrlFetchApp would
+ * add the /exec two-hop and its ~6% flake to a kiosk hot path that does not need it.
+ *
+ * NOTHING ABOUT THE CALENDAR CHANGES HERE. The anchor is 2026-05-11 and the length 14 in both
+ * places today; this reads a value it used to duplicate. No boundary moves, no frozen snapshot is
+ * orphaned, no closed payroll history is re-keyed.
+ *
+ * `props` mirrors currentPPStart_'s optional pre-fetched ScriptProperties, and is the seam the
+ * tests inject a different anchor through. That seam is deliberate: core-admin's note retracted
+ * its own earlier advice to verify this by editing the LIVE cfg.payPeriodAnchor, because Crew and
+ * SPIFF read that key and Crew matches vendor SPIFF money to a pay period by start date — moving
+ * the boundary even briefly drops those matches and the vendor column reads $0, indistinguishable
+ * from a fortnight nobody earned in. Prove the read with an injected value; never move the key.
+ *
+ * @param  {GoogleAppsScript.Properties.Properties=} props  Optional pre-fetched ScriptProperties.
+ * @return {{ anchor: string, days: number, source: string }}
+ */
+function payPeriodCfg_(props) {
+  if (_ppCfgCache_) return _ppCfgCache_;
+  var anchor = null, days = null, source = 'gxcore';
+
+  try {
+    if (typeof GXCore !== 'undefined' && typeof GXCore.getKv === 'function') {
+      var a = GXCore.getKv('cfg.payPeriodAnchor');
+      var d = GXCore.getKv('cfg.payPeriodDays');
+      if (a && /^\d{4}-\d{2}-\d{2}$/.test(String(a).trim())) anchor = String(a).trim();
+      if (d && isFinite(+d) && +d > 0) days = Math.round(+d);
+    }
+  } catch (e) {
+    Logger.log('payPeriodCfg_: GX Core unreachable (' + e.message + ') — falling back');
+  }
+
+  // Per-value fallback, so a registry that carries one and not the other still wins where it can.
+  if (!anchor) {
+    var local = (props || getProps_()).getProperty(GC_PAY_PERIOD_ANCHOR);
+    anchor = (local && /^\d{4}-\d{2}-\d{2}$/.test(String(local).trim()))
+      ? String(local).trim() : PP_ANCHOR_DEFAULT;
+    source = local ? 'script-property' : 'default';
+    Logger.log('payPeriodCfg_: anchor from ' + source + ' (' + anchor + ') — GX Core did not supply one');
+  }
+  if (!days) {
+    days = PP_DAYS_DEFAULT;
+    if (source === 'gxcore') source = 'gxcore+default-days';
+    Logger.log('payPeriodCfg_: days fell back to ' + days + ' — GX Core did not supply one');
+  }
+
+  _ppCfgCache_ = { anchor: anchor, days: days, source: source };
+  return _ppCfgCache_;
+}
+
+/** Pay-period length in days, from the registry. Use this, never a literal 14. */
+function ppDays_() { return payPeriodCfg_().days; }
+
+/**
+ * Returns the CURRENT pay period's boundaries. Reads the calendar once per GAS execution and
  * caches the result in _ppStartCache_.
  *
  * Prefer ppStartStr/ppEndStr/ppEndMs over doing arithmetic on ppStartMs — see ppShift_ for why
@@ -139,8 +218,9 @@ function getProps_() {
  */
 function currentPPStart_(props) {
   if (_ppStartCache_) return _ppStartCache_;
-  var p         = props || getProps_();
-  var anchorStr = p.getProperty(GC_PAY_PERIOD_ANCHOR) || '2026-05-11';
+  var cfg       = payPeriodCfg_(props);
+  var anchorStr = cfg.anchor;
+  var PP_DAYS   = cfg.days;
   var anchorMs  = ptDateToUtcMs_(anchorStr);
   var PP_MS     = PP_DAYS * 24 * 60 * 60 * 1000;
   var todayMs   = ptDateToUtcMs_(ptNow_().dateStr);
@@ -229,7 +309,7 @@ function ptDateShift_(ptDateStr, days) {
  */
 function ppShift_(ppStartMs, n) {
   const startStr = Utilities.formatDate(new Date(ppStartMs), STORE_TZ, 'yyyy-MM-dd');
-  return ptDateToUtcMs_(ptDateShift_(startStr, n * PP_DAYS));
+  return ptDateToUtcMs_(ptDateShift_(startStr, n * ppDays_()));
 }
 
 /** Last millisecond of the pay period starting at ppStartMs (i.e. next period's start, minus 1). */
@@ -286,6 +366,30 @@ function doGet(e) {
     // error is REPORTED rather than thrown: a diagnostic that 500s fails exactly when it is needed.
     if (params.action === 'libversion') {
       return jsonOut(getLibVersion_(), params.callback);
+    }
+    // Public: WHERE this deployment's pay-period calendar actually came from. The whole failure
+    // this fixes is invisible — reading the wrong source still produces a date that parses — so
+    // "we now read GX Core" is a claim that has to be checkable against the RUNNING app, not the
+    // repo. `source` is the answer: gxcore means the registry answered; script-property or
+    // default means the library call did not, and the deployment is still on a private value.
+    // That distinction matters most right after a re-pin, since GXCore.getKv has to exist in the
+    // version the DEPLOYMENT snapshotted, not the one appsscript.json names.
+    if (params.action === 'paycalendar') {
+      return jsonOut((function () {
+        try {
+          _ppCfgCache_ = null; _ppStartCache_ = null;   // report live, not a warm instance's memo
+          var cfg = payPeriodCfg_();
+          var pp  = currentPPStart_();
+          return {
+            ok: true, source: cfg.source, anchor: cfg.anchor, days: cfg.days,
+            ppStart: pp.ppStartStr, ppEnd: pp.ppEndStr,
+            readsRegistry: cfg.source === 'gxcore',
+            gxcoreVersion: (function () { try { return GXCore.libVersion(); } catch (e) { return null; } })(),
+          };
+        } catch (e) {
+          return { ok: false, error: e.message };
+        }
+      })(), params.callback);
     }
     // Public: proves the write gate is really wired, including that a bogus user is actually
     // REFUSED. "hasRoleForApp:true" alone would be a comfortable lie.
