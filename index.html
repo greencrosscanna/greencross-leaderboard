@@ -3617,7 +3617,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      slideshow bar at 9999, so nothing here contests it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.733';
+window.GC = window.GC || {}; GC.VERSION = 'v1.734';
 
 // ── GX Core web-app URL — ONE definition ──
 // This was previously a `var` inside loadChangelogFromGXCore(), i.e. function-scoped, while the
@@ -9758,8 +9758,11 @@ var kiosk = (function() {
     // Goal stats
     var soldEl  = document.getElementById('kioskGoalSold');
     var toGoEl  = document.getElementById('kioskGoalToGo');
-    if (soldEl) countUp(soldEl, parseInt(soldEl.getAttribute('data-target'), 10) || 0);
-    if (toGoEl) countUp(toGoEl, parseInt(toGoEl.getAttribute('data-target'), 10) || 0);
+    // parseFloat, not parseInt: the target is dollars-and-cents. parseInt TRUNCATED the
+    // cents, so $58.63 counted up to $58 while Store KPIs and the employee cards — which
+    // pass the raw float and let countUp round — showed $59 off the same number.
+    if (soldEl) countUp(soldEl, parseFloat(soldEl.getAttribute('data-target')) || 0);
+    if (toGoEl) countUp(toGoEl, parseFloat(toGoEl.getAttribute('data-target')) || 0);
 
     // Pace card ±% is plain text — no countUp needed
 
