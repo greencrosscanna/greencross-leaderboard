@@ -1134,10 +1134,23 @@ html, body {
 }
 .dir-gauge-wrap svg { width: 100%; height: 100%; }
 
-/* Centered overlay text inside arc */
+/* Centered overlay text inside arc.
+ *
+ * Tucked UP into the arc, matching the kiosk — the reference Sky named when he filed this. The
+ * kiosk stacks its number and sub-label as one block sitting 4px off the bottom of a 130px wrap,
+ * which lands the number's center about 63% of the way down the arc, cradled by it.
+ *
+ * These two were absolutely positioned INDEPENDENTLY and neither was placed against that: the
+ * number sat at bottom:6px, i.e. level with the arc's feet at ~84% down, and the sub-label at
+ * bottom:-14px hung outside the gauge box entirely. So the pair read as sinking out of the arc
+ * rather than sitting in it, and the two dashboards did not look like the same component.
+ *
+ * The values below are the kiosk's, scaled by this wrap's 114/130 height ratio: the number's
+ * center lands at the same 63%, and the sub-label keeps the kiosk's 4px gap under it, inside
+ * the box. Recompute both if .dir-gauge-wrap's height changes. */
 .dir-gauge-pct {
   position: absolute;
-  bottom: 6px; left: 0; right: 0;
+  bottom: 24px; left: 0; right: 0;
   text-align: center;
   font-size: 30px;
   font-weight: 800;
@@ -1147,7 +1160,7 @@ html, body {
 }
 .dir-gauge-sub {
   position: absolute;
-  bottom: -14px; left: 0; right: 0;
+  bottom: 8px; left: 0; right: 0;
   text-align: center;
   font-size: 10px;
   text-transform: uppercase;
