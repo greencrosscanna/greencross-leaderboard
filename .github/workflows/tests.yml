@@ -84,8 +84,23 @@ jobs:
             echo ""
             for t in tests/*_test.js; do
               out="$(node "$t" 2>&1 || true)"
-              if printf '%s' "$out" | grep -qiE '^SKIP|not a sibling|Need at least two palettes'; then
-                echo "- ⚠️ \`$t\` — **SKIPPED** (sibling repo absent)"
+              # ONE MARKER, EVERY REPO: a skip is a line whose first non-space word is SKIP.
+              # Column 0 means the whole suite could not run; indented means it ran but had to pass
+              # over part of itself — so the COUNT matters, not just the fact.
+              #
+              # This used to be five different greps across eight repos, each matching the PHRASING
+              # its own tests happened to use ("not a sibling", "checkout not present", "live-value
+              # check skipped") — five guesses at wording that nothing kept in step, and a suite that
+              # reworded its skip would silently go back to being reported as having run. Two suites
+              # (crew's drift check, spiff's live-value check) were already in that state and were
+              # given the marker in the same pass.
+              #
+              # Case-sensitive on purpose: assertion labels are lowercase prose ("a nameless row is
+              # skipped") and a -i match would flag those until nobody read the warning.
+              SKIPRE='^SKIP|^ +SKIP '
+              n="$(printf '%s' "$out" | grep -cE "$SKIPRE" || true)"
+              if [ "${n:-0}" -gt 0 ]; then
+                echo "- ⚠️ \`$t\` — **$n SKIPPED**: $(printf '%s' "$out" | grep -E "$SKIPRE" | head -1 | sed 's/^ *//')"
               else
                 echo "- ✅ \`$t\` — $(printf '%s' "$out" | tail -1)"
               fi
