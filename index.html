@@ -4533,6 +4533,60 @@ GC.renderKpiBlock = function(summary, periodLabel) {
 };
 
 /** pace number → 'green' | 'amber' | 'red' */
+/** ══ ONE definition of "what percentage do we show on a pace gauge" ═════════════════════════════
+ *  Read this before changing any pace readout. The kiosk and Director must agree, and until
+ *  2026-09-08 they did not: the kiosk printed the DAMPED INTRADAY pace while Director printed
+ *  PROJECTED END OF DAY vs goal. Same store, same second, two headline numbers — River read
+ *  −28% on the kiosk and −46% on the Director strip, and neither was wrong.
+ *
+ *  Worse, the kiosk contradicted ITSELF: the big −28% sat directly above "Short by $1,793",
+ *  and $1,793 of a $4,155 goal is 43%, not 28%. The two stats under the gauge were end-of-day
+ *  while the number over them was right-now. A manager doing that division finds the seam.
+ *
+ *  THE RULE, both views:
+ *    • Once the backend has an EOD projection (2+ hours of sales, MIN_PROJ_HOURS in
+ *      endpoints.gs), show PROJECTED vs the full daily goal. That is what the Projected /
+ *      Short-by stats beneath the gauge already are, so the card now reconciles.
+ *    • Before then there is no projection to show, so fall back to today's damped pace
+ *      (pacedAgainstFloor_, PACE_FLOOR_FRAC 20%) — the same fallback Director already used.
+ *    • SAY WHICH ONE. The card title and the sub-label both change. The number moves when the
+ *      projection arrives mid-morning; that jump is real and is why it is labeled.
+ *
+ *  Returns { pct, isProjected, title, sub, zone, zoneColor, deg } — deg is the needle rotation
+ *  on the shared ±PACE_RANGE scale, so the two gauges also POINT the same way for one number.
+ */
+GC.PACE_RANGE = 80;   // ±% mapped across the gauge's ±90°. Director's scale: sized for projected
+                      // numbers, which routinely run past ±40% where the old kiosk ±30 pinned.
+GC.paceView = function(today) {
+  today = today || {};
+  var goal = today.goal || 0;
+  var proj = today.projectedRevenue || today.projected || 0;
+  var projectedPace = (proj > 0 && goal > 0) ? (proj - goal) / goal : null;
+  // Director's strip is handed projectedPace precomputed by the server; the kiosk payload
+  // carries projectedRevenue instead. Accept either, so there is one answer per store.
+  if (projectedPace == null && today.projectedPace != null) projectedPace = today.projectedPace;
+
+  var isProjected = projectedPace != null;
+  var pct         = isProjected ? projectedPace : (today.pace || 0);
+
+  var clamped = Math.max(-GC.PACE_RANGE, Math.min(GC.PACE_RANGE, pct * 100));
+  var deg     = Math.round((clamped / GC.PACE_RANGE) * 90);
+  var zone    = deg <= -30 ? 'red' : deg >= 30 ? 'green' : 'amber';
+
+  return {
+    pct:         pct,
+    isProjected: isProjected,
+    deg:         deg,
+    zone:        zone,
+    zoneColor:   zone === 'red' ? 'var(--red)' : zone === 'green' ? 'var(--green)' : 'var(--amber)',
+    str:         (pct >= 0 ? '+' : '\u2212') + Math.abs(Math.round(pct * 100)) + '%',
+    title:       isProjected ? 'Projected \u00b7 vs. Plan' : 'Pace \u00b7 vs. Plan',
+    sub:         isProjected
+      ? (zone === 'red' ? 'Proj. behind plan' : zone === 'green' ? 'Proj. ahead of plan' : 'Proj. near plan')
+      : (zone === 'red' ? 'Behind plan'       : zone === 'green' ? 'Ahead of plan'       : 'Near plan')
+  };
+};
+
 GC.paceDotClass = function(pace) {
   const t = GC.THRESHOLDS;
   if (pace >= t.paceGreenAbove) return 'green';
@@ -6114,22 +6168,23 @@ var director = (function() {
       + '<div class="ss-label">Today</div>';
     // Sort by projected pace when available, fall back to pace
     var sorted = stores.slice().sort(function(a, b) {
-      var aVal = a.today.projectedPace != null ? a.today.projectedPace : (a.today.pace || 0);
-      var bVal = b.today.projectedPace != null ? b.today.projectedPace : (b.today.pace || 0);
+      var aVal = GC.paceView(a.today).pct;
+      var bVal = GC.paceView(b.today).pct;
       return bVal - aVal;
     });
     sorted.forEach(function(s) {
       var td      = s.today;
-      var hasProj = td.projectedPace != null;
+      var pv      = GC.paceView(td);
+      var hasProj = pv.isProjected;
       // Until ~2 hours of sales exist the backend has no EOD projection (MIN_PROJ_HOURS in
       // endpoints.gs), and this used to print an em dash for every store. Today's PACE is always
       // there — the dot beside it has always been colored by exactly this number — so show it
       // instead of a dash. The strip read "— — — — — —" for the first two hours of every day
       // while the store table directly beneath it showed real percentages for the same stores.
-      var pctNum  = hasProj ? td.projectedPace : (td.pace || 0);
+      var pctNum  = pv.pct;
       var dotCls  = GC.paceDotClass(pctNum);
       var pctCls  = pctNum >= 0.005 ? 'up' : pctNum <= -0.005 ? 'down' : 'flat';
-      var pctStr  = (pctNum >= 0 ? '+' : '−') + Math.abs(Math.round(pctNum * 100)) + '%';
+      var pctStr  = pv.str;
       var pctTip  = hasProj ? 'Projected end of day vs. daily goal'
                             : 'Pace so far vs. daily goal (projection needs 2h of sales)';
       var revenue = GC.fmtCurrency(td.revenue);
@@ -6479,7 +6534,9 @@ var director = (function() {
 
   var DIR_ARC_LEN = 308; // π × 98 ≈ 308  (same arc as kiosk)
 
-  var DIR_PACE_RANGE = 80;
+  // Gauge scale and zone thresholds live on GC.PACE_RANGE / GC.paceView — one home, because a
+  // damping rule with two of them rots the moment either moves. The local ±80 that used to sit
+  // here (and the kiosk's ±30) are what let the two gauges point differently for one number.
 
   function renderDirGoalCard(today) {
     var pct        = today.pctToGoal || 0;
@@ -6542,33 +6599,26 @@ var director = (function() {
   }
 
   function renderDirPaceCard(today) {
-    // Use projected EOD vs goal when enough data exists (2+ hours), else fall back to pace
-    var proj          = today.projectedRevenue || 0;
-    var goal          = today.goal || 0;
-    var hasProj       = proj > 0 && goal > 0;
-    var projectedPace = hasProj ? (proj - goal) / goal : null;
-    var pace          = today.pace || 0;
-    var displayPace   = projectedPace != null ? projectedPace : pace;
+    var proj    = today.projectedRevenue || 0;
+    var goal    = today.goal || 0;
+    var hasProj = proj > 0 && goal > 0;
 
-    var clamped  = Math.max(-DIR_PACE_RANGE, Math.min(DIR_PACE_RANGE, displayPace * 100));
-    var deg      = (clamped / DIR_PACE_RANGE) * 90;
-    var zone     = deg <= -30 ? 'red' : deg >= 30 ? 'green' : 'amber';
-    var zoneColor = zone === 'red' ? 'var(--red)' : zone === 'green' ? 'var(--green)' : 'var(--amber)';
-    // Same rule as the status strip above: with no projection yet the NEEDLE was still swinging
-    // to today's real pace while the big readout said "—", so the gauge pointed at a number it
-    // refused to print. Always print what the needle is pointing at; the label below and the
-    // card title say which of the two it is.
-    var pctStr   = (displayPace >= 0 ? '+' : '−') + Math.abs(Math.round(displayPace * 100)) + '%';
-    var subLabel = projectedPace != null
-      ? (zone === 'red' ? 'Proj. behind plan' : zone === 'green' ? 'Proj. ahead of plan' : 'Proj. near plan')
-      : (zone === 'red' ? 'Behind plan' : zone === 'green' ? 'Ahead of plan' : 'Near plan');
+    // This card's rule — show the projection once there is one, say which it is, and never let
+    // the needle point at a number the readout isn't printing — is now GC.paceView, shared with
+    // the kiosk so both screens give one answer per store. See the note there.
+    var pv        = GC.paceView(today);
+    var deg       = pv.deg;
+    var zone      = pv.zone;
+    var zoneColor = pv.zoneColor;
+    var pctStr    = pv.str;
+    var subLabel  = pv.sub;
 
     var paceGap  = today.paceGap || 0;
     var gapAmt   = GC.fmtCurrency(Math.abs(paceGap));
     var gapLabel = paceGap >= 0 ? 'Ahead of pace' : 'Behind pace';
 
     return '<div class="dir-today-card">'
-      + '<div class="kcard-label">' + (projectedPace != null ? 'Projected · vs. Plan' : 'Pace · vs. Plan') + '</div>'
+      + '<div class="kcard-label">' + e(pv.title) + '</div>'
       + '<div class="dir-gauge-wrap">'
       +   '<svg width="200" height="108" viewBox="0 0 240 130" style="overflow:visible">'
       // Geometry is the KIOSK's pace gauge, to the unit — stroke-width 14 and round caps, not the
@@ -8772,9 +8822,9 @@ var kiosk = (function() {
       + '</div>';
   }
   // ── Render: Pace dial card ─────────────────────────────
-  // PACE_RANGE: ±N% maps to ±90° rotation on the arc.
-  // Zones: |deg| > 30 → red (left) or green (right); |deg| ≤ 30 → amber.
-  var PACE_RANGE = 30;
+  // Scale and zones: GC.PACE_RANGE / GC.paceView, shared with Director. The ±30 that used to be
+  // here was sized for the damped intraday pace; projected EOD routinely runs past ±40, where it
+  // pinned the needle at the end stop and every struggling store looked identically bad.
 
   // Parse "H:MM" label → total minutes; returns null for "Closed" / invalid
   function parseLabelMins(label) {
@@ -8792,49 +8842,34 @@ var kiosk = (function() {
     return '';
   }
 
-  function paceZone(pace) {
-    var pct     = (pace || 0) * 100;           // convert decimal to percentage
-    var clamped = Math.max(-PACE_RANGE, Math.min(PACE_RANGE, pct));
-    var deg     = (clamped / PACE_RANGE) * 90;
-    if (deg <= -30) return 'red';
-    if (deg >=  30) return 'green';
-    return 'amber';
-  }
-
   function renderPaceCard(today) {
-    var pace = today.pace || 0;
     var proj = today.projectedRevenue || 0;
     var goal = today.goal || 0;
     var diff = proj - goal;
 
-    // ± % text and zone
-    var pctInt  = Math.round(pace * 100);
-    var pctStr  = (pctInt >= 0 ? '+' : '−') + Math.abs(pctInt) + '%';
-    var zone    = paceZone(pace);
-    var zoneColor = zone === 'red' ? 'var(--red)' : zone === 'green' ? 'var(--green)' : 'var(--amber)';
+    // ONE definition, shared with Director — see GC.paceView. The headline used to be today's
+    // damped pace while the Projected / Short-by stats below it were end-of-day, so the card
+    // disagreed with itself and with Director's number for the same store.
+    var pv        = GC.paceView(today);
+    var pctStr    = pv.str;
+    var zone      = pv.zone;
+    var zoneColor = pv.zoneColor;
+    var subLabel  = pv.sub;
+    var tickDeg   = pv.deg;
 
-    // Sublabel (under the big %)
-    var subLabel = Math.abs(diff) < (goal || 1) * 0.02
-      ? 'On plan'
-      : diff >= 0 ? 'ahead of plan' : 'behind plan';
-
-    // Tick rotation
-    var pct100  = pace * 100;
-    var clamped = Math.max(-PACE_RANGE, Math.min(PACE_RANGE, pct100));
-    var tickDeg = Math.round((clamped / PACE_RANGE) * 90);
-
-    // Bottom-row stats
-    var projStr   = fmtDollars(proj);
+    // Bottom-row stats. Before the projection exists these are NOT zero — they do not exist, and
+    // the card used to print "$0 projected / short by $4,155", i.e. the entire day's goal, at
+    // 9am on a store trading normally. Both are derived from a projection of 0 that the backend
+    // never supplied (MIN_PROJ_HOURS). Director already dashed the Projected slot; this matches
+    // it, and dashes the gap too, since a shortfall against a projection that does not exist is
+    // the same invented number wearing a different label. See DATA UNAVAILABLE above.
+    var projStr   = pv.isProjected ? fmtDollars(proj) : '—';
     var gapAbs    = Math.abs(Math.round(diff));
-    var gapStr    = '$' + gapAbs.toLocaleString();
-    var statusStr = Math.abs(diff) < (goal || 1) * 0.02
-      ? 'On plan'
-      : diff >= 0 ? 'Ahead' : 'Behind';
-    var gapCls    = diff >= 0 ? '' : ' down';
-    var statusCls = diff >= 0 ? '' : ' down';
+    var gapStr    = pv.isProjected ? '$' + gapAbs.toLocaleString() : '—';
+    var gapCls    = pv.isProjected && diff < 0 ? ' down' : '';
 
     return '<div class="pace-card">'
-      + '<div class="kcard-label">Pace · vs. Plan</div>'
+      + '<div class="kcard-label" id="kioskPaceTitle">' + e(pv.title) + '</div>'
       + '<div class="gauge-wrap pace-gauge-wrap">'
       + '  <svg width="240" height="130" viewBox="0 0 240 130">'
       // Background track
@@ -8869,7 +8904,7 @@ var kiosk = (function() {
       + '  </div>'
       + '  <div class="kstat' + gapCls + '">'
       + '    <div class="kstat-v num" id="kioskPaceShortBy">' + e(gapStr) + '</div>'
-      + '    <div class="kstat-l" id="kioskPaceShortByLabel">' + e(diff >= 0 ? 'Ahead by' : 'Short by') + '</div>'
+      + '    <div class="kstat-l" id="kioskPaceShortByLabel">' + e(!pv.isProjected ? 'Short by' : diff >= 0 ? 'Ahead by' : 'Short by') + '</div>'
       + '  </div>'
       + '</div>'
       + '</div>';
@@ -9655,7 +9690,7 @@ var kiosk = (function() {
     startClock();
     runCountUps(data);
     animateGoalArc(data.today.today.pctToGoal);
-    animatePaceNeedle(data.today.today.pace);
+    animatePaceNeedle(data.today.today);
     animateBars();
     applyBigSaleTreatment_();   // a sale from before this mount still gets its remaining time
     paintTopSaleOverlay_(false);  // today's standing record rides the holder's card
@@ -9828,14 +9863,13 @@ var kiosk = (function() {
   }
 
   // ── Pace tick ─────────────────────────────────────────
-  function animatePaceNeedle(pace) {
+  function animatePaceNeedle(today) {
     setTimeout(function() {
       var tick = document.getElementById('kioskPaceNeedle');
       if (!tick) return;
-      var pct100  = (pace || 0) * 100;
-      var clamped = Math.max(-PACE_RANGE, Math.min(PACE_RANGE, pct100));
-      var deg     = Math.round((clamped / PACE_RANGE) * 90);
-      tick.style.transform = 'rotate(' + deg + 'deg)';
+      // Takes the whole `today` object, not a bare pace number: the needle has to land on the
+      // SAME value the readout prints, and that value depends on whether a projection exists.
+      tick.style.transform = 'rotate(' + GC.paceView(today).deg + 'deg)';
     }, 350);
   }
 
@@ -10190,46 +10224,45 @@ var kiosk = (function() {
       lblEl.classList.toggle('zone-amber', !closed && timeZoneClass(label) === 'zone-amber');
     }
 
-    // Pace tick position
-    if (td.pace != null) {
+    // Pace gauge — same GC.paceView the first paint used, or the live refresh would quietly
+    // revert the card to the old right-now number 30 seconds after load. _goal is carried on
+    // the delta payload, which omits goal, so the projection has something to measure against.
+    if (td.pace != null || td.projectedRevenue != null) {
+      var pv = GC.paceView({
+        goal:             td.goal != null ? td.goal : _goal,
+        projectedRevenue: td.projectedRevenue,
+        pace:             td.pace
+      });
       var tick = document.getElementById('kioskPaceNeedle');
-      if (tick) {
-        var pct100  = td.pace * 100;
-        var clamped = Math.max(-PACE_RANGE, Math.min(PACE_RANGE, pct100));
-        var tickDeg = Math.round((clamped / PACE_RANGE) * 90);
-        tick.style.transform = 'rotate(' + tickDeg + 'deg)';
-      }
-      // ±% big number + zone color
-      var pctInt    = Math.round(td.pace * 100);
-      var pctStr    = (pctInt >= 0 ? '+' : '−') + Math.abs(pctInt) + '%';
-      var zone      = paceZone(td.pace);
-      var zoneColor = zone === 'red' ? 'var(--red)' : zone === 'green' ? 'var(--green)' : 'var(--amber)';
+      if (tick) tick.style.transform = 'rotate(' + pv.deg + 'deg)';
       var paceEl = document.getElementById('kioskPacePct');
       if (paceEl) {
-        paceEl.textContent = pctStr;
-        paceEl.className   = 'gp-big num zone-' + zone;
+        paceEl.textContent = pv.str;
+        paceEl.className   = 'gp-big num zone-' + pv.zone;
       }
       var labelEl = document.getElementById('kioskPaceLabel');
       if (labelEl) {
-        var subLbl = Math.abs(td.pace) < 0.02 ? 'On plan'
-          : td.pace >= 0 ? 'ahead of plan' : 'behind plan';
-        labelEl.textContent  = subLbl;
-        labelEl.style.color  = zoneColor;
+        labelEl.textContent = pv.sub;
+        labelEl.style.color = pv.zoneColor;
       }
+      // Title flips from "Pace" to "Projected" the moment the projection arrives mid-morning.
+      var titleEl = document.getElementById('kioskPaceTitle');
+      if (titleEl) titleEl.textContent = pv.title;
     }
     if (td.projectedRevenue != null) {
-      var proj  = td.projectedRevenue;
-      var diff  = proj - _goal;
-      var gapCls = diff >= 0 ? '' : ' down';
+      var proj    = td.projectedRevenue;
+      var diff    = proj - _goal;
+      var hasProj = proj > 0 && _goal > 0;   // same test as GC.paceView
+      var gapCls  = hasProj && diff < 0 ? ' down' : '';
       var projValEl = document.getElementById('kioskPaceProjVal');
-      if (projValEl) projValEl.textContent = fmtDollars(proj);
+      if (projValEl) projValEl.textContent = hasProj ? fmtDollars(proj) : '—';
       var shortByEl = document.getElementById('kioskPaceShortBy');
       if (shortByEl) {
-        shortByEl.textContent = '$' + Math.abs(Math.round(diff)).toLocaleString();
+        shortByEl.textContent = hasProj ? '$' + Math.abs(Math.round(diff)).toLocaleString() : '—';
         shortByEl.parentElement.className = 'kstat' + gapCls;
       }
       var shortByLblEl = document.getElementById('kioskPaceShortByLabel');
-      if (shortByLblEl) shortByLblEl.textContent = diff >= 0 ? 'Ahead by' : 'Short by';
+      if (shortByLblEl) shortByLblEl.textContent = (hasProj && diff >= 0) ? 'Ahead by' : 'Short by';
     }
 
     // Closing push

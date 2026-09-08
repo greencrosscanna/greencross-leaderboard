@@ -39,9 +39,18 @@ const ctx = {
     fmtCurrency: (n) => '$' + Math.round(Number(n) || 0),
     paceDotClass: (p) => (p >= 0.01 ? 'green' : p <= -0.05 ? 'red' : 'amber'),
   },
-  DIR_PACE_RANGE: 80,
 };
 vm.createContext(ctx);
+
+// GC.paceView is the REAL one, lifted off the shipped file — never a stub. It is now the single
+// definition of which percentage a pace gauge shows, shared by this card, the strip above it and
+// the kiosk. Stubbing it here would let the shipped rule drift while these assertions kept
+// passing, which is the exact failure tests/_harness.js exists to forbid. Same for the ±80 scale:
+// it used to be a local DIR_PACE_RANGE this test supplied itself, so the test could not have
+// noticed the kiosk drawing the same number on a ±30 gauge.
+const paceViewSrc = src.match(/\nGC\.PACE_RANGE = [\s\S]*?\nGC\.paceView = function[\s\S]*?\n\};\n/);
+if (!paceViewSrc) throw new Error('GC.paceView not found in index.html');
+vm.runInContext(paceViewSrc[0], ctx);
 vm.runInContext(grab('renderStatusStrip'), ctx);
 vm.runInContext(grab('renderDirPaceCard'), ctx);
 
@@ -88,10 +97,11 @@ console.log('\nProjected-vs-Plan gauge');
   ok('Projected stat is a dash — that value genuinely does not exist yet',
      pre.includes('num">—</div><div class="kstat-l">Projected</div>'));
 
-  // The needle and the number must name the same quantity. -14.2% of a ±80 range → -15.975deg.
+  // The needle and the number must name the same quantity. -14.2% of a ±80 range → -15.975deg,
+  // rounded to whole degrees by GC.paceView (the kiosk always rounded; the two now match).
   const deg = pre.match(/rotate\((-?[\d.]+)deg\)/);
   ok('needle is drawn from the same pace the readout prints',
-     !!deg && Math.abs(parseFloat(deg[1]) - (-0.142 * 100 / 80) * 90) < 0.001);
+     !!deg && parseFloat(deg[1]) === Math.round((-0.142 * 100 / 80) * 90));
 
   const post = ctx.renderDirPaceCard(withProjection.today);
   ok('card title returns to Projected once there is a projection',
