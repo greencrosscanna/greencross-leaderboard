@@ -72,13 +72,26 @@ console.log('\nKiosk and Director answer the same question');
 
 console.log('\nOne gauge scale, so one number points one way');
 {
-  ok('the scale has a single home', ctx.GC.PACE_RANGE === 80);
+  const R = ctx.GC.PACE_RANGE;
+  // Pinned deliberately, because the value is a MEASURED decision, not a preference: 240
+  // store-days (six stores, 34 days, finished revenue vs goal) put 99% of days inside ±50 and
+  // only 96% inside ±30, while ±80 — where this sat for one morning — wasted a third of the
+  // arc on a range that never occurs. Changing it means re-running those numbers, so make this
+  // assertion fail loudly rather than tracking whatever the constant happens to say.
+  ok('the scale is the measured ±50', R === 50);
+  ok('and it has a single home', typeof R === 'number');
+
   const deg = paceView(KIOSK).deg;
-  ok('needle uses the shared ±80 range', deg === Math.round((-0.4315 * 100 / 80) * 90));
-  ok('a projected −43% does NOT pin the needle', Math.abs(deg) < 90);
-  // The old kiosk ±30 mapped anything past −30% to the hard stop.
-  const pinnedOnOldScale = Math.round((Math.max(-30, -43.15) / 30) * 90);
-  ok('the old ±30 scale would have pinned it', pinnedOnOldScale === -90);
+  ok('needle is derived from that one scale', deg === Math.round((-0.4315 * 100 / R) * 90));
+  ok('a projected −43% — an ordinary bad day — does NOT pin the needle', Math.abs(deg) < 90);
+  // The kiosk's old ±30 mapped anything past −30% to the hard stop, which is the failure this
+  // replaced: a routine bad day and a catastrophe drew the same picture.
+  ok('the old ±30 scale would have pinned it',
+     Math.round((Math.max(-30, -43.15) / 30) * 90) === -90);
+  // Worst day in 34 days was −34.7%; best was +60.7%. The floor must stay readable; the
+  // ceiling is allowed to clip, since only 2 of 240 days cleared it and both were blowouts.
+  ok('the worst real day in 34 days stays off the end stop',
+     Math.abs(paceView({ goal: 1000, projectedRevenue: 653 }).deg) < 90);
 }
 
 console.log('\nBefore a projection exists, fall back to damped pace and say so');

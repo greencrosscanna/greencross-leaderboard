@@ -97,11 +97,13 @@ console.log('\nProjected-vs-Plan gauge');
   ok('Projected stat is a dash — that value genuinely does not exist yet',
      pre.includes('num">—</div><div class="kstat-l">Projected</div>'));
 
-  // The needle and the number must name the same quantity. -14.2% of a ±80 range → -15.975deg,
-  // rounded to whole degrees by GC.paceView (the kiosk always rounded; the two now match).
+  // The needle and the number must name the same quantity, on whatever scale GC.paceView
+  // currently uses — read the range from it rather than repeating a literal here, or this
+  // fails for a deliberate scale change instead of for the drift it exists to catch.
+  // (The VALUE of that scale is pinned, with its data, in pace_one_definition_test.js.)
   const deg = pre.match(/rotate\((-?[\d.]+)deg\)/);
   ok('needle is drawn from the same pace the readout prints',
-     !!deg && parseFloat(deg[1]) === Math.round((-0.142 * 100 / 80) * 90));
+     !!deg && parseFloat(deg[1]) === Math.round((-0.142 * 100 / ctx.GC.PACE_RANGE) * 90));
 
   const post = ctx.renderDirPaceCard(withProjection.today);
   ok('card title returns to Projected once there is a projection',
