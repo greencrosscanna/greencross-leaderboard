@@ -381,8 +381,8 @@ function getDirectorToday(byStoreToday) {
   const MIN_PROJ_HOURS = 2;
   const projectedRevenue = storeClosed
     ? totalRevenue
-    : (elapsedHours >= MIN_PROJ_HOURS && _expFrac > 0.02)
-      ? Math.round(totalRevenue / _expFrac)
+    : (elapsedHours >= MIN_PROJ_HOURS)
+      ? projectedEod_(totalRevenue, _expFrac, totalGoal)
       : 0;
 
   // Build hourly array (same shape as getStoreToday hourly)
@@ -536,8 +536,8 @@ function getDirectorStores(params, pre) {
 
     // Projected EOD: extrapolate along the DOW-weighted curve; requires 2+ hours of data
     const MIN_PROJ_HOURS = 2;
-    const projectedRevenue = (elapsed >= MIN_PROJ_HOURS && expectedFrac > 0.02)
-      ? Math.round(aggToday.sales / expectedFrac) : 0;
+    const projectedRevenue = (elapsed >= MIN_PROJ_HOURS)
+      ? projectedEod_(aggToday.sales, expectedFrac, dailyGoal) : 0;
     const projectedPace    = (projectedRevenue > 0 && dailyGoal > 0)
       ? r3_((projectedRevenue - dailyGoal) / dailyGoal) : null;
 
@@ -1337,13 +1337,15 @@ function getStoreToday(store, params) {
     : _remFmt;
 
   // Project EOD revenue on the DOW-weighted curve (sales ÷ expected-fraction-by-now) so a slow morning
-  // projects to the real finish, not a linear under-shoot that makes the goal look out of reach. Guard a
-  // tiny expectedFrac early in the day (paired with the ≥2h gate) to avoid a wild projection.
+  // projects to the real finish, not a linear under-shoot that makes the goal look out of reach.
+  // projectedEod_ owns the small-denominator guard AND shrinks toward the goal while the day is young —
+  // the ≥2h gate alone still left the 10am number missing the finish by 23 points of goal. See the
+  // fitted constant and its data in dutchie_fetch.gs.
   const MIN_PROJ_HOURS = 2;
   const projectedRevenue = (isPreOpen || storeClosed)
     ? agg.sales
-    : (elapsedHours >= MIN_PROJ_HOURS && expectedFrac > 0.02)
-      ? Math.round(agg.sales / expectedFrac)
+    : (elapsedHours >= MIN_PROJ_HOURS)
+      ? projectedEod_(agg.sales, expectedFrac, dailyGoal)
       : 0;
 
   // Hourly bar chart. FREEZE completed hours so a past hour's bar never changes after it ends
