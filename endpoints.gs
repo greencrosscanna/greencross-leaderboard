@@ -1602,6 +1602,15 @@ function getStoreToday(store, params) {
     latestTxnTs:        latestTxnTs,
     lastUpdated:        new Date().toISOString(),
     refreshToken:       kioskRefreshToken_(store.slug),
+    /* The SPIFF board's per-store link, or '' when this store has no token in the Command
+       Center — see spiffKioskUrl_. It rides the FULL response only: the header this button
+       lives in is built once per load, and the 30s delta poll does not rebuild it. Wrapped
+       because SPIFF's page is a link, not a dependency; a config read that fails must cost
+       the kiosk a button, never a board. */
+    spiffKioskUrl:      (function () {
+                          try { return spiffKioskUrl_(store); }
+                          catch (e) { Logger.log('spiffKioskUrl_ failed: ' + e); return ''; }
+                        })(),
   };
 
   // Store in GAS cache for 55 seconds (full loads only — sinceTs polls bypass this)

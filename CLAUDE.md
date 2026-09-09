@@ -63,6 +63,26 @@ across the suite until it read as fact. SPIFF keeps its payout data in its own s
 Leaderboard↔Core contract is `goal_publications` (Leaderboard publishes, Sales consumes), covered by
 `tests/cross_app_goals_contract_test.js`.*
 
+**There IS a SPIFF contract now, and it is the other direction (2026-09-08).** SPIFF publishes each pay
+period's finished per-employee sell-through and payout to GX Core's **`spiff_publications`** tab after
+every hourly refresh; this app reads it back with `GXCore.publishedSpiffProgress(secret, scope)` and folds
+it onto the kiosk staff cards. Before that, `spiff.gs` called SPIFF's `/exec` directly — knowingly
+app-to-app, and documented as such in its own header. The numbers and the payload shape did not change.
+
+Two things about it that are not guessable from the code:
+
+- **Core stores the payload verbatim and never recomputes it**, so a SPIFF that stops publishing does not
+  fail — it just gets older, and nothing throws anywhere. `spiff.gs` therefore refuses any scope older
+  than `cfg.spiffStaleHours` (GX Core's own watchdog threshold, so the alert and the screen agree) rather
+  than drawing a fortnight-old bar on the kiosk.
+- **A payload is filed under the pay period the PROGRAM started in, not the current one.** A SPIFF that
+  began last fortnight and is still running is filed under the previous scope, so reading only the
+  current one drops a live program off every card. `SPIFF_LOOKBACK_PERIODS` reads three back and merges.
+
+The kiosk also links out to SPIFF's own per-store board (`store.html?t=<token>`), one permanent token per
+store held in GX Core kv as `cfg.spiffKiosk.<core store_id>`. No token, no button — which is the correct
+state until they are pasted into the Command Center.
+
 ## Sync with the brain — run `/gxbrain` (or say "brain sync")
 
 This app is on the shared brain. **`/gxbrain`** loads the shared rules and reconciles this chat with GX Core

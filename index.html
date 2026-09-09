@@ -1373,6 +1373,77 @@ body.kiosk-bg {
 }
 .kiosk-back-btn:hover { background: var(--surface-2); color: var(--text); }
 
+/* ── SPIFF board button + overlay ───────────────────────────
+   The button only exists when the server sent a link for THIS store, so it is absent
+   rather than dead at a store whose token has not been minted. Gold because a SPIFF is a
+   bounty and gold is what this board already uses to mean "there is money in this". */
+.kiosk-spiff-btn {
+  background: linear-gradient(180deg, rgba(212,168,71,0.18), rgba(212,168,71,0.08));
+  border: 1px solid var(--gold-line);
+  color: var(--gold-bright);
+  border-radius: 6px;
+  /* Bigger than the back button on purpose: a director clicks that one with a mouse, and a
+     budtender taps this one on a wall-mounted screen. 44px is the small end of a touch target. */
+  padding: 9px 16px;
+  min-height: 40px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.kiosk-spiff-btn:hover { background: rgba(212,168,71,0.28); }
+.kiosk-spiff-btn .ksb-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 8px var(--gold);
+  animation: kiosk-pulse-dot 2s ease-in-out infinite;
+}
+
+#kioskSpiffOverlay {
+  position: fixed; inset: 0;
+  background: rgba(10,14,13,0.86);
+  backdrop-filter: blur(4px);
+  z-index: 120;                 /* above the rare-drop overlay: this one was ASKED for */
+  display: none;
+  flex-direction: column;
+  animation: kiosk-fade-in 0.25s ease-out;
+}
+#kioskSpiffOverlay.show { display: flex; }
+/* Opaque, not translucent like the sheet below it: the kiosk header sits directly behind this
+   strip, and letting the store badge and the clock ghost through it read as a rendering fault. */
+.kso-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--gold-line);
+  flex-shrink: 0;
+}
+.kso-title { color: var(--gold-bright); font-size: 14px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; }
+/* The board is coming back on its own — say so, rather than letting somebody wonder whether
+   they broke the screen. See openSpiff_ for why it closes itself at all. */
+.kso-auto  { color: var(--text-mute); font-size: 12px; margin-left: auto; font-variant-numeric: tabular-nums; }
+.kso-close {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  padding: 10px 24px;
+  min-height: 44px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.kso-close:hover { background: var(--surface-2); }
+.kso-frame { flex: 1; width: 100%; border: 0; background: var(--bg); }
+
 /* ── Slideshow bar ─────────────────────────────────────── */
 .ss-bar {
   position: fixed;
@@ -3630,7 +3701,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      slideshow bar at 9999, so nothing here contests it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.751';
+window.GC = window.GC || {}; GC.VERSION = 'v1.752';
 
 // ── GX Core web-app URL — ONE definition ──
 // This was previously a `var` inside loadChangelogFromGXCore(), i.e. function-scoped, while the
@@ -8295,6 +8366,68 @@ function kioskDataError_(rawData) {
 // is generated inside the kiosk module and an onclick can only reach globals.
 GC.views.forceKioskRefresh = function() { kiosk.forceRefresh(kioskRouteSlug_()); };
 
+/* ── The SPIFF board overlay: open, close, and close ITSELF ──────────────────────────────────
+ *
+ * Same reason as forceKioskRefresh — the markup is generated inside the kiosk module and an
+ * inline onclick can only reach a global.
+ *
+ * IT CLOSES ITSELF, and that is the part worth defending. A budtender opens the SPIFF board,
+ * reads it, and walks back to the counter; nobody presses Close on a wall-mounted screen. Left
+ * alone, the most visible screen in the company sits on a vendor flyer for the rest of the
+ * shift while the floor believes it is watching the board. So the overlay has a life of its own
+ * measured in seconds — long enough to read five selling tips, short enough that a forgotten
+ * one costs a minute of board time. The countdown is shown, because a screen that closes with
+ * no warning reads as a crash.
+ *
+ * ANY TOUCH RESTARTS THE CLOCK. Somebody still reading must not be shut out mid-sentence. The
+ * frame is same-origin (both apps are on greencrosscanna.github.io), so a listener inside it
+ * would work — but this deliberately does NOT reach into SPIFF's document: prodding another
+ * app's DOM from here is exactly the coupling this whole consolidation is unwinding. Focus
+ * moving into the frame is enough of a signal, and the bar above it stays reachable.
+ */
+var KIOSK_SPIFF_AUTOCLOSE_S = 120;
+var _kioskSpiffTimer = null, _kioskSpiffLeft = 0;
+
+function kioskSpiffTick_() {
+  var el = document.getElementById('kioskSpiffAuto');
+  if (el) el.textContent = 'Closing in ' + _kioskSpiffLeft + 's';
+  if (_kioskSpiffLeft <= 0) { GC.views.closeSpiffBoard(); return; }
+  _kioskSpiffLeft--;
+}
+
+GC.views.openSpiffBoard = function() {
+  var ov = document.getElementById('kioskSpiffOverlay');
+  var fr = document.getElementById('kioskSpiffFrame');
+  if (!ov || !fr) return;
+  // Load on open, not on paint — see renderSpiffOverlay. Re-set every time so a board left
+  // open through a pay-period boundary cannot show yesterday's program.
+  fr.setAttribute('src', ov.getAttribute('data-src') || '');
+  ov.classList.add('show');
+
+  clearInterval(_kioskSpiffTimer);
+  _kioskSpiffLeft = KIOSK_SPIFF_AUTOCLOSE_S;
+  kioskSpiffTick_();
+  _kioskSpiffTimer = setInterval(kioskSpiffTick_, 1000);
+  /* A tap INSIDE the frame never reaches the overlay's own pointerdown — the iframe swallows it —
+     but it does move focus off this document, so the window blurs. That is the whole signal, and
+     it costs us nothing inside SPIFF's page. */
+  window.addEventListener('blur', GC.views.keepSpiffBoardOpen);
+};
+
+/** Push the auto-close back — someone is still reading. */
+GC.views.keepSpiffBoardOpen = function() { _kioskSpiffLeft = KIOSK_SPIFF_AUTOCLOSE_S; };
+
+GC.views.closeSpiffBoard = function() {
+  clearInterval(_kioskSpiffTimer); _kioskSpiffTimer = null;
+  window.removeEventListener('blur', GC.views.keepSpiffBoardOpen);
+  var ov = document.getElementById('kioskSpiffOverlay');
+  var fr = document.getElementById('kioskSpiffFrame');
+  if (ov) ov.classList.remove('show');
+  // Drop the src as well as hiding it: a hidden frame keeps its 10-minute self-refresh running,
+  // and a kiosk that opened the board once would poll SPIFF all day for a screen nobody sees.
+  if (fr) fr.removeAttribute('src');
+};
+
 GC.views.renderKiosk = function(slug) {
   var app = document.getElementById('app');
   if (!app) return;
@@ -8522,16 +8655,25 @@ var kiosk = (function() {
   }
 
   // ── Render: Header ─────────────────────────────────────
-  function renderHeader(store) {
+  function renderHeader(store, spiffUrl) {
     var sess = GC.auth.load() || {};
     var isDirector = sess.role === 'director' || sess.role === 'owner';
     var backBtn = isDirector
       ? '<button class="kiosk-back-btn" onclick="GC.router.navigate(\'#/director\')">← Back</button>'
       : '';
+    /* The SPIFF board button, and ONLY when the server sent a link for this store — the URL
+       carries a permanent per-store token that SPIFF mints, so the absence of one means this
+       store has not been set up and the honest thing is no button. Everyone gets it, not just
+       directors: this is what a budtender walks up to the screen to look at. */
+    var spiffBtn = spiffUrl
+      ? '<button class="kiosk-spiff-btn" onclick="GC.views.openSpiffBoard()">'
+        + '<span class="ksb-dot"></span>SPIFF</button>'
+      : '';
     // Standings is intentionally NOT linked from the kiosk — managers reach it via its dedicated
     // URL (#/standings). See the router's post-login return-to so that link lands on Standings.
     return '<header class="kiosk-header">'
       + backBtn
+      + spiffBtn
       + '<img class="gc-logo-img" src="' + GC.LOGO_PNG + '" alt="Green Cross" height="28">'
       + '<span class="store-live-badge">' + e(store.name) + '</span>'
       + '<span class="ver-badge">' + (window.GC && GC.VERSION ? GC.VERSION : '') + '</span>'
@@ -9595,7 +9737,7 @@ var kiosk = (function() {
       '<canvas id="kioskConfetti"></canvas>',
       '<div id="kioskGoalBanner">🎯 DAILY GOAL HIT! · ' + e(store.name.toUpperCase()) + ' TEAM!</div>',
       '<div class="kiosk-wrap">',
-        renderHeader(store),
+        renderHeader(store, storeData.spiffKioskUrl || ''),
         renderStaffGrid(staff, store.name, onShift, badges, _eomKey),
         '<div class="hero-grid">',
           renderGoalCard(today),
@@ -9610,7 +9752,38 @@ var kiosk = (function() {
         '</div>',
       '</div>',
       renderRareDrop(),
+      renderSpiffOverlay(storeData.spiffKioskUrl || ''),
     ].join('');
+  }
+
+  // ── Render: SPIFF board overlay ────────────────────────
+  /* SPIFF's own page, in a frame, over the board.
+   *
+   * A FRAME AND NOT A NEW TAB. A kiosk is a wall-mounted screen with no keyboard and often no
+   * visible browser chrome; a new tab is a place a budtender can get stranded and nobody can
+   * navigate back from. This opens over the board and closes back onto it.
+   *
+   * THE PAGE IS NOT REDRAWN HERE. SPIFF renders the program, the goals, the bounty and Tawny's
+   * tips; we supply a rectangle. A kiosk-shaped copy of a vendor agreement is a second thing to
+   * keep in step with the agreement, and the first time it drifts a screen promises a bounty
+   * nobody signed. It also refreshes itself every 10 minutes and on wake, so it needs nothing
+   * from us once it is up.
+   *
+   * `src` IS SET ON OPEN, NOT HERE. Left in the markup it would load SPIFF's page on every
+   * kiosk paint at every store all day — a fetch nobody asked for, on a board that repaints
+   * itself continuously. */
+  function renderSpiffOverlay(url) {
+    if (!url) return '';
+    return '<div id="kioskSpiffOverlay" data-src="' + e(url) + '"'
+      + ' onpointerdown="GC.views.keepSpiffBoardOpen()">'
+      + '<div class="kso-bar">'
+      +   '<span class="kso-title">SPIFF</span>'
+      +   '<span class="kso-auto" id="kioskSpiffAuto"></span>'
+      +   '<button class="kso-close" onclick="GC.views.closeSpiffBoard()">Close</button>'
+      + '</div>'
+      + '<iframe class="kso-frame" id="kioskSpiffFrame" title="SPIFF board"'
+      +   ' referrerpolicy="no-referrer"></iframe>'
+      + '</div>';
   }
 
   // ── init ──────────────────────────────────────────────
