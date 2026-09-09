@@ -1,26 +1,60 @@
 // ============================================================
 //  Green Cross — SPIFF progress for kiosk staff cards (spiff.gs)
 //
-//  Reads SPIFF's `progress` cache and folds each budtender's sell-through onto
-//  their kiosk card: units toward the vendor's target, and the payout once hit.
+//  Reads SPIFF's finished per-employee sell-through FROM GX CORE and folds it onto
+//  each budtender's kiosk card: units toward the vendor's target, and the payout once hit.
 //
 //  SPIFF OWNS THE NUMBERS. This file measures nothing. SPIFF sets the targets,
 //  counts the units and decides what a person earned; we render a finished
 //  figure. Computing it a second time here would be a second answer to "what
 //  does this person get", and the vendor is being paid SPIFF's number.
 //
-//  APP-TO-APP, AND KNOWN TO BE. The shared brain says everything cross-app goes
-//  through GX Core. This is the THIRD hop for the same per-employee data
-//  (Leaderboard incentiveperf -> Crew, SPIFF progress -> Crew, and now
-//  SPIFF progress -> here). The brain notes asking core-admin to promote a
-//  per-employee slice are open on both sides; Sky's call on 2026-08-29 was to
-//  ship the kiosk now rather than wait. DELETE THIS FILE when GX Core exposes
-//  the slice — same fate as the incentiveperf route in dutchie_proxy.gs.
+//  NO LONGER APP-TO-APP (2026-09-08). This used to call SPIFF's /exec directly — the third
+//  hop for the same per-employee data, and knowingly against the suite rule that everything
+//  cross-app goes through GX Core. Step 2 of the consolidation closed that: SPIFF now
+//  publishes each pay period's finished payload to Core's `spiff_publications` after every
+//  hourly refresh, and we read it back with GXCore.publishedSpiffProgress. The payload is
+//  byte-for-byte the shape ?action=progress already served, deliberately, so this file's
+//  filtering, joining and card-shaping below are UNCHANGED — only the source moved.
+//
+//  THE FILE STAYS. The note announcing the route said Leaderboard "can delete spiff.gs",
+//  reading its old header, which promised deletion when Core exposed the slice. That header
+//  was about the FETCH, which is now eight lines of library call. Everything else here —
+//  the overlap window, the active-status filter, the Dutchie-id join, choosing which of a
+//  person's programs a card leads with — is Leaderboard's own display logic, lives nowhere
+//  else, and is what puts the tick on the card. Deleting the file removes the feature.
+//
+//  THE NEW FAILURE MODE, AND WHAT WE DO ABOUT IT. Core stores the payload verbatim and
+//  never recomputes it. If SPIFF goes quiet the payload simply gets OLDER and nothing throws
+//  anywhere — a consumer that does not check would draw a fortnight-old bar and look healthy
+//  doing it. So every scope we take rows from must be fresh (spiffStaleMinutes_), and a stale
+//  one is dropped with its reason recorded rather than rendered. On a kiosk, no SPIFF row is
+//  a visibly missing feature; a wrong SPIFF row is a budtender told they are at 4 of 5 when
+//  the program ended last fortnight.
 // ============================================================
 
-var SPIFF_CACHE_KEY  = 'gc_spiff_progress_v1';
+var SPIFF_CACHE_KEY  = 'gc_spiff_progress_v2';  // v2: the payload now comes from Core, not SPIFF
 var SPIFF_TTL_OK     = 900;   // 15 min. SPIFF's own refresh trigger is hourly, so this is fresh.
 var SPIFF_TTL_FAIL   = 120;   // Cache FAILURES too, briefly — see spiffFetchRaw_.
+
+/* HOW MANY PAY PERIODS BACK TO READ, and why this is not 1.
+ *
+ * Core files a published payload under a SCOPE, and SPIFF derives that scope from the
+ * PROGRAM'S START DATE — not from today. A program that began last fortnight and is still
+ * running is therefore filed under the PREVIOUS scope, so asking only for the current one
+ * would drop it from every card while it is still live. That is the exact case
+ * spiffFilterRows_ exists for: a SPIFF runs concurrent to the pay period without being
+ * required to line up with it.
+ *
+ * Three periods covers any program whose start is within the last ~6 weeks. A program
+ * running longer than that would fall off the kiosk — diagSpiff_ reports the scopes read and
+ * what each contributed, so that shows up as an answer rather than as a mystery.
+ */
+var SPIFF_LOOKBACK_PERIODS = 3;
+
+/* Fallback for cfg.spiffStaleHours, matching GX Core's own default so the watchdog that
+ * emails about a stale publication and the kiosk that stops drawing it agree on the number. */
+var SPIFF_STALE_HOURS_DEFAULT = 6;
 
 /**
  * Is the SPIFF row switched on for the kiosk?
@@ -40,31 +74,112 @@ function spiffShowEnabled_() {
 }
 
 /**
- * SPIFF's /exec URL, from GX Core kv key `spiffProgress`.
+ * How old a published payload may be before we refuse to draw it, in MINUTES.
  *
- * Read from kv rather than hardcoded so a SPIFF redeploy is a config change in the
- * Command Center and not an edit in two repos. Crew reads the same key the same way.
+ * ONE NUMBER, HELD IN THE COMMAND CENTER. GX Core's spiff_freshness watchdog already reads
+ * cfg.spiffStaleHours to decide when to shout about a stale publication; the kiosk reads the
+ * same key to decide when to stop showing one. A second threshold here would mean the alert
+ * and the screen could disagree about whether the data is usable, which is the worst of both.
  */
-function spiffEngineUrl_() {
-  try { return String(GXCore.getKv('spiffProgress') || '').trim(); }
-  catch (e) { return ''; }
+function spiffStaleMinutes_() {
+  var hours = SPIFF_STALE_HOURS_DEFAULT;
+  try {
+    var v = GXCore.getKv('cfg.spiffStaleHours');
+    if (v && isFinite(+v) && +v > 0) hours = +v;
+  } catch (e) { /* a kiosk that cannot reach Core still needs a threshold */ }
+  return Math.round(hours * 60);
 }
 
 /**
- * Fetch SPIFF's progress cache, memoized in CacheService.
+ * The scopes to read: this pay period's start, then the SPIFF_LOOKBACK_PERIODS - 1 before it.
  *
- * NEVER THROWS, and never lets a SPIFF problem reach the kiosk. Every failure
+ * Built by shifting CALENDAR DAYS off the current start, never by subtracting milliseconds —
+ * the same trap currentPPStart_ documents at length. An hour either side of PT midnight
+ * formats to the wrong DAY, and a scope is matched by exact string equality in Core.
+ */
+function spiffScopes_() {
+  var pp = currentPPStart_();
+  var n  = ppDays_();
+  var out = [];
+  for (var i = 0; i < SPIFF_LOOKBACK_PERIODS; i++) out.push(ptDateShift_(pp.ppStartStr, -i * n));
+  return out;
+}
+
+/**
+ * One scope, read back from Core. NEVER THROWS.
+ *
+ * "NOTHING PUBLISHED" IS NOT A FAILURE. Core answers ok:false with a "nothing published…"
+ * error when no payload exists for a scope, and for a pay period in which no SPIFF program
+ * STARTED that is the correct and ordinary answer — most fortnights, for most of the lookback.
+ * Treating it as an outage would put a constantly-polled kiosk into the short failure-cache
+ * loop and log an error every time, which is exactly the mistake the old code documented
+ * about ?status=active and then would have re-made here.
+ *
+ * A STALE PAYLOAD IS DROPPED, NOT DRAWN — see the header. The reason is carried back so
+ * diagSpiff_ can say "SPIFF stopped publishing 9 hours ago" instead of showing an empty board.
+ *
+ * @return {{ scope:string, rows:Array, used:boolean, reason:string, age_minutes:(number|null),
+ *            published_at:string, refreshed_at:string }}
+ */
+function spiffReadScope_(secret, scope, maxAgeMin) {
+  var base = { scope: scope, rows: [], used: false, reason: '',
+               age_minutes: null, published_at: '', refreshed_at: '' };
+  var res;
+  try {
+    res = GXCore.publishedSpiffProgress(secret, scope);
+  } catch (e) {
+    base.reason = 'GX Core threw: ' + String((e && e.message) || e);
+    return base;
+  }
+  if (!res || !res.ok) {
+    base.reason = (res && res.error) || 'GX Core refused';
+    return base;
+  }
+
+  base.age_minutes  = (res.age_minutes == null) ? null : Number(res.age_minutes);
+  base.published_at = String(res.published_at || '');
+
+  var payload = res.payload || {};
+  base.refreshed_at = String(payload.refreshed_at || '');
+
+  /* An envelope with no age is not proof of freshness — it means published_at was unreadable,
+     which is the one case where we cannot tell the difference between an hour old and a month
+     old. Refuse it, for the same reason a stale one is refused. */
+  if (base.age_minutes == null) {
+    base.reason = 'published_at missing or unreadable, so freshness cannot be checked';
+    return base;
+  }
+  if (base.age_minutes > maxAgeMin) {
+    base.reason = 'stale: published ' + base.age_minutes + ' min ago, limit ' + maxAgeMin;
+    return base;
+  }
+
+  base.rows = payload.rows || [];
+  base.used = true;
+  return base;
+}
+
+/**
+ * Every fresh published row across the lookback, memoized in CacheService.
+ *
+ * NEVER THROWS, and never lets a SPIFF or Core problem reach the kiosk. Every failure
  * returns { ok:false, error } and the caller renders staff cards without SPIFF —
  * this is the all-staff screen, and a vendor-bonus widget is not worth a blank board.
  *
  * FAILURES ARE CACHED (briefly) on purpose. The kiosk polls standings continuously;
- * without this, a SPIFF outage would mean one blocking UrlFetchApp per poll per
- * screen, turning their downtime into our latency.
+ * without this, an outage would mean one blocking read per poll per screen, turning
+ * somebody else's downtime into our latency.
  *
- * Deliberately does NOT call refreshProgress: that is a WRITE, ~9s per store against
- * a 60s /exec ceiling, which is why it hands back a plan for the caller to loop.
- * SPIFF's hourly trigger and Crew's on-demand refresh already drive it; a kiosk
- * polling it would fight both. We read, and trust `refreshed_at`.
+ * ok:true WITH ZERO ROWS IS A NORMAL FORTNIGHT — nobody is running a SPIFF — and must not be
+ * routed through the failure path. Only a missing secret, which no read can recover from,
+ * is ok:false here.
+ *
+ * NO pay_period FILTER, and this is not an oversight. SPIFF stores pay_period as a
+ * human-readable RANGE ("2026-08-17 - 2026-08-30") on the row itself, so matching it as a
+ * date matches nothing and every card reads zero: indistinguishable from a fortnight where
+ * nobody sold anything. The SCOPE the payload is filed under is the derived, trustworthy
+ * one; the row's own column is not. We place rows by their WINDOW in spiffFilterRows_ —
+ * the fact, not its formatting.
  */
 function spiffFetchRaw_() {
   var cache = CacheService.getScriptCache();
@@ -72,34 +187,37 @@ function spiffFetchRaw_() {
   if (hit) { try { return JSON.parse(hit); } catch (e) {} }
 
   var out;
-  var base = spiffEngineUrl_();
-  if (!base) {
-    out = { ok: false, error: 'no SPIFF engine URL in GX Core kv (key spiffProgress)' };
+  var secret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+  if (!secret) {
+    // Per-employee money: Core gates this read on the deploy secret, same as SPIFF did.
+    out = { ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' };
   } else {
-    var secret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
-    if (!secret) {
-      out = { ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' };
-    } else {
-      /* NO pay_period FILTER — and this is not an oversight. SPIFF stores pay_period as a
-         human-readable RANGE ("2026-08-17 - 2026-08-30"), not a start date, so asking for
-         "2026-08-17" matches nothing and every card reads zero: indistinguishable from a
-         fortnight where nobody sold anything. Crew hit exactly this and now filters on the
-         WINDOW instead. We do the same in spiffFilterRows_ — the fact, not its formatting. */
-      try {
-        var res = UrlFetchApp.fetch(
-          base + '?action=progress&secret=' + encodeURIComponent(secret),
-          { muteHttpExceptions: true, followRedirects: true });
-        if (res.getResponseCode() !== 200) {
-          out = { ok: false, error: 'SPIFF returned HTTP ' + res.getResponseCode() };
-        } else {
-          var d = JSON.parse(res.getContentText());
-          out = (!d || d.ok === false)
-            ? { ok: false, error: (d && d.error) || 'SPIFF refused' }
-            : { ok: true, rows: d.rows || [], refreshed_at: d.refreshed_at || '' };
-        }
-      } catch (e) {
-        out = { ok: false, error: 'could not reach SPIFF: ' + String((e && e.message) || e) };
-      }
+    var maxAge  = spiffStaleMinutes_();
+    var scopes  = spiffScopes_().map(function (sc) { return spiffReadScope_(secret, sc, maxAge); });
+    var rows    = [];
+    var freshest = '';
+    scopes.forEach(function (s) {
+      if (!s.used) return;
+      rows = rows.concat(s.rows || []);
+      if (s.refreshed_at > freshest) freshest = s.refreshed_at;
+    });
+    out = {
+      ok: true,
+      rows: rows,
+      refreshed_at: freshest,
+      maxAgeMinutes: maxAge,
+      // Kept on the cached object so diagSpiff_ answers "why is this card empty" from the
+      // SAME read the kiosk did, rather than re-running one that might succeed differently.
+      scopes: scopes.map(function (s) {
+        return { scope: s.scope, used: s.used, rows: (s.rows || []).length,
+                 age_minutes: s.age_minutes, published_at: s.published_at,
+                 refreshed_at: s.refreshed_at, reason: s.reason };
+      }),
+    };
+    var dropped = out.scopes.filter(function (s) { return !s.used && s.age_minutes != null; });
+    if (dropped.length) {
+      Logger.log('spiffFetchRaw_: dropped ' + dropped.length + ' stale scope(s): '
+                 + dropped.map(function (s) { return s.scope + ' (' + s.reason + ')'; }).join('; '));
     }
   }
 
@@ -157,15 +275,14 @@ function spiffFilterRows_(rows, coreStoreId, ppStartStr, ppEndStr) {
  * split the inference was producing, so this swap was a no-op on screen and correct by
  * contract rather than by luck.
  *
- * WE FILTER HERE RATHER THAN ASKING FOR ?status=active. SPIFF also offers a server-side
- * filter, and it trims its own by_employee totals in the same call. We do not use it, for
- * one reason: it answers ok:false when NOTHING is active, and spiffFetchRaw_ treats ok:false
- * as a failure — cached for SPIFF_TTL_FAIL (2 min) instead of SPIFF_TTL_OK (15 min). "No
- * program is running this fortnight" is a normal steady state, not an outage, and routing
- * it through the failure path would put a constantly-polled kiosk into a permanent 2-minute
- * refetch loop and log an error every time. The totals argument does not apply to us either:
- * spiffIndexByEmployee_ sums `earned` over the rows we KEEP, so filtering here fixes the
- * inflation without reading SPIFF's by_employee at all.
+ * WE FILTER HERE, and since 2026-09-08 there is nowhere else to do it. The rows arrive from
+ * Core's published payload, which SPIFF files UNFILTERED on purpose so every consumer sees the
+ * same thing; SPIFF's old server-side ?status=active filter is not reachable through Core and
+ * we would not want it anyway — it answered ok:false when nothing was active, and "no program
+ * is running this fortnight" is a normal steady state, not an outage. The payload also carries
+ * a by_employee roll-up we deliberately ignore: it is computed over ALL rows in the scope,
+ * including closed ones, while spiffIndexByEmployee_ sums `earned` over the rows we KEEP. That
+ * is what stops a finished program inflating a card's totalEarned with money nobody can bank.
  *
  * UNKNOWN IS NOT ACTIVE. If a cached row's program has vanished from the programs tab,
  * SPIFF reports status '' and names the id in `orphan_program_ids`. An orphan fails the
@@ -307,6 +424,10 @@ function diagSpiff_(storeSlug) {
 
   var raw = spiffFetchRaw_();
   if (!raw.ok) return { ok: false, error: raw.error, store: storeSlug, stage: 'fetch' };
+  /* THE SCOPES, FIRST — because the commonest empty board is no longer "SPIFF is down" but
+     "the payload Core holds went stale" or "the program is filed under a fortnight we did not
+     read". Reported off the SAME cached read the kiosk used, so this cannot answer differently
+     from the screen it is explaining. */
 
   var pp     = currentPPStart_();
   var coreId = coreStoreId_(store);
@@ -347,6 +468,13 @@ function diagSpiff_(storeSlug) {
     coreStoreId:     coreId,
     payPeriod:       pp.ppStartStr + ' … ' + pp.ppEndStr,
     refreshedAt:     raw.refreshed_at || '',
+    // Where the rows came from: one entry per pay period read, newest first, each saying
+    // whether it was used and — when it was not — exactly why. `used:false` with a reason
+    // starting "stale" means SPIFF has stopped publishing; "nothing published" for an older
+    // scope is ordinary (no program started that fortnight), not a fault.
+    source:          'gxcore:spiff_publications',
+    staleLimitMin:   raw.maxAgeMinutes == null ? null : raw.maxAgeMinutes,
+    scopesRead:      raw.scopes || [],
     rowsInCache:     (raw.rows || []).length,
     /* Dropped as not-active, named rather than silently missing: "SPIFF says 63 rows and the
        kiosk shows 38" is a question somebody will ask, and this is the answer. A count of 0
@@ -373,4 +501,68 @@ function diagSpiff_(storeSlug) {
                        return o;
                      }, Object.create(null)),
   };
+}
+
+/* ============================================================
+ *  The SPIFF kiosk board — a LINK, not a second copy of the data
+ * ============================================================
+ *
+ * Sky's ask: "We need unique store links for each store. We will then wire these to Leaderboard
+ * so that BTs can open a window with the SPIFF details from their Kiosk." SPIFF shipped its half
+ * on 2026-09-08 — a per-store page at store.html?t=<token> showing the running program, its
+ * window, the store goal, the per-budtender goal, the bounty, the featured product and Tawny's
+ * selling tips. Leaderboard's half is to open it.
+ *
+ * NOTHING IS RE-RENDERED HERE. We do not read the program, we do not draw the tips, we open
+ * SPIFF's own page. A kiosk-shaped copy of a vendor program is a second thing to keep in step
+ * with the agreement, and the first time it drifts a screen promises a bounty nobody agreed to.
+ *
+ * WHY THE TOKEN IS CONFIG AND NOT SOURCE. One PERMANENT token per store, identifying the SCREEN
+ * rather than a program, so the same URL sits in a kiosk forever and resolves at read time to
+ * whatever runs at that store that day — and says "No SPIFF running right now" when nothing does.
+ * They are rotatable from SPIFF's Programs → Kiosk links panel, which makes them credentials with
+ * a lifecycle, and a credential with a lifecycle does not belong in a file that needs a deploy to
+ * change. So they live in the Command Center as kv, one key per store, and this app reads them.
+ *
+ * NO SIGN-IN ON THE FAR SIDE, DELIBERATELY. A kiosk is a shared screen nobody signs into, so the
+ * token in the URL is the whole credential. That is why SPIFF's page carries NO person and NO
+ * margin — no budtender names, no per-person units, no earnings, no vendor cost, no ROI. It is
+ * safe on a screen facing the floor with a customer at the counter. The personal view is a
+ * different page (flyer.html, which keeps its own sign-in); never point a kiosk at that one.
+ */
+
+// Where SPIFF's per-store kiosk page lives. Overridable from the Command Center (kv
+// cfg.spiffKioskBase) so a repo rename or a move off Pages is a config change rather than a
+// deploy in this app — the same reason the engine URLs are kv and not literals.
+var SPIFF_KIOSK_BASE_DEFAULT = 'https://greencrosscanna.github.io/greencross-spiff/store.html';
+
+/**
+ * The SPIFF kiosk URL for one store, or '' when this store has no token configured.
+ *
+ * '' IS THE OFF SWITCH, and it is the default. No key, no button — which is the right state for
+ * a store whose link has never been minted, and the state every store is in until the six tokens
+ * are pasted into the Command Center. A button that opens a broken page is worse than no button
+ * on the most visible screen in the company.
+ *
+ * Keyed on the GX CORE store_id ('bend', 'river-rd'), not Leaderboard's own slug ('century'),
+ * because SPIFF's store_links rows are keyed the same way its progress rows are. coreStoreId_ is
+ * the one translation between the two, and it already exists for exactly this reason.
+ */
+function spiffKioskUrl_(store) {
+  var id = '';
+  try { id = String(coreStoreId_(store) || '').trim(); } catch (e) { return ''; }
+  if (!id) return '';
+
+  var token = '';
+  try { token = String(GXCore.getKv('cfg.spiffKiosk.' + id) || '').trim(); }
+  catch (e) { return ''; }        // a kiosk that cannot reach Core still shows its board
+  if (!token) return '';
+
+  var base = SPIFF_KIOSK_BASE_DEFAULT;
+  try {
+    var b = String(GXCore.getKv('cfg.spiffKioskBase') || '').trim();
+    if (/^https:\/\//.test(b)) base = b;    // https only: this ends up as a link on a kiosk
+  } catch (e) {}
+
+  return base + '?t=' + encodeURIComponent(token);
 }
