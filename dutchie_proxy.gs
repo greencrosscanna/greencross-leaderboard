@@ -1572,52 +1572,54 @@ function bumpKioskRefresh_(slug) {
 }
 
 // ── Bug reporter ─────────────────────────────────────────────
-/* ONE CLICK OF "SUBMIT" CAN RUN THIS FUNCTION THREE TIMES, and until 2026-09-09 that meant three
- * emails for one report. Google's second hop sometimes refuses the content key it just issued and
- * 302s the caller back to /exec, which executes doGet all over again; GX Core measured a
- * five-redirect chain that was three complete executions of a single request (see the DE-DUPE note in
- * gxIngestBug). The client's own onerror retry lands the same way, and neither the browser nor the
- * reporter ever sees it happen.
+/* THIS APP NO LONGER EMAILS A FILED BUG. GX Core does, and this sends ONLY when Core could not be
+ * reached at all — the no-lost-report fallback.
  *
- * GX Core already defends the BUG ROW — it merges an identical open bug from the same reporter filed
- * inside three minutes, which is why a triple-executed report still shows up exactly once on the
- * board. This email had no equivalent guard, so the one part of the pipeline a human actually reads
- * was the one part that repeated. Reported by Sky the same day, on a report Mike filed once.
+ * The history is worth keeping, because the shape of it is why the fallback survives. One click of
+ * "Submit" can run this function three times: Google's /exec second hop sometimes refuses the content
+ * key it just issued and 302s the caller back, re-running doGet from the top; GX Core measured a
+ * five-redirect chain that was three complete executions of one request, and the client's own onerror
+ * retry lands the same way. Neither the browser nor the reporter can see it happen. GX Core has always
+ * defended the bug ROW against this (gxIngestBug's three-minute merge), which is exactly why a report
+ * Mike filed once showed up once on the board and three times in Sky's inbox on 2026-09-09 — the email
+ * was the only step in the chain with no equivalent guard.
  *
- * Two guards, because they cover different failures:
- *   1. gxIngestBug now gets its answer READ. It returns `deduped: true` when it merged into an
- *      existing row — i.e. "this exact report already landed" — so a re-execution is identifiable and
- *      stays silent.
- *   2. A short script-cache mark, on the same three-minute window, covers the case where central is
- *      unreachable and there is no answer to read. Without it the redirect chain would send three
- *      copies of the very email that exists because the board did NOT get the report.
- * Neither guard may ever swallow a first report: any failure inside them falls through to sending.
+ * v1.761 fixed that here, by reading gxIngestBug's `deduped` answer. GX Core v310 then moved the send
+ * itself into gxIngestBug, below the de-dupe, so the guard exists once instead of once per spoke.
+ * Keeping BOTH sends would have been a new regression — two emails per bug — so this one narrowed to
+ * the case Core cannot cover: Core unreachable, nothing filed, and this email the only evidence the
+ * report was ever made. That is why it is not simply deleted.
+ *
+ * bugMailOnce_ stays and is now load-bearing for a different reason. On the success path Core owns the
+ * de-dupe; on THIS path there is no `deduped` answer to read, because the call threw. Without the mark,
+ * a redirect chain would send three copies of the very email that exists because the board got nothing.
+ * It may never swallow a first report — every failure inside it falls through to sending.
  */
 function handleBugReport_(b) {
   const ts = new Date();
 
-  // Central bug log — GX Command Center is the SINGLE source of truth for bug reports
-  // (GX Core's central bug_reports table, shown in the cockpit; this app's key =
-  // 'performance'). Real library fn is gxIngestBug (NOT ingestBug); it maps our keys
-  // (desc→detail, priority→severity, appStore→store, appVer→app_version) internally.
-  // Runs as Sky (GX Core owner) so the write is authorized.
-  var bugId = '';
-  var isRepeat = false;
+  // Central bug log, and — since GX Core v310 — the thing that emails Sky about it. A normal filing
+  // ends here: the row is written, Core mails once, and this function sends nothing.
+  var reached = false;
   try {
-    const ing = GXCore.gxIngestBug('performance', b.reporter, {
+    GXCore.gxIngestBug('performance', b.reporter, {
       title: b.title, desc: b.desc, priority: b.priority, store: b.appStore, appVer: b.appVer
     });
-    if (ing && ing.id) bugId = String(ing.id);
-    if (ing && ing.deduped) isRepeat = true;
-  } catch (e) { /* central unavailable — the email below is the no-lost-report fallback */ }
+    reached = true;
+  } catch (e) { /* Core unreachable — fall through to the fallback mail below */ }
 
-  if (!isRepeat && bugMailOnce_(b)) {
+  // Core never saw it. This email is now the ONLY record that someone reported a problem, so it says
+  // so in as many words: a fallback that reads like an ordinary notification is a report quietly lost.
+  if (!reached && bugMailOnce_(b)) {
     try {
-      const emoji = { low: '🟢', medium: '🟡', high: '🔴' }[b.priority] || '🟡';
       MailApp.sendEmail({
         to:      'sky@greencrosscanna.com',
-        subject: emoji + ' Leaderboard Bug [' + (b.priority || 'medium') + ']: ' + b.title,
+        subject: '⚠️ UNFILED Leaderboard bug [' + (b.priority || 'medium') + ']: ' + b.title,
         body: [
+          'THIS REPORT IS NOT ON THE BUG BOARD. GX Core could not be reached when it was submitted,',
+          'so nothing was recorded and this email is the only copy. Please re-file it from the',
+          'Command Center cockpit — the reporter believes it went through.',
+          '',
           'Reporter : ' + (b.reporter || ''),
           'Priority : ' + (b.priority || 'medium'),
           'Store    : ' + (b.appStore || ''),
@@ -1627,10 +1629,6 @@ function handleBugReport_(b) {
           'Time     : ' + Utilities.formatDate(ts, STORE_TZ, 'M/d/yy h:mm a'),
           '',
           b.desc || '(no details provided)',
-          '',
-          bugId ? 'On the bug board as ' + bugId + ' — open the Command Center cockpit to triage it.'
-                : 'NOT ON THE BUG BOARD — the central log could not be reached, so this email is the '
-                  + 'only record of this report. Please re-file it from the cockpit.',
         ].join('\n'),
       });
     } catch(mailErr) { /* non-fatal */ }
