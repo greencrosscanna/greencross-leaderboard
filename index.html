@@ -8395,13 +8395,55 @@ function kioskSpiffTick_() {
   _kioskSpiffLeft--;
 }
 
+/* Point the SPIFF button at the link the server just sent, on a screen that is already painted.
+ *
+ * WHY THIS EXISTS AT ALL: the tokens SPIFF mints are rotatable — that is the whole reason they are
+ * config rather than source, and the reason Leaderboard reads them live instead of holding a copy.
+ * But reading live server-side bought nothing while the CLIENT held the composed URL in header
+ * markup that a running kiosk never rebuilds. A rotation reached the screen at the 04:00 nightly
+ * reload and not before: up to ~24h, nearly all of it trading hours, with the floor looking at
+ * SPIFF's "this link is no longer active" page. Now it is one poll, ~60s.
+ *
+ * UNDEFINED IS NOT EMPTY. A response that simply does not carry the field — an older engine, a
+ * shape we do not recognize — must leave the button exactly as it is. Only an explicit empty
+ * string means "this store has no token now", which is what a revoke writes.
+ */
+GC.views.applySpiffLink = function(url) {
+  if (url === undefined || url === null) return;      // field absent — not an instruction
+  var next = String(url);
+  var ov   = document.getElementById('kioskSpiffOverlay');
+  var btn  = document.querySelector('.kiosk-spiff-btn');
+  if (!ov || !btn) return;                            // not on the kiosk view
+
+  var prev = ov.getAttribute('data-src') || '';
+  if (prev === next) return;
+  ov.setAttribute('data-src', next);
+  btn.hidden = !next;
+
+  /* If somebody is LOOKING at the board when the link changes under them, do not leave them on a
+     page that has just been revoked. A live token gets swapped in place; a revoked one closes the
+     overlay and takes the button with it, which is the honest outcome — there is nothing to show. */
+  if (ov.classList.contains('show')) {
+    if (next) {
+      var fr = document.getElementById('kioskSpiffFrame');
+      if (fr) fr.setAttribute('src', next);
+    } else {
+      GC.views.closeSpiffBoard();
+    }
+  }
+};
+
 GC.views.openSpiffBoard = function() {
   var ov = document.getElementById('kioskSpiffOverlay');
   var fr = document.getElementById('kioskSpiffFrame');
   if (!ov || !fr) return;
+  // The button is always in the markup now and only hidden, so this can be reached with no link —
+  // opening an empty frame over the board would be a black rectangle nobody can explain.
+  var src = ov.getAttribute('data-src') || '';
+  if (!src) return;
   // Load on open, not on paint — see renderSpiffOverlay. Re-set every time so a board left
   // open through a pay-period boundary cannot show yesterday's program.
-  fr.setAttribute('src', ov.getAttribute('data-src') || '');
+  fr.setAttribute('src', src);
   ov.classList.add('show');
 
   clearInterval(_kioskSpiffTimer);
@@ -8665,10 +8707,13 @@ var kiosk = (function() {
        carries a permanent per-store token that SPIFF mints, so the absence of one means this
        store has not been set up and the honest thing is no button. Everyone gets it, not just
        directors: this is what a budtender walks up to the screen to look at. */
-    var spiffBtn = spiffUrl
-      ? '<button class="kiosk-spiff-btn" onclick="GC.views.openSpiffBoard()">'
-        + '<span class="ksb-dot"></span>SPIFF</button>'
-      : '';
+    /* ALWAYS IN THE MARKUP, hidden when there is no link — not omitted. The poll has to be able
+       to reveal it on a screen that is already painted (a token minted at 10am should not wait for
+       the 04:00 reload either), and creating header DOM from a poll handler is a worse job than
+       toggling one attribute. applySpiffLink owns `hidden` from here on. */
+    var spiffBtn = '<button class="kiosk-spiff-btn" onclick="GC.views.openSpiffBoard()"'
+      + (spiffUrl ? '' : ' hidden') + '>'
+      + '<span class="ksb-dot"></span>SPIFF</button>';
     // Standings is intentionally NOT linked from the kiosk — managers reach it via its dedicated
     // URL (#/standings). See the router's post-login return-to so that link lands on Standings.
     return '<header class="kiosk-header">'
@@ -9773,8 +9818,8 @@ var kiosk = (function() {
    * kiosk paint at every store all day — a fetch nobody asked for, on a board that repaints
    * itself continuously. */
   function renderSpiffOverlay(url) {
-    if (!url) return '';
-    return '<div id="kioskSpiffOverlay" data-src="' + e(url) + '"'
+    // Mounted even with no link yet, for the same reason the button is — see renderHeader.
+    return '<div id="kioskSpiffOverlay" data-src="' + e(url || '') + '"'
       + ' onpointerdown="GC.views.keepSpiffBoardOpen()">'
       + '<div class="kso-bar">'
       +   '<span class="kso-title">SPIFF</span>'
@@ -10560,6 +10605,11 @@ var kiosk = (function() {
           if (!resp || resp.ok === false) { markStale(resp && resp.error); return; }
           _clearStaleBanner();
           checkRemoteRefresh(slug, resp.refreshToken);
+          /* SPIFF's kiosk token is rotatable, so the button's link has to be able to CHANGE on a
+             screen that is already painted. The header is only built by a full render, which a
+             running kiosk never does again — so without this the old link survived until the 04:00
+             nightly reload. See the spiffKioskUrl comment in getStoreToday's delta response. */
+          GC.views.applySpiffLink(resp.spiffKioskUrl);
 
           if (resp.isUpdate) {
             // Delta response: inject new ticker items + update numbers
@@ -12050,9 +12100,34 @@ GC.loadStoreColors = function(opts) {
       var jsChanged = false;
       var root = document.documentElement;
       resp.stores.forEach(function(s) {
-        var slug  = String(s.display_name || '').trim().toLowerCase();
+        /* MATCH ON THE KEY THE SERVER RESOLVED, not on the display name.
+         *
+         * This lowercased s.display_name and looked it up in GC.STORES, which is keyed by this
+         * app's own slugs. That worked only because every display name happens to lowercase to
+         * its slug today. Rename "Century" to "Century Drive" in the Command Center and the
+         * lookup becomes GC.STORES['century drive'], undefined, the return below fires, and that
+         * store keeps its compiled-in color forever — while the other five carry on updating.
+         * No error, no log, a screen that looks entirely fine. (Found by core-admin, 2026-09-09;
+         * gx-stores.js's own header names this app as the example.)
+         *
+         * app_slug is resolved engine-side from the explicit STORES table, so a rename cannot
+         * touch it. display_name is deliberately NOT kept as a fallback: silently succeeding by
+         * the broken route is what hid this for as long as it hid. */
+        var slug  = String(s.app_slug || '').trim().toLowerCase();
         var color = String(s.color || '').trim();
-        if (!slug || !color || !GC.STORES[slug]) return;
+        if (!slug || !GC.STORES[slug]) {
+          /* The skip is what made the old failure invisible, so say something. A store the engine
+             sent that this page cannot place is either a store added to Core and not to GC.STORES,
+             or app_slug not coming through — both worth one line in the console rather than a
+             color that quietly stops tracking. */
+          try {
+            console.warn('[GC.loadStoreColors] cannot place store ' +
+              JSON.stringify({ store_id: s.store_id, app_slug: s.app_slug, display_name: s.display_name }) +
+              ' — its color will not update. Add it to GC.STORES, or check the engine is sending app_slug.');
+          } catch (e) {}
+          return;
+        }
+        if (!color) return;
         // CSS-var consumers (.store-dot.<slug> etc.) update instantly via setProperty — no re-render.
         root.style.setProperty('--store-' + slug, color);
         // JS consumers (canvas charts, kiosk) read GC.STORES[slug].color at render time. Case-

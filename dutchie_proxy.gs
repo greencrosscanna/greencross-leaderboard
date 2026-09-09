@@ -1618,12 +1618,35 @@ function handleBugReport_(b) {
 function getGxStores_() {
   try {
     const cache = CacheService.getScriptCache();
-    const hit = cache.get('GC_GXSTORES_v1');
+    const hit = cache.get('GC_GXSTORES_v2')   /* v2: rows carry app_slug now */;
     if (hit) return JSON.parse(hit);
     const rows = GXCore.getStores() || [];
+    /* app_slug IS RESOLVED HERE, not in the browser.
+     *
+     * The frontend used to match these rows to its own store table by lowercasing display_name,
+     * so renaming a store in the Command Center silently stopped that store's color tracking the
+     * registry — it kept whatever color was compiled into the page, with no error anywhere.
+     *
+     * The engine already owns this translation and every other consumer goes through it, so the
+     * fix is to SEND the key rather than have the client re-derive it. Doing it the other way —
+     * teaching the client the id→slug mapping — would put that mapping in a second place, and a
+     * mapping in two places is the thing this app has already been bitten by (see the transposed
+     * Dutchie labels above STORES). Empty when Core knows a store this app does not; the client
+     * warns rather than guessing.
+     *
+     * BUILT FROM STORES INLINE, deliberately NOT via gxStoreIdToAppSlug_ — that function calls
+     * THIS one for its own fallback pass, so calling it here would recurse until the stack blew
+     * on the first cold cache. It is also the wrong source for this field even if it were safe:
+     * its fallback derives a slug from the display name, which is exactly the guess this change
+     * exists to stop shipping to the browser. Only explicit pairs belong on the wire. */
+    const id2slug = Object.create(null);
+    STORES.forEach(function (st) {
+      if (st.storeId && st.slug) id2slug[String(st.storeId)] = String(st.slug);
+    });
     const stores = rows.map(function(s) {
       return {
         store_id:     String(s.store_id || ''),
+        app_slug:     String(id2slug[String(s.store_id || '')] || ''),
         display_name: String(s.display_name || ''),
         dutchie_name: String(s.dutchie_name || ''),
         color:        String(s.color || ''),
@@ -1631,7 +1654,7 @@ function getGxStores_() {
       };
     });
     const out = { ok: true, stores: stores };
-    cache.put('GC_GXSTORES_v1', JSON.stringify(out), 300);   // 5 min — matches the Sky wall's color poll
+    cache.put('GC_GXSTORES_v2', JSON.stringify(out), 300);   // 5 min — matches the Sky wall's color poll
     return out;
   } catch (e) {
     return { ok: false, error: String((e && e.message) || e), stores: [] };
@@ -1642,11 +1665,22 @@ function getGxStores_() {
 // GX store_id (bend, hillsboro, …); the app uses display-name slugs (century, baseline, …).
 function gxStoreIdToAppSlug_() {
   const map = Object.create(null);
+
+  /* THE EXPLICIT PAIRS FIRST — see coreStoreId_ for the full argument. Deriving the app slug by
+     lowercasing Core's DISPLAY NAME works only until somebody renames a store in the Command
+     Center, at which point that store silently stops resolving and everything keyed on it misses
+     with no error. STORES.storeId is the literal answer and a rename cannot touch it. */
+  STORES.forEach(function (s) {
+    if (s.storeId && s.slug) map[String(s.storeId)] = String(s.slug);
+  });
+
+  /* The registry pass stays, and runs SECOND so it can never overwrite an explicit pair. It is
+     what places a store that exists in Core but is not in the table yet — the seventh-store case. */
   try {
     const g = getGxStores_();
     ((g && g.stores) || []).forEach(function(s) {
       const slug = String(s.display_name || '').trim().toLowerCase();
-      if (s.store_id && slug) map[String(s.store_id)] = slug;
+      if (s.store_id && slug && !map[String(s.store_id)]) map[String(s.store_id)] = slug;
     });
   } catch (e) {}
   return map;

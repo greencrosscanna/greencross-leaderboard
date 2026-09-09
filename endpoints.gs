@@ -1560,6 +1560,23 @@ function getStoreToday(store, params) {
       // copy that actually does the work: the full response is cached 55s, the delta poll is not,
       // so a kiosk sitting on one store all day sees a bump within one poll. See bumpKioskRefresh_.
       refreshToken:      kioskRefreshToken_(store.slug),
+      /* THE SPIFF LINK RIDES THE DELTA FOR THE SAME REASON, and it is not decoration.
+       *
+       * SPIFF's kiosk tokens are rotatable, and the whole point of reading them live is that a
+       * rotation reaches the screen on its own. It did not: the button lives in the kiosk HEADER,
+       * the header is built only inside a full render, and this 60s poll updates numbers in place
+       * without rebuilding it. So a rotated token sat on a single-store kiosk until the 04:00
+       * nightly reload — up to ~24h, essentially all of it trading hours, pointing the floor at
+       * SPIFF's "this link is no longer active" page. (Raised by SPIFF, 2026-09-09, who asked how
+       * fast a rotation reaches us before deciding whether to keep rotate atomic.)
+       *
+       * On the delta rather than only the full response because the full one is cached 55s and,
+       * more to the point, is not fetched again by a kiosk that is already painted. This is the
+       * only channel that reaches a running screen. */
+      spiffKioskUrl:     (function () {
+                           try { return spiffKioskUrl_(store); }
+                           catch (e) { Logger.log('spiffKioskUrl_ failed: ' + e); return ''; }
+                         })(),
     };
   }
 

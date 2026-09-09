@@ -244,6 +244,34 @@ var HOURLY_DIST_WEEKS = 8;
  */
 var _CORE_ID_MAP = null;
 function coreStoreId_(store) {
+  const slug = String((store && store.slug) || '').trim().toLowerCase();
+
+  /* THE LOCAL TABLE FIRST, because it is the only source that survives a RENAME.
+   *
+   * This used to go straight to gxStoreIdToAppSlug_, which builds its map by lowercasing each
+   * registry row's DISPLAY NAME. That works today only because every display name happens to
+   * lowercase to this app's slug — Century/century, Baseline… no: 'Baseline' is store_id
+   * `hillsboro`, and it lines up only because Core's display name for it is also "Baseline".
+   * Rename any store in the Command Center and the derivation stops matching, this function
+   * silently returns the SLUG instead of the store_id, and everything keyed on Core's id misses:
+   * SPIFF rows for that store (spiffFilterRows_ compares store_id), its kiosk-board token
+   * (cfg.spiffKiosk.<store_id>), and the hourly-shape lookups in this file. No error, no log —
+   * one store just quietly stops having data while the other five are fine.
+   *
+   * STORES already carries the answer explicitly. `storeId` was added on 2026-08-29 precisely
+   * because "store_id is Core-owned and unambiguous", and the comment above that table says so;
+   * this function simply predates it and kept deriving what it could have read. A rename cannot
+   * touch a literal.
+   *
+   * The registry derivation stays as the SECOND step, not deleted: it is what would place a store
+   * that exists in Core but not yet in the table below, which is the shape of adding a seventh
+   * store. Falling back to the bare slug stays last, unchanged.
+   */
+  if (store && store.storeId) return String(store.storeId).trim();
+  for (var i = 0; i < STORES.length; i++) {
+    if (STORES[i].slug === slug && STORES[i].storeId) return String(STORES[i].storeId).trim();
+  }
+
   if (!_CORE_ID_MAP) {
     _CORE_ID_MAP = {};
     try {
@@ -251,8 +279,12 @@ function coreStoreId_(store) {
       Object.keys(id2slug).forEach(function(id) { _CORE_ID_MAP[id2slug[id]] = id; });
     } catch (e) {}
   }
-  const slug = String((store && store.slug) || '').trim().toLowerCase();
-  return (_CORE_ID_MAP && _CORE_ID_MAP[slug]) || slug;
+  if (_CORE_ID_MAP && _CORE_ID_MAP[slug]) {
+    Logger.log('coreStoreId_: "' + slug + '" is not in STORES — resolved from the registry by '
+             + 'display name, which a rename would break. Add its storeId to the table.');
+    return _CORE_ID_MAP[slug];
+  }
+  return slug;
 }
 
 /** Cache-ONLY read of today's same-DOW hourly-target shape (NO Dutchie fetch). Returns the cached dist or
