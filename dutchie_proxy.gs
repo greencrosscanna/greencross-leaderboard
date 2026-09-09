@@ -1572,6 +1572,27 @@ function bumpKioskRefresh_(slug) {
 }
 
 // ── Bug reporter ─────────────────────────────────────────────
+/* ONE CLICK OF "SUBMIT" CAN RUN THIS FUNCTION THREE TIMES, and until 2026-09-09 that meant three
+ * emails for one report. Google's second hop sometimes refuses the content key it just issued and
+ * 302s the caller back to /exec, which executes doGet all over again; GX Core measured a
+ * five-redirect chain that was three complete executions of a single request (see the DE-DUPE note in
+ * gxIngestBug). The client's own onerror retry lands the same way, and neither the browser nor the
+ * reporter ever sees it happen.
+ *
+ * GX Core already defends the BUG ROW — it merges an identical open bug from the same reporter filed
+ * inside three minutes, which is why a triple-executed report still shows up exactly once on the
+ * board. This email had no equivalent guard, so the one part of the pipeline a human actually reads
+ * was the one part that repeated. Reported by Sky the same day, on a report Mike filed once.
+ *
+ * Two guards, because they cover different failures:
+ *   1. gxIngestBug now gets its answer READ. It returns `deduped: true` when it merged into an
+ *      existing row — i.e. "this exact report already landed" — so a re-execution is identifiable and
+ *      stays silent.
+ *   2. A short script-cache mark, on the same three-minute window, covers the case where central is
+ *      unreachable and there is no answer to read. Without it the redirect chain would send three
+ *      copies of the very email that exists because the board did NOT get the report.
+ * Neither guard may ever swallow a first report: any failure inside them falls through to sending.
+ */
 function handleBugReport_(b) {
   const ts = new Date();
 
@@ -1580,32 +1601,69 @@ function handleBugReport_(b) {
   // 'performance'). Real library fn is gxIngestBug (NOT ingestBug); it maps our keys
   // (desc→detail, priority→severity, appStore→store, appVer→app_version) internally.
   // Runs as Sky (GX Core owner) so the write is authorized.
+  var bugId = '';
+  var isRepeat = false;
   try {
-    GXCore.gxIngestBug('performance', b.reporter, {
+    const ing = GXCore.gxIngestBug('performance', b.reporter, {
       title: b.title, desc: b.desc, priority: b.priority, store: b.appStore, appVer: b.appVer
     });
+    if (ing && ing.id) bugId = String(ing.id);
+    if (ing && ing.deduped) isRepeat = true;
   } catch (e) { /* central unavailable — the email below is the no-lost-report fallback */ }
 
-  try {
-    const emoji = { low: '🟢', medium: '🟡', high: '🔴' }[b.priority] || '🟡';
-    MailApp.sendEmail({
-      to:      'sky@greencrosscanna.com',
-      subject: emoji + ' Leaderboard Bug [' + (b.priority || 'medium') + ']: ' + b.title,
-      body: [
-        'Reporter : ' + (b.reporter || ''),
-        'Priority : ' + (b.priority || 'medium'),
-        'Store    : ' + (b.appStore || ''),
-        'Role     : ' + (b.appRole  || ''),
-        'Version  : ' + (b.appVer   || ''),
-        'Route    : ' + (b.appRoute || ''),
-        'Time     : ' + Utilities.formatDate(ts, STORE_TZ, 'M/d/yy h:mm a'),
-        '',
-        b.desc || '(no details provided)',
-      ].join('\n'),
-    });
-  } catch(mailErr) { /* non-fatal */ }
+  if (!isRepeat && bugMailOnce_(b)) {
+    try {
+      const emoji = { low: '🟢', medium: '🟡', high: '🔴' }[b.priority] || '🟡';
+      MailApp.sendEmail({
+        to:      'sky@greencrosscanna.com',
+        subject: emoji + ' Leaderboard Bug [' + (b.priority || 'medium') + ']: ' + b.title,
+        body: [
+          'Reporter : ' + (b.reporter || ''),
+          'Priority : ' + (b.priority || 'medium'),
+          'Store    : ' + (b.appStore || ''),
+          'Role     : ' + (b.appRole  || ''),
+          'Version  : ' + (b.appVer   || ''),
+          'Route    : ' + (b.appRoute || ''),
+          'Time     : ' + Utilities.formatDate(ts, STORE_TZ, 'M/d/yy h:mm a'),
+          '',
+          b.desc || '(no details provided)',
+          '',
+          bugId ? 'On the bug board as ' + bugId + ' — open the Command Center cockpit to triage it.'
+                : 'NOT ON THE BUG BOARD — the central log could not be reached, so this email is the '
+                  + 'only record of this report. Please re-file it from the cockpit.',
+        ].join('\n'),
+      });
+    } catch(mailErr) { /* non-fatal */ }
+  }
 
   return { ok: true };
+}
+
+/* True the FIRST time a given report asks to be emailed, false for a repeat inside three minutes.
+ * The window matches GX Core's own bug dedupe so the email and the board agree on what "the same
+ * report" means; a fourth minute is a person filing again because nothing happened, which should mail.
+ * The lock makes check-and-set atomic — a redirect chain can re-enter fast enough for three executions
+ * to read an empty cache at once, and three simultaneous misses is exactly the bug being fixed.
+ * FAILS OPEN on purpose: a cache or lock that is unavailable must never be the reason a bug report
+ * goes unread. Better a duplicate email than a silent one. */
+function bugMailOnce_(b) {
+  var lock = null;
+  try {
+    const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5,
+      String(b.reporter || '') + '\u0000' + String(b.title || '') + '\u0000' + String(b.desc || ''),
+      Utilities.Charset.UTF_8);
+    const key = 'bugmail:' + Utilities.base64EncodeWebSafe(digest);
+    lock = LockService.getScriptLock();
+    try { lock.waitLock(5000); } catch (e) { lock = null; }   // busy → fall through and send
+    const cache = CacheService.getScriptCache();
+    if (cache.get(key)) return false;
+    cache.put(key, '1', 180);   // seconds; 3 min, same window as gxIngestBug's dedupe
+    return true;
+  } catch (e) {
+    return true;
+  } finally {
+    if (lock) { try { lock.releaseLock(); } catch (e) {} }
+  }
 }
 
 // (Deploy version-recording moved to GX Core's central `action=deploy_version` endpoint —
