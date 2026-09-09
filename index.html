@@ -3701,7 +3701,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      slideshow bar at 9999, so nothing here contests it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.759';
+window.GC = window.GC || {}; GC.VERSION = 'v1.760';
 
 // ── GX Core web-app URL — ONE definition ──
 // This was previously a `var` inside loadChangelogFromGXCore(), i.e. function-scoped, while the
@@ -5857,6 +5857,7 @@ GC.views.renderDirector = function() {
           director.init(stale2.data);
           director._showStaleBanner('Offline — showing data from ' + ageMin2 + ' min ago');
         } else {
+          director._clearStaleBanner();   // the error screen states the failure itself
           app.innerHTML = director.renderError(data.error || 'Server returned an error');
         }
         return;
@@ -5882,6 +5883,7 @@ GC.views.renderDirector = function() {
         director.init(stale.data);
         director._showStaleBanner('Offline — showing data from ' + ageMin + ' min ago');
       } else {
+        director._clearStaleBanner();   // the error screen states the failure itself
         app.innerHTML = director.renderError(err.message);
       }
     });
@@ -6107,6 +6109,21 @@ var director = (function() {
     // the top of the page, so an unreserved fixed banner sits directly ON the logo and tabs.
     // Reserve its height on <body> -- not <html>, which the localhost dev guard already offsets.
     document.body.style.paddingTop = banner.offsetHeight + 'px';
+  }
+
+  // Taking it back down is the other half, and it was missing. The banner is position:fixed on
+  // <body>, so it survives the `#app` repaint that swaps one view for the next, and the padding it
+  // reserved on <body> survives with it. One failed director fetch therefore pinned
+  // "Offline - showing data from N min ago" to the top of EVERY screen for the rest of the session:
+  // the successful reload a minute later, History, Settings, a store board -- each one still wearing
+  // a warning about a fetch that had long since recovered, still quoting the age it had when it
+  // first painted. Reported from the floor as a stale bar that appears when you switch views.
+  // The kiosk module already knew this (its own _clearStaleBanner, and the note on its onLeave);
+  // the director half never got the same treatment.
+  function _clearStaleBanner() {
+    var el = document.getElementById('staleBanner');
+    if (el) el.remove();
+    document.body.style.paddingTop = '';
   }
 
   // ── Render: Error ──────────────────────────────────────
@@ -7147,6 +7164,10 @@ var director = (function() {
 
   function init(data) {
     _data = data;
+    // Real data is on screen -- drop any offline warning left over from an earlier failed fetch.
+    // Covers the first render, the background stale-while-revalidate landing, and the 5-min refresh,
+    // all three of which come back through here.
+    _clearStaleBanner();
     startClock();
     scheduleRefresh();
     animateBars();
@@ -7169,6 +7190,7 @@ var director = (function() {
     GC.router.onLeave(function() {
       if (_clockTimer)   { clearInterval(_clockTimer);   _clockTimer = null; }
       if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
+      _clearStaleBanner();   // position:fixed on <body> -- it outlives #app if not removed
     });
 
     // Update last-refreshed label
@@ -7575,6 +7597,8 @@ var director = (function() {
 
   // ── Historical: wire interactivity ──────────────────────────
   function initHistorical(histData, dateStr) {
+    // A snapshot of a past day cannot be "offline data" -- clear any banner carried in from live.
+    _clearStaleBanner();
     // Stop live auto-refresh — historical view must not be overwritten
     if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
     startClock();
@@ -7632,6 +7656,7 @@ var director = (function() {
     updateStaffTable:    updateStaffTable,
     wireHistoryControls: wireHistoryControls,
     _showStaleBanner:    _showStaleBanner,
+    _clearStaleBanner:   _clearStaleBanner,
     resetPeriods: function() {
       _storePeriod   = 'mtd';
       _storePpStores = null;
