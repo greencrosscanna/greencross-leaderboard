@@ -63,6 +63,11 @@ echo "Syncing shared GX spoke files for app=$APP …"
 fetch gx-brain-notes.sh    .claude/gx-brain-notes.sh    || true
 fetch gx-posttool-tests.sh .claude/gx-posttool-tests.sh || true
 fetch gx-usenglish.sh    gx-usenglish.sh           || true
+# gxclaim.sh is the one-session-per-checkout gate. It has to reach EVERY repo, not just the hub:
+# the shared-tree collision happened three times in spiff on 2026-09-08/09, and the pre-existing
+# mitigation ("do not edit the hub from a spoke chat") says nothing about two sessions in one spoke.
+# The SessionStart hook re-installs its git hooks each session, so syncing the script is enough.
+fetch gxclaim.sh         gxclaim.sh                || true
 fetch deploy.sh          deploy.sh                 || true
 fetch serve.py           serve.py                  || true
 # serve.js is a SECOND DOOR, not a replacement — serve.py stays and still works from a terminal, from
@@ -94,7 +99,7 @@ fetch gxengine.sh        gxengine.sh               || true
 # `sh` for exactly this reason -- gx-preflight, theme-preflight and run-tests alike. Keep it that way:
 # a hook that depends on a mode bit is a hook this filesystem can switch off without telling you.
 _notexec=""
-for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh gx-usenglish.sh; do
+for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh gx-usenglish.sh gxclaim.sh; do
   [ -f "$f" ] || continue
   chmod 755 "$f" 2>/dev/null || true
   [ -x "$f" ] || _notexec="$_notexec $f"
@@ -115,7 +120,7 @@ done
 # So `update-index` alone does NOT make it stick — 4f01457 proves that; the very next commit undid it.
 # The habit is the fix, which is why the message below leads with the habit.
 _badmode=""
-for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh gx-usenglish.sh; do
+for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh gx-usenglish.sh gxclaim.sh; do
   [ -f "$f" ] || continue
   case "$(git ls-files -s "$f" 2>/dev/null | awk '{print $1}')" in
     100644) [ -x "$f" ] && _badmode="$_badmode $f" ;;
