@@ -21,6 +21,21 @@
 # WHY THE RETRY: GX Core's /exec is a two-hop redirect that ~6% of the time serves a Drive HTML error page
 # instead of JSON. A single fetch would silently drop the whole inbox on that miss (this is how the rec-price
 # note was lost). gx_fetch RETRIES until it gets real JSON — normally one fast call; retries only fire on the flake.
+# ─── Claim the checkout, first thing ────────────────────────────────────────────────────────────
+# These repos live in Dropbox, so two Claude sessions open the SAME folder and the SAME HEAD. On
+# 2026-09-02 one session switched the branch out from under another and shipped its unreviewed commit
+# as GX Core v284; it recurred three times in spiff on 2026-09-08/09. gxclaim.sh makes the first
+# session own the tree and refuses the second at commit, push and branch-change.
+#
+# It runs BEFORE the secret check below, which exits early in any repo without .gx_deploy_secret — the
+# collision has nothing to do with the brain inbox and must not depend on it. `install` is re-run every
+# session on purpose: this filesystem drops executable bits asynchronously, and a git hook that lost
+# one is skipped silently. Re-arming costs three writes; noticing it had disarmed costs a bad ship.
+if [ -f ./gxclaim.sh ]; then
+  sh ./gxclaim.sh install >/dev/null 2>&1
+  sh ./gxclaim.sh claim "" || echo "   → this chat is READ-ONLY in this repo until that one finishes."
+fi
+
 APP="performance"
 GXCORE="https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec"
 [ -f ".gx_deploy_secret" ] || exit 0
