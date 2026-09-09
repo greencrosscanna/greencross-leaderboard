@@ -51,6 +51,46 @@ if [ -z "$APP" ]; then
   else echo "gxdevlogin: which app? pass one, e.g. sh ./gxdevlogin.sh inventory" >&2; exit 2; fi
 fi
 
+# ─── WHICH APPS THIS CAN WORK FOR AT ALL ────────────────────────────────────────────────────────
+# NOT ALL OF THEM, and finding that out late is the reason this block exists.
+#
+# GX Core signs a token with GX_SESSION_SECRET. An app can either ASK CORE to validate it
+# (GXCore.verifySession / the ?action=verify route) or validate it ITSELF against its own HMAC. Three
+# apps do the latter — they have their own signSession_ and their own secret — so a Core-minted token
+# is rejected by their gated routes no matter how valid it is upstream. Nothing about the token is
+# wrong; it was simply signed by a different key than the one checking it.
+#
+# THE FAILURE MODE IS WHY THIS REFUSES RATHER THAN WARNS. Installing the session still "works": the
+# app's PUBLIC routes answer, so a page paints and looks signed in, while every gated route quietly
+# returns "Invalid session". That is worse than not working — it is a screen you would report on.
+# Leaderboard measured it on 2026-09-09 (?action=storetoday -> {"ok":false,"error":"Invalid session"}
+# on all six stores) after this tool shipped claiming all seven apps.
+#
+# HOW THAT SHIPPED, since the mistake is more reusable than the fact: minting was verified for all
+# seven and treated as working. Minting is Core answering about itself. Whether the APP accepts the
+# token is a different question and the only one that matters, and it was checked on exactly one app.
+# A green result on the easy half read as coverage of the whole.
+#
+# TO ADD AN APP HERE: point it at GXCore.verifySession instead of its own signSession_. That is the
+# shared write-auth migration, not a change to this file.
+case "$APP" in
+  pricecards|spiff|crew|core-admin) ;;                     # validate through GX Core — this works
+  inventory|performance|sales)
+    cat >&2 <<UNSUPPORTED
+gxdevlogin: $APP validates sessions with its OWN secret, so a GX Core token cannot work here.
+
+  Its backend has its own signSession_ (not GXCore.verifySession), so this token is rejected by
+  every gated route. The page would still paint from public routes and LOOK signed in, which is
+  why this refuses instead of printing a snippet.
+
+  Works today: pricecards, spiff, crew, core-admin.
+  To change that, $APP has to validate through GXCore.verifySession — a backend change in that
+  repo, not something this tool can work around.
+UNSUPPORTED
+    exit 1 ;;
+  *) echo "gxdevlogin: unknown app '$APP' (inventory performance sales pricecards spiff crew core-admin)" >&2; exit 2 ;;
+esac
+
 [ -f .gx_deploy_secret ] || { echo "gxdevlogin: no .gx_deploy_secret in $(pwd)" >&2; exit 2; }
 SECRET="$(cat .gx_deploy_secret)"
 
@@ -64,14 +104,10 @@ SECRET="$(cat .gx_deploy_secret)"
 # If an app ever moves its key, this is the line to fix — and the symptom will be unmistakable: the
 # snippet reports success and the app still shows its login screen.
 case "$APP" in
-  inventory)  STORE=localStorage;   KEY=gc_inv_auth ;;
-  performance)STORE=localStorage;   KEY=GC_PERF_SESSION ;;
-  sales)      STORE=localStorage;   KEY=gc_sales_token ;;
   pricecards) STORE=localStorage;   KEY=gx_pricecards_auth ;;
   spiff)      STORE=sessionStorage; KEY=spiff_session ;;
   crew)       STORE=sessionStorage; KEY=gx_crew_token ;;   # plus gx_crew_user — handled below
   core-admin) STORE=localStorage;   KEY=gx_mc_auth ;;
-  *) echo "gxdevlogin: unknown app '$APP' (inventory performance sales pricecards spiff crew core-admin)" >&2; exit 2 ;;
 esac
 
 # ─── mint ───────────────────────────────────────────────────────────────────────────────────────

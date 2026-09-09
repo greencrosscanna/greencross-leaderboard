@@ -26,13 +26,32 @@ APP="$(tr -d ' \t\r\n' < .gx_app)"
 #     # gx-sync:keep-local  <why>
 # The marker lives IN the file rather than in a side list, so it travels with it, is visible to whoever
 # opens it, and cannot drift out of step with the thing it protects.
+# fetch <path-under-gx-theme> <local-dest> [mode]
+#
+# THE MODE IS SET HERE, AT WRITE TIME, NOT IN A SWEEP AT THE END. mktemp lands 0600, so between the
+# mv and a later chmod every file this script has written is non-executable. That window used to be
+# the WHOLE REST OF THE SYNC, and anything that ended the script inside it -- a Ctrl-C, a closed
+# terminal, a killed curl, or piping the output to `head` (SIGPIPE) -- left every file already
+# fetched at 0600 with no error and a plausible-looking transcript.
+#
+# THAT IS THE 2026-08-22 INCIDENT this file records four comments down as "cause unconfirmed
+# (self-update path? Dropbox reverting modes asynchronously?)". It is neither. Reproduced on
+# 2026-09-09 by interrupting a sync: gx-preflight.sh, deploy.sh and serve.py come out 0600 together,
+# which is exactly the "across four repos" shape -- one interrupted run per repo, not a filesystem
+# doing something exotic. Dropbox was blamed for a deferred chmod.
+#
+# Setting the mode as part of writing the file makes the window zero: a file this script has
+# finished writing is correct, and one it never got to does not exist. The verification loop below
+# stays, because it is a CHECK -- it must not go back to being the mechanism.
 fetch() {
   if [ -f "$2" ] && grep -q 'gx-sync:keep-local' "$2" 2>/dev/null; then
     echo "  • $2 (kept local — marked gx-sync:keep-local)"; return 0
   fi
   tmp="$(mktemp)"
   if curl -fsSL "$BASE/$1" | sed "s/__APP__/$APP/g" > "$tmp" && [ -s "$tmp" ]; then
-    mkdir -p "$(dirname "$2")"; mv "$tmp" "$2"; echo "  ✓ $2"
+    mkdir -p "$(dirname "$2")"
+    chmod "${3:-644}" "$tmp" 2>/dev/null || true   # BEFORE the mv, so the file is never briefly wrong
+    mv "$tmp" "$2"; echo "  ✓ $2"
   else
     rm -f "$tmp"; echo "  ✗ $1 (skipped — fetch failed, left existing file untouched)"; return 1
   fi
@@ -60,20 +79,20 @@ fi
 # only (see gx-dev-boot.html). Nothing to commit per repo, so production never requests it and the
 # 'referenced a file I never tracked' failure cannot recur.
 echo "Syncing shared GX spoke files for app=$APP …"
-fetch gx-brain-notes.sh    .claude/gx-brain-notes.sh    || true
-fetch gx-posttool-tests.sh .claude/gx-posttool-tests.sh || true
-fetch gx-usenglish.sh    gx-usenglish.sh           || true
+fetch gx-brain-notes.sh    .claude/gx-brain-notes.sh 755 || true
+fetch gx-posttool-tests.sh .claude/gx-posttool-tests.sh 755 || true
+fetch gx-usenglish.sh    gx-usenglish.sh 755 || true
 # gxclaim.sh is the one-session-per-checkout gate. It has to reach EVERY repo, not just the hub:
 # the shared-tree collision happened three times in spiff on 2026-09-08/09, and the pre-existing
 # mitigation ("do not edit the hub from a spoke chat") says nothing about two sessions in one spoke.
 # The SessionStart hook re-installs its git hooks each session, so syncing the script is enough.
-fetch gxclaim.sh         gxclaim.sh                || true
+fetch gxclaim.sh         gxclaim.sh 755 || true
 # gxdevlogin.sh mints the READ-ONLY dev session that gets past an app's sign-in screen without a
 # password being typed. It carries the per-app storage key map, which is suite knowledge rather than
 # app knowledge — each app keeps its session under its own key, in its own storage.
-fetch gxdevlogin.sh      gxdevlogin.sh             || true
-fetch deploy.sh          deploy.sh                 || true
-fetch serve.py           serve.py                  || true
+fetch gxdevlogin.sh      gxdevlogin.sh 755 || true
+fetch deploy.sh          deploy.sh 755 || true
+fetch serve.py           serve.py 755 || true
 # serve.js is a SECOND DOOR, not a replacement — serve.py stays and still works from a terminal, from
 # CI, from anywhere started by a shell. The managed dev-server launcher is the case it does not cover:
 # it spawns as a child of Claude's disclaimer helper, and in that context every APPLE-SIGNED binary is
@@ -81,16 +100,21 @@ fetch serve.py           serve.py                  || true
 # /bin/ls BLOCKED, /bin/cat BLOCKED, /usr/bin/python3 BLOCKED, /opt/homebrew/bin/node OK. Not a Dropbox
 # problem (Documents and Desktop fail identically) and NOT fixable with Full Disk Access — Sky granted
 # it at three levels and restarted, with no change. Do not send anyone round that loop again.
-fetch serve.js           serve.js                  || true
-fetch gx-preflight.sh    gx-preflight.sh           || true
-fetch gxengine.sh        gxengine.sh               || true
+fetch serve.js           serve.js 755 || true
+fetch gx-preflight.sh    gx-preflight.sh 755 || true
+fetch gxengine.sh        gxengine.sh 755 || true
 # chmod each file individually with an explicit mode. "chmod +x a b c" is subject to umask and skips
 # the whole list if it errors early, and mktemp+mv lands these at 0600 -- which silently left deploy.sh
 # non-executable in some repos after a sync.
 # VERIFY, do not assume. On 2026-08-22 gx-preflight.sh, deploy.sh and serve.py came out of a sync at
-# 0600 across four repos. It has not reproduced since and the cause is unconfirmed (self-update path?
-# Dropbox reverting modes asynchronously?) -- so this does not claim to prevent it, it refuses to let it
-# pass silently.
+# 0600 across four repos. THE CAUSE IS NOW KNOWN and is fixed in fetch() above: the chmod used to run
+# in a sweep at the END, so mktemp's 0600 stood for the whole rest of the sync and any interruption
+# froze it there. Reproduced 2026-09-09 by piping this script's output to `head` -- SIGPIPE, no error,
+# a transcript that looks fine. Dropbox was blamed for a deferred chmod; it was never Dropbox.
+#
+# This loop STAYS, and stays a check rather than the mechanism. A file whose mode is set at write time
+# should never reach here wrong, so if one does, something new is true and the loop is how anyone
+# finds out.
 #
 # WHAT IT ACTUALLY COSTS, corrected 2026-08-22. The hook is `exec sh ./gx-preflight.sh` -- `sh` READS
 # the script, so a 0600 preflight still runs and the guard is never weakened. The earlier claim here

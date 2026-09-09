@@ -204,6 +204,16 @@ for page in [f for f in os.listdir('.') if f.endswith('.html')]:
         if any(c in ref for c in BAD):
             continue
         path = ref.split('?')[0].split('#')[0]
+        # A __PLACEHOLDER__ is a scaffold slot, not a filename. gx-app-template.html ships
+        # <script src="__APP_JS__?v=1"> and gx-sync.sh substitutes the real JS filename for each
+        # repo out of .gx_app -- so no browser ever requests the literal. NO APOSTROPHES IN HERE:
+        # this heredoc sits inside an enclosing $(), where a lone quote breaks the shell parse of
+        # the entire script, which is why the block below spells its quotes with chr(). Left unhandled
+        # this blocked EVERY push in this repo, on a line that was correct, which is the one way a
+        # gate reliably gets bypassed with --no-verify. Found 2026-09-08 while fixing the same
+        # defect shape in gx-usenglish.sh: a pattern matched more than the thing it named.
+        if re.fullmatch(r'__[A-Z0-9_]+__', path):
+            continue
         if not path or path in tracked or os.path.isdir(path):
             continue
         missing.append(page + ' -> ' + path)
