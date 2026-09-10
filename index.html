@@ -3812,9 +3812,19 @@ GC.closeChangelog = function() {
   if (GC._clIsWn) { try { localStorage.setItem('gc_wn_seen_performance', (GC.CHANGELOG[0] || {}).v || ''); } catch (e) {} GC._clIsWn = false; }
 };
 
-// Show unseen updates once per login — DIRECTORS ONLY.
+// Show unseen updates once per login — DIRECTORS ONLY, and never on a wall screen.
+//
+// NOT ON THE KIOSK (Sky, 2026-09-10: "the staff doesn't need to see the version notes at the kiosk
+// level"). The notes load on EVERY route and re-run this when they land, so a store kiosk signed in
+// with a director's login painted the popup over the board, and a wall screen has nobody there to
+// click "Got it". Wall screens are #/store/<slug> (the kiosk) and #/sky (the all-stores wall).
+// Returning WITHOUT setting _wnChecked is deliberate: a director who backs out to the dashboard still
+// gets the notes there, where a person is actually using the app. The version badge still opens the
+// full changelog on every screen.
+GC.WALL_ROUTE = /^#\/(store\/[a-z]+|sky)$/;
 GC.checkWhatsNew = function() {
   if (GC._wnChecked) return;
+  if (GC.WALL_ROUTE.test(window.location.hash || '')) return;
   var sess = (GC.auth && GC.auth.load && GC.auth.load()) || {};
   if (sess.role !== 'director' && sess.role !== 'owner') return;   // not a director yet — don't lock; login retries
   if (!GC.CHANGELOG || !GC.CHANGELOG.length) return;               // notes not loaded from GX Core yet — the fetch re-invokes us
