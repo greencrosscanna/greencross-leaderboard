@@ -984,9 +984,9 @@ html, body {
 .ss-store .ss-name { font-weight: 600; font-size: 12px; white-space: nowrap; }
 .ss-store .ss-sub  { font-size: 10px; color: var(--text-mute); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ss-store .ss-pct  { margin-left: auto; font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 8px; }
-.ss-store .ss-pct.up   { color: var(--green); }
-.ss-store .ss-pct.flat { color: var(--text-dim); }
-.ss-store .ss-pct.down { color: var(--red); }
+.ss-store .ss-pct.green { color: var(--green); }
+.ss-store .ss-pct.amber { color: var(--amber); }
+.ss-store .ss-pct.red   { color: var(--red); }
 
 /* ── KPI Rows ────────────────────────────────────────────── */
 .kpi-row {
@@ -6304,8 +6304,10 @@ var director = (function() {
       // instead of a dash. The strip read "— — — — — —" for the first two hours of every day
       // while the store table directly beneath it showed real percentages for the same stores.
       var pctNum  = pv.pct;
+      // The number is colored by the SAME rule as the dot beside it. It used to have its own
+      // ±0.5% cut, so a store at −1% showed an amber dot next to a red "−1%" (Sky, 2026-09-09).
       var dotCls  = GC.paceDotClass(pctNum);
-      var pctCls  = pctNum >= 0.005 ? 'up' : pctNum <= -0.005 ? 'down' : 'flat';
+      var pctCls  = dotCls;
       var pctStr  = pv.str;
       var pctTip  = hasProj ? 'Projected end of day vs. daily goal'
                             : 'Pace so far vs. daily goal (projection needs 2h of sales)';

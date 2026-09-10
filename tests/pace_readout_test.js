@@ -76,14 +76,24 @@ console.log('\nStatus strip — the "upper bar"');
   ok('prints no em dash in the percentage slot',
      !/class="ss-pct[^"]*"[^>]*>—</.test(pre));
   ok('percentage is the pace, signed and rounded', pre.includes('>−14%<'));
-  ok('down class matches a negative pace', /class="ss-pct down"/.test(pre));
+  ok('red number beside a red dot', /class="ss-pct red"/.test(pre));
   ok('tooltip says it is pace, not a projection', /Pace so far vs\. daily goal/.test(pre));
 
   const post = ctx.renderStatusStrip([withProjection]);
   ok('still prefers the projection once there is one', post.includes('>+6%<'));
   ok('tooltip switches to the projection wording',
      /Projected end of day vs\. daily goal/.test(post));
-  ok('up class matches a positive projected pace', /class="ss-pct up"/.test(post));
+  ok('green number beside a green dot', /class="ss-pct green"/.test(post));
+
+  // Reported 2026-09-09: River at −1% had an amber dot and a RED "−1%" — the number had its own
+  // ±0.5% cut instead of the dot's rule. Every store's number must now match its own dot.
+  [0.004, -0.01, -0.03, -0.049, -0.05, 0.01].forEach(function(p) {
+    const html = ctx.renderStatusStrip([{ slug: 'river', name: 'River',
+      today: { revenue: 1000, goal: 1000, pace: p, projectedPace: p, projected: 0, projectedRevenue: 0 } }]);
+    const dot = (html.match(/class="ss-dot (\w+)"/) || [])[1];
+    const num = (html.match(/class="ss-pct (\w+)"/) || [])[1];
+    ok('number color matches dot color at ' + (p * 100) + '% (' + dot + ')', !!dot && dot === num);
+  });
 }
 
 console.log('\nProjected-vs-Plan gauge');
