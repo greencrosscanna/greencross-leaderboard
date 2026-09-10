@@ -104,12 +104,41 @@ if (fs.existsSync(REAL_GREP)) {
   console.log('  (skipped the mechanism check — ' + REAL_GREP + ' not present; the invariant above still holds)');
 }
 
+/* 3. THIS FILE MUST NOT SPELL OUT ANY OF THE GATE'S OWN PATTERNS — enforced, not promised.
+      A file that describes the gate is a file the gate reads, and the evening this suite was written
+      produced FOUR blocked or near-blocked pushes on that alone: this file's first push named the
+      dev-only tag in prose; Sales' probe fixture carried a breakpoint statement; the comment
+      explaining the fix for that quoted the fixture rule verbatim; and Sales' guard was found still
+      spelling two patterns out, passing only because those two rules happen to drop comment lines.
+      THE LAST ONE IS THE REASON THIS IS CODE. It was written AFTER the lesson was explicit, by a
+      session that had just articulated it. Knowing the rule did not prevent violating it; only
+      running the check did. So the check runs.
+      THE PATTERNS ARE READ OUT OF gx-preflight.sh, never copied — copying them here would be the
+      violation itself, and a copy would drift from the rules actually enforced. Comment-stripping is
+      deliberately NOT applied: a literal that survives only because its rule drops comments breaks
+      the day that rule is declared keep-comments, as the dev-only one already is. */
+const gate = fs.readFileSync(path.join(ROOT, 'gx-preflight.sh'), 'utf8');
+const PATTERNS = (gate.match(/^\s+'[^']+'[ \t]*(?:comments)?[ \t]*$/gm) || [])
+  .map(l => l.trim().replace(/[ \t]*comments[ \t]*$/, '').replace(/^'|'$/g, '')).filter(Boolean);
+/* A PARSE THAT FOUND NOTHING WOULD PASS EVERY ASSERTION BELOW VACUOUSLY — the same false-green shape
+   Sales found in its missing-binary branch, where `catch { return false }` made `!false` a pass. */
+ok('parsed the gate\'s patterns (a silent parse failure would pass this suite vacuously)',
+   PATTERNS.length >= 4);
+const self = fs.readFileSync(__filename, 'utf8');
+const spelled = PATTERNS.filter(pat => { try { return new RegExp(pat.replace(/\[\[:space:\]\]/g, '\\s')).test(self); } catch (e) { return false; } });
+ok('this file spells out none of them (' + PATTERNS.length + ' checked)', spelled.length === 0);
+if (spelled.length) fails.push('  spelled: ' + spelled.join(' | '));
+
 if (fails.length) {
   console.error('❌ binary source ' + fails.length + ' FAILED (' + pass + ' passed)');
   fails.forEach(f => console.error('  ✗ ' + f));
   offenders.forEach(o => console.error('    ' + o));
-  console.error('  Fix: remove the NUL bytes. Until you do, the pre-push gate may not be reading');
-  console.error('  that file at all — it will report success while leftovers ship.');
+  // Only the NUL failure gets the NUL advice — this suite now has three unrelated assertions, and a
+  // fix instruction printed for the wrong one sends the reader looking for a byte that is not there.
+  if (offenders.length) {
+    console.error('  Fix: remove the NUL bytes. Until you do, the pre-push gate may not be reading');
+    console.error('  that file at all — it will report success while leftovers ship.');
+  }
   process.exit(1);
 }
 console.log('✅ binary source ALL PASS (' + pass + '/' + pass + ')');
