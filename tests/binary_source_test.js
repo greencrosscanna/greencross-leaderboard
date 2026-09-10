@@ -73,7 +73,13 @@ ok(`no NUL bytes in any of the ${FILES.length} files the push gate greps`, offen
 const REAL_GREP = '/usr/bin/grep';
 if (fs.existsSync(REAL_GREP)) {
   const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'nulgrep-'));
-  const token = 'USE_FIXTURES_SENTINEL';
+  /* A NEUTRAL PROBE TOKEN, deliberately not resembling any real leftover marker. It only has to be
+     a string grep can find. The gate's fixture rule matches `USE_FIXTURES = true` and today an
+     inert `USE_FIXTURES_SENTINEL` slips past it — but a file that DESCRIBES the gate is a file the
+     gate reads, and planting something leftover-shaped in the suite that protects the gate is how
+     you block your own pushes forever when a pattern is later broadened. Sales hit exactly this from
+     the other direction: its probe fixture tripped the `debugger` rule. Both of us inside an hour. */
+  const token = 'PREFLIGHT_PROBE_ZZQ';
   const body = Buffer.concat([Buffer.from(token + '\n'), Buffer.alloc(300000, 0x61)]);   // 'a' padding
   const early = Buffer.from(body); early[22] = 0;                 // inside the first block
   const late  = Buffer.from(body); late[260022] = 0;              // far past it
