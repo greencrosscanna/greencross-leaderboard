@@ -367,6 +367,40 @@ function doGet(e) {
     if (params.action === 'libversion') {
       return jsonOut(getLibVersion_(), params.callback);
     }
+    /* Public: can this deployment actually SEND the bug notices below, and is anyone configured to
+       receive Core's? Counts and a boolean — never the address itself, which is a real person's.
+       WHY IT IS WORTH A ROUTE. handleBugReport_'s notices exist because a filed bug can go
+       unannounced, and the one failure they cannot escape is an exhausted mail quota: a library call
+       runs in the CALLING project, so GXCore.gxIngestBug's MailApp already spent OURS, and a quota
+       that refused Core's send refuses the fallback identically. That state is indistinguishable
+       from everything working — no error, no email, nothing recorded. This is the only way to ask.
+       Taken from SPIFF, 2026-09-09, which added the same to its diag and read 1447 live. Reading a
+       real number is also how you learn the send path is available at all, rather than assuming a
+       declared scope is a granted one.
+       WRAPPED, because a diagnostic that 500s fails exactly when it is needed. */
+    if (params.action === 'bugmailhealth') {
+      var q = null, qErr = '';
+      try { q = MailApp.getRemainingDailyQuota(); } catch (e) { qErr = String((e && e.message) || e); }
+      var watch = null;
+      try { watch = GXCore.getKv('cfg.bugWatchEmail'); } catch (e) {}
+      /* UNSET IS NOT OFF, and the difference decides whether mail_skipped can ever happen.
+         gxBugWatchEmail_ returns a hardcoded default when the key is empty and '' only for the
+         literal string 'off', so with the key unset there is ALWAYS a recipient and Core's
+         mail_skipped branch is unreachable. Established by the SPIFF session 2026-09-09 and
+         re-checked here the same day: ?action=config&key=cfg.bugWatchEmail returns value:null.
+         Which is exactly why handleBugReport_ still handles mail_skipped — one config edit makes it
+         reachable overnight, from a change nobody would connect to bug mail. A branch deleted as
+         dead is the one nobody re-adds. */
+      var set = String(watch == null ? '' : watch).trim();
+      return jsonOut({
+        ok: !qErr,
+        remaining_daily_quota: q, quota_error: qErr || undefined,
+        watch_configured: !!set,
+        // The one that answers "can mail_skipped happen at all today". Off empties the watch
+        // address, and only then can Core end up with nobody to mail.
+        watch_off: set.toLowerCase() === 'off',
+      }, params.callback);
+    }
     // Public: WHERE this deployment's pay-period calendar actually came from. The whole failure
     // this fixes is invisible — reading the wrong source still produces a date that parses — so
     // "we now read GX Core" is a claim that has to be checkable against the RUNNING app, not the
@@ -1604,6 +1638,22 @@ function bumpKioskRefresh_(slug) {
  *
  *   `mail_skipped` is the one that reads as fine and is not: cfg.bugWatchEmail off plus a reporter with
  *   no address on file means nothing failed and nobody was mailed. It is still a silent report.
+ *
+ *   IT CANNOT HAPPEN TODAY, AND THE BRANCH STAYS ANYWAY. gxBugWatchEmail_ returns a hardcoded default
+ *   for an EMPTY key and '' only for the literal string 'off' — unset is not off — so there is always
+ *   a recipient and Core's skip is unreachable. Established by the SPIFF session 2026-09-09, which
+ *   read the live key rather than assuming; re-checked here the same day (value:null). Setting that
+ *   one key to 'off' makes the branch live overnight, from a config change nobody would connect to
+ *   bug mail, and a branch deleted as dead is the one nobody re-adds. `?action=bugmailhealth`
+ *   answers it for the RUNNING deployment rather than from this comment.
+ *
+ *   THE REPORTER'S RECEIPT IS FINE, checked rather than assumed the same day. Core sends to the
+ *   reporter and cc's the watch address, resolving the reporter's id against the shared `users` tab
+ *   — so an unresolvable id would silently downgrade every filing to "Sky only". Of the 76 staff
+ *   rows in GX Core, 58 have no verified address; but all 17 who hold a `user_id` do, and holding
+ *   one is what it takes to sign in and file at all. The scary-looking number is people who cannot
+ *   reach the reporter in the first place. This app sends the session's login key as `reporter`
+ *   (index.html ~12300), which is exactly that slug.
  *
  * A DEDUPED REPEAT CARRIES NO MAIL FIELDS AT ALL — gxIngestBug returns at `priorBug` above its send —
  * so the redirect chain that started all of this cannot trip the new notice. That is a property of
