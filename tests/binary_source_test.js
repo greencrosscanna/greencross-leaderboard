@@ -74,11 +74,15 @@ const REAL_GREP = '/usr/bin/grep';
 if (fs.existsSync(REAL_GREP)) {
   const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'nulgrep-'));
   /* A NEUTRAL PROBE TOKEN, deliberately not resembling any real leftover marker. It only has to be
-     a string grep can find. The gate's fixture rule matches `USE_FIXTURES = true` and today an
-     inert `USE_FIXTURES_SENTINEL` slips past it — but a file that DESCRIBES the gate is a file the
-     gate reads, and planting something leftover-shaped in the suite that protects the gate is how
-     you block your own pushes forever when a pattern is later broadened. Sales hit exactly this from
-     the other direction: its probe fixture tripped the `debugger` rule. Both of us inside an hour. */
+     a string grep can find. It used to echo the fixture flag's name, which slipped past that rule
+     only because the rule also requires the assignment — but a file that DESCRIBES the gate is a
+     file the gate reads, and planting something leftover-shaped inside the suite that protects the
+     gate is how you block your own pushes forever once a pattern is broadened.
+     NONE OF THE GATE'S PATTERNS ARE QUOTED ANYWHERE IN THIS FILE, for the same reason and the hard
+     way: the first version of THIS comment quoted the fixture rule verbatim to explain the rename,
+     and the push was blocked by the rule it was quoting. That was the third block in one evening —
+     this suite's first push named the dev-only tag in prose, Sales' probe fixture tripped the
+     debugger rule, and then this. Describe the rules; never spell them. */
   const token = 'PREFLIGHT_PROBE_ZZQ';
   const body = Buffer.concat([Buffer.from(token + '\n'), Buffer.alloc(300000, 0x61)]);   // 'a' padding
   const early = Buffer.from(body); early[22] = 0;                 // inside the first block
