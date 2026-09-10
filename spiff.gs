@@ -367,6 +367,79 @@ function spiffLeadProgram_(entry) {
 }
 
 /**
+ * Every program running at one store, with everyone in it: what the kiosk's SPIFF panel lists
+ * when a budtender taps the SPIFF button (Sky chose this over opening SPIFF's own store page,
+ * 2026-09-10).
+ *
+ * THE SAME ROWS AS THE CARDS, grouped the other way. The cards group by PERSON and keep one lead
+ * program; this groups by PROGRAM and keeps everyone. Both are built from the rows spiffForStore_
+ * has already filtered to active, this store and this pay period's window, so the panel cannot
+ * list a program the cards have dropped, or the reverse.
+ *
+ * STILL NO MATH OF OUR OWN. Units, targets, hit and earned are SPIFF's finished figures, copied.
+ * The one derived value is `reward`: the payout for hitting the target, stated only when every
+ * person who has hit it was paid the SAME amount at the SAME target. SPIFF does not publish the
+ * bounty up front, so for a program nobody has hit yet it is null and the panel says "Sell N
+ * units" rather than guessing. A number we inferred would be a bounty promised on a wall screen
+ * that nobody agreed to.
+ *
+ * Ordered by the program ENDING SOONEST first, since that is the one worth acting on today, and
+ * people within a program by how close they are to their target.
+ */
+function spiffProgramsForStore_(rows) {
+  var byProg = Object.create(null), order = [];
+  (rows || []).forEach(function (r) {
+    if (!r) return;
+    var key = String(r.program_id == null ? '' : r.program_id).trim()
+           || (String(r.vendor || '') + '|' + String(r.program_name || ''));
+    var p = byProg[key];
+    if (!p) {
+      p = byProg[key] = {
+        id:       key,
+        vendor:   String(r.vendor || ''),
+        name:     String(r.program_name || ''),
+        start:    String(r.start_date == null ? '' : r.start_date).slice(0, 10),
+        end:      String(r.end_date == null ? '' : r.end_date).slice(0, 10),
+        target:   Number(r.target) || 0,
+        reward:   null,
+        earned:   0,
+        hitCount: 0,
+        people:   [],
+      };
+      order.push(key);
+    }
+    var person = {
+      employee_id: String(r.employee_id == null ? '' : r.employee_id).trim(),
+      name:        String(r.name || ''),
+      units:       Number(r.units)  || 0,
+      target:      Number(r.target) || 0,
+      hit:         !!r.hit,
+      earned:      Number(r.earned) || 0,
+    };
+    p.people.push(person);
+    p.earned += person.earned;
+    if (person.hit) p.hitCount++;
+  });
+
+  var frac = function (x) { return x.target > 0 ? x.units / x.target : 0; };
+  return order.map(function (k) {
+    var p = byProg[k];
+    var paid = p.people.filter(function (x) { return x.hit && x.earned > 0; });
+    var sameTarget = p.people.every(function (x) { return x.target === p.target; });
+    if (paid.length && sameTarget && paid.every(function (x) { return x.earned === paid[0].earned; })) {
+      p.reward = paid[0].earned;
+    }
+    p.people.sort(function (a, b) {
+      return (frac(b) - frac(a)) || (b.units - a.units) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+    });
+    return p;
+  }).sort(function (a, b) {
+    return (a.end < b.end ? -1 : a.end > b.end ? 1 : 0)
+        || (a.vendor < b.vendor ? -1 : a.vendor > b.vendor ? 1 : 0);
+  });
+}
+
+/**
  * Everything getStandings_ needs for one store: { ok, refreshed_at, byId: { dutchieId: card } }.
  *
  * `byId` is keyed by the Dutchie numeric id as a STRING, because that is what
@@ -376,10 +449,10 @@ function spiffLeadProgram_(entry) {
 function spiffForStore_(store) {
   // Off means OFF: return before the fetch, so a disabled toggle costs nothing per kiosk poll
   // and doubles as the kill switch if SPIFF ever starts misbehaving.
-  if (!spiffShowEnabled_()) return { ok: false, error: 'SPIFF row disabled in Settings', byId: {} };
+  if (!spiffShowEnabled_()) return { ok: false, error: 'SPIFF row disabled in Settings', byId: {}, programs: [] };
 
   var raw = spiffFetchRaw_();
-  if (!raw.ok) return { ok: false, error: raw.error, byId: {} };
+  if (!raw.ok) return { ok: false, error: raw.error, byId: {}, programs: [] };
 
   var pp   = currentPPStart_();
   // Closed programs first, then this store's window — order is irrelevant to the result
@@ -409,6 +482,7 @@ function spiffForStore_(store) {
     ppStart:      pp.ppStartStr,
     ppEnd:        pp.ppEndStr,
     byId:         byId,
+    programs:     spiffProgramsForStore_(rows),   // the SPIFF panel — same rows, grouped by program
   };
 }
 
