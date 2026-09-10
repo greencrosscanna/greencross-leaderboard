@@ -1572,8 +1572,8 @@ function bumpKioskRefresh_(slug) {
 }
 
 // ── Bug reporter ─────────────────────────────────────────────
-/* THIS APP NO LONGER EMAILS A FILED BUG. GX Core does, and this sends ONLY when Core could not be
- * reached at all — the no-lost-report fallback.
+/* THIS APP NO LONGER EMAILS A FILED BUG. GX Core does. This sends only when NOBODY WAS TOLD — either
+ * the report never reached the board, or it reached it and Core's email did not leave.
  *
  * The history is worth keeping, because the shape of it is why the fallback survives. One click of
  * "Submit" can run this function three times: Google's /exec second hop sometimes refuses the content
@@ -1587,70 +1587,143 @@ function bumpKioskRefresh_(slug) {
  * v1.761 fixed that here, by reading gxIngestBug's `deduped` answer. GX Core v310 then moved the send
  * itself into gxIngestBug, below the de-dupe, so the guard exists once instead of once per spoke.
  * Keeping BOTH sends would have been a new regression — two emails per bug — so this one narrowed to
- * the case Core cannot cover: Core unreachable, nothing filed, and this email the only evidence the
- * report was ever made. That is why it is not simply deleted.
+ * the cases Core cannot cover. That is why it is not simply deleted.
+ *
+ * THERE ARE TWO SUCH CASES, and the second is why this function reads the return value at all.
+ *
+ *   NOT FILED — Core unreachable (the call threw), or Core refused the report (`ok:false`, e.g. an
+ *   empty one). Nothing is on the board and this email is the only evidence anyone reported anything.
+ *
+ *   FILED BUT UNANNOUNCED — the row is down and Core's send died anyway. gxIngestBug swallows a mail
+ *   failure on purpose, because a report that reached the sheet has succeeded and mail must never be
+ *   what stops it. So it returns ok, and until GX Core v312 said nothing further: the live failure
+ *   mode was a bug filed, nobody told, and NOTHING recording that fact — not the inbox, not the row.
+ *   The absence of an email is not an event anyone observes. v312 added `mailed` / `mail_error` /
+ *   `mail_skipped` so a spoke can tell the three apart, and reading them is the whole reason this app
+ *   is pinned to v315. Absent, not empty, when they do not apply — read with truthiness, like `deduped`.
+ *
+ *   `mail_skipped` is the one that reads as fine and is not: cfg.bugWatchEmail off plus a reporter with
+ *   no address on file means nothing failed and nobody was mailed. It is still a silent report.
+ *
+ * A DEDUPED REPEAT CARRIES NO MAIL FIELDS AT ALL — gxIngestBug returns at `priorBug` above its send —
+ * so the redirect chain that started all of this cannot trip the new notice. That is a property of
+ * Core's early return, not of anything here, which is why the test pins it.
+ *
+ * WHETHER THIS EMAIL CAN SUCCEED WHERE CORE'S FAILED is not guaranteed, and the honest answer shapes
+ * what it is for. A library call runs in the CALLING project, so gxIngestBug's MailApp.sendEmail spent
+ * THIS app's quota — an exhausted quota will refuse this send too. What it does cover is everything
+ * else: a bad or missing recipient (all of `mail_skipped`), a transient send failure, a Core-side
+ * config problem. When it cannot get through either, Core's own console.error already logged into this
+ * app's Cloud project, which is the trace of last resort.
  *
  * bugMailOnce_ stays and is now load-bearing for a different reason. On the success path Core owns the
- * de-dupe; on THIS path there is no `deduped` answer to read, because the call threw. Without the mark,
- * a redirect chain would send three copies of the very email that exists because the board got nothing.
- * It may never swallow a first report — every failure inside it falls through to sending.
+ * de-dupe; on THESE paths there may be no `deduped` answer to read — the call threw, or two concurrent
+ * filings each got a row (Core's ingest lock fails open, by design). Without the mark, a redirect chain
+ * would send three copies of the very email that exists because nobody was told once. It may never
+ * swallow a first report: every failure inside it falls through to sending.
+ *
+ * THE TWO NOTICES MARK SEPARATE KEYS. They say opposite things — one asks Sky to re-file a report that
+ * is not on the board, the other points him at a row that is — so a shared mark would let the first
+ * suppress the second and leave him acting on the wrong instruction.
  */
 function handleBugReport_(b) {
   const ts = new Date();
 
-  // Central bug log, and — since GX Core v310 — the thing that emails Sky about it. A normal filing
-  // ends here: the row is written, Core mails once, and this function sends nothing.
-  var reached = false;
+  // Central bug log, and — since GX Core v310 — the thing that emails about it. A normal filing ends
+  // here: the row is written, Core mails once, and this function sends nothing.
+  var res = null, why = '';
   try {
-    GXCore.gxIngestBug('performance', b.reporter, {
+    res = GXCore.gxIngestBug('performance', b.reporter, {
       title: b.title, desc: b.desc, priority: b.priority, store: b.appStore, appVer: b.appVer
-    });
-    reached = true;
-  } catch (e) { /* Core unreachable — fall through to the fallback mail below */ }
+    }) || {};
+    /* A REFUSAL IS NOT A FILING. gxIngestBug returns {ok:false, error} without throwing when it will
+       not take a report — an empty one, a missing app key. Treating any non-throw as success (which
+       this did) meant such a report reached no board and produced no email either: the exact silent
+       loss the fallback exists to prevent, just through the door nobody was watching. */
+    if (res.ok === false) why = 'GX Core refused the report: ' + (res.error || 'no reason given');
+  } catch (e) {
+    why = 'GX Core could not be reached: ' + String((e && e.message) || e);
+  }
 
-  // Core never saw it. This email is now the ONLY record that someone reported a problem, so it says
+  // Nothing on the board. This email is now the ONLY record that someone reported a problem, so it says
   // so in as many words: a fallback that reads like an ordinary notification is a report quietly lost.
-  if (!reached && bugMailOnce_(b)) {
-    try {
-      MailApp.sendEmail({
-        to:      'sky@greencrosscanna.com',
-        subject: '⚠️ UNFILED Leaderboard bug [' + (b.priority || 'medium') + ']: ' + b.title,
-        body: [
-          'THIS REPORT IS NOT ON THE BUG BOARD. GX Core could not be reached when it was submitted,',
-          'so nothing was recorded and this email is the only copy. Please re-file it from the',
-          'Command Center cockpit — the reporter believes it went through.',
-          '',
-          'Reporter : ' + (b.reporter || ''),
-          'Priority : ' + (b.priority || 'medium'),
-          'Store    : ' + (b.appStore || ''),
-          'Role     : ' + (b.appRole  || ''),
-          'Version  : ' + (b.appVer   || ''),
-          'Route    : ' + (b.appRoute || ''),
-          'Time     : ' + Utilities.formatDate(ts, STORE_TZ, 'M/d/yy h:mm a'),
-          '',
-          b.desc || '(no details provided)',
-        ].join('\n'),
-      });
-    } catch(mailErr) { /* non-fatal */ }
+  if (why && bugMailOnce_(b, 'unfiled')) {
+    bugNotify_({
+      subject: '⚠️ UNFILED Leaderboard bug [' + (b.priority || 'medium') + ']: ' + b.title,
+      lead: [
+        'THIS REPORT IS NOT ON THE BUG BOARD. ' + why + ',',
+        'so nothing was recorded and this email is the only copy. Please re-file it from the',
+        'Command Center cockpit — the reporter believes it went through.',
+      ],
+      b: b, ts: ts,
+    });
+    return { ok: true };
+  }
+
+  /* THE ROW IS DOWN AND NOBODY WAS TOLD. Core swallows its own mail failure on purpose (a filed report
+     has succeeded), so nothing else anywhere will mention this. Unlike the case above the report is
+     safe — what is lost is the notification, including the receipt the REPORTER was supposed to get,
+     so this email has to correct the opposite instinct: do not re-file it, go and look at it. */
+  var mailWhy = res && (res.mail_error || res.mail_skipped);
+  if (mailWhy && bugMailOnce_(b, 'unannounced')) {
+    bugNotify_({
+      subject: '🔕 UNANNOUNCED Leaderboard bug [' + (b.priority || 'medium') + ']: ' + b.title,
+      lead: [
+        'THIS REPORT IS ON THE BUG BOARD — do NOT re-file it — but GX Core could not email anyone',
+        'about it, so this notice is standing in. The reporter got no receipt either.',
+        '',
+        'Bug id   : ' + String(res.id || '(none returned)'),
+        'Mail    ' + (res.mail_error ? ' failed  : ' : ' skipped : ') + mailWhy,
+      ],
+      b: b, ts: ts,
+    });
   }
 
   return { ok: true };
 }
 
-/* True the FIRST time a given report asks to be emailed, false for a repeat inside three minutes.
- * The window matches GX Core's own bug dedupe so the email and the board agree on what "the same
- * report" means; a fourth minute is a person filing again because nothing happened, which should mail.
- * The lock makes check-and-set atomic — a redirect chain can re-enter fast enough for three executions
- * to read an empty cache at once, and three simultaneous misses is exactly the bug being fixed.
+/* The body both notices share. Same fields, same order, in one place — the two differ only in the
+   paragraph at the top that says which failure this was and what to do about it. Wrapped and non-fatal
+   for the reason every send in this file is: mail is the enhancement, the report is the thing. */
+function bugNotify_(o) {
+  try {
+    MailApp.sendEmail({
+      to:      'sky@greencrosscanna.com',
+      subject: o.subject,
+      body: o.lead.concat([
+        '',
+        'Reporter : ' + (o.b.reporter || ''),
+        'Priority : ' + (o.b.priority || 'medium'),
+        'Store    : ' + (o.b.appStore || ''),
+        'Role     : ' + (o.b.appRole  || ''),
+        'Version  : ' + (o.b.appVer   || ''),
+        'Route    : ' + (o.b.appRoute || ''),
+        'Time     : ' + Utilities.formatDate(o.ts, STORE_TZ, 'M/d/yy h:mm a'),
+        '',
+        o.b.desc || '(no details provided)',
+      ]).join('\n'),
+    });
+  } catch (mailErr) { /* non-fatal */ }
+}
+
+/* True the FIRST time a given report asks to be emailed AS `kind`, false for a repeat inside three
+ * minutes. The window matches GX Core's own bug dedupe so the email and the board agree on what "the
+ * same report" means; a fourth minute is a person filing again because nothing happened, which should
+ * mail. The lock makes check-and-set atomic — a redirect chain can re-enter fast enough for three
+ * executions to read an empty cache at once, and three simultaneous misses is exactly the bug fixed.
+ * `kind` NAMESPACES THE MARK, because the two notices carry contradictory instructions ("re-file this"
+ * vs "do not re-file this"). One report can legitimately raise both — a submit that never reaches Core,
+ * then a retry that files and cannot mail — and collapsing them onto one key would silently drop
+ * whichever came second, leaving the earlier, now-wrong instruction standing as the only word on it.
  * FAILS OPEN on purpose: a cache or lock that is unavailable must never be the reason a bug report
  * goes unread. Better a duplicate email than a silent one. */
-function bugMailOnce_(b) {
+function bugMailOnce_(b, kind) {
   var lock = null;
   try {
     const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5,
       String(b.reporter || '') + '\u0000' + String(b.title || '') + '\u0000' + String(b.desc || ''),
       Utilities.Charset.UTF_8);
-    const key = 'bugmail:' + Utilities.base64EncodeWebSafe(digest);
+    const key = 'bugmail:' + (kind || 'unfiled') + ':' + Utilities.base64EncodeWebSafe(digest);
     lock = LockService.getScriptLock();
     try { lock.waitLock(5000); } catch (e) { lock = null; }   // busy → fall through and send
     const cache = CacheService.getScriptCache();

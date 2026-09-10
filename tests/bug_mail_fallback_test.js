@@ -36,6 +36,21 @@
  *   5. THE FALLBACK MUST READ AS A FAILURE. An email that looks like an ordinary notification, for a
  *      report that was never filed, is worse than no email — it is a lost report wearing the costume
  *      of a handled one.
+ *   6. A FILED BUG WHOSE EMAIL DIED MUST STILL REACH SOMEONE. GX Core swallows its own mail failure
+ *      on purpose — a report that reached the sheet has succeeded — so it returns ok and the row
+ *      looks perfect. Before GX Core v312 there was nothing in the answer to read, and the live
+ *      failure mode was a bug on the board that nobody was ever told about, recorded nowhere. v312
+ *      added mailed / mail_error / mail_skipped; §6-§9 pin this app actually reading them, which is
+ *      the only thing the v315 re-pin bought.
+ *   7. AND IT MUST SAY THE OPPOSITE THING. This report IS filed. An email that told Sky to re-file it
+ *      would have him open a duplicate — so the two notices must not be one notice with a variable
+ *      in it, and must not share a de-dupe mark that lets the wrong one win.
+ *   8. A DEDUPED REPEAT MUST STAY SILENT. Core returns at `priorBug` before its send, so a repeat
+ *      carries no mail fields at all. Reading "no mailed field" as "mail failed" would turn every
+ *      redirect chain into a false alarm — the original three-emails bug, wearing a new hat.
+ *   9. A REFUSED REPORT IS AN UNFILED ONE. gxIngestBug answers {ok:false} without throwing when it
+ *      will not take a report. Counting that as success is a silent loss through the one door the
+ *      fallback was not watching.
  *
  * Per tests/_harness.js's rule these never reimplement — dutchie_proxy.gs is read off disk.
  */
@@ -55,11 +70,18 @@ function M() {
     stubs: {
       MailApp: { sendEmail: function (msg) { SENT.push(msg); } },
       GXCore: {
+        /* The five answers gxIngestBug can actually give, read off gx_core.gs rather than imagined:
+           a fresh filing carries `mailed`; a repeat returns at `priorBug` with `deduped` and NO mail
+           field of any kind; a mail failure or a skipped send carries the reason; a refusal is
+           {ok:false, error} and does not throw. Only 'down' throws. */
         gxIngestBug: function (app, reporter, payload) {
           INGESTED.push({ app: app, reporter: reporter, payload: payload });
-          if (CORE_MODE === 'down') throw new Error('central unavailable');
-          if (CORE_MODE === 'dup')  return { ok: true, id: 'bug_existing', deduped: true };
-          return { ok: true, id: 'bug_fresh' };
+          if (CORE_MODE === 'down')    throw new Error('central unavailable');
+          if (CORE_MODE === 'dup')     return { ok: true, id: 'bug_existing', deduped: true };
+          if (CORE_MODE === 'refused') return { ok: false, error: 'title or detail required' };
+          if (CORE_MODE === 'mailerr') return { ok: true, id: 'bug_fresh', mail_error: 'Service invoked too many times' };
+          if (CORE_MODE === 'mailskip') return { ok: true, id: 'bug_fresh', mail_skipped: 'no recipient — cfg.bugWatchEmail is off' };
+          return { ok: true, id: 'bug_fresh', mailed: 'mike@greencrosscanna.com' };
         },
       },
       CacheService: {
@@ -196,6 +218,95 @@ const tests = {
     _eq_('ok when Core took it', m.handleBugReport_(MIKE), { ok: true });
     reset({ core: 'down' });
     _eq_('ok when Core did not', M().handleBugReport_(MIKE), { ok: true });
+  },
+
+  /* §6. The row is down, Core's send died, and Core deliberately swallowed it. Nothing else in the
+     suite will ever mention this bug — not the inbox, not the row, not a log anyone reads. */
+  'a filed bug whose email failed still reaches someone': function () {
+    reset({ core: 'mailerr' });
+    const m = M();
+    m.handleBugReport_(MIKE);
+    _eq_('exactly one notice', SENT.length, 1);
+    _ok_('and it carries the report', SENT[0].body.indexOf(MIKE.desc) >= 0);
+  },
+
+  /* The quiet half of the same failure: nothing threw, nobody was mailed. It reads as fine on every
+     surface, which is why it has to be read out of the answer rather than noticed. */
+  'a filed bug nobody could be mailed about still reaches someone': function () {
+    reset({ core: 'mailskip' });
+    const m = M();
+    m.handleBugReport_(MIKE);
+    _eq_('exactly one notice', SENT.length, 1);
+    _ok_('says why nobody got it', SENT[0].body.indexOf('cfg.bugWatchEmail is off') >= 0);
+  },
+
+  /* §7. The two notices give opposite instructions, and acting on the wrong one opens a duplicate
+     bug — or abandons a real one. Neither may wear the other's words. */
+  'the unannounced notice says the report IS filed, and not to re-file it': function () {
+    reset({ core: 'mailerr' });
+    const m = M();
+    m.handleBugReport_(MIKE);
+    _ok_('subject flags it as unannounced', SENT[0].subject.indexOf('UNANNOUNCED') >= 0);
+    _ok_('body says it IS on the board', SENT[0].body.indexOf('ON THE BUG BOARD') >= 0);
+    _ok_('and says not to re-file', SENT[0].body.indexOf('do NOT re-file') >= 0);
+    _ok_('points at the row by id', SENT[0].body.indexOf('bug_fresh') >= 0);
+    _ok_('and names the mail failure', SENT[0].body.indexOf('Service invoked too many times') >= 0);
+    _ok_('never claims it was not filed', SENT[0].body.indexOf('NOT ON THE BUG BOARD') < 0);
+  },
+
+  /* One report can raise BOTH — a submit that never reached Core, then a retry that filed and could
+     not mail. A shared de-dupe mark would drop the second and leave "please re-file this" standing
+     as the only word on a bug that is now on the board. */
+  'an unfiled notice does not suppress a later unannounced one': function () {
+    reset({ core: 'down' });
+    const m = M();
+    m.handleBugReport_(MIKE);
+    CORE_MODE = 'mailerr';
+    m.handleBugReport_(MIKE);
+    _eq_('both notices sent', SENT.length, 2);
+    _ok_('first says unfiled', SENT[0].subject.indexOf('UNFILED') >= 0);
+    _ok_('second says unannounced', SENT[1].subject.indexOf('UNANNOUNCED') >= 0);
+  },
+
+  /* And the new notice inherits the old one's guard: a redirect chain that files once and fails to
+     mail once must not produce three copies of the notice about it. */
+  'the unannounced notice is sent only once': function () {
+    reset({ core: 'mailerr' });
+    const m = M();
+    m.handleBugReport_(MIKE);
+    m.handleBugReport_(MIKE);
+    m.handleBugReport_(MIKE);
+    _eq_('exactly one notice', SENT.length, 1);
+  },
+
+  /* §8. THE FALSE ALARM THAT WOULD UNDO ALL OF THIS. A deduped repeat returns before Core's send and
+     carries no mail field at all. Reading absent-`mailed` as failure would mail on every redirect
+     chain — the original bug, restored through the fix for it. */
+  'a deduped repeat raises no notice, even though it was never mailed': function () {
+    reset({ core: 'dup' });
+    const m = M();
+    m.handleBugReport_(MIKE);
+    _eq_('silent', SENT.length, 0);
+  },
+
+  /* §9. A refusal does not throw, so the old `reached = true` counted it as filed. Nothing on the
+     board, nothing in the inbox: a silent loss through the door the fallback was not watching. */
+  'a report Core REFUSED is treated as unfiled': function () {
+    reset({ core: 'refused' });
+    const m = M();
+    m.handleBugReport_(MIKE);
+    _eq_('one notice', SENT.length, 1);
+    _ok_('flagged unfiled', SENT[0].subject.indexOf('UNFILED') >= 0);
+    _ok_('and says why Core would not take it', SENT[0].body.indexOf('title or detail required') >= 0);
+  },
+
+  /* The ordinary path, restated against the richer stub: a filing that Core mailed is still silent
+     here. §1 with `mailed` present is what a real v315 answer looks like. */
+  'a filing Core successfully mailed sends nothing from here': function () {
+    reset();
+    const m = M();
+    m.handleBugReport_(MIKE);
+    _eq_('silent', SENT.length, 0);
   },
 
 };
