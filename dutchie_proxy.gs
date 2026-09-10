@@ -1659,6 +1659,19 @@ function bumpKioskRefresh_(slug) {
  * so the redirect chain that started all of this cannot trip the new notice. That is a property of
  * Core's early return, not of anything here, which is why the test pins it.
  *
+ * WHICH MAKES THE RULE: GATE ON THE PRESENCE OF `mail_error` / `mail_skipped`, NEVER ON THE ABSENCE
+ * OF `mailed`. The two read as equivalent and are opposites. Because a deduped repeat carries no mail
+ * field, `if (!res.mailed)` fires on EVERY repeat — every retry, every redirect chain — which is the
+ * three-emails-per-bug bug restored through the fix for it. Core's early return is what makes absence
+ * UNSAFE to read, not what makes it safe. A presence check is silent on a repeat by construction and
+ * needs no second guard here; adding one would be unreachable code that looks load-bearing.
+ * WRITTEN DOWN BECAUSE THE PROSE FAILED WHERE THE CODE DID NOT. This file has always gated on
+ * presence (`.mailed` appears nowhere in it), but the note this session sent to five other apps on
+ * 2026-09-09 stated the rule backwards, and two of them had not built yet. The sales session caught
+ * it by measuring rather than arguing: mutating its shipped source to add
+ * `|| (!r.mailed && 'no mail reported')` failed 3 of 44 assertions, including a lone deduped repeat
+ * and a mailed → deduped → deduped chain. Corrections filed to all six apps.
+ *
  * WHETHER THIS EMAIL CAN SUCCEED WHERE CORE'S FAILED is not guaranteed, and the honest answer shapes
  * what it is for. A library call runs in the CALLING project, so gxIngestBug's MailApp.sendEmail spent
  * THIS app's quota — an exhausted quota will refuse this send too. What it does cover is everything
