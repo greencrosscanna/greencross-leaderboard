@@ -371,18 +371,32 @@ function doGet(e) {
        receive Core's? Counts and a boolean — never the address itself, which is a real person's.
        WHY IT IS WORTH A ROUTE. handleBugReport_'s notices exist because a filed bug can go
        unannounced, and the one failure they cannot escape is an exhausted mail quota: a library call
-       runs in the CALLING project, so GXCore.gxIngestBug's MailApp already spent OURS, and a quota
+       runs in the CALLING project, so GXCore.gxIngestBug's MailApp send is billed here, and a quota
        that refused Core's send refuses the fallback identically. That state is indistinguishable
        from everything working — no error, no email, nothing recorded. This is the only way to ask.
-       Taken from SPIFF, 2026-09-09, which added the same to its diag and read 1447 live. Reading a
-       real number is also how you learn the send path is available at all, rather than assuming a
-       declared scope is a granted one.
+       Taken from SPIFF, 2026-09-09, which added the same to its diag. Reading a real number is also
+       how you learn the send path is available at all, rather than assuming a declared scope is a
+       granted one.
+       THE NUMBER IS THE ACCOUNT'S, NOT THIS APP'S — corrected 2026-09-09, and it changes what the
+       reading MEANS. Apps Script meters MailApp per USER ACCOUNT per day, and every GX engine
+       deploys as the same owner, so this is ONE allowance shared by all seven apps. Crew's Monday
+       digest can exhaust Leaderboard's bug notice. Read it as a suite-wide gauge; a low number is
+       not evidence that anything here sent, and SPIFF measured the converse directly — it watched
+       the figure fall 1447 → 1417 having sent nothing at all. Do not treat a drop as proof of
+       delivery, which is the reading the old wording invited.
        WRAPPED, because a diagnostic that 500s fails exactly when it is needed. */
     if (params.action === 'bugmailhealth') {
       var q = null, qErr = '';
       try { q = MailApp.getRemainingDailyQuota(); } catch (e) { qErr = String((e && e.message) || e); }
-      var watch = null;
-      try { watch = GXCore.getKv('cfg.bugWatchEmail'); } catch (e) {}
+      /* THREE STATES, NOT TWO, and the third must never be reported as the second. A key that could
+         not be READ is not a key that is unset, and reporting it as "off" would say mail_skipped is
+         reachable when nothing is known either way. Crew's point (2026-09-09), and the same shape as
+         its own lb_agrees null-coerced-to-false bug and Core's three-state stores_failed rule: the
+         natural one-liner — `watch.toLowerCase() === 'off'` over a caught-and-blanked read — gets it
+         silently wrong. So the error is carried, and watch_off stays false while it is set. */
+      var watch = null, watchErr = '';
+      try { watch = GXCore.getKv('cfg.bugWatchEmail'); }
+      catch (e) { watchErr = String((e && e.message) || e); }
       /* UNSET IS NOT OFF, and the difference decides whether mail_skipped can ever happen.
          gxBugWatchEmail_ returns a hardcoded default when the key is empty and '' only for the
          literal string 'off', so with the key unset there is ALWAYS a recipient and Core's
@@ -393,12 +407,15 @@ function doGet(e) {
          dead is the one nobody re-adds. */
       var set = String(watch == null ? '' : watch).trim();
       return jsonOut({
-        ok: !qErr,
+        ok: !qErr && !watchErr,
+        // Shared by all seven apps — see the note above. A drop is not evidence THIS app sent.
         remaining_daily_quota: q, quota_error: qErr || undefined,
-        watch_configured: !!set,
+        watch_configured: watchErr ? null : !!set,
+        watch_error: watchErr || undefined,
         // The one that answers "can mail_skipped happen at all today". Off empties the watch
-        // address, and only then can Core end up with nobody to mail.
-        watch_off: set.toLowerCase() === 'off',
+        // address, and only then can Core end up with nobody to mail. Stays false — never true —
+        // when the key could not be read, because unknown must not read as off.
+        watch_off: !watchErr && set.toLowerCase() === 'off',
       }, params.callback);
     }
     // Public: WHERE this deployment's pay-period calendar actually came from. The whole failure
@@ -1673,11 +1690,18 @@ function bumpKioskRefresh_(slug) {
  * and a mailed → deduped → deduped chain. Corrections filed to all six apps.
  *
  * WHETHER THIS EMAIL CAN SUCCEED WHERE CORE'S FAILED is not guaranteed, and the honest answer shapes
- * what it is for. A library call runs in the CALLING project, so gxIngestBug's MailApp.sendEmail spent
- * THIS app's quota — an exhausted quota will refuse this send too. What it does cover is everything
- * else: a bad or missing recipient (all of `mail_skipped`), a transient send failure, a Core-side
- * config problem. When it cannot get through either, Core's own console.error already logged into this
- * app's Cloud project, which is the trace of last resort.
+ * what it is for. A library call runs in the CALLING project, so gxIngestBug's MailApp.sendEmail was
+ * billed to the same allowance this send draws on — an exhausted quota refuses both. What it does
+ * cover is everything else: a bad or missing recipient (all of `mail_skipped`), a transient send
+ * failure, a Core-side config problem. When it cannot get through either, Core's own console.error
+ * already logged into this app's Cloud project, which is the trace of last resort.
+ *
+ * THAT ALLOWANCE IS THE ACCOUNT'S, NOT THIS APP'S, and it is wider than it looks — corrected
+ * 2026-09-09 by core-admin, which had told every spoke the opposite. Apps Script meters MailApp per
+ * USER ACCOUNT per day and all seven GX engines deploy as the same owner, so ONE daily allowance
+ * covers the whole suite: Crew's Monday digest, SPIFF's payout mail and this notice compete for it.
+ * The practical consequence is that "our app barely mails, so quota is not our failure mode" is
+ * false reasoning here. `?action=bugmailhealth` reads the shared figure.
  *
  * bugMailOnce_ stays and is now load-bearing for a different reason. On the success path Core owns the
  * de-dupe; on THESE paths there may be no `deduped` answer to read — the call threw, or two concurrent
