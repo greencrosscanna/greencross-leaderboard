@@ -410,6 +410,14 @@ function doGet(e) {
         ok: !qErr && !watchErr,
         // Shared by all seven apps — see the note above. A drop is not evidence THIS app sent.
         remaining_daily_quota: q, quota_error: qErr || undefined,
+        /* "CANNOT SEND" AND "COULD NOT TELL" ARE DIFFERENT ANSWERS, and this field exists to keep
+           them apart rather than leave every reader to re-derive it. Derived from whether the quota
+           READ succeeded (q !== null), never from the number — q === 0 is a real, knowable "no", and
+           a thrown read is null with quota_error set. Crew's shape and Crew's field name, taken so
+           the suite converges on one; the weaker version infers capability from the read not
+           throwing and quietly reports "could not tell" as "can". Same three-state discipline as
+           watch_off above. */
+        can_send_mail: q === null ? null : q > 0,
         watch_configured: watchErr ? null : !!set,
         watch_error: watchErr || undefined,
         // The one that answers "can mail_skipped happen at all today". Off empties the watch
