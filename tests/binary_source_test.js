@@ -124,10 +124,35 @@ const PATTERNS = (gate.match(/^\s+'[^']+'[ \t]*(?:comments)?[ \t]*$/gm) || [])
    Sales found in its missing-binary branch, where `catch { return false }` made `!false` a pass. */
 ok('parsed the gate\'s patterns (a silent parse failure would pass this suite vacuously)',
    PATTERNS.length >= 4);
+/* THE GATE'S PATTERNS ARE POSIX ERE AND JS REGEXP IS NOT — and the difference fails SILENTLY, which
+   is this suite's own subject one level down. A POSIX bracket class compiles cleanly in JS and then
+   matches NOTHING: `new RegExp('[[:space:]]')` is a valid character class over the literal characters
+   `[`, `:`, `s`... and never matches a space. So an untranslated class reads as "no violation found",
+   forever, for exactly the rules most likely to contain one. Sales found this in its copy, where the
+   two patterns that silently could not match were the two its file actually contained.
+   SO AN UNTRANSLATABLE PATTERN IS A FAILURE THAT NAMES ITSELF, NEVER A SKIP. The previous version
+   here ended `catch (e) { return false; }` — a pattern that would not compile was reported as "not
+   spelled", i.e. a pass. That is the same false-green shape Sales hit in its missing-binary branch
+   and the same one the vacuity guard above exists for: three instances now, all of them a check that
+   cannot fail wearing the clothes of a check that passed. */
+const POSIX_CLASSES = { '[:space:]': '\\s', '[:alpha:]': 'A-Za-z', '[:digit:]': '0-9', '[:alnum:]': 'A-Za-z0-9', '[:upper:]': 'A-Z', '[:lower:]': 'a-z' };
+function toJs(pat) {
+  let out = pat;
+  for (const k in POSIX_CLASSES) out = out.split(k).join(POSIX_CLASSES[k]);
+  if (/\[:[a-z]+:\]/.test(out)) throw new Error('untranslated POSIX class — it would compile and match nothing');
+  return new RegExp(out);
+}
 const self = fs.readFileSync(__filename, 'utf8');
-const spelled = PATTERNS.filter(pat => { try { return new RegExp(pat.replace(/\[\[:space:\]\]/g, '\\s')).test(self); } catch (e) { return false; } });
+const spelled = [], untranslatable = [];
+for (const pat of PATTERNS) {
+  let re; try { re = toJs(pat); } catch (e) { untranslatable.push(pat + '  (' + e.message + ')'); continue; }
+  if (re.test(self)) spelled.push(pat);
+}
+ok('every gate pattern survived translation to JS (an untranslated one matches nothing, forever)',
+   untranslatable.length === 0);
 ok('this file spells out none of them (' + PATTERNS.length + ' checked)', spelled.length === 0);
 if (spelled.length) fails.push('  spelled: ' + spelled.join(' | '));
+untranslatable.forEach(u => fails.push('  untranslatable: ' + u));
 
 if (fails.length) {
   console.error('❌ binary source ' + fails.length + ' FAILED (' + pass + ' passed)');
