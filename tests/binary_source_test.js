@@ -38,7 +38,7 @@
  * greencross-sales/tests/binary_source_test.js, which found it.
  */
 'use strict';
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 const fs   = require('fs');
 const path = require('path');
 
@@ -90,13 +90,20 @@ if (fs.existsSync(REAL_GREP)) {
   const p = n => path.join(tmp, n);
   fs.writeFileSync(p('early.gs'), early);
   fs.writeFileSync(p('late.gs'), late);
+  /* BOTH STREAMS, AND ANY CASE — because /usr/bin/grep is not the same tool everywhere this runs.
+     On a Mac it is BSD grep, which prints "Binary file X matches" to stdout. On the Linux CI runner
+     it is GNU grep 3.5+, which prints "grep: X: binary file matches" to STDERR, in lowercase, and
+     still exits 0. Reading only stdout and matching "Binary file" exactly made this assertion fail on
+     every CI run from the day it landed (2026-09-09) while passing on every Mac: the gate was blind
+     in both places, and only the test's reading of the message differed. Same lesson as the header —
+     measure with the tool that actually runs, which here is two tools. */
   const grep = f => {
-    try { return execFileSync(REAL_GREP, ['-HnE', token, p(f)], { cwd: tmp }).toString(); }
-    catch (e) { return String((e.stdout || '') + (e.stderr || '')); }
+    const r = spawnSync(REAL_GREP, ['-HnE', token, p(f)], { cwd: tmp });
+    return String(r.stdout || '') + String(r.stderr || '');
   };
   const eOut = grep('early.gs'), lOut = grep('late.gs');
   ok('an EARLY NUL makes the real grep refuse the file (gate goes blind)',
-     /Binary file/.test(eOut) && !/:1:/.test(eOut));
+     /binary file/i.test(eOut) && !/:1:/.test(eOut));
   ok('a LATE NUL does not — same byte, same size, only the position differs',
      /early|late/.test(lOut) && /:1:/.test(lOut));
   fs.rmSync(tmp, { recursive: true, force: true });
