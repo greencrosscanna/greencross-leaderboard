@@ -1444,6 +1444,51 @@ body.kiosk-bg {
 .kso-close:hover { background: var(--surface-2); }
 .kso-frame { flex: 1; width: 100%; border: 0; background: var(--bg); }
 
+/* ── SPIFF panel: what the button opens (Sky picked "built into Leaderboard", 2026-09-10) ──
+   Same bar language as the SPIFF row on each staff card (gold = hit, a hash left of the end =
+   beaten by that much), so the panel reads as the cards' detail view rather than a new widget. */
+.kiosk-spiff-btn .ksb-count {
+  background: rgba(212,168,71,0.22); border-radius: 10px;
+  padding: 2px 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.3px;
+}
+.kiosk-spiff-btn.none .ksb-dot { animation: none; opacity: 0.4; box-shadow: none; }
+/* flex:1 on the context line pushes the page button, countdown and Close to the right whether or
+   not the page button is present — an auto margin on a sibling would hinge on which one is hidden. */
+.kso-ctx  { flex: 1; color: var(--text-dim); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.kso-page {
+  background: transparent; border: 1px solid var(--gold-line); color: var(--gold-bright);
+  padding: 10px 16px; min-height: 44px; border-radius: 6px; cursor: pointer;
+  font-size: 13px; font-weight: 700;
+}
+.kso-body { flex: 1; overflow: auto; padding: 18px 22px 24px; display: flex; flex-direction: column; gap: 14px; }
+.kso-body[hidden], .kso-frame[hidden], .kso-page[hidden] { display: none; }
+.ksp-sum  { display: flex; flex-wrap: wrap; gap: 10px; }
+.ksp-stat {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 14px; display: flex; gap: 8px; align-items: baseline;
+}
+.ksp-stat b    { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ksp-stat span { font-size: 12px; color: var(--text-dim); }
+.ksp-stat.gold b { color: var(--gold-bright); }
+.ksp-progs { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; align-items: start; }
+.ksp-prog {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.ksp-prog.ending { border-color: var(--gold-line); }
+.ksp-vendor { font-size: 11px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--text-dim); font-weight: 700; }
+.ksp-name   { font-size: 18px; font-weight: 800; letter-spacing: -0.2px; margin-top: 2px; }
+.ksp-tags   { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.ksp-tag    { border: 1px solid var(--border-strong); border-radius: 12px; padding: 2px 9px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.ksp-tag.gold { border-color: var(--gold-line); color: var(--gold-bright); background: rgba(212,168,71,0.08); }
+.ksp-people { display: flex; flex-direction: column; gap: 8px; }
+.ksp-row    { display: grid; grid-template-columns: minmax(0, 120px) 1fr auto; gap: 10px; align-items: center; font-size: 12px; }
+.ksp-who    { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ksp-count  { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; min-width: 70px; }
+.ksp-row.hit .ksp-count { color: var(--gold-bright); }
+.ksp-row .emp-spiff { margin: 0; padding: 0; border: 0; }
+.ksp-empty  { color: var(--text-dim); font-size: 15px; padding: 48px 0; text-align: center; }
+
 /* ── Slideshow bar ─────────────────────────────────────── */
 .ss-bar {
   position: fixed;
@@ -4429,6 +4474,103 @@ GC.spiffRow = function(sp) {
     +   (markPct !== null ? '<div class="emp-spiff-mark" style="left:' + markPct + '%"></div>' : '')
     + '</div>'
     + '</div>';
+};
+
+/** The SPIFF button's label: the pulsing dot, the word, and how many programs are live. */
+GC.spiffButtonInner = function(n) {
+  n = Math.max(0, +n || 0);
+  return '<span class="ksb-dot"></span>SPIFF'
+    + (n > 0 ? '<span class="ksb-count">' + n + ' live</span>' : '');
+};
+
+/** The SPIFF panel — what the kiosk's SPIFF button opens (Sky chose "built into Leaderboard" over
+ *  SPIFF's own store page, 2026-09-10). One summary line, then a card per program listing everyone
+ *  at the store who is in it. Pure — programs in, HTML out — so tests/spiff_panel_test.js runs
+ *  this exact function.
+ *
+ *  THE BARS ARE THE CARDS' BARS: same classes, same geometry as GC.spiffRow (gold = hit, a hash left
+ *  of the end = beaten by that much), with the width set directly because the overlay is not part
+ *  of the board's count-up animation. GC.spiffRow is deliberately not refactored to share this —
+ *  its own test loads it alone.
+ *
+ *  THE REWARD IS NEVER GUESSED. It is shown only when spiffProgramsForStore_ could state it (people
+ *  who hit were all paid the same); otherwise the card just says how many units the target is.
+ *
+ *  opts: { ok, today: 'YYYY-MM-DD' in PT, storeName }
+ */
+GC.spiffPanel = function(programs, opts) {
+  var esc   = GC.esc || function(v) { return String(v == null ? '' : v); };
+  var o     = opts || {};
+  var list  = programs || [];
+  var store = o.storeName ? esc(o.storeName) : 'this store';
+  if (!o.ok) {
+    return '<div class="ksp-empty">SPIFF numbers aren’t available right now. They’ll be back on the next refresh.</div>';
+  }
+  if (!list.length) return '<div class="ksp-empty">No SPIFF running at ' + store + ' right now.</div>';
+
+  var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var ymd = function(s) { return /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s == null ? '' : s).slice(0, 10)); };
+  var md  = function(s) { var m = ymd(s); return m ? MON[+m[2] - 1] + ' ' + (+m[3]) : ''; };
+  // Whole days between two TEXT dates, built in UTC and read in UTC — no timezone can shift it.
+  var day = function(s) { var m = ymd(s); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86400000 : null; };
+  var today = day(o.today);
+
+  function bar(u, t, hit) {
+    var units = Math.max(0, +u || 0), target = Math.max(0, +t || 0);
+    var raw  = target > 0 ? Math.round((units / target) * 100) : 0;
+    var over = raw > 100, pct = over ? 100 : raw;
+    var mk   = over ? Math.round(100 / raw * 100) : null;
+    return '<div class="emp-spiff' + (hit ? ' hit' : '') + '">'
+      + '<div class="emp-spiff-bar-wrap' + (over ? ' bar-over' : '') + (units > 0 ? ' has-progress' : '') + '">'
+      +   '<div class="emp-spiff-bar"><span style="width:' + pct + '%' + (over ? '; --mark-pct:' + mk + '%' : '') + '"></span></div>'
+      +   (mk !== null ? '<div class="emp-spiff-mark" style="left:' + mk + '%"></div>' : '')
+      + '</div></div>';
+  }
+
+  var winners = Object.create(null), earned = 0;
+  list.forEach(function(p) {
+    earned += +p.earned || 0;
+    (p.people || []).forEach(function(x) { if (x.hit) winners[x.name] = true; });
+  });
+  var nWin = Object.keys(winners).length;
+  var stat = function(n, label, cls) {
+    return '<div class="ksp-stat' + (cls ? ' ' + cls : '') + '"><b>' + n + '</b><span>' + label + '</span></div>';
+  };
+  var html = '<div class="ksp-sum">'
+    + stat(list.length, list.length === 1 ? 'program running' : 'programs running')
+    + stat(nWin, nWin === 1 ? 'person has hit a target' : 'people have hit a target')
+    + (earned > 0 ? stat('$' + earned, 'earned at ' + store + ' so far', 'gold') : '')
+    + '</div>';
+
+  html += '<div class="ksp-progs">' + list.map(function(p) {
+    var target = Math.max(0, +p.target || 0);
+    var d      = (today === null || day(p.end) === null) ? null : Math.round(day(p.end) - today);
+    var ending = d !== null && d <= 1;
+    var leftTxt = d === null ? '' : d <= 0 ? 'Ends today' : d === 1 ? 'Ends tomorrow' : d + ' days left';
+    var dates  = md(p.start) && md(p.end) ? md(p.start) + ' – ' + md(p.end) : '';
+    var goal   = (p.reward != null && +p.reward > 0)
+      ? '<span class="ksp-tag gold">Pays $' + (+p.reward) + ' at ' + target + ' units</span>'
+      : '<span class="ksp-tag">Sell ' + target + ' units</span>';
+    var rows = (p.people || []).map(function(x) {
+      var u = Math.max(0, +x.units || 0), t = Math.max(0, +x.target || target);
+      var paid = x.hit && +x.earned > 0 ? ' · +$' + (+x.earned) : '';
+      return '<div class="ksp-row' + (x.hit ? ' hit' : '') + '">'
+        + '<span class="ksp-who">' + esc(x.name) + '</span>'
+        + bar(u, t, x.hit)
+        + '<span class="ksp-count">' + u + '/' + t + paid + '</span>'
+        + '</div>';
+    }).join('');
+    return '<article class="ksp-prog' + (ending ? ' ending' : '') + '">'
+      + '<div><div class="ksp-vendor">' + esc(p.vendor) + '</div><div class="ksp-name">' + esc(p.name || p.vendor) + '</div></div>'
+      + '<div class="ksp-tags">'
+      +   (dates ? '<span class="ksp-tag">' + dates + '</span>' : '')
+      +   (leftTxt ? '<span class="ksp-tag' + (ending ? ' gold' : '') + '">' + leftTxt + '</span>' : '')
+      +   goal
+      + '</div>'
+      + '<div class="ksp-people">' + rows + '</div>'
+      + '</article>';
+  }).join('') + '</div>';
+  return html;
 };
 
 /** True when a real curve is available — i.e. the pace marker is weighted, not linear. */
@@ -8425,6 +8567,39 @@ GC.views.forceKioskRefresh = function() { kiosk.forceRefresh(kioskRouteSlug_());
 var KIOSK_SPIFF_AUTOCLOSE_S = 120;
 var _kioskSpiffTimer = null, _kioskSpiffLeft = 0;
 
+/* What the SPIFF button and panel are drawing from. On GC rather than a local so the kiosk render
+   (which seeds it) and these handlers (which read it) can both reach it. `on` is Settings → Include
+   SPIFF — the ONE switch for the button and the card rows (Sky, 2026-09-10). */
+GC._kioskSpiff = { on: false, ok: false, programs: [], store: '' };
+
+function kioskSpiffPanelHtml_() {
+  var s = GC._kioskSpiff;
+  return GC.spiffPanel(s.programs, { ok: s.ok, today: GC.todayStr(), storeName: s.store });
+}
+
+/* The 5-minute leaderboard refresh hands the server's SPIFF state here, so flipping the setting,
+   or a program starting or ending, reaches a running kiosk without its 04:00 reload.
+   UNDEFINED IS NOT OFF: an engine that predates the switch does not send spiffOn at all, and that
+   must leave the screen exactly as it is rather than read as "turned off". */
+GC.views.applySpiffState = function(lb) {
+  if (!lb || lb.spiffOn === undefined) return;
+  var s = GC._kioskSpiff;
+  s.on       = lb.spiffOn === true;
+  s.ok       = lb.spiffOk === true;
+  s.programs = lb.spiffPrograms || [];
+  var btn = document.querySelector('.kiosk-spiff-btn');
+  if (btn) {
+    btn.hidden = !s.on;
+    btn.classList.toggle('none', !s.programs.length);
+    btn.innerHTML = GC.spiffButtonInner(s.programs.length);
+  }
+  var ov = document.getElementById('kioskSpiffOverlay');
+  if (!ov || !ov.classList.contains('show')) return;
+  if (!s.on) { GC.views.closeSpiffBoard(); return; }   // switched off while open: nothing to show
+  var body = document.getElementById('kioskSpiffPanel');
+  if (body && !body.hidden) body.innerHTML = kioskSpiffPanelHtml_();
+};
+
 function kioskSpiffTick_() {
   var el = document.getElementById('kioskSpiffAuto');
   if (el) el.textContent = 'Closing in ' + _kioskSpiffLeft + 's';
@@ -8432,7 +8607,10 @@ function kioskSpiffTick_() {
   _kioskSpiffLeft--;
 }
 
-/* Point the SPIFF button at the link the server just sent, on a screen that is already painted.
+/* Point the panel's "SPIFF store page" button at the link the server just sent, on a screen that is
+ * already painted. (Until 2026-09-10 this link WAS the SPIFF button, and its absence hid the button.
+ * The button now opens Leaderboard's own panel and follows Include SPIFF alone; SPIFF's store page is
+ * a secondary view inside the panel, offered only where a store has a link.)
  *
  * WHY THIS EXISTS AT ALL: the tokens SPIFF mints are rotatable — that is the whole reason they are
  * config rather than source, and the reason Leaderboard reads them live instead of holding a copy.
@@ -8449,38 +8627,57 @@ GC.views.applySpiffLink = function(url) {
   if (url === undefined || url === null) return;      // field absent — not an instruction
   var next = String(url);
   var ov   = document.getElementById('kioskSpiffOverlay');
-  var btn  = document.querySelector('.kiosk-spiff-btn');
-  if (!ov || !btn) return;                            // not on the kiosk view
+  var page = document.getElementById('kioskSpiffPage');
+  if (!ov || !page) return;                           // not on the kiosk view
 
   var prev = ov.getAttribute('data-src') || '';
   if (prev === next) return;
   ov.setAttribute('data-src', next);
-  btn.hidden = !next;
+  page.hidden = !next;
 
-  /* If somebody is LOOKING at the board when the link changes under them, do not leave them on a
-     page that has just been revoked. A live token gets swapped in place; a revoked one closes the
-     overlay and takes the button with it, which is the honest outcome — there is nothing to show. */
-  if (ov.classList.contains('show')) {
-    if (next) {
-      var fr = document.getElementById('kioskSpiffFrame');
-      if (fr) fr.setAttribute('src', next);
-    } else {
-      GC.views.closeSpiffBoard();
-    }
+  /* If somebody is LOOKING at SPIFF's page when the link changes under them, do not leave them on a
+     page that has just been revoked. A live token gets swapped in place; a revoked one drops them
+     back onto the panel, which still has everything Leaderboard knows. */
+  var fr = document.getElementById('kioskSpiffFrame');
+  if (fr && !fr.hidden) {
+    if (next) fr.setAttribute('src', next);
+    else GC.views.showSpiffPanel();
   }
+};
+
+/** The panel view (the default): paint it fresh, and unload SPIFF's page if it was up. */
+GC.views.showSpiffPanel = function() {
+  var body = document.getElementById('kioskSpiffPanel');
+  var fr   = document.getElementById('kioskSpiffFrame');
+  var page = document.getElementById('kioskSpiffPage');
+  if (body) { body.innerHTML = kioskSpiffPanelHtml_(); body.hidden = false; }
+  if (fr)   { fr.hidden = true; fr.removeAttribute('src'); }
+  if (page) page.textContent = 'SPIFF store page';
+};
+
+/** Toggle between the panel and SPIFF's own store page, where the store has a link. */
+GC.views.showSpiffStorePage = function() {
+  var ov   = document.getElementById('kioskSpiffOverlay');
+  var fr   = document.getElementById('kioskSpiffFrame');
+  var body = document.getElementById('kioskSpiffPanel');
+  var page = document.getElementById('kioskSpiffPage');
+  if (!ov || !fr || !body) return;
+  GC.views.keepSpiffBoardOpen();
+  if (!fr.hidden) { GC.views.showSpiffPanel(); return; }
+  var src = ov.getAttribute('data-src') || '';
+  if (!src) return;
+  fr.setAttribute('src', src);    // set on open, never on paint — see renderSpiffOverlay
+  fr.hidden = false;
+  body.hidden = true;
+  if (page) page.textContent = 'Back to the list';
 };
 
 GC.views.openSpiffBoard = function() {
   var ov = document.getElementById('kioskSpiffOverlay');
-  var fr = document.getElementById('kioskSpiffFrame');
-  if (!ov || !fr) return;
-  // The button is always in the markup now and only hidden, so this can be reached with no link —
-  // opening an empty frame over the board would be a black rectangle nobody can explain.
-  var src = ov.getAttribute('data-src') || '';
-  if (!src) return;
-  // Load on open, not on paint — see renderSpiffOverlay. Re-set every time so a board left
-  // open through a pay-period boundary cannot show yesterday's program.
-  fr.setAttribute('src', src);
+  if (!ov || !GC._kioskSpiff.on) return;   // the button is only hidden, never removed — see renderHeader
+  // Always opens on the panel, painted from the latest refresh — never on SPIFF's page left over
+  // from the last person, and never on numbers from before a pay-period boundary.
+  GC.views.showSpiffPanel();
   ov.classList.add('show');
 
   clearInterval(_kioskSpiffTimer);
@@ -8504,7 +8701,7 @@ GC.views.closeSpiffBoard = function() {
   if (ov) ov.classList.remove('show');
   // Drop the src as well as hiding it: a hidden frame keeps its 10-minute self-refresh running,
   // and a kiosk that opened the board once would poll SPIFF all day for a screen nobody sees.
-  if (fr) fr.removeAttribute('src');
+  if (fr) { fr.removeAttribute('src'); fr.hidden = true; }
 };
 
 GC.views.renderKiosk = function(slug) {
@@ -8734,23 +8931,26 @@ var kiosk = (function() {
   }
 
   // ── Render: Header ─────────────────────────────────────
-  function renderHeader(store, spiffUrl) {
+  function renderHeader(store, spiff) {
     var sess = GC.auth.load() || {};
     var isDirector = sess.role === 'director' || sess.role === 'owner';
     var backBtn = isDirector
       ? '<button class="kiosk-back-btn" onclick="GC.router.navigate(\'#/director\')">← Back</button>'
       : '';
-    /* The SPIFF board button, and ONLY when the server sent a link for this store — the URL
-       carries a permanent per-store token that SPIFF mints, so the absence of one means this
-       store has not been set up and the honest thing is no button. Everyone gets it, not just
-       directors: this is what a budtender walks up to the screen to look at. */
-    /* ALWAYS IN THE MARKUP, hidden when there is no link — not omitted. The poll has to be able
-       to reveal it on a screen that is already painted (a token minted at 10am should not wait for
-       the 04:00 reload either), and creating header DOM from a poll handler is a worse job than
-       toggling one attribute. applySpiffLink owns `hidden` from here on. */
-    var spiffBtn = '<button class="kiosk-spiff-btn" onclick="GC.views.openSpiffBoard()"'
-      + (spiffUrl ? '' : ' hidden') + '>'
-      + '<span class="ksb-dot"></span>SPIFF</button>';
+    /* The SPIFF button. ONE SWITCH (Sky, 2026-09-10): it shows exactly when Settings → Include SPIFF
+       is on — the same switch as the card rows — and opens Leaderboard's own SPIFF panel. It used
+       to show only where SPIFF's store link had been configured, which was no store at all, so the
+       setting and the button could never agree. Everyone gets it, not just directors: this is what
+       a budtender walks up to the screen to look at. On with nothing running still shows it (dimmed,
+       no count), and the panel says so — the setting is what decides, not the day's programs. */
+    /* ALWAYS IN THE MARKUP, hidden when off — not omitted. The 5-minute refresh has to be able to
+       reveal it on a screen that is already painted, and creating header DOM from a poll handler is
+       a worse job than toggling one attribute. applySpiffState owns `hidden` from here on. */
+    var sp     = spiff || {};
+    var nProg  = (sp.programs || []).length;
+    var spiffBtn = '<button class="kiosk-spiff-btn' + (nProg ? '' : ' none') + '" onclick="GC.views.openSpiffBoard()"'
+      + (sp.on === true ? '' : ' hidden') + '>'
+      + GC.spiffButtonInner(nProg) + '</button>';
     // Standings is intentionally NOT linked from the kiosk — managers reach it via its dedicated
     // URL (#/standings). See the router's post-login return-to so that link lands on Standings.
     return '<header class="kiosk-header">'
@@ -9815,11 +10015,19 @@ var kiosk = (function() {
     seedTopSale_(storeData);
     seedBigSales_(storeData);
 
+    // Seed the SPIFF button + panel state from THIS payload; the 5-minute refresh keeps it current.
+    GC._kioskSpiff = {
+      on:       data.leaderboard.spiffOn === true,
+      ok:       data.leaderboard.spiffOk === true,
+      programs: data.leaderboard.spiffPrograms || [],
+      store:    store.name || '',
+    };
+
     return [
       '<canvas id="kioskConfetti"></canvas>',
       '<div id="kioskGoalBanner">🎯 DAILY GOAL HIT! · ' + e(store.name.toUpperCase()) + ' TEAM!</div>',
       '<div class="kiosk-wrap">',
-        renderHeader(store, storeData.spiffKioskUrl || ''),
+        renderHeader(store, GC._kioskSpiff),
         renderStaffGrid(staff, store.name, onShift, badges, _eomKey),
         '<div class="hero-grid">',
           renderGoalCard(today),
@@ -9834,37 +10042,37 @@ var kiosk = (function() {
         '</div>',
       '</div>',
       renderRareDrop(),
-      renderSpiffOverlay(storeData.spiffKioskUrl || ''),
+      renderSpiffOverlay(storeData.spiffKioskUrl || '', store.name || ''),
     ].join('');
   }
 
-  // ── Render: SPIFF board overlay ────────────────────────
-  /* SPIFF's own page, in a frame, over the board.
+  // ── Render: SPIFF overlay ──────────────────────────────
+  /* What the SPIFF button opens, over the board.
    *
-   * A FRAME AND NOT A NEW TAB. A kiosk is a wall-mounted screen with no keyboard and often no
-   * visible browser chrome; a new tab is a place a budtender can get stranded and nobody can
-   * navigate back from. This opens over the board and closes back onto it.
+   * THE PANEL IS THE DEFAULT (Sky, 2026-09-10 — "built into Leaderboard"). GC.spiffPanel draws
+   * every program at this store and everyone in it, from SPIFF's own published figures. It shows
+   * nothing SPIFF did not publish: no bounty before anyone has earned it, no selling tips.
    *
-   * THE PAGE IS NOT REDRAWN HERE. SPIFF renders the program, the goals, the bounty and Tawny's
-   * tips; we supply a rectangle. A kiosk-shaped copy of a vendor agreement is a second thing to
-   * keep in step with the agreement, and the first time it drifts a screen promises a bounty
-   * nobody signed. It also refreshes itself every 10 minutes and on wake, so it needs nothing
-   * from us once it is up.
-   *
-   * `src` IS SET ON OPEN, NOT HERE. Left in the markup it would load SPIFF's page on every
-   * kiosk paint at every store all day — a fetch nobody asked for, on a board that repaints
-   * itself continuously. */
-  function renderSpiffOverlay(url) {
-    // Mounted even with no link yet, for the same reason the button is — see renderHeader.
+   * SPIFF'S STORE PAGE IS SECONDARY, and only where this store has a link in the Command Center: a
+   * button in the bar swaps the panel for SPIFF's page (bounty text, featured product, Tawny's tips)
+   * in a frame, and back. A frame and not a new tab — a kiosk has no browser chrome to navigate
+   * back with. `src` is set when that view opens, never here, or every kiosk paint would load
+   * SPIFF's page all day for nobody. */
+  function renderSpiffOverlay(url, storeName) {
+    // Mounted even when SPIFF is off, for the same reason the button is — see renderHeader.
     return '<div id="kioskSpiffOverlay" data-src="' + e(url || '') + '"'
       + ' onpointerdown="GC.views.keepSpiffBoardOpen()">'
       + '<div class="kso-bar">'
       +   '<span class="kso-title">SPIFF</span>'
+      +   '<span class="kso-ctx">' + e(storeName || '') + ' · every program running now</span>'
+      +   '<button class="kso-page" id="kioskSpiffPage" onclick="GC.views.showSpiffStorePage()"'
+      +     (url ? '' : ' hidden') + '>SPIFF store page</button>'
       +   '<span class="kso-auto" id="kioskSpiffAuto"></span>'
       +   '<button class="kso-close" onclick="GC.views.closeSpiffBoard()">Close</button>'
       + '</div>'
-      + '<iframe class="kso-frame" id="kioskSpiffFrame" title="SPIFF board"'
-      +   ' referrerpolicy="no-referrer"></iframe>'
+      + '<div class="kso-body" id="kioskSpiffPanel"></div>'
+      + '<iframe class="kso-frame" id="kioskSpiffFrame" title="SPIFF store page"'
+      +   ' referrerpolicy="no-referrer" hidden></iframe>'
       + '</div>';
   }
 
@@ -10428,7 +10636,10 @@ var kiosk = (function() {
 
     return {
       today:       normalizedToday,
-      leaderboard: { staff: normalizedStaff },
+      // SPIFF button + panel ride the leaderboard payload (spiff.gs → getStoreLeaderboard). Passed
+      // through as-is: undefined spiffOn means an engine that predates the switch, see applySpiffState.
+      leaderboard: { staff: normalizedStaff, spiffOn: lb.spiffOn, spiffOk: lb.spiffOk,
+                     spiffPrograms: lb.spiffPrograms || [] },
       badges:      { badges: normalizedBadges },
       eomKey:      eomKey || null,
     };
@@ -10684,6 +10895,7 @@ var kiosk = (function() {
           // repainting from it wipes the whole leaderboard rather than leaving yesterday's standings
           // up. Keep what is on screen.
           if (!lb || lb.ok === false) { markStale(lb && lb.error); return; }
+          GC.views.applySpiffState(lb);   // Include SPIFF flips, programs start/end — no reload needed
           var data = normalizeKioskData_({
             today:       {},
             leaderboard: lb,
@@ -11517,7 +11729,7 @@ var settings = (function() {
       +   '<input type="checkbox" id="setShowSpiff"' + (on ? ' checked' : '') + '>'
       +   '<span class="settings-toggle-body">'
       +     '<span class="settings-toggle-label">Include SPIFF</span>'
-      +     '<span class="settings-toggle-sub">Adds a row to each staff card showing units sold toward the vendor\'s SPIFF target, and the payout once they hit it. Numbers come from the SPIFF app. Leave off when no program is running — otherwise every card carries an empty bar.</span>'
+      +     '<span class="settings-toggle-sub">Shows the SPIFF button on the kiosk, which lists every program running at that store and everyone in it, and adds a row to each staff card showing units sold toward the target and the payout once they hit it. Numbers come from the SPIFF app. Turn off when no program is running.</span>'
       +   '</span>'
       + '</label>'
       + '<div class="settings-save-status" id="showSpiffStatus"></div>'

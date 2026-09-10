@@ -37,5 +37,29 @@
       "role": "Budtender",  "sales": 0,    "txns": 0,  "aov": null,  "upt": null,
       "streak": 0, "streakType": null,   "personalBestPct": null, "note": "Off today"
     }
+  ],
+  "spiffOn": true,
+  "spiffOk": true,
+  "spiffPrograms": [
+    { "id": "preroll-blitz", "vendor": "Dutchie Farms", "name": "Pre-roll Blitz", "start": "2026-09-01", "end": "2026-09-10",
+      "target": 5, "reward": 15, "earned": 15, "hitCount": 1,
+      "people": [ { "name": "Marcus Chen", "units": 5, "target": 5, "hit": true, "earned": 15 },
+                  { "name": "Lina Park",   "units": 2, "target": 5, "hit": false, "earned": 0 } ] },
+    { "id": "gc-test4", "vendor": "Green Cross", "name": "Green Cross - Test4", "start": "2026-08-31", "end": "2026-09-13",
+      "target": 55, "reward": 25, "earned": 25, "hitCount": 1,
+      "people": [ { "name": "Lina Park", "units": 110, "target": 55, "hit": true, "earned": 25 } ] },
+    { "id": "stiiizy-summer", "vendor": "Stiiizy", "name": "Stiiizy Summer Push", "start": "2026-08-31", "end": "2026-09-13",
+      "target": 5, "reward": null, "earned": 0, "hitCount": 0,
+      "people": [ { "name": "Dean Deloof",  "units": 3, "target": 5, "hit": false, "earned": 0 },
+                  { "name": "Theo Bennett", "units": 1, "target": 5, "hit": false, "earned": 0 } ] },
+    { "id": "gron-chews", "vendor": "Grön", "name": "Grön Chews", "start": "2026-08-24", "end": "2026-09-20",
+      "target": 40, "reward": null, "earned": 0, "hitCount": 0,
+      "people": [ { "name": "Theo Bennett", "units": 18, "target": 40, "hit": false, "earned": 0 },
+                  { "name": "Avery Liu",    "units": 7,  "target": 40, "hit": false, "earned": 0 },
+                  { "name": "Marcus Chen",  "units": 4,  "target": 40, "hit": false, "earned": 0 } ] },
+    { "id": "wyld-gummies", "vendor": "Wyld", "name": "Wyld Gummies", "start": "2026-09-07", "end": "2026-09-20",
+      "target": 6, "reward": null, "earned": 0, "hitCount": 0,
+      "people": [ { "name": "Marcus Chen", "units": 2, "target": 6, "hit": false, "earned": 0 },
+                  { "name": "Avery Liu",   "units": 0, "target": 6, "hit": false, "earned": 0 } ] }
   ]
 }

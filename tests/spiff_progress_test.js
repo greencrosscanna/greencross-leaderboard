@@ -283,6 +283,62 @@ const tests = {
     _ok_('reports what it dropped', /rowsNotActive/.test(diag));
   },
 
+  /* THE SPIFF PANEL (2026-09-10) — the same rows as the cards, grouped by PROGRAM with everyone
+     in it. A card keeps only one lead program per person; the panel must keep them all. */
+  panelGroupsEveryoneByProgram() {
+    const progs = M.spiffProgramsForStore_([
+      row({ program_id: 'a', employee_id: 1, name: 'Ann',  units: 3, target: 5, hit: false, earned: 0 }),
+      row({ program_id: 'a', employee_id: 2, name: 'Bo',   units: 5, target: 5, hit: true,  earned: 15 }),
+      row({ program_id: 'b', employee_id: 1, name: 'Ann',  units: 110, target: 55, hit: true, earned: 25,
+            vendor: 'Stiiizy', program_name: 'Summer Push' }),
+    ]);
+    _eq_('two programs', progs.length, 2);
+    const a = progs.find((p) => p.id === 'a');
+    _eq_('program a lists both people', a.people.length, 2);
+    _eq_('closest to target first', a.people[0].name, 'Bo');
+    _eq_('hit count', a.hitCount, 1);
+    _eq_('store earned sums the program', a.earned, 15);
+    _eq_('Ann appears in BOTH programs — nothing hidden behind "+1 more"',
+         progs.filter((p) => p.people.some((x) => x.name === 'Ann')).length, 2);
+    _eq_('employee id is carried as a string for the name join', a.people[1].employee_id, '1');
+  },
+
+  /* ZERO IS NOT ABSENT, here too: someone at 0 of 6 is in the program and must be listed. */
+  panelKeepsPeopleAtZero() {
+    const progs = M.spiffProgramsForStore_([row({ units: 0, target: 6, hit: false, earned: 0 })]);
+    _eq_('listed', progs[0].people.length, 1);
+    _eq_('at zero', progs[0].people[0].units, 0);
+  },
+
+  /* THE REWARD IS NEVER GUESSED. SPIFF does not publish the bounty up front, so it is only
+     stated when everyone who hit the target was paid the same amount at the same target. */
+  panelRewardOnlyWhenTheHitsAgree() {
+    const r = (o) => M.spiffProgramsForStore_(o.map((x, i) => row(Object.assign({ employee_id: i + 1 }, x))))[0].reward;
+    _eq_('nobody hit yet → no reward', r([{ units: 2, target: 5, hit: false, earned: 0 }]), null);
+    _eq_('one hit → its payout', r([{ units: 5, target: 5, hit: true, earned: 15 }, { units: 1, target: 5, hit: false, earned: 0 }]), 15);
+    _eq_('two hits that disagree → none', r([{ units: 5, target: 5, hit: true, earned: 15 }, { units: 9, target: 5, hit: true, earned: 20 }]), null);
+    _eq_('different targets → none', r([{ units: 5, target: 5, hit: true, earned: 15 }, { units: 1, target: 8, hit: false, earned: 0 }]), null);
+    _eq_('hit with $0 earned → none', r([{ units: 5, target: 5, hit: true, earned: 0 }]), null);
+  },
+
+  /* Ending soonest first — the program worth acting on today. */
+  panelOrdersProgramsByEndDate() {
+    const progs = M.spiffProgramsForStore_([
+      row({ program_id: 'late',  end_date: '2026-09-20', vendor: 'A' }),
+      row({ program_id: 'soon',  end_date: '2026-09-10', vendor: 'Z' }),
+      row({ program_id: 'mid',   end_date: '2026-09-13T00:00:00.000Z', vendor: 'M' }),
+    ]);
+    _eq_('order', progs.map((p) => p.id).join(','), 'soon,mid,late');
+    _eq_('dates are carried as text, truncated to the day', progs[1].end, '2026-09-13');
+  },
+
+  panelSurvivesJunk() {
+    _eq_('null rows', M.spiffProgramsForStore_(null).length, 0);
+    _eq_('null row skipped', M.spiffProgramsForStore_([null, row()]).length, 1);
+    _eq_('missing program_id still groups by vendor + name',
+         M.spiffProgramsForStore_([row({ program_id: '' , employee_id: 1 }), row({ program_id: null, employee_id: 2 })])[0].people.length, 2);
+  },
+
   /* Off means no fetch at all — the switch is also the kill switch if SPIFF misbehaves.
      UrlFetchApp.fetch throws in the harness, so reaching the network here would fail loudly. */
   offSkipsTheFetchEntirely() {
@@ -290,6 +346,7 @@ const tests = {
     const res = M.spiffForStore_({ slug: 'century' });
     _eq_('returns not-ok', res.ok, false);
     _eq_('no cards',       Object.keys(res.byId).length, 0);
+    _eq_('no programs for the panel', res.programs.length, 0);
     _ok_('says why',       /disabled/i.test(res.error || ''));
     setShow(undefined);
   },

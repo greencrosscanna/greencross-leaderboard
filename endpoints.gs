@@ -1772,8 +1772,26 @@ function getStoreLeaderboard(store, params) {
   // SPIFF sell-through for this store's crew, joined on the Dutchie employee id that both
   // sides already carry. Wrapped: SPIFF is a separate app and this is the all-staff kiosk —
   // if it is down, cards render without a SPIFF row rather than not rendering at all.
-  let _spiff = { ok: false, byId: {} };
+  let _spiff = { ok: false, byId: {}, programs: [] };
   try { _spiff = spiffForStore_(store); } catch (e) { Logger.log('spiffForStore_ failed: ' + e); }
+
+  // The SPIFF panel names people the way their cards do: nickname applied, joined on the Dutchie
+  // id. Roster first, then today's sellers, so someone in a program who has not rung a sale today
+  // is still named, and today's list wins where the two disagree. SPIFF's own spelling is the
+  // fallback for anyone neither list knows.
+  const _spiffNames = Object.create(null);
+  (getEmployeeRoster_()[store.slug] || []).concat(empList).forEach(e => {
+    if (e && e.id && e.name) _spiffNames[String(e.id)] = applyNickname_(e.name, _storeNicknames);
+  });
+  const spiffPrograms = (_spiff.programs || []).map(p => Object.assign({}, p, {
+    people: p.people.map(x => ({
+      name:   _spiffNames[x.employee_id] || x.name,
+      units:  x.units,
+      target: x.target,
+      hit:    x.hit,
+      earned: x.earned,
+    })),
+  }));
 
   const staff = empList.map((emp, i) => {
     const nameKey = nameToKey_(emp.name);  // canonical key before nickname — matches settings page
@@ -1832,6 +1850,14 @@ function getStoreLeaderboard(store, params) {
     onShift:      onShift,
     lastUpdated:  new Date().toISOString(),
     avatarConfigs: getAvatarConfigs_(),
+    /* ONE SWITCH (Sky, 2026-09-10). Settings → Include SPIFF now controls the kiosk's SPIFF
+       button as well as the card rows, so the kiosk has to be told the setting itself: an empty
+       program list cannot say whether SPIFF is off or simply has nothing running. spiffOk is
+       false when the setting is on but the numbers could not be read, so the panel can say that
+       instead of claiming no SPIFF is running. */
+    spiffOn:       spiffShowEnabled_(),
+    spiffOk:       !!_spiff.ok,
+    spiffPrograms: spiffPrograms,
   };
 
   // Store in GAS cache for 55 seconds (same window as storetoday)
