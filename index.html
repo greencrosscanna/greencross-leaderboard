@@ -3746,7 +3746,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      slideshow bar at 9999, so nothing here contests it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.782';
+window.GC = window.GC || {}; GC.VERSION = 'v1.784';
 
 // ── GX Core web-app URL — ONE definition ──
 // This was previously a `var` inside loadChangelogFromGXCore(), i.e. function-scoped, while the
@@ -8566,6 +8566,12 @@ GC.views.forceKioskRefresh = function() { kiosk.forceRefresh(kioskRouteSlug_());
  */
 var KIOSK_SPIFF_AUTOCLOSE_S = 120;
 var _kioskSpiffTimer = null, _kioskSpiffLeft = 0;
+/* The popup window showing SPIFF's own store page, while it is open. Held rather than fired
+   and forgotten so a second tap raises the window it already opened instead of minting a
+   second one, a rotated token can be swapped into it in place, and above all so the board's
+   own auto-close can take it down with it — a kiosk has no chrome to close a window with,
+   and a popup nobody can dismiss is the whole screen gone for the rest of the shift. */
+var _kioskSpiffWin = null;
 
 /* What the SPIFF button and panel are drawing from. On GC rather than a local so the kiosk render
    (which seeds it) and these handlers (which read it) can both reach it. `on` is Settings → Include
@@ -8643,6 +8649,15 @@ GC.views.applySpiffLink = function(url) {
     if (next) fr.setAttribute('src', next);
     else GC.views.showSpiffPanel();
   }
+  /* Same for the popup, which is the usual case now: swap a live token in place, and close the
+     window outright on a revoke rather than leave the floor reading "this link is no longer
+     active". Same-origin, so its location is ours to set. */
+  if (_kioskSpiffWin && !_kioskSpiffWin.closed) {
+    try {
+      if (next) _kioskSpiffWin.location.replace(next);
+      else { _kioskSpiffWin.close(); _kioskSpiffWin = null; }
+    } catch (e) { _kioskSpiffWin = null; }
+  }
 };
 
 /** The panel view (the default): paint it fresh, and unload SPIFF's page if it was up. */
@@ -8655,7 +8670,21 @@ GC.views.showSpiffPanel = function() {
   if (page) page.textContent = 'SPIFF store page';
 };
 
-/** Toggle between the panel and SPIFF's own store page, where the store has a link. */
+/** Open SPIFF's own store page, where the store has a link.
+ *
+ * A REAL WINDOW, not the embedded frame (Sky, 2026-09-11). The frame came first because a kiosk has
+ * no browser chrome to navigate back with; a window answers that differently — SPIFF's page gets the
+ * whole screen and the board is still underneath, untouched, where closing the window returns to it.
+ *
+ * THE BOARD'S AUTO-CLOSE OWNS THE WINDOW TOO. That is the point of holding the handle: the countdown
+ * exists so the most visible screen in the company cannot be left parked on a vendor page for the
+ * rest of a shift, and a popup that outlives the overlay would walk straight back into exactly that.
+ *
+ * A BLOCKED POPUP FALLS BACK TO THE FRAME rather than doing nothing. window.open can be refused — a
+ * blocker, a kiosk browser configured against popups — and it returns null when it is. Returning
+ * there would leave a gold button on a wall screen that visibly does nothing when tapped, which is
+ * the complaint this whole path started from.
+ */
 GC.views.showSpiffStorePage = function() {
   var ov   = document.getElementById('kioskSpiffOverlay');
   var fr   = document.getElementById('kioskSpiffFrame');
@@ -8663,9 +8692,25 @@ GC.views.showSpiffStorePage = function() {
   var page = document.getElementById('kioskSpiffPage');
   if (!ov || !fr || !body) return;
   GC.views.keepSpiffBoardOpen();
+  // Frame path only: it is a toggle, because there the page REPLACED the panel.
   if (!fr.hidden) { GC.views.showSpiffPanel(); return; }
   var src = ov.getAttribute('data-src') || '';
   if (!src) return;
+
+  if (_kioskSpiffWin && !_kioskSpiffWin.closed) {
+    try { _kioskSpiffWin.focus(); return; } catch (e) { _kioskSpiffWin = null; }
+  }
+  /* Sized to the screen so it lands as a window over the board rather than a tab behind it. NOT
+     'noopener': Chrome returns null for a window opened with it, which this code cannot tell apart
+     from a blocked one — it would fall back to the frame every single time. Both pages are ours and
+     same-origin, so there is nothing here for noopener to protect. */
+  var feat = 'width=' + (screen.availWidth || 1280) + ',height=' + (screen.availHeight || 800)
+           + ',left=0,top=0,resizable=yes,scrollbars=yes';
+  var w = null;
+  try { w = window.open(src, 'gxSpiffStore', feat); } catch (e) { w = null; }
+  if (w && !w.closed) { _kioskSpiffWin = w; try { w.focus(); } catch (e) {} return; }
+
+  _kioskSpiffWin = null;
   fr.setAttribute('src', src);    // set on open, never on paint — see renderSpiffOverlay
   fr.hidden = false;
   body.hidden = true;
@@ -8696,6 +8741,12 @@ GC.views.keepSpiffBoardOpen = function() { _kioskSpiffLeft = KIOSK_SPIFF_AUTOCLO
 GC.views.closeSpiffBoard = function() {
   clearInterval(_kioskSpiffTimer); _kioskSpiffTimer = null;
   window.removeEventListener('blur', GC.views.keepSpiffBoardOpen);
+  // The window goes with the board. See _kioskSpiffWin: the countdown's whole job is making sure
+  // the kiosk comes back on its own, and a popup left standing would be the board still gone.
+  if (_kioskSpiffWin) {
+    try { if (!_kioskSpiffWin.closed) _kioskSpiffWin.close(); } catch (e) {}
+    _kioskSpiffWin = null;
+  }
   var ov = document.getElementById('kioskSpiffOverlay');
   var fr = document.getElementById('kioskSpiffFrame');
   if (ov) ov.classList.remove('show');
@@ -10054,10 +10105,10 @@ var kiosk = (function() {
    * nothing SPIFF did not publish: no bounty before anyone has earned it, no selling tips.
    *
    * SPIFF'S STORE PAGE IS SECONDARY, and only where this store has a link in the Command Center: a
-   * button in the bar swaps the panel for SPIFF's page (bounty text, featured product, Tawny's tips)
-   * in a frame, and back. A frame and not a new tab — a kiosk has no browser chrome to navigate
-   * back with. `src` is set when that view opens, never here, or every kiosk paint would load
-   * SPIFF's page all day for nobody. */
+   * button in the bar opens SPIFF's page (bounty text, featured product, Tawny's tips) in its own
+   * window over the board — see showSpiffStorePage, which also owns why, and why the frame below
+   * still exists as the fallback for a blocked popup. `src` on that frame is set when it is
+   * actually used, never here, or every kiosk paint would load SPIFF's page all day for nobody. */
   function renderSpiffOverlay(url, storeName) {
     // Mounted even when SPIFF is off, for the same reason the button is — see renderHeader.
     return '<div id="kioskSpiffOverlay" data-src="' + e(url || '') + '"'
