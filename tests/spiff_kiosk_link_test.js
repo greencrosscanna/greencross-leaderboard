@@ -113,18 +113,36 @@ const tests = {
     });
   },
 
-  'GX Core being unreachable costs a button, never a board': function () {
+  /* THE THIRD ANSWER, and the reason it exists.
+   *
+   * "This store has no token" and "we could not find out" used to both come back as '', and ''
+   * reaches the kiosk as a REVOKE: it drops SPIFF's page and falls back to Leaderboard's own card,
+   * which has no product line, no store target and none of Tawny's selling tips. One unlucky config
+   * read on a route the kiosk polls every 60 seconds was enough to do that, and it healed itself on
+   * the next poll, which is exactly what makes it hard to catch from the floor. It happened on
+   * 2026-09-11. null is "no answer", the payload omits the field, and the kiosk keeps what it has. */
+  'GX Core being unreachable costs a button, never a board — and never a REVOKE': function () {
     reset();
     KV['cfg.spiffKiosk.bend'] = 'tok';
     CORE_UP = false;
-    _eq_('no link, no throw', M.spiffKioskUrl_({ slug: 'century' }), '');
+    _eq_('null, not empty string', M.spiffKioskUrl_({ slug: 'century' }), null);
+  },
+
+  'a configured token and an unreachable Core are told apart, not merged': function () {
+    reset();
+    _eq_('no token configured is an empty string', M.spiffKioskUrl_({ slug: 'century' }), '');
+    KV['cfg.spiffKiosk.bend'] = 'tok';
+    CORE_UP = false;
+    _eq_('cannot ask is null', M.spiffKioskUrl_({ slug: 'century' }), null);
+    CORE_UP = true;
+    _eq_('and it comes back on its own', M.spiffKioskUrl_({ slug: 'century' }), BASE + '?t=tok');
   },
 
   'a store with no slug at all yields no link rather than a half-built URL': function () {
     reset();
     KV['cfg.spiffKiosk.'] = 'tok';
-    _eq_('null store', M.spiffKioskUrl_(null), '');
-    _eq_('empty slug', M.spiffKioskUrl_({ slug: '' }), '');
+    _eq_('null store', M.spiffKioskUrl_(null), null);
+    _eq_('empty slug', M.spiffKioskUrl_({ slug: '' }), null);
   },
 };
 

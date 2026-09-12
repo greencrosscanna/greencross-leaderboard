@@ -569,6 +569,17 @@ function diagSpiff_(storeSlug) {
     store:           storeSlug,
     showSpiff:       spiffShowEnabled_(),   // the usual answer to "why is there no row"
     coreStoreId:     coreId,
+    /* What the kiosk's SPIFF button actually resolves to for this store, and which of the three
+       answers it is. Exposed because it is unaskable from outside otherwise — the payload that
+       carries it is session-gated, so "is the link empty right now" could only be guessed at from
+       the screen. That guessing is what made the 2026-09-11 fallback take two rounds to find. */
+    kioskUrl:        (function () { try { return spiffKioskUrl_(store); } catch (e) { return null; } })(),
+    kioskUrlMeans:   (function () {
+                       var u; try { u = spiffKioskUrl_(store); } catch (e) { return 'threw: ' + e; }
+                       return u === null ? 'COULD NOT ASK — field is omitted, kiosk keeps what it has'
+                            : u === ''   ? 'no token configured for ' + coreId + ' — kiosk shows our own panel'
+                            :              'ok';
+                     })(),
     payPeriod:       pp.ppStartStr + ' … ' + pp.ppEndStr,
     refreshedAt:     raw.refreshed_at || '',
     // Where the rows came from: one entry per pay period read, newest first, each saying
@@ -640,7 +651,22 @@ function diagSpiff_(storeSlug) {
 var SPIFF_KIOSK_BASE_DEFAULT = 'https://greencrosscanna.github.io/greencross-spiff/store.html';
 
 /**
- * The SPIFF kiosk URL for one store, or '' when this store has no token configured.
+ * The SPIFF kiosk URL for one store: the URL, '' when this store has no token, or NULL when we
+ * could not find out.
+ *
+ * THOSE LAST TWO ARE NOT THE SAME ANSWER, and folding them together broke the kiosk on
+ * 2026-09-11. Every failure path here used to return '' — Core unreachable, a store we could not
+ * identify, all of it — and '' means "this store's token was revoked" to the client, which drops
+ * SPIFF's page and falls back to Leaderboard's own card. So one unlucky config read, on a route
+ * the kiosk polls every 60 seconds, silently replaced the product, the store target and Tawny's
+ * selling tips with a card that has none of them, until the next poll happened to succeed.
+ *
+ * null means "no answer", and the payload OMITS the field entirely rather than sending it — which
+ * the client already treats as "change nothing". See GC.views.applySpiffLink, which has drawn that
+ * distinction since the day it was written; this function simply never gave it the chance.
+ *
+ * (Five bugs in this suite have now had this exact shape: an unknown folded into a falsy. An
+ * absence needs its own state.)
  *
  * '' IS THE OFF SWITCH, and it is the default. No key, no button — which is the right state for
  * a store whose link has never been minted, and the state every store is in until the six tokens
@@ -653,12 +679,12 @@ var SPIFF_KIOSK_BASE_DEFAULT = 'https://greencrosscanna.github.io/greencross-spi
  */
 function spiffKioskUrl_(store) {
   var id = '';
-  try { id = String(coreStoreId_(store) || '').trim(); } catch (e) { return ''; }
-  if (!id) return '';
+  try { id = String(coreStoreId_(store) || '').trim(); } catch (e) { return null; }
+  if (!id) return null;           // we could not work out which store this is — not "no token"
 
   var token = '';
   try { token = String(GXCore.getKv('cfg.spiffKiosk.' + id) || '').trim(); }
-  catch (e) { return ''; }        // a kiosk that cannot reach Core still shows its board
+  catch (e) { return null; }      // a kiosk that cannot reach Core still shows its board
   if (!token) return '';
 
   var base = SPIFF_KIOSK_BASE_DEFAULT;

@@ -1573,9 +1573,12 @@ function getStoreToday(store, params) {
        * On the delta rather than only the full response because the full one is cached 55s and,
        * more to the point, is not fetched again by a kiosk that is already painted. This is the
        * only channel that reaches a running screen. */
+      /* OMITTED, NOT EMPTIED, when we could not find out — see spiffKioskUrl_. '' tells the kiosk
+         the token was revoked and drops SPIFF's page; an absent field tells it nothing changed,
+         which is the truth when a config read failed. */
       spiffKioskUrl:     (function () {
                            try { return spiffKioskUrl_(store); }
-                           catch (e) { Logger.log('spiffKioskUrl_ failed: ' + e); return ''; }
+                           catch (e) { Logger.log('spiffKioskUrl_ failed: ' + e); return null; }
                          })(),
     };
   }
@@ -1626,7 +1629,7 @@ function getStoreToday(store, params) {
        the kiosk a button, never a board. */
     spiffKioskUrl:      (function () {
                           try { return spiffKioskUrl_(store); }
-                          catch (e) { Logger.log('spiffKioskUrl_ failed: ' + e); return ''; }
+                          catch (e) { Logger.log('spiffKioskUrl_ failed: ' + e); return null; }
                         })(),
   };
 
