@@ -3803,7 +3803,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      slideshow bar at 9999, so nothing here contests it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.791';
+window.GC = window.GC || {}; GC.VERSION = 'v1.792';
 
 // ── GX Core web-app URL — ONE definition ──
 // This was previously a `var` inside loadChangelogFromGXCore(), i.e. function-scoped, while the
@@ -4603,9 +4603,20 @@ GC.spiffPanel = function(programs, opts) {
 
   html += '<div class="ksp-progs">' + list.map(function(p) {
     var target = Math.max(0, +p.target || 0);
+    /* DAYS LEFT COUNTS TODAY (Sky, 2026-09-11: "use spiff's day count, today counts").
+     *
+     * `d` is whole days from today to the end date, so the number a budtender is owed — days they
+     * can still sell this — is d + 1. We used to print `d`, which is one fewer than SPIFF's own
+     * page said for the same program on the same day. Neither was wrong arithmetic; they answered
+     * different questions, and a kiosk is no place for two answers.
+     *
+     * THE LAST TWO DAYS KEEP THEIR WORDS. "Ends today" and "Ends tomorrow" say the same thing as
+     * "1 day left" and "2 days left" and say it better on a wall screen — the count is what was
+     * out of step, not the phrasing. */
     var d      = (today === null || day(p.end) === null) ? null : Math.round(day(p.end) - today);
     var ending = d !== null && d <= 1;
-    var leftTxt = d === null ? '' : d <= 0 ? 'Ends today' : d === 1 ? 'Ends tomorrow' : d + ' days left';
+    var leftTxt = d === null ? '' : d <= 0 ? 'Ends today' : d === 1 ? 'Ends tomorrow'
+                : (d + 1) + ' days left';
     var dates  = md(p.start) && md(p.end) ? md(p.start) + ' – ' + md(p.end) : '';
     var when   = [dates, leftTxt].filter(Boolean).join(' · ');
 

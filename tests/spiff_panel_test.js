@@ -160,11 +160,16 @@ const tests = {
          panel([prog({ tips: ['Real one', '  ', ''] })]).indexOf('<li></li>') === -1);
   },
 
+  /* TODAY COUNTS as a selling day (Sky, 2026-09-11: "use spiff's day count, today counts"). SPIFF's
+     page counts inclusively and ours did not, so the same program read "3 days left" there and
+     "2 days left" on the kiosk. The last two days keep the clearer wording. */
   daysLeftIsCalendarArithmetic() {
-    const t = (end) => panel([prog({ end })]);
+    const t = (end) => panel([prog({ end })]);   // TODAY is 2026-09-09
     _ok_('today',    t('2026-09-09').indexOf('Ends today') > -1);
     _ok_('tomorrow', t('2026-09-10').indexOf('Ends tomorrow') > -1);
-    _ok_('four',     t('2026-09-13').indexOf('4 days left') > -1);
+    _ok_('two days out reads THREE — today is one of them', t('2026-09-11').indexOf('3 days left') > -1);
+    _ok_('four days out reads five', t('2026-09-13').indexOf('5 days left') > -1);
+    _ok_('and never the exclusive count again', t('2026-09-13').indexOf('4 days left') === -1);
     _ok_('across a month end', panel([prog({ end: '2026-10-01' })], { today: '2026-09-30' }).indexOf('Ends tomorrow') > -1);
     _ok_('ending soon is flagged', t('2026-09-10').indexOf('ksp-prog ending') > -1);
     _ok_('a later one is not',      t('2026-09-13').indexOf('ksp-prog ending') === -1);
