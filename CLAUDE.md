@@ -79,9 +79,19 @@ Two things about it that are not guessable from the code:
   began last fortnight and is still running is filed under the previous scope, so reading only the
   current one drops a live program off every card. `SPIFF_LOOKBACK_PERIODS` reads three back and merges.
 
-The kiosk also links out to SPIFF's own per-store board (`store.html?t=<token>`), one permanent token per
-store held in GX Core kv as `cfg.spiffKiosk.<core store_id>`. No token, no button — which is the correct
-state until they are pasted into the Command Center.
+**The kiosk's SPIFF button opens SPIFF's own per-store board** (`store.html?t=<token>`) in a popup
+window (Sky, 2026-09-11). One permanent token per store, held in GX Core kv as
+`cfg.spiffKiosk.<core store_id>`; all six are set. Leaderboard reads the token live on every poll, so
+a rotation reaches a running kiosk in ~60s rather than at the 04:00 reload.
+
+*Corrected 2026-09-11: this said "no token, no button", which stopped being true on 2026-09-10.*
+**Settings → Include SPIFF is the one switch for the button** — the same switch as the staff-card
+rows, so the setting and the button cannot disagree. The token decides only what the button OPENS: a
+window on SPIFF's page where there is one, Leaderboard's own panel where there is not, and SPIFF's
+page embedded in an overlay where the browser refuses the popup. The panel was the front door for
+exactly one day (2026-09-10 → 11) and is now only that fallback. Covered by
+`tests/spiff_store_window_test.js`, which also holds the reason the window must close with the
+board: a wall screen has no chrome, so a popup nobody can dismiss is the board gone for the shift.
 
 ## Sync with the brain — run `/gxbrain` (or say "brain sync")
 
