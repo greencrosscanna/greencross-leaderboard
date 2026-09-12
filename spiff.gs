@@ -122,7 +122,7 @@ function spiffScopes_() {
  *            published_at:string, refreshed_at:string }}
  */
 function spiffReadScope_(secret, scope, maxAgeMin) {
-  var base = { scope: scope, rows: [], used: false, reason: '',
+  var base = { scope: scope, rows: [], programs: [], used: false, reason: '',
                age_minutes: null, published_at: '', refreshed_at: '' };
   var res;
   try {
@@ -155,6 +155,11 @@ function spiffReadScope_(secret, scope, maxAgeMin) {
   }
 
   base.rows = payload.rows || [];
+  /* SPIFF'S PROGRAM SIDECAR — one entry per program, not repeated on every employee row. It holds
+     the four things a per-person row cannot say: the product in words, each store's goal, what the
+     program pays, and Tawny's tips. See spiffProgramsForStore_ for the join and for why reading it
+     off the row (which is what this app tried first) finds nothing. */
+  base.programs = payload.programs || [];
   base.used = true;
   return base;
 }
@@ -195,15 +200,18 @@ function spiffFetchRaw_() {
     var maxAge  = spiffStaleMinutes_();
     var scopes  = spiffScopes_().map(function (sc) { return spiffReadScope_(secret, sc, maxAge); });
     var rows    = [];
+    var programs = [];
     var freshest = '';
     scopes.forEach(function (s) {
       if (!s.used) return;
       rows = rows.concat(s.rows || []);
+      programs = programs.concat(s.programs || []);
       if (s.refreshed_at > freshest) freshest = s.refreshed_at;
     });
     out = {
       ok: true,
       rows: rows,
+      programs: programs,
       refreshed_at: freshest,
       maxAgeMinutes: maxAge,
       // Kept on the cached object so diagSpiff_ answers "why is this card empty" from the
@@ -386,7 +394,15 @@ function spiffLeadProgram_(entry) {
  * Ordered by the program ENDING SOONEST first, since that is the one worth acting on today, and
  * people within a program by how close they are to their target.
  */
-function spiffProgramsForStore_(rows) {
+function spiffProgramsForStore_(rows, sidecar, coreStoreId) {
+  /* SPIFF's program sidecar, keyed by program_id. Built here rather than passed in already keyed so
+     a caller that has no sidecar (an older payload, a test) simply gets the numbers and no copy. */
+  var meta = Object.create(null);
+  (sidecar || []).forEach(function (m) {
+    if (m && m.program_id != null) meta[String(m.program_id)] = m;
+  });
+  var storeId = String(coreStoreId == null ? '' : coreStoreId).trim();
+
   var byProg = Object.create(null), order = [];
   (rows || []).forEach(function (r) {
     if (!r) return;
@@ -422,20 +438,7 @@ function spiffProgramsForStore_(rows) {
       };
       order.push(key);
     }
-    /* First row that states one wins — these are program-level facts repeated on every row of the
-       program, so any row answers, and a later row that omits one must not blank it. */
-    if (!p.product && r.product) p.product = String(r.product);
-    if (!p.storeGoal && Number(r.store_goal)) p.storeGoal = Number(r.store_goal);
-    if (p.payout == null && r.payout != null && r.payout !== '') p.payout = Number(r.payout) || 0;
-    if (!p.tips.length && r.tips) {
-      // Published either as an array or as one newline/pipe-separated cell — a sheet round-trip
-      // flattens an array, so accept both rather than silently dropping every tip.
-      var t = r.tips;
-      if (Object.prototype.toString.call(t) === '[object Array]') p.tips = t.map(String);
-      else p.tips = String(t).split(/\r?\n|\s*\|\s*/);
-      p.tips = p.tips.map(function (x) { return String(x).trim(); }).filter(function (x) { return !!x; });
-    }
-    if (!p.measuredAt && r.measured_at) p.measuredAt = String(r.measured_at);
+    if (!p.measuredAt && r.refreshed_at) p.measuredAt = String(r.refreshed_at);
 
     var person = {
       employee_id: String(r.employee_id == null ? '' : r.employee_id).trim(),
@@ -453,6 +456,24 @@ function spiffProgramsForStore_(rows) {
   var frac = function (x) { return x.target > 0 ? x.units / x.target : 0; };
   return order.map(function (k) {
     var p = byProg[k];
+
+    /* THE SIDECAR JOIN. Keyed on program_id, and the goals inside it are keyed on GX Core's
+       store_id — one program runs at six stores with six different goals, so reading the wrong
+       store's number here would put a target on the kiosk that nobody at that store was given.
+       Absent stays absent: a payload published before SPIFF v1.407 carries no sidecar at all, and
+       the popup omits whichever block is missing rather than drawing a heading over a gap. */
+    var m = meta[String(p.id)];
+    if (m) {
+      if (m.product) p.product = String(m.product);
+      if (m.payout != null && m.payout !== '') p.payout = Number(m.payout) || 0;
+      if (m.payout_type) p.payoutType = String(m.payout_type);
+      var sg = m.store_goals && storeId ? m.store_goals[storeId] : null;
+      if (Number(sg)) p.storeGoal = Number(sg);
+      if (Object.prototype.toString.call(m.tips) === '[object Array]') {
+        p.tips = m.tips.map(function (t) { return String(t).trim(); })
+                       .filter(function (t) { return !!t; });
+      }
+    }
     var paid = p.people.filter(function (x) { return x.hit && x.earned > 0; });
     var sameTarget = p.people.every(function (x) { return x.target === p.target; });
     if (paid.length && sameTarget && paid.every(function (x) { return x.earned === paid[0].earned; })) {
@@ -511,7 +532,9 @@ function spiffForStore_(store) {
     ppStart:      pp.ppStartStr,
     ppEnd:        pp.ppEndStr,
     byId:         byId,
-    programs:     spiffProgramsForStore_(rows),   // the SPIFF panel — same rows, grouped by program
+    // The SPIFF panel — same rows grouped by program, joined to SPIFF's program sidecar so the
+    // popup can show the product, this store's goal, the payout and the tips.
+    programs:     spiffProgramsForStore_(rows, raw.programs, coreStoreId_(store)),
   };
 }
 

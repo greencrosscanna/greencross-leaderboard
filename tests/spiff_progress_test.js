@@ -66,6 +66,73 @@ function row(over) {
 
 const tests = {
 
+  /* SPIFF'S PROGRAM SIDECAR (their v1.407, 2026-09-11). The four things a per-employee row cannot
+   * say — the product in words, each store's goal, what the program pays, Tawny's tips — arrive as
+   * ONE entry per program alongside the rows, not as repeated columns on every row.
+   *
+   * This app guessed columns-on-the-row first and shipped a reader for it. That reader would have
+   * found nothing, forever, and failed in the quietest possible way: the kiosk popup would simply
+   * have gone on framing SPIFF's page and neither app would have logged a thing. So these assert
+   * the SHAPE, not just the values.
+   *
+   * The goals are keyed on GX CORE's store_id, and one program runs at six stores with six
+   * different numbers — reading the wrong key would put a target on a kiosk that nobody at that
+   * store was ever given. */
+  'the program sidecar joins by program_id, and the goal comes from THIS store\'s key': function () {
+    const rows = [
+      { program_id: 'p1', store_id: 'bend', employee_id: 1, name: 'A', units: 9, target: 7, hit: true,
+        earned: 25, vendor: 'Mule Extracts', program_name: 'Dank Tank', start_date: '2026-08-31',
+        end_date: '2026-09-13', refreshed_at: '2026-09-11 21:56:08' },
+    ];
+    const sidecar = [{
+      program_id: 'p1', product: 'Live Resin Dank Tank | 2g', payout: 25, payout_type: 'flat',
+      store_goals: { bend: 42, center: 18, 'river-rd': 30 },
+      bt_goals:    { bend: 7,  center: 3 },
+      tips: ['Lead with the live resin', '  ', 'Pair it with a pre-roll'],
+    }];
+
+    const bend = M.spiffProgramsForStore_(rows, sidecar, 'bend')[0];
+    _eq_('product', bend.product, 'Live Resin Dank Tank | 2g');
+    _eq_('payout stated, not inferred', bend.payout, 25);
+    _eq_('payout type', bend.payoutType, 'flat');
+    _eq_('THIS store\'s goal', bend.storeGoal, 42);
+    _eq_('tips kept', bend.tips.length, 2);
+    _eq_('blank tip dropped', bend.tips[1], 'Pair it with a pre-roll');
+    _eq_('measured at comes off the row', bend.measuredAt, '2026-09-11 21:56:08');
+
+    // Same program, a different store: the goal must follow the store, never the first key.
+    const river = M.spiffProgramsForStore_(
+      [Object.assign({}, rows[0], { store_id: 'river-rd' })], sidecar, 'river-rd')[0];
+    _eq_('river gets river\'s number', river.storeGoal, 30);
+  },
+
+  'no sidecar at all leaves every block absent rather than guessed': function () {
+    const rows = [
+      { program_id: 'p1', store_id: 'bend', employee_id: 1, name: 'A', units: 9, target: 7, hit: true,
+        earned: 25, vendor: 'Mule Extracts', program_name: 'Dank Tank', start_date: '2026-08-31',
+        end_date: '2026-09-13' },
+    ];
+    const p = M.spiffProgramsForStore_(rows, [], 'bend')[0];
+    _eq_('no product', p.product, '');
+    _eq_('no store goal', p.storeGoal, 0);
+    _eq_('no stated payout', p.payout, null);
+    _eq_('no tips', p.tips.length, 0);
+    _ok_('but the numbers are all still there', p.people.length === 1 && p.target === 7);
+  },
+
+  'a sidecar for a program we are not showing is ignored, not merged': function () {
+    const rows = [
+      { program_id: 'p1', store_id: 'bend', employee_id: 1, name: 'A', units: 1, target: 7,
+        hit: false, earned: 0, vendor: 'V', program_name: 'P', start_date: '2026-08-31',
+        end_date: '2026-09-13' },
+    ];
+    const p = M.spiffProgramsForStore_(rows, [{ program_id: 'SOMETHING-ELSE', product: 'Wrong',
+      store_goals: { bend: 999 }, tips: ['no'] }], 'bend')[0];
+    _eq_('no product borrowed', p.product, '');
+    _eq_('no goal borrowed', p.storeGoal, 0);
+  },
+
+
   /* store_id is GX Core's id ('bend'), NOT our slug ('century'). Filtering by the slug would
      silently return nothing for every store whose two names differ. */
   filtersToTheRequestedStore() {
