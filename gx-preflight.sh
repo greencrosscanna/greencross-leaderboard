@@ -360,10 +360,13 @@ if [ -d tests ]; then
             echo "      IIFE that never resolves: node then exits clean and this gate sees success."
           else
             echo "  ✓ $t — $(printf '%s' "$_out" | tail -1)"
-            # Softer signal, deliberately NOT a block: output that never mentions a pass is worth a
-            # look, but blocking on it would punish a suite that words its summary differently.
-            printf '%s' "$_out" | grep -qiE "pass|ok\b|✓" || \
-              echo "      ! no pass/ok line in that output — check the suite actually asserts something"
+            # NO SECOND, SOFTER CHECK HERE. The first cut also warned when the output mentioned no
+            # pass/ok — and on its very first run across the suite it fired on
+            # greencross-spiff/tests/undefined_calls_test.js, which is entirely healthy and reports
+            # "213 call sites checked against 657 bindings — all resolve". A warning that cries on a
+            # good suite every push is one people learn to scroll past, and it sat directly above the
+            # hard rule that matters. Whether a suite asserts anything is not a question its wording
+            # can answer.
           fi
         else
           _tfail="$_tfail $t"
