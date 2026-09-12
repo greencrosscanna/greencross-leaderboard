@@ -46,7 +46,15 @@ command -v clasp >/dev/null 2>&1 || { echo "✗ clasp not on PATH"; exit 1; }
 # and in this project's deployment list is, by definition, the one this app talks to. That
 # intersection is self-correcting — GX Core's /exec id appears in every spoke's source but is never
 # in the spoke's OWN deployment list, so it drops out for free, no exclusion list to rot.
-DEPLOYS="$(clasp deployments 2>/dev/null | grep -oE '^- AKfycb[A-Za-z0-9_-]+ @[0-9]+' || true)"
+DEPLOYS_RAW="$(clasp deployments 2>&1 || true)"
+DEPLOYS="$(printf '%s\n' "$DEPLOYS_RAW" | grep -oE '^- AKfycb[A-Za-z0-9_-]+ @[0-9]+' || true)"
+# AN EXPIRED LOGIN IS NOT A MISSING DEPLOYMENT. With clasp's Google auth expired the list comes back
+# as {"error":"invalid_grant",...invalid_rapt}, and this used to report "no versioned deployment
+# found" — failing safe, but sending the reader to the wrong fix (SPIFF, 2026-09-10).
+if [ -z "$DEPLOYS" ] && printf '%s' "$DEPLOYS_RAW" | grep -qiE 'invalid_grant|invalid_rapt|reauth|not logged in|login'; then
+  echo "✗ clasp's Google login has expired, so the deployment list could not be read. Run \`clasp login\`, then re-run."
+  exit 1
+fi
 [ -n "$DEPLOYS" ] || { echo "✗ no versioned deployment found (only @HEAD?). Refusing to create one."; exit 1; }
 
 # Ids this repo's own frontend/engine source actually points at.

@@ -54,11 +54,20 @@ fi
 # ─── WHICH APPS THIS CAN WORK FOR AT ALL ────────────────────────────────────────────────────────
 # NOT ALL OF THEM, and finding that out late is the reason this block exists.
 #
-# GX Core signs a token with GX_SESSION_SECRET. An app can either ASK CORE to validate it
-# (GXCore.verifySession / the ?action=verify route) or validate it ITSELF against its own HMAC. Three
-# apps do the latter — they have their own signSession_ and their own secret — so a Core-minted token
-# is rejected by their gated routes no matter how valid it is upstream. Nothing about the token is
-# wrong; it was simply signed by a different key than the one checking it.
+# GX Core signs a session token with an HMAC over the Script Property GC_SESSION_SECRET. An app can
+# validate that token in one of two ways, and BOTH work here:
+#
+#   1. ASK CORE.  GXCore.verifySession / GXCore.requireAuth / the ?action=verify route. Core holds
+#      the key, so there is nothing to keep in sync. pricecards, spiff and crew do this.
+#   2. SIGN IT ITSELF, WITH THE SAME KEY.  Its own signSession_/validateSessionToken_, reading the
+#      SAME Script Property Core reads. Same key, same payload format, so a Core-minted token
+#      validates identically. inventory and sales do this.
+#
+# The one that CANNOT work is an app that signs with a DIFFERENT key. Its HMAC is computed over a
+# secret Core has never seen, so a Core-minted token fails its signature check no matter how valid
+# it is upstream. Only `performance` is in that position: greencross-leaderboard/dutchie_proxy.gs
+# reads GC_PERF_SESSION_SECRET, not GC_SESSION_SECRET — a different property, which every project
+# auto-generates independently, so the two values are unrelated by construction.
 #
 # THE FAILURE MODE IS WHY THIS REFUSES RATHER THAN WARNS. Installing the session still "works": the
 # app's PUBLIC routes answer, so a page paints and looks signed in, while every gated route quietly
@@ -66,26 +75,47 @@ fi
 # Leaderboard measured it on 2026-09-09 (?action=storetoday -> {"ok":false,"error":"Invalid session"}
 # on all six stores) after this tool shipped claiming all seven apps.
 #
-# HOW THAT SHIPPED, since the mistake is more reusable than the fact: minting was verified for all
-# seven and treated as working. Minting is Core answering about itself. Whether the APP accepts the
-# token is a different question and the only one that matters, and it was checked on exactly one app.
-# A green result on the easy half read as coverage of the whole.
+# ─── CORRECTED 2026-09-09: inventory and sales were refused on a premise that was never true. ───
+# This block used to say "three apps have their own signSession_ and their own secret". Three apps
+# do have their own signSession_ — that part was right, and it is also irrelevant. What matters is
+# WHICH KEY they sign with, and inventory and sales both read GC_SESSION_SECRET, the same property
+# Core reads. Their own source said so in as many words (inventory dutchie_proxy.gs:5775 — "Tokens
+# are signed with the shared GC_SESSION_SECRET, so a token issued by either path validates
+# identically"; sales dutchie_proxy.gs:335 — "MUST match GXCore + Inventory"). Nobody read it.
 #
-# TO ADD AN APP HERE: point it at GXCore.verifySession instead of its own signSession_. That is the
-# shared write-auth migration, not a change to this file.
+# The overcorrection came straight out of the undercorrection. The first version claimed all seven
+# apps on the strength of MINTING working, which is Core answering a question about itself; the
+# second version generalized Leaderboard's single real failure to the two apps that happened to sit
+# beside it in a grep for signSession_. Same mistake both times — one app's result, taken for the
+# suite's. Neither pass ever asked an app whether it accepted the token.
+#
+# So it was asked, on 2026-09-09, of all three, live, each against a gated route with a deliberately
+# invalid token as the control (a route that is not really gated answers both, and would otherwise
+# read as a pass):
+#
+#   inventory    ?action=operationalstatus  -> {"ok":true,"ready":true,...}    control -> Invalid session
+#   sales        ?action=stores             -> {"stores":[...6 stores...]}     control -> Invalid session
+#   performance  ?action=storetoday&store=Bend -> Invalid session              control -> Invalid session
+#
+# performance is the only genuine refusal, and it is refused below for the reason that is actually
+# true. TO ADD IT: point it at GC_SESSION_SECRET (or at GXCore.verifySession) — a backend change in
+# greencross-leaderboard, not something this tool can work around. Its own auth.gs already publishes
+# a fingerprint route for comparing the two values without revealing either.
 case "$APP" in
-  pricecards|spiff|crew|core-admin) ;;                     # validate through GX Core — this works
-  inventory|performance|sales)
+  inventory|sales|pricecards|spiff|crew|core-admin) ;;     # a Core-minted token validates — measured
+  performance)
     cat >&2 <<UNSUPPORTED
-gxdevlogin: $APP validates sessions with its OWN secret, so a GX Core token cannot work here.
+gxdevlogin: performance signs sessions with its OWN key, so a GX Core token cannot work here.
 
-  Its backend has its own signSession_ (not GXCore.verifySession), so this token is rejected by
-  every gated route. The page would still paint from public routes and LOOK signed in, which is
-  why this refuses instead of printing a snippet.
+  greencross-leaderboard reads the Script Property GC_PERF_SESSION_SECRET; GX Core reads
+  GC_SESSION_SECRET. Different property, independently generated value — so this token fails its
+  signature check on every gated route, measured 2026-09-09 (?action=storetoday -> Invalid session).
+  The page would still paint from public routes and LOOK signed in, which is why this refuses
+  instead of printing a snippet.
 
-  Works today: pricecards, spiff, crew, core-admin.
-  To change that, $APP has to validate through GXCore.verifySession — a backend change in that
-  repo, not something this tool can work around.
+  Works today: inventory, sales, pricecards, spiff, crew, core-admin.
+  To change that, greencross-leaderboard has to sign with GC_SESSION_SECRET or validate through
+  GXCore.verifySession — a backend change in that repo, not something this tool can work around.
 UNSUPPORTED
     exit 1 ;;
   *) echo "gxdevlogin: unknown app '$APP' (inventory performance sales pricecards spiff crew core-admin)" >&2; exit 2 ;;
@@ -95,15 +125,21 @@ esac
 SECRET="$(cat .gx_deploy_secret)"
 
 # ─── where each app keeps its session ───────────────────────────────────────────────────────────
-# Read out of each app's own source, not invented here — inventory's LS.AUTH, leaderboard's
-# SESSION_KEY, sales' GC_SALES_AUTH, Price Cards' PC_AUTH_KEY, spiff's session(), crew's TOKEN_KEY,
-# Master Control's AUTH_KEY. They genuinely differ, including WHICH storage: spiff and crew use
-# sessionStorage on purpose (a credentialed admin session on a machine that may not be the user's),
-# and crew stores a bare token string plus a separate user string rather than one JSON object.
+# Read out of each app's own source, not invented here — inventory's LS.AUTH, sales' GC_SALES_AUTH,
+# Price Cards' PC_AUTH_KEY, spiff's session(), crew's TOKEN_KEY, Master Control's AUTH_KEY. They
+# genuinely differ, including WHICH storage: spiff and crew use sessionStorage on purpose (a
+# credentialed admin session on a machine that may not be the user's), and crew stores a bare token
+# string plus a separate user string rather than one JSON object.
+#
+# READ THE VALUE, NOT THE VARIABLE THAT HOLDS IT. Sales' wrapper object is called GC_SALES_AUTH and
+# the key it writes is `gc_sales_token`; the earlier note here recorded the wrapper's name, which
+# would have written to a key nothing reads.
 #
 # If an app ever moves its key, this is the line to fix — and the symptom will be unmistakable: the
 # snippet reports success and the app still shows its login screen.
 case "$APP" in
+  inventory)  STORE=localStorage;   KEY=gc_inv_auth ;;     # LS.AUTH in index.html
+  sales)      STORE=localStorage;   KEY=gc_sales_token ;;  # the KEY inside GC_SALES_AUTH, not that name
   pricecards) STORE=localStorage;   KEY=gx_pricecards_auth ;;
   spiff)      STORE=sessionStorage; KEY=spiff_session ;;
   crew)       STORE=sessionStorage; KEY=gx_crew_token ;;   # plus gx_crew_user — handled below
@@ -130,7 +166,7 @@ esac
 # The response is the session payload. Keep it in one place: python does the parsing AND builds the
 # snippet, so the JSON is never reassembled by hand in shell.
 printf '%s' "$RESP" | JS_ONLY="$JS_ONLY" APP="$APP" STORE="$STORE" KEY="$KEY" python3 -c '
-import json, os, sys
+import json, os, sys, time
 r = json.load(sys.stdin)
 app, store, key, js_only = os.environ["APP"], os.environ["STORE"], os.environ["KEY"], os.environ["JS_ONLY"] == "1"
 
@@ -152,6 +188,12 @@ sess = {
 # Leaderboard names the store fields differently; harmless elsewhere, so it is not special-cased.
 sess["storeId"] = r.get("store", "")
 sess["store"]   = r.get("store", "")
+# Inventory'"'"'s client-side gate is `(Date.now() - ts) < GC_AUTH_TTL`, so a session with no `ts`
+# reads as NaN < TTL == false and the app shows its login screen while the token itself is perfectly
+# good — the same silent half-working state this tool refuses `performance` to avoid. Set for every
+# app rather than special-cased: nothing else reads it, and the next app to adopt the field gets it.
+# It is the LOCAL freshness stamp, not the expiry; `expiresAt` above is what actually runs out.
+sess["ts"] = int(time.time() * 1000)
 
 if app == "crew":
     # crew keeps a bare token string and a separate user string, not one JSON blob.

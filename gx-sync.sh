@@ -34,11 +34,30 @@ APP="$(tr -d ' \t\r\n' < .gx_app)"
 # terminal, a killed curl, or piping the output to `head` (SIGPIPE) -- left every file already
 # fetched at 0600 with no error and a plausible-looking transcript.
 #
-# THAT IS THE 2026-08-22 INCIDENT this file records four comments down as "cause unconfirmed
-# (self-update path? Dropbox reverting modes asynchronously?)". It is neither. Reproduced on
-# 2026-09-09 by interrupting a sync: gx-preflight.sh, deploy.sh and serve.py come out 0600 together,
-# which is exactly the "across four repos" shape -- one interrupted run per repo, not a filesystem
-# doing something exotic. Dropbox was blamed for a deferred chmod.
+# THAT IS ONE CAUSE, CONFIRMED. Reproduced 2026-09-09 by interrupting a sync: gx-preflight.sh,
+# deploy.sh and serve.py come out 0600 together. It is very likely what happened on 2026-08-22, which
+# this file records four comments down as "cause unconfirmed".
+#
+# IT IS NOT THE ONLY CAUSE, AND THE SECOND ONE IS STILL OPEN. An earlier draft of this comment said
+# "it is neither -- Dropbox was blamed for a deferred chmod", and that went too far. spiff pushed back
+# the same day with evidence that its own 0600 run was NOT interrupted, and the old script's own
+# output proves it: the "! executable on disk but recorded 100644 in git" block prints BEFORE the
+# "✗ NOT EXECUTABLE after chmod" block, and spiff saw the first and not the second. So every file
+# passed [ -x ] after the sweep. Executable when the script checked; 0600 minutes later; nothing run
+# in between. That is a mode reverting after a COMPLETED chmod, which the deferred-chmod story cannot
+# explain. (It also did not pipe to `head` -- it used `tail`, which consumes all input and raises no
+# SIGPIPE.)
+#
+# The candidate is what the original note guessed: this tree is Dropbox-synced, these files carry
+# com.dropbox.attrs and com.dropbox.internal, and a client reconciling its own recorded permissions
+# over a local chmod fits every observation -- including why it looks unreproducible on a quiet tree
+# and why it hits several repos at once. UNCONFIRMED. Do not write it up as settled in either
+# direction; that is the mistake this comment has now made once in each.
+#
+# WHY THE OVERREACH IS WORTH RECORDING. A note saying "Dropbox was innocent" hands the next reader a
+# ruled-out explanation for the thing actually in front of them, which is the same failure the
+# original unconfirmed note committed, in reverse. Finding A cause is not finding THE cause, and a
+# reproduction that matches the symptom is not proof it matches the incident.
 #
 # Setting the mode as part of writing the file makes the window zero: a file this script has
 # finished writing is correct, and one it never got to does not exist. The verification loop below
@@ -107,14 +126,19 @@ fetch gxengine.sh        gxengine.sh 755 || true
 # the whole list if it errors early, and mktemp+mv lands these at 0600 -- which silently left deploy.sh
 # non-executable in some repos after a sync.
 # VERIFY, do not assume. On 2026-08-22 gx-preflight.sh, deploy.sh and serve.py came out of a sync at
-# 0600 across four repos. THE CAUSE IS NOW KNOWN and is fixed in fetch() above: the chmod used to run
-# in a sweep at the END, so mktemp's 0600 stood for the whole rest of the sync and any interruption
-# froze it there. Reproduced 2026-09-09 by piping this script's output to `head` -- SIGPIPE, no error,
-# a transcript that looks fine. Dropbox was blamed for a deferred chmod; it was never Dropbox.
+# 0600 across four repos. ONE cause is now known and fixed in fetch() above -- the chmod used to run in
+# a sweep here at the END, so mktemp's 0600 stood for the whole rest of the sync and any interruption
+# froze it there. A SECOND remains open: spiff reported 0600 on 2026-09-09 after a run that completed
+# and whose own [ -x ] check passed, which no amount of write-time chmod can prevent. See fetch().
 #
-# This loop STAYS, and stays a check rather than the mechanism. A file whose mode is set at write time
-# should never reach here wrong, so if one does, something new is true and the loop is how anyone
-# finds out.
+# THIS LOOP IS LOAD-BEARING EITHER WAY, and more so if the second cause is real -- it is the only
+# thing that would notice. It stays a CHECK rather than the mechanism: a file whose mode is set at
+# write time should never reach here wrong, so if one does, something new is true.
+#
+# WHAT IT CANNOT DO is catch a revert that happens AFTER the script exits, which is precisely what
+# spiff observed. If that is confirmed, the answer is not a bigger chmod here -- it is that these
+# files should not depend on a mode bit at all. Every guard already runs through `sh`; ./deploy.sh by
+# hand is the one path that does not, and that is the exposure.
 #
 # WHAT IT ACTUALLY COSTS, corrected 2026-08-22. The hook is `exec sh ./gx-preflight.sh` -- `sh` READS
 # the script, so a 0600 preflight still runs and the guard is never weakened. The earlier claim here

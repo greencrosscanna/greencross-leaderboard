@@ -14,6 +14,35 @@ cd "$(dirname "$0")"
 
 APP="performance"
 FAIL=0
+
+# ── SELF-HEAL: sweep this repo's orphaned preflight worktrees ────────────────────────────────────
+# 20 of these were found across the suite on 2026-09-09 — ~80MB, oldest 2026-08-29 — left by this
+# script and theme-preflight.sh. Both create a sibling worktree to test HEAD and remove it in a trap,
+# but a run killed outright (a canceled push, a closed terminal) never reaches the trap. Left alone
+# they accumulate in the parent folder, sync to every machine over Dropbox, and get picked up by any
+# grep across the suite — one of them polluted a dependency audit before anyone noticed.
+#
+# Sweeping at START rather than only trusting cleanup at END is what makes this self-correcting. It
+# is why the hub's run-tests.sh has had zero .gxruntests-* orphans since it adopted the same fix on
+# 2026-08-30, while these two scripts kept accumulating them for eleven days.
+#
+# TWO GUARDS run-tests.sh DOES NOT NEED, AND THIS SCRIPT DOES. That one is hub-only, so its blind
+# `../.gxruntests-*` glob can only ever match worktrees it made itself. This script is synced into
+# SEVEN repos that push concurrently:
+#   • SCOPE TO THIS REPO'S PREFIX. A bare ../.gxpreflight-* glob would let a sales push delete the
+#     worktree a crew push is running its tests inside — turning the self-heal into the outage.
+#   • SKIP A LIVE PID. The suffix is $$. If that process still exists, a concurrent preflight in
+#     THIS repo owns the worktree. A recycled pid only means a dead one survives to the next run,
+#     which is the safe direction to be wrong in.
+_mine="../.gxpreflight-$(basename "$PWD")-"
+git worktree prune >/dev/null 2>&1 || true
+for _stale in "$_mine"*; do
+  [ -d "$_stale" ] || continue
+  if kill -0 "${_stale##*-}" 2>/dev/null; then continue; fi   # a concurrent preflight owns it
+  git worktree remove --force "$_stale" >/dev/null 2>&1 || true
+  if [ -d "$_stale" ]; then rm -rf "$_stale"; fi
+done
+git worktree prune >/dev/null 2>&1 || true
 # Files we ship. Exclude the shared tooling, which legitimately contains these words.
 # serve.js joins serve.py here for the same reason: both print a localhost URL on startup, which the
 # hard 'localhost URL in shipped code' check below would otherwise fail. spiff shipped serve.js with
@@ -30,12 +59,36 @@ FILES="$(git ls-files '*.html' '*.js' '*.css' '*.gs' 2>/dev/null | grep -vE '^(g
 # ("// USE_FIXTURES = true reads fixtures") trips the check, and a hook that cries wolf on a clean
 # tree gets --no-verify'd within a day, which defeats the whole point. The @devonly check is the one
 # that deliberately wants comments.
+# -a KEEPS THE DIAGNOSTICS, and that is the whole of the claim. If a shipped file contains a NUL
+# byte, grep may classify it as binary and collapse every match to the single line
+# "Binary file <name> matches" — no path, no line number, no offending text.
+#
+# WHAT THAT DOES AND DOES NOT DO, measured 2026-09-09 rather than reasoned, because two sessions
+# (mine included) got this wrong in both directions first:
+#   • It does NOT disable the gate. `hits` is still non-empty, so a hard check still sets FAIL and
+#     still blocks the push. A clean file still passes. Verified with a real `@devonly` leftover in a
+#     NUL-bearing file at every position tried: CAUGHT every time.
+#   • It DOES destroy the report. You are told the push is blocked and given a filename with no line
+#     and no matching text, on a file grep has decided it cannot quote — which on a 240KB proxy is a
+#     blocked push nobody can act on.
+#
+# POSITION MATTERS AND NOTHING CHOOSES IT. /usr/bin/grep (BSD, what this hook gets under /bin/sh)
+# classifies from the FIRST BLOCK only. Minimal pair, identical size and token, NUL position the only
+# difference:  byte 1 -> "Binary file early.gs matches" · byte 312000 -> "late.gs:6002:@devonly".
+# greencross-sales carried two NULs at offset 196535 (a '\0' delimiter written as a literal byte,
+# commit edc075d) and its hook read the file normally — purely because they landed late.
+#
+# The agent-facing `grep` is a shell function wrapping ugrep, which scans the WHOLE file and behaves
+# differently again. So a measurement taken at an interactive prompt does not describe this hook.
+# -a removes the whole question: never classify a shipped source file as binary.
 flag() {
-  hits="$(grep -HnE "$3" $FILES 2>/dev/null || true)"   # -H: grep omits the filename for a SINGLE
+  hits="$(grep -aHnE "$3" $FILES 2>/dev/null || true)"  # -a: see above — a NUL must not cost the
+                                                       #     file:line report a blocked push needs
+                                                       # -H: grep omits the filename for a SINGLE
                                                        # file, which breaks the comment filter below
   if [ "${4:-}" != "comments" ]; then
     # drop  file:line:<whitespace>(// | * | #)  — i.e. the match sits in a comment, not in code
-    hits="$(printf '%s\n' "$hits" | grep -vE '^[^:]*:[0-9]+:[[:space:]]*(//|\*|#)' || true)"
+    hits="$(printf '%s\n' "$hits" | grep -avE '^[^:]*:[0-9]+:[[:space:]]*(//|\*|#)' || true)"
   fi
   [ -n "$hits" ] || return 0
   echo "  ✗ $2"
@@ -287,7 +340,31 @@ if [ -d tests ]; then
       _tfail=""
       for t in $_tests; do
         if _out="$(cd "$_rundir" && node "$t" 2>&1)"; then
-          echo "  ✓ $t — $(printf '%s' "$_out" | tail -1)"
+          # ── A SUITE THAT SAID NOTHING DID NOT PASS ──────────────────────────────────────────────
+          # Exit 0 was the only thing checked here, and a suite can reach it having run nothing at
+          # all. Measured in greencross-sales on 2026-09-11: background_refresh_test.js is an async
+          # IIFE whose fake timer only fired delays >= 1000ms, while the code under test backs off
+          # 700 + random*500. Under 1000 the promise never resolved, the suite hung on its own await,
+          # Node exited clean with EMPTY stdout — and this line printed "✓ ... —" with nothing after
+          # the dash. Six silent runs in twelve. So roughly half of that repo's pushes were gated on
+          # 43 assertions that never ran, and the gate said they had.
+          #
+          # Deliberately the narrowest rule that closes it: EMPTY output is a failure. Every suite in
+          # this suite-of-suites prints something, so this cannot fire on a healthy one — and a
+          # stricter rule (demand a recognizable summary line) would block pushes across seven repos
+          # over a wording difference, which is how a gate gets --no-verify'd into uselessness.
+          if [ -z "$(printf '%s' "$_out" | tr -d '[:space:]')" ]; then
+            _tfail="$_tfail $t"
+            echo "  ✗ $t PRODUCED NO OUTPUT — exit 0 but nothing ran."
+            echo "      A suite that prints nothing has not passed. The usual cause is an async"
+            echo "      IIFE that never resolves: node then exits clean and this gate sees success."
+          else
+            echo "  ✓ $t — $(printf '%s' "$_out" | tail -1)"
+            # Softer signal, deliberately NOT a block: output that never mentions a pass is worth a
+            # look, but blocking on it would punish a suite that words its summary differently.
+            printf '%s' "$_out" | grep -qiE "pass|ok\b|✓" || \
+              echo "      ! no pass/ok line in that output — check the suite actually asserts something"
+          fi
         else
           _tfail="$_tfail $t"
           echo "  ✗ $t FAILED:"

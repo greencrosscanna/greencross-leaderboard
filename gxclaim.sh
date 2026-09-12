@@ -99,7 +99,42 @@ held_by_other() {                      # 0 = someone ELSE holds it
   return 0
 }
 
+# ─── NO CLAIM IS NOT THE SAME AS NOBODY HERE ────────────────────────────────────────────────────
+# `who` used to print "free" whenever the claim file was absent. On 2026-09-09 it said "greencross-spiff:
+# free" while a live session was working there, and the next night five of six spoke chats were open
+# with no claim file between them (only crew's survived; why the others vanished is still open). A
+# session opened before the hook claimed, or in a checkout whose hook never claims (the hub's did not),
+# holds nothing — and "free" told the next session to start editing underneath it.
+#
+# So the advisory commands also look at the processes: any OTHER Claude session whose working directory
+# is this checkout. `pgrep -a` because macOS pgrep otherwise hides its own ancestors, which includes the
+# session asking. This is ADVISORY ONLY: `check` still enforces on the claim file alone, because
+# refusing a commit on a process-table guess is a much bigger decision than printing one.
+others_here() {
+  command -v lsof >/dev/null 2>&1 || return 0
+  _top="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
+  for _p in $(pgrep -a -x claude 2>/dev/null); do
+    [ -n "$ME" ] && [ "$_p" = "$ME" ] && continue
+    [ -n "$c_pid" ] && [ "$_p" = "$c_pid" ] && continue
+    _cwd="$(lsof -a -p "$_p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"
+    [ "$_cwd" = "$_top" ] && printf '%s ' "$_p"
+  done
+}
+
 short_session() { printf '%s' "$1" | cut -c1-8; }
+
+write_claim() {                        # $1 = label
+  umask 077
+  {
+    echo "pid=$ME"
+    echo "session=$MY_SESSION"
+    echo "host=$HOST"
+    echo "started=$(date '+%Y-%m-%d %H:%M')"
+    echo "epoch=$(date +%s)"
+    echo "branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+    echo "label=${1:-}"
+  } > "$CLAIM"
+}
 
 describe_holder() {
   _who="session ${c_session:+$(short_session "$c_session")}"
@@ -124,16 +159,7 @@ case "$CMD" in
       echo "       sh ./gxclaim.sh release --force"
       exit 1
     fi
-    umask 077
-    {
-      echo "pid=$ME"
-      echo "session=$MY_SESSION"
-      echo "host=$HOST"
-      echo "started=$(date '+%Y-%m-%d %H:%M')"
-      echo "epoch=$(date +%s)"
-      echo "branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
-      echo "label=$LABEL"
-    } > "$CLAIM"
+    write_claim "$LABEL"
     exit 0
     ;;
 
@@ -146,7 +172,20 @@ case "$CMD" in
       fi
       exit 0
     fi
-    held_by_other || exit 0
+    if ! held_by_other; then
+      # CLAIM ON FIRST ACTION, not only at session start. The hook claims once, when a chat opens, and
+      # a chat refused then was never offered it again. On 2026-09-10 six new spoke chats were each
+      # refused at start by a claim taken IN THE SAME MINUTE by a different session id — one that left
+      # no transcript anywhere and was gone within minutes (its claim went stale and was swept). There
+      # were no older spoke chats open; the holders look like a short-lived companion process started
+      # alongside each chat, which is inference from those two facts, not something observed. Five
+      # repos then sat unclaimed with live chats in them, the gates protecting nobody. All five chats
+      # reported the same refused-then-"free" sequence. So the first gated action (commit, push,
+      # branch change) by a session in an unclaimed checkout takes the claim, whatever held it before.
+      # (An earlier version of this comment blamed old chats still open. There were none.)
+      live_claim || write_claim ""
+      exit 0
+    fi
     if [ "${GX_CLAIM_OK:-0}" = "1" ]; then
       echo "⚠️  GX_CLAIM_OK=1 — $CONTEXT allowed even though another session holds $REPO." >&2
       exit 0
@@ -184,7 +223,13 @@ case "$CMD" in
 
   who)
     if live_claim; then echo "$REPO: held by $(describe_holder) since ${c_started:-?}"
-    else echo "$REPO: free"; fi
+    else
+      _others="$(others_here)"
+      if [ -n "$_others" ]; then
+        echo "$REPO: NOT CLAIMED — but another Claude session is working in this folder (pid ${_others% })."
+        echo "   No claim is not the same as nobody here. Ask that session, or check ListAgents, before editing."
+      else echo "$REPO: free"; fi
+    fi
     exit 0
     ;;
 
@@ -228,6 +273,28 @@ exit 0
 HOOK_EOF
 
     for h in pre-push pre-commit reference-transaction; do chmod 755 "$HOOKS/$h" 2>/dev/null || true; done
+
+    # ── RESTORE THE EXECUTABLE BIT ON THE SHARED SCRIPTS, TOO ───────────────────────────────────
+    # The hooks above are chmod'd here because this filesystem drops executable bits and a disarmed
+    # hook is silent. The same thing happens to the shared scripts beside them, and it is NOT fully
+    # explained: one cause was found and fixed (gx-sync.sh used to chmod in a sweep at the end, so an
+    # interrupted run froze mktemp's 0600 — gx-theme 647fc45), but files have been observed 755 right
+    # after a COMPLETED sync and 0600 minutes later with nothing run in between, twice, in different
+    # repos. A controlled A/B would not reproduce it in either arm. That remains open; see gx-sync.sh.
+    #
+    # This does not explain it. It makes it stop mattering, which is the half worth having: every
+    # guard in the suite already invokes these through `sh` (which reads the file and ignores the
+    # mode), so the ONLY path that needs the bit is a human typing `./deploy.sh`. Repairing it
+    # wherever we happen to be running is cheaper than the alternative — rewriting 153 occurrences of
+    # `./deploy.sh` across eight repos' docs, most of them in per-repo CLAUDE.md files that are
+    # deliberately not synced and would drift straight back.
+    #
+    # The list matches gx-sync.sh's. Keep them together: a script that syncs 755 and a script that
+    # repairs 755 disagreeing about WHICH files is how one of them silently stops covering something.
+    for _f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js \
+              gx-preflight.sh gxengine.sh gx-usenglish.sh gxclaim.sh gxdevlogin.sh; do
+      [ -f "$_f" ] && [ ! -x "$_f" ] && chmod 755 "$_f" 2>/dev/null || true
+    done
     echo "✓ gxclaim gates installed in $REPO (pre-commit, pre-push, reference-transaction)"
     exit 0
     ;;
@@ -242,6 +309,11 @@ HOOK_EOF
       echo "  since ${c_started:-?}${c_branch:+, on branch $c_branch}${c_host:+, on $c_host}"
     else
       echo "  not claimed"
+    fi
+    _others="$(others_here)"
+    if [ -n "$_others" ]; then
+      echo "  ⚠ another Claude session is working in this folder without a claim here (pid ${_others% })"
+      echo "    — the gates cannot protect either of you until one of you claims."
     fi
     # A gate that stopped running is worse than no gate, and this filesystem can switch one off by
     # dropping a mode bit. Say plainly whether each hook is there AND executable.
@@ -260,8 +332,61 @@ HOOK_EOF
     exit 0
     ;;
 
+  expect)
+    # ── REFUSE A COMMIT ONTO A BRANCH THE CALLER NEVER LOOKED AT ────────────────────────────────
+    # `check` answers "does someone ELSE hold this checkout". It says nothing about what is checked
+    # out RIGHT NOW, and that is the other half of the same hazard: on 2026-09-09 a gxdevlogin.sh
+    # rollout ran `git add && git commit && git push` across six spokes and committed into
+    # greencross-leaderboard while that repo had a feature branch out. Nothing was lost — the content
+    # shipped inside leaderboard's squash-merge, under its title — but the authorship is buried and
+    # the originating session never knew. Leaderboard found it, not us. Half an hour later the same
+    # rollout WAS refused on leaderboard and spiff, but only because those sessions happened to hold
+    # their claims; in an unclaimed repo it would have gone through again.
+    #
+    # So this is deliberately EXPLICIT rather than a hook. A hook cannot know which branch you meant
+    # to be on — only the caller does. A rollout loop states its expectation once per repo and gets a
+    # refusal instead of a surprise:
+    #
+    #     for r in ../greencross-*/; do (cd "$r" && sh ./gxclaim.sh expect main "the gxdevlogin rollout" \
+    #                                     && git add … && git commit … ) || echo "skipped $r"; done
+    #
+    # Detached HEAD refuses too: it is never what a rollout means, and it is what a preflight
+    # worktree leaves behind.
+    _want="${1:-}"
+    [ -n "$_want" ] || { echo "gxclaim expect: name the branch you expect, e.g. 'expect main'" >&2; exit 2; }
+    [ $# -gt 0 ] && shift
+    _ctx="${1:-this command}"
+    _on="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+    [ "$_on" = "$_want" ] && exit 0
+    if [ "${GX_EXPECT_OK:-0}" = "1" ]; then
+      echo "⚠️  GX_EXPECT_OK=1 — $_ctx allowed on '${_on:-detached HEAD}' though it expected '$_want'." >&2
+      exit 0
+    fi
+    {
+      echo
+      echo "⛔ REFUSING $_ctx — $REPO is not on the branch you expected."
+      echo
+      echo "   expected: $_want"
+      echo "   actually: ${_on:-detached HEAD}"
+      echo
+      if [ -z "$_on" ]; then
+        echo "   A detached HEAD is never what a rollout means. If this is a leftover preflight"
+        echo "   worktree, you are in the wrong directory."
+      else
+        echo "   Committing here would bury your change inside '$_on' — it ships under that"
+        echo "   branch's title when it merges, and the session that made it never finds out."
+        echo "   That happened to greencross-leaderboard on 2026-09-09."
+      fi
+      echo
+      echo "   What to do: skip this repo, or check out $_want first."
+      echo "   To override this one command:   GX_EXPECT_OK=1 <your command>"
+      echo
+    } >&2
+    exit 1
+    ;;
+
   *)
-    echo "gxclaim: unknown command '$CMD' — use claim | check | release | who | status | install" >&2
+    echo "gxclaim: unknown command '$CMD' — use claim | check | expect | release | who | status | install" >&2
     exit 2
     ;;
 esac

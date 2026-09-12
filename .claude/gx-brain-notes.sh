@@ -33,7 +33,51 @@
 # one is skipped silently. Re-arming costs three writes; noticing it had disarmed costs a bad ship.
 if [ -f ./gxclaim.sh ]; then
   sh ./gxclaim.sh install >/dev/null 2>&1
-  sh ./gxclaim.sh claim "" || echo "   → this chat is READ-ONLY in this repo until that one finishes."
+  sh ./gxclaim.sh claim "" || echo "   → this chat is READ-ONLY in this repo until that one finishes. Once it closes, this chat's first commit takes the claim."
+fi
+
+# ─── Is main red on GitHub? ─────────────────────────────────────────────────────────────────────
+# The pre-push gate runs on the Mac; CI runs on Linux, and the two disagree about things like a file
+# that exists only in the folder above the repos, or the exact wording grep prints. On 2026-09-09/10
+# the hub stayed red from 21:57 to 11:00 and Leaderboard from 23:38 to 11:06 — 26 failure emails
+# between them — and no chat noticed, because nothing a chat reads ever asked GitHub. Sky's inbox was
+# the only monitor. Now the first thing a session sees in a red repo is that it is red, and why.
+#
+# Silent when green, when gh is missing or signed out, or when offline: this is a doorbell, not a gate.
+# Reads the latest COMPLETED run, so a push still running does not hide a red main — or clear it.
+if command -v gh >/dev/null 2>&1; then
+  _REPO=$(git remote get-url origin 2>/dev/null | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')
+  if [ -n "$_REPO" ]; then
+    _RUNS=$(gh run list -R "$_REPO" --branch main --workflow tests --limit 20 \
+      --json databaseId,status,conclusion,createdAt,displayTitle,url 2>/dev/null)
+    _RED=$(printf '%s' "$_RUNS" | python3 -c '
+import sys, json
+try: runs = [r for r in json.load(sys.stdin) if r.get("status") == "completed"]
+except Exception: sys.exit(0)
+if not runs or runs[0].get("conclusion") != "failure": sys.exit(0)
+n = 0
+for r in runs:
+    if r.get("conclusion") != "failure": break
+    n += 1
+# Pacific, because that is the clock Sky reads his inbox on; the API answers in UTC.
+from datetime import datetime
+try:
+    from zoneinfo import ZoneInfo
+    t = datetime.fromisoformat(runs[n - 1]["createdAt"].replace("Z", "+00:00")).astimezone(ZoneInfo("America/Los_Angeles"))
+    since = t.strftime("%b %d %I:%M %p PT").replace(" 0", " ")
+except Exception:
+    since = runs[n - 1]["createdAt"].replace("T", " ")[:16] + " UTC"
+print("%s\t%d\t%s\t%s\t%s" % (runs[0]["databaseId"], n, since, runs[0].get("displayTitle", "")[:70], runs[0]["url"]))
+' 2>/dev/null)
+    if [ -n "$_RED" ]; then
+      _ID=$(printf '%s' "$_RED" | cut -f1)
+      echo "⛔ CI is RED on main in $_REPO — $(printf '%s' "$_RED" | cut -f2) failed run(s) in a row, since $(printf '%s' "$_RED" | cut -f3)."
+      echo "   Each one emailed Sky. Latest: $(printf '%s' "$_RED" | cut -f4)"
+      gh run view "$_ID" -R "$_REPO" --log-failed 2>/dev/null | grep -E '✗ |Error: ' | grep -v 'PUSH BLOCKED' | sed -E 's/^.*Z //' | awk '!seen[$0]++' | head -4 | sed 's/^/     /'
+      echo "   $(printf '%s' "$_RED" | cut -f5)"
+      echo "   → fix this before new work: it usually passes on the Mac and fails only on Linux, so the push gate will not show it."
+    fi
+  fi
 fi
 
 APP="performance"
