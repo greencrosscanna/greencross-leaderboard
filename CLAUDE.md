@@ -80,7 +80,12 @@ Two things about it that are not guessable from the code:
   current one drops a live program off every card. `SPIFF_LOOKBACK_PERIODS` reads three back and merges.
 
 **The kiosk's SPIFF button opens SPIFF's own per-store board** (`store.html?t=<token>`) in a popup
-window (Sky, 2026-09-11). One permanent token per store, held in GX Core kv as
+Leaderboard DRAWS — a card over the dimmed board, not `window.open` (Sky, 2026-09-11: "maybe that's
+being blocked, what about an overlay that is acting like a popup"). SPIFF's page carries the staff
+progress bars itself as of their v1.405; Leaderboard renders none of it. **The frame is loaded at
+kiosk paint and left loaded** — `storeView` takes ~4s over JSONP, and lazy loading meant every tap
+bought a blank card ("the data takes too long to load"). The cost is SPIFF's own 10-minute refresh
+running on six wall screens all day; that trade is deliberate and SPIFF has been told. One permanent token per store, held in GX Core kv as
 `cfg.spiffKiosk.<core store_id>`; all six are set. Leaderboard reads the token live on every poll, so
 a rotation reaches a running kiosk in ~60s rather than at the 04:00 reload.
 
