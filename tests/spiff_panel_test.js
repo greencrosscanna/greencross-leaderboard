@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 /* The kiosk's SPIFF button and panel — GC.spiffButtonInner, GC.spiffPanel and renderHeader in
- * index.html (Sky's calls, 2026-09-10: the panel is built into Leaderboard, and Settings → Include
- * SPIFF is the ONE switch for the button and the card rows).
+ * index.html. Settings → Include SPIFF is the ONE switch for the button and the card rows
+ * (Sky, 2026-09-10), and the panel now draws SPIFF's own store-page layout in Leaderboard's
+ * progress-bar treatment (Sky, 2026-09-11: "i want the previously submitted screenshot data
+ * inside. I do like this treatment of the progress bars").
  *
  * What these lock down, each a way the most visible screen in the company could say something
  * untrue:
  *   • THE SWITCH DECIDES THE BUTTON. Off hides it; on shows it — even with nothing running, since
  *     the setting is what decides, not the day's programs. The old button followed SPIFF's store
  *     link instead, which no store had, so the setting and the button could never agree.
- *   • NO GUESSED BOUNTY. A program nobody has hit yet says "Sell N units" — never a dollar amount
- *     SPIFF did not publish.
+ *   • NO GUESSED BOUNTY. A program with no stated payout and nobody hit yet shows no dollar amount
+ *     at all — never one worked out from thin air.
+ *   • SPIFF'S COPY IS OPTIONAL. The product, the store goal and Tawny's tips only exist if SPIFF
+ *     published them; every block is absent-safe, because absent is the normal state.
  *   • "UNAVAILABLE" IS NOT "NOTHING RUNNING". A failed read must not tell the floor there is no SPIFF.
  *   • Days left is calendar arithmetic on TEXT dates, so no timezone can move it a day.
  *
@@ -107,26 +111,53 @@ const tests = {
     _ok_('names the store', panel([]).indexOf('No SPIFF running at Baseline right now.') > -1);
   },
 
-  summaryCountsPeopleOnceAndSumsEarnings() {
+  headIsTheStoreAndTheCount() {
     const h = panel([
       prog(),
       prog({ id: 'q', reward: 25, earned: 25, people: [ { name: 'Marcus Chen', units: 9, target: 9, hit: true, earned: 25 } ] }),
     ]);
-    _ok_('two programs', /<b>2<\/b><span>programs running/.test(h));
-    _ok_('Marcus hit two — counted once', /<b>1<\/b><span>person has hit a target/.test(h));
-    _ok_('earnings summed', /<b>\$40<\/b><span>earned at Baseline so far/.test(h));
+    _ok_('store named', /<b>Baseline<\/b>/.test(h));
+    _ok_('and the count', /2 programs running/.test(h));
+    _ok_('one program reads singular', /1 program running/.test(panel([prog()])));
   },
 
-  noEarningsNoGoldStat() {
-    const h = panel([prog({ reward: null, earned: 0, people: [ { name: 'A', units: 1, target: 5, hit: false, earned: 0 } ] })]);
-    _ok_('no "$0 earned"', h.indexOf('earned at') === -1);
+  /* NO GUESSED BOUNTY, and the rule got sharper when SPIFF started publishing the payout: a stated
+     payout is right from the first morning, an inferred one is null until somebody has hit. */
+  statedPayoutBeatsTheInferredOne() {
+    _ok_('inferred reward shows', panel([prog()]).indexOf('<b>$15</b><span>when you hit it') > -1);
+    _ok_('SPIFF\'s stated payout wins over it',
+         panel([prog({ payout: 20 })]).indexOf('<b>$20</b><span>when you hit it') > -1);
+    _ok_('and it shows before anyone has hit',
+         panel([prog({ payout: 20, reward: null, earned: 0,
+                       people: [ { name: 'A', units: 1, target: 5, hit: false, earned: 0 } ] })])
+           .indexOf('<b>$20</b>') > -1);
   },
 
-  rewardOnlyWhenPublished() {
-    _ok_('known reward → "Pays $15 at 5 units"', panel([prog()]).indexOf('Pays $15 at 5 units') > -1);
+  noBountyIsNoTileAtAll() {
     const h = panel([prog({ reward: null, earned: 0, people: [ { name: 'A', units: 1, target: 5, hit: false, earned: 0 } ] })]);
-    _ok_('unknown reward → "Sell 5 units"', h.indexOf('Sell 5 units') > -1);
-    _ok_('and no dollar amount anywhere', h.indexOf('$') === -1);
+    _ok_('the target still shows', h.indexOf('<b>5</b><span>units to hit your bonus') > -1);
+    _ok_('no dollar amount anywhere', h.indexOf('$') === -1);
+    _ok_('and no empty "when you hit it" label', h.indexOf('when you hit it') === -1);
+  },
+
+  /* SPIFF'S OWN COPY IS OPTIONAL. product, storeGoal and tips reach us only if SPIFF publishes them
+     on the row; a card missing them must still be a complete card, never a heading over a gap. */
+  spiffCopyRendersWhenPublishedAndVanishesWhenNot() {
+    const bare = panel([prog()]);
+    _ok_('no SELL block without a product', bare.indexOf('ksp-sell') === -1);
+    _ok_('no store target line without one', bare.indexOf('Store target') === -1);
+    _ok_('no "HOW TO SELL IT" over nothing', bare.indexOf('HOW TO SELL IT') === -1);
+    _ok_('and no "as of" stamped from our own clock', bare.indexOf('as of') === -1);
+
+    const full = panel([prog({ product: 'Live Resin Dank Tank | 2g', storeGoal: 42,
+                               measuredAt: '2026-09-09 21:56:08',
+                               tips: ['Lead with the live resin', 'Pair it with a pre-roll'] })]);
+    _ok_('product', full.indexOf('Live Resin Dank Tank | 2g') > -1);
+    _ok_('store target', full.indexOf('Store target: <b>42</b> units') > -1);
+    _ok_('tips as a list', /<ul class="ksp-tips"><li>Lead with the live resin<\/li><li>Pair it with a pre-roll<\/li><\/ul>/.test(full));
+    _ok_('SPIFF\'s measurement time, converted to 12-hour', full.indexOf('as of 9:56pm') > -1);
+    _ok_('a blank tip is dropped, not rendered as an empty bullet',
+         panel([prog({ tips: ['Real one', '  ', ''] })]).indexOf('<li></li>') === -1);
   },
 
   daysLeftIsCalendarArithmetic() {

@@ -404,10 +404,39 @@ function spiffProgramsForStore_(rows) {
         reward:   null,
         earned:   0,
         hitCount: 0,
+        /* SPIFF'S OWN PROGRAM COPY, carried through untouched for the kiosk popup to render.
+           Leaderboard cannot derive any of these — the product a program is on, the store-level
+           goal, the stated payout and Tawny's selling lines live in SPIFF's sheet and only reach us
+           if SPIFF publishes them on the row. ABSENT IS THE NORMAL STATE until it does, and the
+           popup omits whatever block is missing rather than inventing one.
+
+           `payout` is deliberately separate from `reward` below: reward is an INFERENCE from what
+           people have already been paid, and it is null until somebody has hit. A stated payout is
+           the real answer and wins wherever it is present. */
+        product:  '',
+        storeGoal: 0,
+        payout:   null,
+        tips:     [],
+        measuredAt: '',
         people:   [],
       };
       order.push(key);
     }
+    /* First row that states one wins — these are program-level facts repeated on every row of the
+       program, so any row answers, and a later row that omits one must not blank it. */
+    if (!p.product && r.product) p.product = String(r.product);
+    if (!p.storeGoal && Number(r.store_goal)) p.storeGoal = Number(r.store_goal);
+    if (p.payout == null && r.payout != null && r.payout !== '') p.payout = Number(r.payout) || 0;
+    if (!p.tips.length && r.tips) {
+      // Published either as an array or as one newline/pipe-separated cell — a sheet round-trip
+      // flattens an array, so accept both rather than silently dropping every tip.
+      var t = r.tips;
+      if (Object.prototype.toString.call(t) === '[object Array]') p.tips = t.map(String);
+      else p.tips = String(t).split(/\r?\n|\s*\|\s*/);
+      p.tips = p.tips.map(function (x) { return String(x).trim(); }).filter(function (x) { return !!x; });
+    }
+    if (!p.measuredAt && r.measured_at) p.measuredAt = String(r.measured_at);
+
     var person = {
       employee_id: String(r.employee_id == null ? '' : r.employee_id).trim(),
       name:        String(r.name || ''),

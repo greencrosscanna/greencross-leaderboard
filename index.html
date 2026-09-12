@@ -1485,31 +1485,65 @@ body.kiosk-bg {
 .kso-ctx  { flex: 1; color: var(--text-dim); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .kso-body { flex: 1; overflow: auto; padding: 18px 22px 24px; display: flex; flex-direction: column; gap: 14px; }
 .kso-body[hidden], .kso-frame[hidden] { display: none; }
-.ksp-sum  { display: flex; flex-wrap: wrap; gap: 10px; }
-.ksp-stat {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-  padding: 8px 14px; display: flex; gap: 8px; align-items: baseline;
-}
-.ksp-stat b    { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.ksp-stat span { font-size: 12px; color: var(--text-dim); }
-.ksp-stat.gold b { color: var(--gold-bright); }
-.ksp-progs { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; align-items: start; }
+/* ── The SPIFF panel: SPIFF's store-page layout, in Leaderboard's bar treatment ──────────────
+   Sky, 2026-09-11 — "i want the previously submitted screenshot data inside. I do like this
+   treatment of the progress bars." So the SHAPE is SPIFF's page (vendor, program, what to sell,
+   the two numbers that matter, everyone's progress, Tawny's tips) and the BARS are the kiosk staff
+   cards' own language: gold once a target is hit, a hash left of the end showing by how much it
+   was beaten. One column, not a grid — this is read standing at a wall screen, and a second column
+   puts half the content past the edge of somebody's attention. */
+.ksp-head { display: flex; align-items: baseline; gap: 10px; }
+.ksp-head b    { font-size: 22px; font-weight: 800; letter-spacing: -0.3px; }
+.ksp-head span { font-size: 13px; color: var(--text-dim); font-weight: 600; }
+.ksp-progs { display: flex; flex-direction: column; gap: 14px; }
 .ksp-prog {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-  padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 12px;
 }
 .ksp-prog.ending { border-color: var(--gold-line); }
 .ksp-vendor { font-size: 11px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--text-dim); font-weight: 700; }
-.ksp-name   { font-size: 18px; font-weight: 800; letter-spacing: -0.2px; margin-top: 2px; }
-.ksp-tags   { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
-.ksp-tag    { border: 1px solid var(--border-strong); border-radius: 12px; padding: 2px 9px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.ksp-tag.gold { border-color: var(--gold-line); color: var(--gold-bright); background: rgba(212,168,71,0.08); }
-.ksp-people { display: flex; flex-direction: column; gap: 8px; }
-.ksp-row    { display: grid; grid-template-columns: minmax(0, 120px) 1fr auto; gap: 10px; align-items: center; font-size: 12px; }
+.ksp-name   { font-size: 26px; font-weight: 800; letter-spacing: -0.4px; margin-top: -6px; }
+.ksp-tags   { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 12px; margin-top: -4px; }
+/* Green, not gold: "running" is a state, and gold on this panel means money. */
+.ksp-pill   {
+  border: 1px solid var(--good, #4ade80); border-radius: 12px; padding: 3px 10px;
+  color: var(--good, #4ade80); font-size: 11px; font-weight: 800; letter-spacing: 0.8px;
+}
+.ksp-when   { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.ksp-when.ending { color: var(--gold-bright); font-weight: 700; }
+.ksp-sell   {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
+}
+.ksp-sell-k { font-size: 10px; letter-spacing: 1.2px; color: var(--text-mute); font-weight: 800; }
+.ksp-sell-v { font-size: 16px; font-weight: 700; }
+.ksp-tiles  { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.ksp-tiles:empty { display: none; }
+.ksp-tile   {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+}
+.ksp-tile b    { display: block; font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; }
+.ksp-tile span { display: block; font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+.ksp-tile.gold b { color: var(--good, #4ade80); }
+.ksp-storegoal { font-size: 12px; color: var(--text-dim); margin-top: -4px; }
+.ksp-storegoal b { color: var(--text); font-variant-numeric: tabular-nums; }
+/* A rule above each section heading, so the card reads as bands rather than one long list. */
+.ksp-sec {
+  display: flex; align-items: baseline; gap: 10px;
+  border-top: 1px solid var(--border); padding-top: 14px; margin-top: 2px;
+}
+.ksp-sec span { font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-dim); font-weight: 700; }
+.ksp-sec i    { margin-left: auto; font-style: normal; font-size: 11px; color: var(--text-mute); }
+.ksp-people { display: flex; flex-direction: column; gap: 10px; }
+.ksp-row    { display: grid; grid-template-columns: minmax(0, 160px) 1fr auto; gap: 14px; align-items: center; font-size: 14px; }
 .ksp-who    { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ksp-count  { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; min-width: 70px; }
+.ksp-count  { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; min-width: 86px; }
+.ksp-row.hit .ksp-who   { color: var(--gold-bright); }
 .ksp-row.hit .ksp-count { color: var(--gold-bright); }
 .ksp-row .emp-spiff { margin: 0; padding: 0; border: 0; }
+.ksp-tips   { margin: 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: 8px; }
+.ksp-tips li { font-size: 14px; line-height: 1.45; }
+.ksp-tips li::marker { color: var(--good, #4ade80); }
 .ksp-empty  { color: var(--text-dim); font-size: 15px; padding: 48px 0; text-align: center; }
 
 /* ── Slideshow bar ─────────────────────────────────────── */
@@ -3769,7 +3803,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      slideshow bar at 9999, so nothing here contests it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.787';
+window.GC = window.GC || {}; GC.VERSION = 'v1.789';
 
 // ── GX Core web-app URL — ONE definition ──
 // This was previously a `var` inside loadChangelogFromGXCore(), i.e. function-scoped, while the
@@ -4554,20 +4588,18 @@ GC.spiffPanel = function(programs, opts) {
       + '</div></div>';
   }
 
-  var winners = Object.create(null), earned = 0;
-  list.forEach(function(p) {
-    earned += +p.earned || 0;
-    (p.people || []).forEach(function(x) { if (x.hit) winners[x.name] = true; });
-  });
-  var nWin = Object.keys(winners).length;
-  var stat = function(n, label, cls) {
-    return '<div class="ksp-stat' + (cls ? ' ' + cls : '') + '"><b>' + n + '</b><span>' + label + '</span></div>';
-  };
-  var html = '<div class="ksp-sum">'
-    + stat(list.length, list.length === 1 ? 'program running' : 'programs running')
-    + stat(nWin, nWin === 1 ? 'person has hit a target' : 'people have hit a target')
-    + (earned > 0 ? stat('$' + earned, 'earned at ' + store + ' so far', 'gold') : '')
-    + '</div>';
+  /* "as of 9:56pm" — SPIFF's measurement time, not our clock. Only shown when SPIFF published one:
+     stamping the current time onto figures that were measured an hour ago is the kind of small lie
+     that makes somebody trust a stale number. */
+  function asOf(ts) {
+    var m = /(\d{1,2}):(\d{2})/.exec(String(ts == null ? '' : ts));
+    if (!m) return '';
+    var h = +m[1], ap = h >= 12 ? 'pm' : 'am', h12 = h % 12 === 0 ? 12 : h % 12;
+    return 'as of ' + h12 + ':' + m[2] + ap;
+  }
+
+  var html = '<div class="ksp-head"><b>' + store + '</b><span>'
+    + list.length + (list.length === 1 ? ' program running' : ' programs running') + '</span></div>';
 
   html += '<div class="ksp-progs">' + list.map(function(p) {
     var target = Math.max(0, +p.target || 0);
@@ -4575,9 +4607,14 @@ GC.spiffPanel = function(programs, opts) {
     var ending = d !== null && d <= 1;
     var leftTxt = d === null ? '' : d <= 0 ? 'Ends today' : d === 1 ? 'Ends tomorrow' : d + ' days left';
     var dates  = md(p.start) && md(p.end) ? md(p.start) + ' – ' + md(p.end) : '';
-    var goal   = (p.reward != null && +p.reward > 0)
-      ? '<span class="ksp-tag gold">Pays $' + (+p.reward) + ' at ' + target + ' units</span>'
-      : '<span class="ksp-tag">Sell ' + target + ' units</span>';
+    var when   = [dates, leftTxt].filter(Boolean).join(' · ');
+
+    /* THE STATED PAYOUT BEATS THE INFERRED ONE. `reward` is worked out from what people have
+       already been paid and is null until somebody hits; `payout` is what SPIFF says the program
+       pays, and is right from the first morning. */
+    var pay = (p.payout != null && +p.payout > 0) ? +p.payout
+            : (p.reward != null && +p.reward > 0) ? +p.reward : null;
+
     var rows = (p.people || []).map(function(x) {
       var u = Math.max(0, +x.units || 0), t = Math.max(0, +x.target || target);
       var paid = x.hit && +x.earned > 0 ? ' · +$' + (+x.earned) : '';
@@ -4587,14 +4624,40 @@ GC.spiffPanel = function(programs, opts) {
         + '<span class="ksp-count">' + u + '/' + t + paid + '</span>'
         + '</div>';
     }).join('');
+
+    var tips = (p.tips || []).filter(function(t) { return !!String(t || '').trim(); });
+    var when2 = asOf(p.measuredAt);
+
+    /* EVERY BLOCK BELOW IS OPTIONAL ON PURPOSE. product, storeGoal, payout and tips reach us only
+       if SPIFF publishes them on the row; a store or a program that has none of them still gets a
+       complete card, rather than a heading over an empty space. */
     return '<article class="ksp-prog' + (ending ? ' ending' : '') + '">'
-      + '<div><div class="ksp-vendor">' + esc(p.vendor) + '</div><div class="ksp-name">' + esc(p.name || p.vendor) + '</div></div>'
+      + '<div class="ksp-vendor">' + esc(p.vendor) + '</div>'
+      + '<div class="ksp-name">' + esc(p.name || p.vendor) + '</div>'
       + '<div class="ksp-tags">'
-      +   (dates ? '<span class="ksp-tag">' + dates + '</span>' : '')
-      +   (leftTxt ? '<span class="ksp-tag' + (ending ? ' gold' : '') + '">' + leftTxt + '</span>' : '')
-      +   goal
+      +   '<span class="ksp-pill">RUNNING NOW</span>'
+      +   (when ? '<span class="ksp-when' + (ending ? ' ending' : '') + '">' + when + '</span>' : '')
       + '</div>'
-      + '<div class="ksp-people">' + rows + '</div>'
+      + (p.product
+          ? '<div class="ksp-sell"><span class="ksp-sell-k">SELL</span>'
+            + '<span class="ksp-sell-v">' + esc(p.product) + '</span></div>'
+          : '')
+      + '<div class="ksp-tiles">'
+      +   (target > 0 ? '<div class="ksp-tile"><b>' + target + '</b><span>units to hit your bonus</span></div>' : '')
+      +   (pay !== null ? '<div class="ksp-tile gold"><b>$' + pay + '</b><span>when you hit it</span></div>' : '')
+      + '</div>'
+      + (+p.storeGoal > 0
+          ? '<div class="ksp-storegoal">Store target: <b>' + (+p.storeGoal) + '</b> units</div>' : '')
+      + (rows
+          ? '<div class="ksp-sec"><span>HOW EVERYONE IS DOING</span>'
+            + (when2 ? '<i>' + esc(when2) + '</i>' : '') + '</div>'
+            + '<div class="ksp-people">' + rows + '</div>'
+          : '')
+      + (tips.length
+          ? '<div class="ksp-sec"><span>HOW TO SELL IT</span></div>'
+            + '<ul class="ksp-tips">' + tips.map(function(t) {
+                return '<li>' + esc(String(t).trim()) + '</li>'; }).join('') + '</ul>'
+          : '')
       + '</article>';
   }).join('') + '</div>';
   return html;
@@ -8629,7 +8692,11 @@ GC.views.applySpiffState = function(lb) {
   if (!_kioskSpiffOpen) return;
   if (!s.on) { GC.views.closeSpiffBoard(); return; }   // switched off while open: nothing to show
   var body = document.getElementById('kioskSpiffPanel');
-  if (body && !body.hidden) body.innerHTML = kioskSpiffPanelHtml_();
+  /* A refresh that brings SPIFF's copy with it must SWAP the view, not just repaint whichever one
+     is up — otherwise somebody standing at the screen keeps the framed page until they close and
+     reopen. See spiffPanelHasSpiffCopy_. */
+  if (body && body.hidden && spiffPanelHasSpiffCopy_()) GC.views.showSpiffPanel();
+  else if (body && !body.hidden) body.innerHTML = kioskSpiffPanelHtml_();
 };
 
 function kioskSpiffTick_() {
@@ -8699,13 +8766,34 @@ function startSpiffCountdown_() {
   window.addEventListener('blur', GC.views.keepSpiffBoardOpen);
 }
 
-/* WHAT THE SPIFF BUTTON OPENS. SPIFF's page where this store has a link — which is every store, the
- * six tokens are in the Command Center — and Leaderboard's own panel where it does not, because
- * Include SPIFF is the ONE switch for this button and a store with the setting on and no token
- * would otherwise have a gold button that does nothing when tapped.
+/* WHICH VIEW THE POPUP OPENS ON, and why it is a question at all.
  *
- * NO WAIT HERE BY DESIGN: the frame was loaded at kiosk paint, so this shows a page that is already
- * rendered. See renderSpiffOverlay.
+ * Sky wants OUR panel: SPIFF's store-page layout drawn here, in the kiosk's own progress-bar
+ * treatment (2026-09-11 — "i want the previously submitted screenshot data inside. I do like this
+ * treatment of the progress bars"). But three things on that page are SPIFF's copy and cannot be
+ * derived here — the product the program is on, the store-level goal, and Tawny's selling tips —
+ * and they only reach us if SPIFF publishes them on the row. They are being added; until they
+ * arrive, a panel would be that page with its product line and its tips cut out.
+ *
+ * SO THE PANEL TAKES OVER THE MOMENT THE COPY IS THERE, and not a moment before. Until then the
+ * popup keeps framing SPIFF's page, which is complete. No deploy flips this — the data does — and
+ * a kiosk picks it up on its next 5-minute refresh. Neither view is ever a half-empty card, which
+ * is the whole point: shipping the treatment early would have traded Tawny's tips for a gradient.
+ *
+ * WHEN THE COPY IS EVERYWHERE, DELETE THE FALLBACK. The frame, its warming in renderSpiffOverlay,
+ * and this branch all exist only for the gap. Leaving them after it closes means carrying a second
+ * rendering of the same screen that nobody ever sees and nothing ever checks.
+ */
+function spiffPanelHasSpiffCopy_() {
+  var list = GC._kioskSpiff.programs || [];
+  if (!list.length) return false;
+  return list.every(function(p) {
+    return !!(p && (p.product || (p.tips && p.tips.length)));
+  });
+}
+
+/* NO WAIT HERE BY DESIGN. The panel is drawn from data the kiosk already holds, and the frame was
+ * loaded at kiosk paint — either way this opens onto something already rendered.
  */
 GC.views.openSpiffBoard = function() {
   var ov = document.getElementById('kioskSpiffOverlay');
@@ -8714,13 +8802,13 @@ GC.views.openSpiffBoard = function() {
   var fr   = document.getElementById('kioskSpiffFrame');
   var body = document.getElementById('kioskSpiffPanel');
 
-  if (src) {
+  // Painted fresh every open — never on numbers from before a pay-period boundary.
+  if (src && !spiffPanelHasSpiffCopy_()) {
     // Normally already warm; this only repairs a frame something else cleared.
     if (fr && fr.getAttribute('src') !== src) fr.setAttribute('src', src);
     if (fr) fr.hidden = false;
     if (body) body.hidden = true;
   } else {
-    // Painted fresh from the latest refresh — never on numbers from before a pay-period boundary.
     GC.views.showSpiffPanel();
   }
 

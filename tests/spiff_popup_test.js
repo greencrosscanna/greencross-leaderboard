@@ -82,8 +82,12 @@ function setup(opts) {
   ctx.window.GC = ctx.GC;
   vm.createContext(ctx);
   vm.runInContext(block, ctx);
-  if (!opts.spiffOff) ctx.GC._kioskSpiff = { on: true, ok: true, programs: [{ vendor: 'Mule Extracts',
-    program: 'Mule Extracts 2g Dank Tank Spiff', target: 7, people: [] }], store: 'Century' };
+  if (!opts.spiffOff) {
+    var prog = { vendor: 'Mule Extracts', name: 'Mule Extracts 2g Dank Tank Spiff', target: 7, people: [] };
+    // SPIFF's own copy — the thing that decides which view the popup opens on.
+    if (opts.copy) { prog.product = 'Live Resin Dank Tank | 2g'; prog.tips = ['Lead with the live resin']; }
+    ctx.GC._kioskSpiff = { on: true, ok: true, programs: [prog], store: 'Century' };
+  }
   const shown = () => nodes.kioskSpiffOverlay.classList.contains('show');
   return { ctx, nodes, state, GC: ctx.GC, shown };
 }
@@ -112,6 +116,33 @@ const tests = {
     ok('announced as a dialog', html.indexOf('role="dialog"') > -1);
     ok('the store is named on it', html.indexOf('Century') > -1);
     ok('and a Close button', /kso-close[^>]*onclick="GC\.views\.closeSpiffBoard\(\)"/.test(html));
+  },
+
+  /* THE HANDOVER. SPIFF's product/tips are what Leaderboard cannot derive, so they decide which
+     rendering the popup opens on — and no deploy flips it, the data does. */
+  'WITHOUT SPIFF’s copy it frames their page — never a panel with the tips cut out': function () {
+    const t = setup();                       // no product, no tips
+    t.GC.views.openSpiffBoard();
+    ok('SPIFF’s page', t.nodes.kioskSpiffFrame.hidden === false);
+    ok('our panel held back', t.nodes.kioskSpiffPanel.hidden === true);
+  },
+
+  'WITH SPIFF’s copy it opens our panel instead, and never loads the frame': function () {
+    const t = setup({ copy: true });
+    t.GC.views.openSpiffBoard();
+    ok('our panel', t.nodes.kioskSpiffPanel.hidden === false && t.nodes.kioskSpiffPanel.innerHTML !== '');
+    ok('frame out of the way', t.nodes.kioskSpiffFrame.hidden === true);
+  },
+
+  'copy arriving on a 5-minute refresh swaps the view under someone already looking': function () {
+    const t = setup();
+    t.GC.views.openSpiffBoard();
+    ok('framed to begin with', t.nodes.kioskSpiffFrame.hidden === false);
+    t.GC.views.applySpiffState({ spiffOn: true, spiffOk: true, spiffPrograms: [
+      { vendor: 'Mule Extracts', name: 'Mule Extracts 2g Dank Tank Spiff', target: 7, people: [],
+        product: 'Live Resin Dank Tank | 2g', tips: ['Lead with the live resin'] }] });
+    ok('now our panel, without closing and reopening', t.nodes.kioskSpiffPanel.hidden === false);
+    ok('frame stood down', t.nodes.kioskSpiffFrame.hidden === true);
   },
 
   'one tap opens SPIFF’s page, already loaded, with no panel of ours in the way': function () {
