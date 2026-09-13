@@ -152,6 +152,21 @@ else
   echo "ℹ️  No .gx_deploy_secret — skipped GX Core version record (create it to enable auto-publish)."
 fi
 
+# ── core_pins: the one thing this pipeline did not write ────────────────────────────────────────
+# Every other spoke gets its core_pins row from ./gxengine.sh --deploy. This repo does not use
+# gxengine (it deploys itself, and gxengine now refuses here to stop the two racing each other), so
+# until 2026-09-13 nothing ever recorded what sha this app was running. gxpins.sh would show it as
+# never recorded, and "what is Leaderboard actually running" had no answer written BY the deploy.
+#
+# Calling gxengine back with --record-only is deliberate: the pin logic — poll the live app for its
+# GXCore version, handle the warm-instance lag, post record_pins — stays in ONE place, shared with
+# the other six apps, instead of being copied here to drift.
+if [ -f "$(dirname "$0")/gxengine.sh" ]; then
+  echo "▶ Recording the pin (core_pins)..."
+  sh "$(dirname "$0")/gxengine.sh" --record-only || \
+    echo "⚠️  core_pins not recorded — deploy is fine, only the record is missing. Re-run: sh ./gxengine.sh --record-only" >&2
+fi
+
 echo "✅ Done — GitHub Pages updated. GAS: see warnings above if version limit was hit."
 
 # Launch background watcher — notifies (desktop + Claude) when Pages is actually live.

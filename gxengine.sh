@@ -4,6 +4,8 @@
 #
 #   ./gxengine.sh                 show what would ship, change nothing
 #   ./gxengine.sh --deploy        push, redeploy the EXISTING id, record the sha
+#   ./gxengine.sh --record-only   record the sha ONLY — for a repo whose own deploy.sh already
+#                                 pushed and redeployed (see the self-deploying check below)
 #
 # WHY THIS EXISTS
 # Deploying an engine was three commands held in someone's head: clasp push, clasp update-deployment,
@@ -23,7 +25,42 @@ cd "$SCRIPT_DIR"
 
 GXCORE="https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec"
 APP="performance"
-DEPLOY=0; for a in "$@"; do [ "$a" = "--deploy" ] && DEPLOY=1; done
+DEPLOY=0; RECORD_ONLY=0
+for a in "$@"; do
+  [ "$a" = "--deploy" ]      && DEPLOY=1
+  [ "$a" = "--record-only" ] && { DEPLOY=1; RECORD_ONLY=1; }
+done
+
+# ── Is this a repo that deploys ITSELF? ─────────────────────────────────────────────────────────
+# Most spokes split the job: gxengine deploys and records the pin, then ./deploy.sh records the
+# release. Leaderboard does not — its deploy.sh is a full pipeline that stamps the version, pushes
+# to clasp, redeploys, commits, pushes to Pages and records the release. Running both there deploys
+# twice and races its `git commit` against yours; that happened on 2026-09-13 and left the release
+# unrecorded behind a stale index.lock.
+#
+# ASK THE FILE, DO NOT KEEP A LIST OF REPOS. The two marks below are the ones that are actually TRUE
+# of a self-deploying deploy.sh: it is pinned against gx-sync (or the next sync would replace it with
+# the recorder, which is a documented 2026-08-22 outage) and it runs clasp itself. A hardcoded
+# "if leaderboard" would be wrong the day a second spoke forks its deploy.sh, and nothing would say so.
+_own_pipeline=0
+if [ -f "$SCRIPT_DIR/deploy.sh" ] \
+   && grep -q 'gx-sync:keep-local' "$SCRIPT_DIR/deploy.sh" 2>/dev/null \
+   && grep -q 'clasp push' "$SCRIPT_DIR/deploy.sh" 2>/dev/null; then
+  _own_pipeline=1
+fi
+
+if [ "$_own_pipeline" = "1" ] && [ "$DEPLOY" = "1" ] && [ "$RECORD_ONLY" != "1" ]; then
+  echo "✗ $APP deploys itself — do not run gxengine here."
+  echo
+  echo "  This repo's ./deploy.sh is the whole pipeline: it stamps the version, pushes to clasp,"
+  echo "  redeploys, commits, pushes to Pages, and records the release. It calls this script back"
+  echo "  with --record-only for the core_pins entry, so nothing is lost by skipping the step."
+  echo
+  echo "  Run instead:   ./deploy.sh \"what changed\""
+  echo
+  echo "  (Running both deploys twice and races deploy.sh's git commit against this one.)"
+  exit 1
+fi
 
 command -v clasp >/dev/null 2>&1 || { echo "✗ clasp not on PATH"; exit 1; }
 [ -f .clasp.json ] || { echo "✗ no .clasp.json here — is this an engine repo?"; exit 1; }
@@ -143,9 +180,15 @@ fi
 [ -n "$(git status --porcelain 2>/dev/null | grep -v '^??')" ] && {
   echo; echo "✗ uncommitted tracked changes — commit first, or the recorded sha will be a lie."; exit 1; }
 
-echo; echo "Pushing…"
-clasp push --force || { echo "✗ clasp push failed"; exit 1; }
-clasp update-deployment "$TARGET" --description "${GX_NOTES:-deploy ${HEAD_SHA:0:9}}" || { echo "✗ redeploy failed"; exit 1; }
+if [ "$RECORD_ONLY" = "1" ]; then
+  # The caller (a repo whose own deploy.sh is the full pipeline) has already pushed and redeployed.
+  # All that is wanted here is the core_pins row, which is the one thing that pipeline does not write.
+  echo; echo "Record-only — the push and redeploy were done by ./deploy.sh."
+else
+  echo; echo "Pushing…"
+  clasp push --force || { echo "✗ clasp push failed"; exit 1; }
+  clasp update-deployment "$TARGET" --description "${GX_NOTES:-deploy ${HEAD_SHA:0:9}}" || { echo "✗ redeploy failed"; exit 1; }
+fi
 
 # ── Record — same command, so it cannot be skipped ───────────────────────────────────────────────
 SECRET_FILE="$SCRIPT_DIR/.gx_deploy_secret"
@@ -250,4 +293,8 @@ RESP="$(curl -sL --max-time 20 -G "$GXCORE" \
   --data-urlencode "by=gxengine@$(hostname -s 2>/dev/null || echo local)" \
   --data-urlencode "rows=$ROWS" 2>/dev/null)"
 echo "recorded   : $RESP"
-echo "✓ $APP deployed at ${HEAD_SHA:0:9}${LV:+, running GXCore v$LV}"
+if [ "$RECORD_ONLY" = "1" ]; then
+  echo "✓ $APP pin recorded at ${HEAD_SHA:0:9}${LV:+, running GXCore v$LV}"
+else
+  echo "✓ $APP deployed at ${HEAD_SHA:0:9}${LV:+, running GXCore v$LV}"
+fi
