@@ -13,7 +13,11 @@
 //   transactions | avg_order_value | hourly_data (JSON) | on_shift_data (JSON) | snapshot_ts
 //
 // Run installSnapshotTrigger() once from the GAS editor to register the nightly
-// trigger (~11pm PT).  Use backfillSnapshot_('YYYY-MM-DD') to recover a missed day.
+// trigger (~11pm PT).  To recover a missed day, run backfillRecentDays() — it has no
+// trailing underscore, so the editor's Run menu can actually see it, and it reads the
+// real transactions for each past date instead of tagging today's live numbers with an
+// older date. (This line used to name backfillSnapshot_, which the Run menu cannot list
+// and which took an argument the Run button cannot pass; removed 2026-09-13.)
 
 var SNAPSHOT_SHEET_ID_KEY = 'GC_SNAPSHOT_SHEET_ID';
 var SNAPSHOT_SHEET_NAME   = 'EOD_Snapshots';
@@ -119,31 +123,19 @@ function snapshotAllStores_() {
   });
 }
 
-/**
- * Manual backfill: snapshot live data tagged as the specified date.
- * Useful when the nightly trigger missed a day — run before midnight on the
- * missed date, or as close as possible to catch the full-day numbers.
+/* backfillSnapshot_ WAS HERE, and it could never be run — removed 2026-09-13.
  *
- * Usage: call backfillSnapshot_('2026-05-26') from the GAS editor.
+ * It tagged TODAY's live numbers with an older date, and its own doc said to "call
+ * backfillSnapshot_('2026-05-26') from the GAS editor". Neither half of that works: a
+ * trailing underscore hides a function from the editor's Run menu, and the Run button
+ * passes no arguments, so the date would have arrived undefined even if you could select
+ * it. The file header pointed operators here for missed-day recovery, so the documented
+ * recovery path for a missed nightly snapshot was unreachable.
+ *
+ * backfillRecentDays() below is the real one, and a better one: it is exposed through a
+ * no-underscore wrapper on purpose (the comment above it says so), and it fetches the
+ * actual transactions for each past date rather than mislabeling today's.
  */
-function backfillSnapshot_(dateStr) {
-  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    Logger.log('[backfill] Invalid date — pass a YYYY-MM-DD string, e.g. backfillSnapshot_("2026-05-26")');
-    return;
-  }
-  var sheet = getSnapshotSheet_();
-  Logger.log('[backfill] Snapshotting all stores as ' + dateStr);
-
-  STORES.forEach(function(store) {
-    try {
-      var data = getStoreToday(store, {});
-      writeSnapshotRow_(sheet, dateStr, store, data);
-      Logger.log('[backfill] ' + store.slug + ' → ' + dateStr + ' $' + data.revenue);
-    } catch(e) {
-      Logger.log('[backfill] ' + store.slug + ' FAILED: ' + e.message);
-    }
-  });
-}
 
 /**
  * Read all store snapshots for a given date (YYYY-MM-DD) from the Sheet.

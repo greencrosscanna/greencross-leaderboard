@@ -321,10 +321,6 @@ function applyNickname_(name, nicknames) {
   return parts[0].replace(/["'`]/g, '');
 }
 
-function firstName_(name) {
-  return (name || '').split(' ')[0] || name;
-}
-
 /**
  * Aggregate today's performance across all stores for the director hero row.
  * Returns the same shape as getStoreToday() so the director can reuse gauge logic.
