@@ -188,6 +188,45 @@ const tests = {
     _ok_('zero draws an EMPTY track, not a floor', /0\/6<\/span>/.test(h) && !/has-progress[^]*0\/6/.test(h.slice(h.indexOf('Avery'))));
   },
 
+  /* PER-UNIT HAS NO THRESHOLD (SPIFF, 2026-09-12). It pays for every unit sold, so "when you hit
+     it" is a wrong dollar figure and a target tile promises a bonus at a number that buys nothing.
+     Portland Heights runs one at $0.75. This is the assertion that keeps a wall screen honest. */
+  perUnitDropsTheThresholdAndSaysPerUnit() {
+    const h = panel([prog({ payoutType: 'per_unit', payout: 0.75, reward: null, target: 0,
+      people: [ { name: 'Marcus Chen', units: 9, target: 0, hit: true,  earned: 6.75 },
+                { name: 'Lina Park',   units: 1, target: 0, hit: true,  earned: 0.75 },
+                { name: 'Avery Liu',   units: 0, target: 0, hit: false, earned: 0 } ] })]);
+    _ok_('the rate, with its cents', h.indexOf('<b>$0.75</b>') > -1);
+    _ok_('said as a rate', h.indexOf('for every unit you sell') > -1);
+    _ok_('and never as a threshold', h.indexOf('when you hit it') === -1);
+    _ok_('no target tile at all', h.indexOf('units to hit your bonus') === -1);
+    _ok_('counts read as units, not a fraction of nothing', h.indexOf('9 units · +$6.75') > -1);
+    _ok_('one unit is singular', h.indexOf('1 unit · +$0.75') > -1);
+    _ok_('nobody is shown as x/0', h.indexOf('/0') === -1);
+    _ok_('no bar drawn against a target that does not exist', h.indexOf('emp-spiff-bar') === -1);
+    _ok_('but the column is held open so the rows still line up',
+         (h.match(/ksp-nobar/g) || []).length === 3);
+    _ok_('a zero seller still gets a row', h.indexOf('Avery Liu') > -1);
+  },
+
+  /* A per_unit program must not borrow the flat wording even when the type arrives with a target
+     still stamped on the rows — SPIFF fills row.target from the per-bt map whatever the model. */
+  perUnitIgnoresATargetLeftOnTheRows() {
+    const h = panel([prog({ payoutType: 'per_unit', payout: 0.5, reward: null, target: 6,
+      people: [ { name: 'A', units: 3, target: 6, hit: true, earned: 1.5 } ] })]);
+    _ok_('still no threshold tile', h.indexOf('units to hit your bonus') === -1);
+    _ok_('still a rate', h.indexOf('<b>$0.50</b><span>for every unit you sell') > -1);
+    _ok_('still counted in units', h.indexOf('3 units · +$1.50') > -1);
+  },
+
+  /* An older payload states no type at all. That is every program SPIFF published before the
+     sidecar, and all of them were flat — so absent must read as flat, not as a missing tile. */
+  noPayoutTypeReadsAsFlat() {
+    const h = panel([prog()]);
+    _ok_('the threshold wording', h.indexOf('when you hit it') > -1);
+    _ok_('and the target tile', h.indexOf('<b>5</b><span>units to hit your bonus') > -1);
+  },
+
   namesAreEscaped() {
     const h = panel([prog({ vendor: '<b>V</b>', people: [ { name: '<img src=x>', units: 1, target: 5, hit: false, earned: 0 } ] })]);
     _ok_('no raw tags from data', h.indexOf('<img') === -1 && h.indexOf('<b>V') === -1);

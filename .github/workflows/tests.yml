@@ -43,6 +43,17 @@ jobs:
           repository: greencrosscanna/greencross-sales
           path: greencross-sales
 
+      # Also public, also no token, and for the same reason: tests/spiff_sidecar_contract_test.js
+      # builds the SPIFF program sidecar with SPIFF'S OWN producer off its shipped source and feeds
+      # it to this app's join. Without the sibling it skips, and a contract that only the pusher's
+      # machine checks is a contract nobody checks on a Friday. Unlike the hub suites below, this
+      # one has no other home — it lives here and nowhere else, so CI is where it has to run.
+      - name: Check out greencross-spiff
+        uses: actions/checkout@v7
+        with:
+          repository: greencrosscanna/greencross-spiff
+          path: greencross-spiff
+
       # ─── WHY greencross-command-center IS NOT CHECKED OUT HERE, AND MUST NOT BE "FIXED" ──────────
       #
       # Four suites in this repo read the hub as a sibling and SKIP without it:
@@ -105,12 +116,14 @@ jobs:
             echo ""
             # greencross-sales is public and checked out unconditionally, so its absence means a
             # checkout step FAILED — say so rather than reporting it as an expected skip.
-            if [ -d ../greencross-sales ]; then
-              echo "greencross-sales present (public, no token)."
-            else
-              echo "> **greencross-sales is absent.** It is public and needs no token, so a checkout"
-              echo "> step failed — this is not an expected skip."
-            fi
+            for sib in greencross-sales greencross-spiff; do
+              if [ -d "../$sib" ]; then
+                echo "$sib present (public, no token)."
+              else
+                echo "> **$sib is absent.** It is public and needs no token, so a checkout"
+                echo "> step failed — this is not an expected skip."
+              fi
+            done
             echo ""
             echo "> **greencross-command-center is deliberately NOT checked out here.** It is a PRIVATE"
             echo "> repo and a spoke's default GITHUB_TOKEN cannot reach it. The four suites that read"
