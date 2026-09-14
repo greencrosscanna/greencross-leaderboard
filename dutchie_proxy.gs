@@ -1478,10 +1478,21 @@ function syncEmployeeRoster_() {
   };
 
   Logger.log('syncEmployeeRoster_: fetching 30-day transactions for all stores…');
+  resetStoresUnavailable_();
   const byStore = fetchAllStoresTransactions_(range30);
+  const unavailable = storesUnavailable_();
   const roster = Object.create(null);
+  // The roster is replaced WHOLE, so a store we could not read must keep what it had. Rebuilding it
+  // from an empty fetch would wipe that store's staff list until the next good sync.
+  var previous = {};
+  try { previous = JSON.parse(PropertiesService.getScriptProperties().getProperty(GC_EMPLOYEES_KEY) || '{}'); } catch (e) {}
 
   STORES.forEach(function(store) {
+    if (Object.prototype.hasOwnProperty.call(unavailable, store.slug)) {
+      roster[store.slug] = Object.prototype.hasOwnProperty.call(previous, store.slug) ? previous[store.slug] : [];
+      Logger.log('syncEmployeeRoster_: ' + store.slug + ' unavailable (' + unavailable[store.slug] + ') — kept its previous roster');
+      return;
+    }
     const seen = Object.create(null);
     (byStore[store.slug] || []).forEach(function(tx) {
       const emp = txEmployee_(tx);

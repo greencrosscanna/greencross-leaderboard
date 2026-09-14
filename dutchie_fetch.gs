@@ -64,9 +64,55 @@ function getDutchieStoreKey_(slug) {
   // GX Core hands the map back already keyed this way, so the Dutchie label never reaches this app.
   const keys = gxDutchieKeyMap_();
   const key = Object.prototype.hasOwnProperty.call(keys, store.storeId) ? keys[store.storeId] : null;
-  if (!key) throw new Error('GX Core has no Dutchie key for store_id: ' + store.storeId);
+  // Prefixed DUTCHIE_UNAVAILABLE so a single-store screen says "no data right now" rather than
+  // showing a raw error -- from the floor's side a store with no connection IS a data outage.
+  if (!key) throw new Error(DUTCHIE_UNAVAILABLE_ + ': GX Core has no Dutchie key for store_id: ' + store.storeId);
   return key;
 }
+
+/**
+ * The key, or null when GX Core simply has no key for THIS store. Every other failure still throws
+ * (an unknown slug is a bug; an unreachable key map is every store at once, not one).
+ *
+ * For the ALL-STORES paths only. One store without a key used to throw out of the request builder
+ * and take the director view, the ticker, the roster sync and the nightly goal job down for all six.
+ * A store that cannot be read is now skipped and marked unavailable (markStoreUnavailable_), and the
+ * other stores carry on.
+ */
+function dutchieStoreKeyOrNull_(slug) {
+  try {
+    return getDutchieStoreKey_(slug);
+  } catch (e) {
+    if (String((e && e.message) || e).indexOf('has no Dutchie key for store_id') !== -1) {
+      markStoreUnavailable_(slug, 'no Dutchie key in GX Core');
+      return null;
+    }
+    throw e;
+  }
+}
+
+/* ─── WHICH STORES COULD NOT BE READ, this execution ────────────────────────────────────────────
+ * The all-stores paths used to answer a store they could not read with an empty list, which every
+ * screen then drew as a confident $0 (the River Rd director row on 2026-09-05 is the same bug as the
+ * kiosk one described above _TXN_FETCH_FAILS_, one level up). They still return the empty list, so
+ * no caller's shape changes -- but they now also record the store here, and the payloads that feed
+ * the board carry that record so the screen can say "Unavailable" instead of $0.
+ *
+ * Execution-scoped, like _TXN_FETCH_FAILS_: reset by the builder that reads it
+ * (buildDirectorAll_), because a failure from an earlier request in a warm instance is not news.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────── */
+var _STORE_UNAVAILABLE_ = {};
+
+function markStoreUnavailable_(slug, why) {
+  if (!slug || Object.prototype.hasOwnProperty.call(_STORE_UNAVAILABLE_, slug)) return;
+  _STORE_UNAVAILABLE_[slug] = String(why || 'unavailable');
+}
+function storesUnavailable_() {
+  var out = {};
+  Object.keys(_STORE_UNAVAILABLE_).forEach(function (k) { out[k] = _STORE_UNAVAILABLE_[k]; });
+  return out;
+}
+function resetStoresUnavailable_() { _STORE_UNAVAILABLE_ = {}; }
 
 /** Single-store transaction fetch via UrlFetchApp (synchronous, single call). */
 function dutchieFetch_(storeKey, path, queryParams) {
@@ -138,6 +184,14 @@ function isDutchieUnavailable_(e) {
 
 function fetchTxnPagesByKey_(reqs) {
   _TXN_FETCH_FAILS_ = [];
+  // A request with no store key never goes on the wire: it is recorded as FAILED (never as an empty
+  // day) and answered with [], exactly as a non-200 is below.
+  const skipped = {};
+  reqs = reqs.filter(function (r) {
+    if (r.storeKey) return true;
+    skipped[r.key] = true;
+    return false;
+  });
   const httpReqs = reqs.map(function(r) {
     const qs = [
       'FromDateUTC=' + encodeURIComponent(r.fromUTC),
@@ -162,6 +216,10 @@ function fetchTxnPagesByKey_(reqs) {
   // before firing the next. 72 = the long-proven single-call size.
   const CHUNK = 72;
   const byKey = {};
+  Object.keys(skipped).forEach(function (k) {
+    byKey[k] = [];
+    _TXN_FETCH_FAILS_.push({ key: k, why: 'no Dutchie key in GX Core' });
+  });
   for (var start = 0; start < httpReqs.length; start += CHUNK) {
     var responses = UrlFetchApp.fetchAll(httpReqs.slice(start, start + CHUNK));
     for (var j = 0; j < responses.length; j++) {
@@ -626,7 +684,9 @@ function primeHourlyDistLocal_(stores) {
   const httpReqs   = [];
   (stores || []).forEach(function(store) {
     if (cache[store.slug + ':' + dow + ':' + now.dateStr]) return;   // already primed today
-    const auth = Utilities.base64Encode(getDutchieStoreKey_(store.slug) + ':');
+    const storeKey = dutchieStoreKeyOrNull_(store.slug);
+    if (!storeKey) return;   // no connection yet: no shape to prime, and it must not stop the others
+    const auth = Utilities.base64Encode(storeKey + ':');
     for (let w = 1; w <= HOURLY_DIST_WEEKS; w++) {
       const fromMs = todayMs - w * 7 * MS_DAY;
       const toMs   = fromMs + MS_DAY - 1;
@@ -689,12 +749,13 @@ function fetchAllStoresTransactions_(range) {
   const reqs = STORES.map(function(store) {
     return {
       key:      store.slug,
-      storeKey: getDutchieStoreKey_(store.slug),
+      storeKey: dutchieStoreKeyOrNull_(store.slug),
       fromUTC:  range.fromUTC,
       toUTC:    range.toUTC,
     };
   });
   const byKey = fetchTxnPagesByKey_(reqs);
+  txnFetchFailures_().forEach(function (f) { markStoreUnavailable_(f.key, f.why); });
 
   const result = {};
   STORES.forEach(function(store) {
@@ -720,7 +781,7 @@ function fetchAllStoresTransactionsMulti_(ranges) {
     STORES.forEach(function(store) {
       reqs.push({
         key:      ri + ':' + store.slug,   // composite key → range index + store
-        storeKey: getDutchieStoreKey_(store.slug),
+        storeKey: dutchieStoreKeyOrNull_(store.slug),
         fromUTC:  range.fromUTC,
         toUTC:    range.toUTC,
       });
@@ -730,6 +791,9 @@ function fetchAllStoresTransactionsMulti_(ranges) {
   Logger.log('fetchAllStoresTransactionsMulti_: ' + reqs.length + ' first-page requests (' +
     ranges.length + ' ranges × ' + nStores + ' stores); overflow pages fetched as needed');
   const byKey = fetchTxnPagesByKey_(reqs);
+  txnFetchFailures_().forEach(function (f) {
+    markStoreUnavailable_(String(f.key).slice(String(f.key).indexOf(':') + 1), f.why);
+  });
 
   return ranges.map(function(range, ri) {
     const result = {};
@@ -995,13 +1059,14 @@ function byStoreAggCached_(range, hardRefresh) {
 
   if (liveReqs.length) {
     const reqs = liveReqs.map(function(r, i) {
-      return { key: String(i), storeKey: getDutchieStoreKey_(r.slug), fromUTC: r.fromUTC, toUTC: r.toUTC };
+      return { key: String(i), storeKey: dutchieStoreKeyOrNull_(r.slug), fromUTC: r.fromUTC, toUTC: r.toUTC };
     });
     const byKey = fetchTxnPagesByKey_(reqs);
     const failedKeys = {};
     txnFetchFailures_().forEach(function(f) { failedKeys[f.key] = f.why; });
     liveReqs.forEach(function(r, i) {
       const failed = failedKeys[String(i)];
+      if (failed) markStoreUnavailable_(r.slug, failed);
       const txns = (byKey[String(i)] || []).filter(isRetailSale_);
       const agg  = aggregateTransactions_(txns);
       perStore[r.slug].push(agg);
