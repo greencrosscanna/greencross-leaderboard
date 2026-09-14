@@ -79,10 +79,28 @@ Two things about it that are not guessable from the code:
   began last fortnight and is still running is filed under the previous scope, so reading only the
   current one drops a live program off every card. `SPIFF_LOOKBACK_PERIODS` reads three back and merges.
 
+- **The program copy is on a SIDECAR, never on the row (2026-09-12).** The five things the kiosk
+  popup shows that a per-employee row cannot say — the product in words, each store's goal, what the
+  program pays *and how*, Tawny's selling tips, and when it was measured — arrive as
+  `payload.programs[]`, **one entry per program, joined by `program_id`**. This app shipped a reader
+  for row columns first; it would have found nothing forever and drawn a card with every block
+  missing, with no error anywhere. SPIFF caught it by reading the live payload back from Core. The
+  spellings: `programs[].product`, `store_goals[store_id]` (a MAP, not a number — `bt_goals[store_id]`
+  is the per-person goal and the one the bars are drawn against), `payout` + `payout_type`, `tips` (a
+  real array), and `payload.refreshed_at` — **there is no `measured_at`**. `payout_type` is the one
+  that costs money if ignored: on `per_unit` the payout is **per unit sold with no threshold at all**,
+  so "$0.75 when you hit it" is a wrong dollar figure on a wall screen. Gated end-to-end by
+  `tests/spiff_sidecar_contract_test.js`, which builds the sidecar with SPIFF's **own** `programsFor_`
+  off its shipped source and renders it with the shipped `GC.spiffPanel` — a fixture of ours would
+  only re-assert the shape we already believed in, which is how this went wrong the first time.
+
 **The kiosk's SPIFF button opens SPIFF's own per-store board** (`store.html?t=<token>`) in a popup
 Leaderboard DRAWS — a card over the dimmed board, not `window.open` (Sky, 2026-09-11: "maybe that's
-being blocked, what about an overlay that is acting like a popup"). SPIFF's page carries the staff
-progress bars itself as of their v1.405; Leaderboard renders none of it. **The frame is loaded at
+being blocked, what about an overlay that is acting like a popup"). *Corrected 2026-09-13: this said
+"Leaderboard renders none of it", which stopped being true the same day it was written.* SPIFF's page
+is the fallback now, not the destination — `spiffPanelHasSpiffCopy_` hands over to Leaderboard's own
+panel the moment every program in the payload carries a product or tips, so **the data flips it, not a
+deploy**, and a kiosk picks it up on its next 5-minute refresh. **The frame is loaded at
 kiosk paint and left loaded** — `storeView` takes ~4s over JSONP, and lazy loading meant every tap
 bought a blank card ("the data takes too long to load"). The cost is SPIFF's own 10-minute refresh
 running on six wall screens all day; that trade is deliberate and SPIFF has been told. One permanent token per store, held in GX Core kv as
@@ -93,10 +111,11 @@ a rotation reaches a running kiosk in ~60s rather than at the 04:00 reload.
 **Settings → Include SPIFF is the one switch for the button** — the same switch as the staff-card
 rows, so the setting and the button cannot disagree. The token decides only what the button OPENS: a
 window on SPIFF's page where there is one, Leaderboard's own panel where there is not, and SPIFF's
-page embedded in an overlay where the browser refuses the popup. The panel was the front door for
-exactly one day (2026-09-10 → 11) and is now only that fallback. Covered by
-`tests/spiff_store_window_test.js`, which also holds the reason the window must close with the
-board: a wall screen has no chrome, so a popup nobody can dismiss is the board gone for the shift.
+page embedded in an overlay where the browser refuses the popup — and, since SPIFF started publishing
+the program sidecar, Leaderboard's own panel wherever the copy is complete. Covered by
+`tests/spiff_popup_test.js` (*named `spiff_store_window_test.js` here until 2026-09-13; no such file
+has ever existed*), which also holds the reason the window must close with the board: a wall screen
+has no chrome, so a popup nobody can dismiss is the board gone for the shift.
 
 ## Sync with the brain — run `/gxbrain` (or say "brain sync")
 

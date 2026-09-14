@@ -1541,6 +1541,9 @@ body.kiosk-bg {
 .ksp-row.hit .ksp-who   { color: var(--gold-bright); }
 .ksp-row.hit .ksp-count { color: var(--gold-bright); }
 .ksp-row .emp-spiff { margin: 0; padding: 0; border: 0; }
+/* A per_unit SPIFF has no target, so there is no bar to draw — this holds the middle column open
+   so the names and the counts stay in the same two lines they are in on every other program. */
+.ksp-nobar  { display: block; }
 .ksp-tips   { margin: 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: 8px; }
 .ksp-tips li { font-size: 14px; line-height: 1.45; }
 .ksp-tips li::marker { color: var(--good, #4ade80); }
@@ -3803,7 +3806,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      slideshow bar at 9999, so nothing here contests it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.798';
+window.GC = window.GC || {}; GC.VERSION = 'v1.799';
 
 // ── GX Core web-app URL — ONE definition ──
 // This was previously a `var` inside loadChangelogFromGXCore(), i.e. function-scoped, while the
@@ -4620,28 +4623,49 @@ GC.spiffPanel = function(programs, opts) {
     var dates  = md(p.start) && md(p.end) ? md(p.start) + ' – ' + md(p.end) : '';
     var when   = [dates, leftTxt].filter(Boolean).join(' · ');
 
+    /* TWO WAYS A SPIFF PAYS, and they cannot share a sentence.
+     *
+     *   flat     — the amount ONCE, per person, for clearing a personal target. "$25 when you hit
+     *              it" is exactly right, and the target tile is the thing to hit.
+     *   per_unit — the amount for EVERY unit sold, with NO threshold at all. "$0.75 when you hit
+     *              it" would be a wrong dollar figure on the most-read screen in the company, and
+     *              a target tile would promise a bonus that does not exist at that number.
+     *
+     * So per_unit drops the threshold entirely (SPIFF's own wording, 2026-09-12) and the rows
+     * print units and money rather than a fraction of a target nobody is chasing. Anything that
+     * is not the string 'per_unit' — including an older payload that states no type at all — is
+     * treated as flat, which is what every program was before SPIFF published the distinction. */
+    var perUnit = String(p.payoutType || '') === 'per_unit';
+
     /* THE STATED PAYOUT BEATS THE INFERRED ONE. `reward` is worked out from what people have
        already been paid and is null until somebody hits; `payout` is what SPIFF says the program
-       pays, and is right from the first morning. */
+       pays, and is right from the first morning. On per_unit the inference is meaningless (it
+       would read somebody's units × rate as a bounty), so only a stated rate is ever shown. */
     var pay = (p.payout != null && +p.payout > 0) ? +p.payout
-            : (p.reward != null && +p.reward > 0) ? +p.reward : null;
+            : (!perUnit && p.reward != null && +p.reward > 0) ? +p.reward : null;
+    // $25, not $25.00 — but $0.75 keeps its cents, because a per-unit rate is rarely whole dollars.
+    var money = function(n) { return '$' + (n === Math.round(n) ? n : n.toFixed(2)); };
 
     var rows = (p.people || []).map(function(x) {
       var u = Math.max(0, +x.units || 0), t = Math.max(0, +x.target || target);
-      var paid = x.hit && +x.earned > 0 ? ' · +$' + (+x.earned) : '';
+      var paid = +x.earned > 0 ? ' · +' + money(+x.earned) : '';
       return '<div class="ksp-row' + (x.hit ? ' hit' : '') + '">'
         + '<span class="ksp-who">' + esc(x.name) + '</span>'
-        + bar(u, t, x.hit)
-        + '<span class="ksp-count">' + u + '/' + t + paid + '</span>'
+        // No target means no bar to draw, but the middle column still has to exist or the name
+        // and the count close up against each other in the grid.
+        + (perUnit || !(t > 0) ? '<span class="ksp-nobar"></span>' : bar(u, t, x.hit))
+        + '<span class="ksp-count">'
+        +   (perUnit || !(t > 0) ? u + (u === 1 ? ' unit' : ' units') : u + '/' + t)
+        +   paid + '</span>'
         + '</div>';
     }).join('');
 
     var tips = (p.tips || []).filter(function(t) { return !!String(t || '').trim(); });
     var when2 = asOf(p.measuredAt);
 
-    /* EVERY BLOCK BELOW IS OPTIONAL ON PURPOSE. product, storeGoal, payout and tips reach us only
-       if SPIFF publishes them on the row; a store or a program that has none of them still gets a
-       complete card, rather than a heading over an empty space. */
+    /* EVERY BLOCK BELOW IS OPTIONAL ON PURPOSE. product, storeGoal, payout and tips arrive on
+       SPIFF's per-program sidecar and only exist once SPIFF publishes them; a store or a program
+       that has none of them still gets a complete card, rather than a heading over empty space. */
     return '<article class="ksp-prog' + (ending ? ' ending' : '') + '">'
       + '<div class="ksp-vendor">' + esc(p.vendor) + '</div>'
       + '<div class="ksp-name">' + esc(p.name || p.vendor) + '</div>'
@@ -4654,8 +4678,11 @@ GC.spiffPanel = function(programs, opts) {
             + '<span class="ksp-sell-v">' + esc(p.product) + '</span></div>'
           : '')
       + '<div class="ksp-tiles">'
-      +   (target > 0 ? '<div class="ksp-tile"><b>' + target + '</b><span>units to hit your bonus</span></div>' : '')
-      +   (pay !== null ? '<div class="ksp-tile gold"><b>$' + pay + '</b><span>when you hit it</span></div>' : '')
+      +   (!perUnit && target > 0
+            ? '<div class="ksp-tile"><b>' + target + '</b><span>units to hit your bonus</span></div>' : '')
+      +   (pay !== null
+            ? '<div class="ksp-tile gold"><b>' + money(pay) + '</b><span>'
+              + (perUnit ? 'for every unit you sell' : 'when you hit it') + '</span></div>' : '')
       + '</div>'
       + (+p.storeGoal > 0
           ? '<div class="ksp-storegoal">Store target: <b>' + (+p.storeGoal) + '</b> units</div>' : '')

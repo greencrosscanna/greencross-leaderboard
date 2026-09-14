@@ -393,8 +393,13 @@ function spiffLeadProgram_(entry) {
  *
  * Ordered by the program ENDING SOONEST first, since that is the one worth acting on today, and
  * people within a program by how close they are to their target.
+ *
+ * @param {Array}  rows          SPIFF rows already filtered to this store and window
+ * @param {Array}  sidecar       payload.programs[] — one entry per program (see the join below)
+ * @param {string} coreStoreId   GX Core store_id, the key the sidecar's goal maps use
+ * @param {string=} payloadRefreshedAt  payload.refreshed_at, used only when no row carries one
  */
-function spiffProgramsForStore_(rows, sidecar, coreStoreId) {
+function spiffProgramsForStore_(rows, sidecar, coreStoreId, payloadRefreshedAt) {
   /* SPIFF's program sidecar, keyed by program_id. Built here rather than passed in already keyed so
      a caller that has no sidecar (an older payload, a test) simply gets the numbers and no copy. */
   var meta = Object.create(null);
@@ -422,9 +427,12 @@ function spiffProgramsForStore_(rows, sidecar, coreStoreId) {
         hitCount: 0,
         /* SPIFF'S OWN PROGRAM COPY, carried through untouched for the kiosk popup to render.
            Leaderboard cannot derive any of these — the product a program is on, the store-level
-           goal, the stated payout and Tawny's selling lines live in SPIFF's sheet and only reach us
-           if SPIFF publishes them on the row. ABSENT IS THE NORMAL STATE until it does, and the
-           popup omits whatever block is missing rather than inventing one.
+           goal, the stated payout and Tawny's selling lines live in SPIFF's sheet and reach us on
+           the PROGRAM SIDECAR, never on the row. (This app shipped a reader for row columns first;
+           it would have found nothing forever and drawn a card with every block missing, without
+           erroring. SPIFF caught it in a note, 2026-09-12.) ABSENT IS STILL A NORMAL STATE — a
+           payload published before SPIFF's sidecar carries none of it — and the popup omits
+           whatever block is missing rather than inventing one.
 
            `payout` is deliberately separate from `reward` below: reward is an INFERENCE from what
            people have already been paid, and it is null until somebody has hit. A stated payout is
@@ -432,13 +440,24 @@ function spiffProgramsForStore_(rows, sidecar, coreStoreId) {
         product:  '',
         storeGoal: 0,
         payout:   null,
+        /* HOW THE PAYOUT IS EARNED, and it changes what the popup may say. 'flat' pays the amount
+           ONCE, per person, for clearing a personal target. 'per_unit' pays the amount for EVERY
+           unit sold and has no threshold to clear at all — rendering "$0.75 when you hit it" on a
+           wall screen would be a wrong dollar figure staff read all day. Defaults to 'flat'
+           because that is what every payload predating the sidecar was, and what SPIFF's own
+           payoutModelOf_ falls back to for anything it does not implement. */
+        payoutType: 'flat',
         tips:     [],
         measuredAt: '',
         people:   [],
       };
       order.push(key);
     }
-    if (!p.measuredAt && r.refreshed_at) p.measuredAt = String(r.refreshed_at);
+    /* THE NEWEST ROW WINS, not the first one. This is the timestamp the popup prints as "as of
+       9:56pm", and SPIFF defines the payload-level figure the same way — the newest row in the
+       publication. First-row-wins would stamp a program with whichever row happened to be
+       serialized first, which can be an hour older than the numbers beside it. */
+    if (r.refreshed_at && String(r.refreshed_at) > p.measuredAt) p.measuredAt = String(r.refreshed_at);
 
     var person = {
       employee_id: String(r.employee_id == null ? '' : r.employee_id).trim(),
@@ -469,14 +488,29 @@ function spiffProgramsForStore_(rows, sidecar, coreStoreId) {
       if (m.payout_type) p.payoutType = String(m.payout_type);
       var sg = m.store_goals && storeId ? m.store_goals[storeId] : null;
       if (Number(sg)) p.storeGoal = Number(sg);
+      /* bt_goals is the PER-BUDTENDER goal, keyed on store_id like store_goals — and it is the
+         number the bars are drawn against. SPIFF builds each row's `target` from this very map,
+         so normally they agree and the rows already carry it; this fills the gap left by a cached
+         row written before the goal was set, where the popup would otherwise draw every bar
+         against zero. store_goals is the WHOLE STORE's number and must never be used here: it is
+         an order of magnitude larger, and on a wall screen that reads as an unreachable target. */
+      var bt = m.bt_goals && storeId ? m.bt_goals[storeId] : null;
+      if (!p.target && Number(bt)) p.target = Number(bt);
       if (Object.prototype.toString.call(m.tips) === '[object Array]') {
         p.tips = m.tips.map(function (t) { return String(t).trim(); })
                        .filter(function (t) { return !!t; });
       }
     }
+    if (!p.measuredAt && payloadRefreshedAt) p.measuredAt = String(payloadRefreshedAt);
+
+    /* NO INFERRED REWARD ON A per_unit PROGRAM, ever. `reward` is worked backwards from what people
+       have already been paid, and on per_unit what they were paid is units × rate — so a program
+       where one person has sold nine units would infer a "$6.75 bounty" nobody was offered. There
+       is no bounty on per_unit; there is a rate, and only SPIFF can state it. */
     var paid = p.people.filter(function (x) { return x.hit && x.earned > 0; });
     var sameTarget = p.people.every(function (x) { return x.target === p.target; });
-    if (paid.length && sameTarget && paid.every(function (x) { return x.earned === paid[0].earned; })) {
+    if (p.payoutType !== 'per_unit' && paid.length && sameTarget
+        && paid.every(function (x) { return x.earned === paid[0].earned; })) {
       p.reward = paid[0].earned;
     }
     p.people.sort(function (a, b) {
@@ -533,8 +567,8 @@ function spiffForStore_(store) {
     ppEnd:        pp.ppEndStr,
     byId:         byId,
     // The SPIFF panel — same rows grouped by program, joined to SPIFF's program sidecar so the
-    // popup can show the product, this store's goal, the payout and the tips.
-    programs:     spiffProgramsForStore_(rows, raw.programs, coreStoreId_(store)),
+    // popup can show the product, this store's goal, how the payout is earned, and the tips.
+    programs:     spiffProgramsForStore_(rows, raw.programs, coreStoreId_(store), raw.refreshed_at),
   };
 }
 

@@ -120,6 +120,80 @@ const tests = {
     _ok_('but the numbers are all still there', p.people.length === 1 && p.target === 7);
   },
 
+  /* PER-UNIT PAYS ON VOLUME, WITH NO THRESHOLD (SPIFF's note, 2026-09-12: "$0.75 when you hit it
+   * would be wrong there"). Portland Heights runs one at 0.75 per unit. Two things must not
+   * happen: the rate must not be inferred from what somebody has already been paid, and the type
+   * must reach the renderer so the wording can change with it. Inferring here would put
+   * "$6.75 when you hit it" — one seller's nine units × the rate — on a wall screen as a bounty. */
+  'per_unit carries its type through and is never given an inferred bounty': function () {
+    const rows = [
+      { program_id: 'pu', store_id: 'portland-rd', employee_id: 7, name: 'A', units: 9, target: 0,
+        hit: true, earned: 6.75, vendor: 'Mule', program_name: 'Volume', start_date: '2026-08-31',
+        end_date: '2026-09-13' },
+    ];
+    const stated = M.spiffProgramsForStore_(rows, [{ program_id: 'pu', payout: 0.75,
+      payout_type: 'per_unit', store_goals: { 'portland-rd': 60 } }], 'portland-rd')[0];
+    _eq_('the rate as published', stated.payout, 0.75);
+    _eq_('and the model with it', stated.payoutType, 'per_unit');
+    _eq_('no inferred bounty', stated.reward, null);
+
+    // Same rows, no sidecar: still no bounty invented out of one person's earnings.
+    const bare = M.spiffProgramsForStore_(rows, [{ program_id: 'pu', payout_type: 'per_unit' }],
+                                          'portland-rd')[0];
+    _eq_('nothing stated, nothing shown', bare.payout, null);
+    _eq_('and still no inference', bare.reward, null);
+  },
+
+  /* A FLAT PROGRAM KEEPS ITS INFERENCE, and defaults to flat when the payload predates the type.
+     This is the case the inference exists for: everyone who hit was paid the same $25. */
+  'flat is the default and keeps the inferred reward': function () {
+    const rows = [
+      row({ employee_id: 1, name: 'A', units: 110, target: 55, hit: true, earned: 25 }),
+      row({ employee_id: 2, name: 'B', units: 60,  target: 55, hit: true, earned: 25 }),
+    ];
+    const p = M.spiffProgramsForStore_(rows, [], 'bend')[0];
+    _eq_('flat when nothing says otherwise', p.payoutType, 'flat');
+    _eq_('reward still inferred', p.reward, 25);
+  },
+
+  /* bt_goals IS THE PER-BUDTENDER GOAL, keyed on store_id like store_goals — and per SPIFF it is
+     the number the bars are drawn against, normally identical to row.target. It is only read
+     where the rows carry no target, e.g. a cached row written before the goal was set. Reading
+     store_goals into that slot instead would put the WHOLE STORE's number on a personal bar. */
+  'bt_goals fills a target the rows do not carry, and store_goals never does': function () {
+    const rows = [
+      { program_id: 'p1', store_id: 'center', employee_id: 1, name: 'A', units: 2, target: 0,
+        hit: false, earned: 0, vendor: 'Mule Extracts', program_name: 'Dank Tank',
+        start_date: '2026-08-31', end_date: '2026-09-13' },
+    ];
+    const sidecar = [{ program_id: 'p1', payout: 25, payout_type: 'flat',
+                       store_goals: { center: 18 }, bt_goals: { center: 3 } }];
+    const p = M.spiffProgramsForStore_(rows, sidecar, 'center')[0];
+    _eq_('the personal goal, not the store one', p.target, 3);
+    _eq_('the store one stays where it belongs', p.storeGoal, 18);
+
+    // Where the rows DO carry a target, they are the per-person truth and win untouched.
+    const withTarget = M.spiffProgramsForStore_(
+      [Object.assign({}, rows[0], { target: 3 })], sidecar, 'center')[0];
+    _eq_('rows win', withTarget.target, 3);
+  },
+
+  /* "as of 9:56pm" IS THE NEWEST ROW, not whichever row was serialized first — that is how SPIFF
+     defines the payload-level refreshed_at, and the two must not disagree by an hour on screen.
+     A program whose rows carry none falls back to the payload's own stamp. */
+  'the measurement time is the newest row, with the payload as the fallback': function () {
+    const at = (t) => ({ program_id: 'p1', store_id: 'bend', employee_id: Math.random(), name: 'A',
+      units: 1, target: 5, hit: false, earned: 0, vendor: 'V', program_name: 'P',
+      start_date: '2026-08-31', end_date: '2026-09-13', refreshed_at: t });
+    const p = M.spiffProgramsForStore_(
+      [at('2026-09-11 20:10:00'), at('2026-09-11 22:56:08'), at('2026-09-11 21:00:00')], [], 'bend')[0];
+    _eq_('newest wins', p.measuredAt, '2026-09-11 22:56:08');
+
+    const none = M.spiffProgramsForStore_(
+      [Object.assign(at(''), { refreshed_at: undefined })], [], 'bend', '2026-09-11 22:56:08')[0];
+    _eq_('payload stamp when no row carries one', none.measuredAt, '2026-09-11 22:56:08');
+  },
+
   'a sidecar for a program we are not showing is ignored, not merged': function () {
     const rows = [
       { program_id: 'p1', store_id: 'bend', employee_id: 1, name: 'A', units: 1, target: 7,
