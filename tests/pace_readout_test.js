@@ -51,6 +51,10 @@ vm.createContext(ctx);
 const paceViewSrc = src.match(/\nGC\.PACE_RANGE = [\s\S]*?\nGC\.paceView = function[\s\S]*?\n\};\n/);
 if (!paceViewSrc) throw new Error('GC.paceView not found in index.html');
 vm.runInContext(paceViewSrc[0], ctx);
+// Same rule for the "unavailable" test the strip applies to every store: the shipped one, not a copy.
+const unavailSrc = src.match(/\nGC\.isUnavailable = function[^\n]*\n/);
+if (!unavailSrc) throw new Error('GC.isUnavailable not found in index.html');
+vm.runInContext(unavailSrc[0], ctx);
 vm.runInContext(grab('renderStatusStrip'), ctx);
 vm.runInContext(grab('renderDirPaceCard'), ctx);
 
@@ -68,6 +72,15 @@ const withProjection = {
   today: { revenue: 21000, goal: 44000, pace: 0.031, projectedPace: 0.062, projected: 46700,
            projectedRevenue: 46700, paceGap: 640, timeRemainingLabel: '05:10' },
 };
+
+console.log('\nStatus strip — a store the server could not read');
+{
+  const out = ctx.renderStatusStrip([withProjection, { slug: 'center', name: 'Center', unavailable: 'Dutchie HTTP 503',
+    today: { revenue: 0, goal: 9000, pace: -1, projectedPace: null, projected: 0 } }]);
+  ok('says Unavailable for it', /Center<\/span><span class="ss-sub store-unavail">Unavailable/.test(out));
+  ok('never draws its empty numbers as $0 of a goal', !/\$0 \/ \$9000/.test(out));
+  ok('lists it after the store that was read', out.indexOf('River') < out.indexOf('Center'));
+}
 
 console.log('\nStatus strip — the "upper bar"');
 {

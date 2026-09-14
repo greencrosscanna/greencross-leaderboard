@@ -501,6 +501,7 @@ function getDirectorStores(params, pre) {
   // Use pre-fetched data when called from directorall, otherwise fetch independently.
   // pre.byStoreAgg is the day-cached per-store aggregate (preferred); byStore raw is
   // only fetched when neither is supplied (standalone directorstores action).
+  if (!pre.byStore && !pre.byStoreAgg) resetStoresUnavailable_();   // standalone: this call's failures only
   const byStore      = pre.byStore      || (pre.byStoreAgg ? {} : fetchAllStoresTransactions_(range));
   const byStoreToday = pre.byStoreToday || (period === 'today' ? byStore : fetchAllStoresTransactions_(todayR));
   const byStore30d   = pre.byStore30d   || null;  // 30-day window for trends (pre-fetched by directorall)
@@ -578,9 +579,18 @@ function getDirectorStores(params, pre) {
     };
   });
 
+  // A store this build could not read has EMPTY numbers, not measured ones. Mark it so the screen
+  // says "Unavailable" instead of $0, keep it out of the ranking (a $0 row would rank last and wear a
+  // "behind plan" flag it did nothing to earn), and list it after the stores that were read.
+  const unavailable = storesUnavailable_();
+  storeSummaries.forEach(function (s) {
+    s.unavailable = Object.prototype.hasOwnProperty.call(unavailable, s.slug) ? unavailable[s.slug] : null;
+    if (s.unavailable) { s.tags = []; s.tagTooltips = []; s.flagCount = 0; }
+  });
+
   // Sort by MTD % of plan descending (goal performance), assign ranks
-  storeSummaries.sort((a, b) => (b.vsplan || 0) - (a.vsplan || 0));
-  storeSummaries.forEach((s, i) => { s.rank = i + 1; });
+  storeSummaries.sort((a, b) => ((a.unavailable ? 1 : 0) - (b.unavailable ? 1 : 0)) || ((b.vsplan || 0) - (a.vsplan || 0)));
+  storeSummaries.forEach((s, i) => { s.rank = s.unavailable ? null : i + 1; });
 
   return {
     period:      period,

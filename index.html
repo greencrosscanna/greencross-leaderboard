@@ -943,6 +943,11 @@ html, body {
   padding: 6px;
   overflow-x: auto;
 }
+/* A store the server could not read this build. Muted and explicit: never a $0 that looks measured. */
+.store-unavail { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-mute); }
+.ss-store.is-unavail { cursor: default; }
+.ss-store.is-unavail .ss-dot { background: var(--border); box-shadow: none; }
+.unavail-notice { margin-top: 12px; padding: 8px 14px; border: 1px dashed var(--border); border-radius: var(--radius); color: var(--text-mute); font-size: 12px; }
 .status-strip .ss-label {
   font-size: 10px;
   letter-spacing: 1.2px;
@@ -4147,6 +4152,10 @@ GC.STORES = {
 
 GC.STORE_SLUGS = Object.keys(GC.STORES);
 
+// A store row the server marked as unreadable this build (see markStoreUnavailable_ in
+// dutchie_fetch.gs). Its numbers are EMPTY, not zero -- every screen must say so rather than draw them.
+GC.isUnavailable = function (s) { return !!(s && s.unavailable); };
+
 // ── Slideshow ────────────────────────────────────────────
 GC.slideshow = (function() {
   var _active      = false;
@@ -6565,16 +6574,38 @@ var director = (function() {
   }
 
   // ── Render: Store Status Strip ─────────────────────────
+  // One line naming the stores this build could not read, because the totals above and below leave
+  // them out. Without it a missing store just looks like a slow one.
+  function renderUnavailableNotice(stores) {
+    var names = (stores || []).filter(GC.isUnavailable).map(function (s) { return s.name; });
+    if (!names.length) return '';
+    return '<div class="unavail-notice" role="status">Live numbers for ' + e(names.join(', '))
+      + ' are unavailable right now — totals leave ' + (names.length > 1 ? 'those stores' : 'that store')
+      + ' out. Retrying automatically.</div>';
+  }
+
   function renderStatusStrip(stores) {
     var html = '<div class="status-strip">'
       + '<div class="ss-label">Today</div>';
-    // Sort by projected pace when available, fall back to pace
+    // Sort by projected pace when available, fall back to pace; unreadable stores go last.
     var sorted = stores.slice().sort(function(a, b) {
+      var au = GC.isUnavailable(a) ? 1 : 0, bu = GC.isUnavailable(b) ? 1 : 0;
+      if (au !== bu) return au - bu;
       var aVal = GC.paceView(a.today).pct;
       var bVal = GC.paceView(b.today).pct;
       return bVal - aVal;
     });
     sorted.forEach(function(s) {
+      if (GC.isUnavailable(s)) {
+        html += '<div class="ss-store is-unavail" data-slug="' + e(s.slug) + '">'
+          + '<span class="ss-dot"></span>'
+          + '<div class="ss-info">'
+          + '<span class="ss-name">' + e(s.name) + '</span>'
+          + '<span class="ss-sub store-unavail">Unavailable</span>'
+          + '</div>'
+          + '</div>';
+        return;
+      }
       var td      = s.today;
       var pv      = GC.paceView(td);
       var hasProj = pv.isProjected;
@@ -6631,6 +6662,9 @@ var director = (function() {
   // ── Store table helpers ────────────────────────────────
   function applyStoreSort(stores) {
     return stores.slice().sort(function(a, b) {
+      // Unreadable stores stay at the bottom whatever column is sorted: their numbers are not real.
+      var au = GC.isUnavailable(a) ? 1 : 0, bu = GC.isUnavailable(b) ? 1 : 0;
+      if (au !== bu) return au - bu;
       var av = a[_storeSortKey] != null ? a[_storeSortKey] : '';
       var bv = b[_storeSortKey] != null ? b[_storeSortKey] : '';
       if (typeof av === 'string' || typeof bv === 'string') {
@@ -6645,6 +6679,18 @@ var director = (function() {
     var avgAov = avgOf(stores, 'avgOrderValue');
     var maxDisc = GC.maxDiscountRate(stores);   // relative discount-bar scale across stores
     return applyStoreSort(stores).map(function(s) {
+      if (GC.isUnavailable(s)) {
+        var dash = '<td class="num" style="color:var(--text-mute)">—</td>';
+        return '<tr data-slug="' + e(s.slug) + '" class="is-unavail">'
+          + '<td><span class="rank-pill">—</span></td>'
+          + '<td><div class="store-cell">' + storeDotHtml(s.slug)
+            + '<div class="sc-meta"><div class="sc-name">' + e(s.name) + '</div>'
+            + '<div class="sc-sub store-unavail">Unavailable</div></div></div></td>'
+          + '<td><div class="who"><div><div class="who-name">' + e((s.manager && s.manager.name) || '') + '</div></div></div></td>'
+          + '<td colspan="2"><span class="store-unavail" title="' + e(String(s.unavailable)) + '">No live data right now</span></td>'
+          + dash + dash + dash + dash + '<td></td><td></td>'
+          + '</tr>';
+      }
       var tLabels = s.tagLabels || s.tags;
       var tTips   = s.tagTooltips || [];
       return '<tr data-slug="' + e(s.slug) + '">'
@@ -7166,6 +7212,7 @@ var director = (function() {
     return renderHeader(data, 'dashboard')
       + '<div class="app-page">'
       + renderEomPrompt()
+      + renderUnavailableNotice(stores)
       + renderStatusStrip(stores)
       + (today.goal
           ? '<div class="dir-today-row">'
@@ -8175,6 +8222,15 @@ var sky = (function() {
 
   // ── Store card (condensed) ──
   function storeCard(s) {
+    if (GC.isUnavailable(s)) {
+      return '<div class="sky-card">'
+        + '<div class="sky-card-hd">'
+        +   '<span class="sky-card-name"><span class="sky-dot" style="background:var(--store-' + e(s.slug) + ', var(--green))"></span>' + e(s.name) + '</span>'
+        + '</div>'
+        + '<div class="sky-sold store-unavail" style="font-size:3vmin">Unavailable</div>'
+        + '<div class="sky-card-foot"><div class="sky-goal">No live data right now — retrying</div></div>'
+        + '</div>';
+    }
     var t    = s.today || {};
     var pct  = t.pctToGoal || 0;
     var overGoal = pct > 1;

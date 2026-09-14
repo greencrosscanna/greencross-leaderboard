@@ -72,6 +72,7 @@ function buildDirectorAll_(period, hardRefresh) {
   const mtdR   = period === 'mtd' ? null : getDateRange_('mtd');
 
   const storeTrendCache = getStoreTrendCache_();
+  resetStoresUnavailable_();   // only failures from THIS build belong on the board
 
   // Day-cached per-store aggregates: settled closed days come from CacheService,
   // only today (+ pre-6am yesterday) is pulled live. hardRefresh re-pulls + re-locks.
@@ -96,7 +97,11 @@ function buildDirectorAll_(period, hardRefresh) {
   const avatarConfigs = getAvatarConfigs_();
   const eomKey        = (getEomCurrent_() || {}).employeeKey || null;
 
-  return { summary, stores, staff, alerts, today, avatarConfigs, eomKey, discountTarget: getDiscountTargetDec_() };
+  // Stores this build could not read. Their numbers above are empty, not measured -- the screen
+  // must say "Unavailable" for them rather than draw $0. See markStoreUnavailable_.
+  const unavailableStores = storesUnavailable_();
+
+  return { summary, stores, staff, alerts, today, avatarConfigs, eomKey, discountTarget: getDiscountTargetDec_(), unavailableStores };
 }
 
 /**
