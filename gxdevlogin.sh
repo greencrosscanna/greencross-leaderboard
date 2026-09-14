@@ -150,9 +150,23 @@ esac
 # GX Core's /exec is a two-hop redirect that sometimes serves a Drive HTML error page instead of JSON.
 # Retry until it is a JSON object, the same way the SessionStart hook does — a single fetch would
 # report "could not mint" for a flake that costs one more call.
+#
+# THE CEILING GREW BECAUSE A FLAT 20s WAS BELOW THE REAL LATENCY, NOT ABOVE IT. Price Cards hit this
+# three runs in a row on 2026-09-13 and was told GX Core was "offline, or the route is not deployed
+# yet" — it was neither. The same dev_session call at --max-time 90 answered ok:true in 5.7s, and an
+# ?action=config probe a minute earlier took 18.5s. Sales measured the same endpoint the day before
+# hanging 16–45s before failing, on a route whose LIBRARY path stayed fast throughout. So the tool
+# gave up inside the window where Core answers, and then named two causes that were both false.
+#
+# Growing budget rather than a flat one, for the same reason gx-client.js uses 8s × 3: the two-hop
+# /exec has a fast bounce (~6% of rapid calls, cheap to retry) AND a cold-instance stall (tens of
+# seconds, where retrying early just burns the budget again). One number cannot serve both. 20/35/50/65
+# spends the first try on the flake and still has room for the stall, and totals ~170s of ceiling
+# against the ~5s this takes when Core is warm.
+TIMEOUTS="20 35 50 65"
 i=1
-while [ "$i" -le 4 ]; do
-  RESP="$(curl -sL --http1.1 --max-time 20 -G "$GXCORE" \
+for _t in $TIMEOUTS; do
+  RESP="$(curl -sL --http1.1 --max-time "$_t" -G "$GXCORE" \
     --data-urlencode action=dev_session --data-urlencode "secret=$SECRET" --data-urlencode "app=$APP" 2>/dev/null)"
   case "$RESP" in \{*) break ;; esac
   i=$((i + 1)); [ "$i" -le 4 ] && sleep 2
@@ -160,7 +174,13 @@ done
 
 case "$RESP" in
   \{*) ;;
-  *) echo "gxdevlogin: GX Core did not return JSON after 4 tries (offline, or the route is not deployed yet)." >&2; exit 1 ;;
+  # NAME SLOWNESS FIRST. It is the cause that has actually occurred, and the old text did not list it
+  # at all — which sent the reader to check a deployment that was fine.
+  *) echo "gxdevlogin: GX Core did not return JSON after 4 tries, the last waiting 65s." >&2
+     echo "  Most likely: GX Core /exec is slow right now — it has been measured stalling 16-45s." >&2
+     echo "  Wait a minute and re-run before suspecting anything else." >&2
+     echo "  Less likely: you are offline, or ?action=dev_session is not deployed (needs GX Core v308+)." >&2
+     exit 1 ;;
 esac
 
 # The response is the session payload. Keep it in one place: python does the parsing AND builds the
