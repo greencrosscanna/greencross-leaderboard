@@ -122,6 +122,7 @@ fetch serve.py           serve.py 755 || true
 fetch serve.js           serve.js 755 || true
 fetch gx-preflight.sh    gx-preflight.sh 755 || true
 fetch gxengine.sh        gxengine.sh 755 || true
+fetch gx-deadcode.sh     gx-deadcode.sh 755 || true
 # chmod each file individually with an explicit mode. "chmod +x a b c" is subject to umask and skips
 # the whole list if it errors early, and mktemp+mv lands these at 0600 -- which silently left deploy.sh
 # non-executable in some repos after a sync.
@@ -151,7 +152,7 @@ fetch gxengine.sh        gxengine.sh 755 || true
 # `sh` for exactly this reason -- gx-preflight, theme-preflight and run-tests alike. Keep it that way:
 # a hook that depends on a mode bit is a hook this filesystem can switch off without telling you.
 _notexec=""
-for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh gx-usenglish.sh gxclaim.sh gxdevlogin.sh; do
+for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh gx-deadcode.sh gx-usenglish.sh gxclaim.sh gxdevlogin.sh; do
   [ -f "$f" ] || continue
   chmod 755 "$f" 2>/dev/null || true
   [ -x "$f" ] || _notexec="$_notexec $f"
@@ -172,7 +173,7 @@ done
 # So `update-index` alone does NOT make it stick — 4f01457 proves that; the very next commit undid it.
 # The habit is the fix, which is why the message below leads with the habit.
 _badmode=""
-for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh gx-usenglish.sh gxclaim.sh gxdevlogin.sh; do
+for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh gx-deadcode.sh gx-usenglish.sh gxclaim.sh gxdevlogin.sh; do
   [ -f "$f" ] || continue
   case "$(git ls-files -s "$f" 2>/dev/null | awk '{print $1}')" in
     100644) [ -x "$f" ] && _badmode="$_badmode $f" ;;
@@ -214,27 +215,37 @@ fi
 # "apps-script" means serve.js is outside the push scope entirely and there is nothing to warn about.
 # Comparing literally against "." reports apps-script repos as armed, which is a false alarm in a
 # warning nobody can act on — and a false alarm here teaches people to ignore the true one.
-if [ -f .clasp.json ] && [ -f serve.js ]; then
+# CHECK EVERY ROOT-LEVEL .js THIS SCRIPT PLACES, not one remembered filename. This guard used to
+# test literally for "serve.js". That is the same mistake the hazard itself is made of — matching a
+# spelling instead of the mechanism — and it would have stayed silent for the next such file. It
+# nearly did: gx-deadcode was first written as a root-level .js in 2026-09-13 and this guard had
+# nothing to say about it. (It ships as .sh now, which is why the list below is short again.)
+_SYNCED_ROOT_JS="serve.js"
+
+if [ -f .clasp.json ]; then
   _rootdir=$(sed -n 's/.*"rootDir"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' .clasp.json | head -1)
   [ -n "$_rootdir" ] || _rootdir="."
   _rootabs=$(cd "$_rootdir" 2>/dev/null && pwd -P) || _rootabs=""
   if [ -n "$_rootabs" ] && [ "$_rootabs" = "$(pwd -P)" ]; then
-    # In scope. Two shapes of .claspignore keep it out, and BOTH are in use across the suite:
-    #   a denylist naming the file      (inventory, sales)
-    #   an allowlist of `**` + !include (performance) — excludes serve.js without ever mentioning it
-    _safe=""
-    if [ -f .claspignore ]; then
-      _ci=$(sed 's/#.*//' .claspignore | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
-      printf '%s\n' "$_ci" | grep -qx 'serve\.js' && _safe="named"
-      if [ -z "$_safe" ] && printf '%s\n' "$_ci" | grep -qx '\*\*' \
-         && ! printf '%s\n' "$_ci" | grep -qx '!serve\.js'; then _safe="allowlist"; fi
-    fi
-    if [ -z "$_safe" ]; then
-      echo "  ! serve.js is inside clasp's push scope here and .claspignore does not exclude it."
-      echo "    Your NEXT backend deploy will fail with a parse error naming serve.gs, whatever that"
-      echo "    deploy is carrying. One line fixes it, before you forget this warning:"
-      echo "      printf '\n# Node dev server, synced from gx-theme. rootDir is the repo root and\n# nothing here excludes JS by extension, so clasp would push this as serve.gs,\n# where the node shebang is a parse error that fails the WHOLE push.\nserve.js\n' >> .claspignore"
-    fi
+    _ci=""
+    [ -f .claspignore ] && _ci=$(sed 's/#.*//' .claspignore | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
+    # An allowlist (`**` then !include) excludes every un-named file at once, so one test covers all.
+    _allowlist=""
+    printf '%s\n' "$_ci" | grep -qx '\*\*' && _allowlist=1
+
+    for _js in $_SYNCED_ROOT_JS; do
+      [ -f "$_js" ] || continue
+      _safe=""
+      _esc=$(printf '%s' "$_js" | sed 's/\./\\./g')
+      printf '%s\n' "$_ci" | grep -qx "$_esc" && _safe="named"
+      if [ -z "$_safe" ] && [ -n "$_allowlist" ] \
+         && ! printf '%s\n' "$_ci" | grep -qx "!$_esc"; then _safe="allowlist"; fi
+      [ -n "$_safe" ] && continue
+      echo "  ! $_js is inside clasp's push scope here and .claspignore does not exclude it."
+      echo "    Your NEXT backend deploy will fail with a parse error naming ${_js%.js}.gs —"
+      echo "    whatever that deploy is carrying. One line fixes it, before you forget this warning:"
+      echo "      printf '\n# Node-side dev file synced from gx-theme. rootDir is the repo root and\n# nothing here excludes JS by extension, so clasp would push this as ${_js%.js}.gs,\n# where the node shebang is a parse error that fails the WHOLE push.\n$_js\n' >> .claspignore"
+    done
   fi
 fi
 

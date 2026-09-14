@@ -38,13 +38,20 @@ done
 # twice and races its `git commit` against yours; that happened on 2026-09-13 and left the release
 # unrecorded behind a stale index.lock.
 #
+# THE [-] IN THE PATTERN BELOW IS LOAD-BEARING — do not "simplify" it to a plain hyphen. gx-sync
+# decides whether to overwrite a file by grepping that file for the literal marker, so a shared file
+# that merely MENTIONS the marker pins ITSELF, everywhere, from its first sync onward. This script did
+# exactly that on 2026-09-13: five spokes took a copy and gx-sync would never have updated any of them
+# again, silently, while reporting a clean sync. The bracket makes the regex match the marker without
+# the file containing it. tests/synced_files_marker_test.js in gx-theme fails if this regresses.
+#
 # ASK THE FILE, DO NOT KEEP A LIST OF REPOS. The two marks below are the ones that are actually TRUE
 # of a self-deploying deploy.sh: it is pinned against gx-sync (or the next sync would replace it with
 # the recorder, which is a documented 2026-08-22 outage) and it runs clasp itself. A hardcoded
 # "if leaderboard" would be wrong the day a second spoke forks its deploy.sh, and nothing would say so.
 _own_pipeline=0
 if [ -f "$SCRIPT_DIR/deploy.sh" ] \
-   && grep -q 'gx-sync:keep-local' "$SCRIPT_DIR/deploy.sh" 2>/dev/null \
+   && grep -qE 'gx-sync:keep[-]local' "$SCRIPT_DIR/deploy.sh" 2>/dev/null \
    && grep -q 'clasp push' "$SCRIPT_DIR/deploy.sh" 2>/dev/null; then
   _own_pipeline=1
 fi
@@ -293,8 +300,46 @@ RESP="$(curl -sL --max-time 20 -G "$GXCORE" \
   --data-urlencode "by=gxengine@$(hostname -s 2>/dev/null || echo local)" \
   --data-urlencode "rows=$ROWS" 2>/dev/null)"
 echo "recorded   : $RESP"
-if [ "$RECORD_ONLY" = "1" ]; then
-  echo "✓ $APP pin recorded at ${HEAD_SHA:0:9}${LV:+, running GXCore v$LV}"
+
+# ── Did the record actually land? ───────────────────────────────────────────────────────────────
+# The POST goes through the same bouncing /exec second hop as everything else, so an EMPTY reply is
+# routine and means nothing either way — the write usually succeeded and only the answer was lost.
+# This printed "✓ pin recorded" regardless, which is the worst of both: it cannot tell a bounced
+# RESPONSE from a failed WRITE, and it reported success for both. Observed 2026-09-13 on
+# performance — blank reply, row written fine, and the only way to know was to go and look.
+#
+# So go and look. Read core_pins back and compare the sha to the one we just claimed to record.
+# Costs one GET on the uncommon path and turns a guess into an answer.
+case "$RESP" in
+  *'"ok":true'*) _pin_ok=1 ;;
+  *)
+    _pin_ok=0
+    _seen="$(curl -sL --max-time 20 "$GXCORE?action=core_pins" 2>/dev/null | python3 -c "
+import sys, json
+try:
+    d = json.loads(sys.stdin.read(), strict=False)
+except Exception:
+    raise SystemExit(0)
+rows = d if isinstance(d, list) else (d.get('pins') or d.get('rows') or [])
+for r in rows if isinstance(rows, list) else []:
+    if str(r.get('app', '')) == '$APP':
+        print(str(r.get('deployed_sha', '')))
+        break
+" 2>/dev/null)"
+    [ -n "$_seen" ] && [ "${_seen}" = "${HEAD_SHA}" ] && _pin_ok=1
+    ;;
+esac
+
+if [ "$_pin_ok" = "1" ]; then
+  if [ "$RECORD_ONLY" = "1" ]; then
+    echo "✓ $APP pin recorded at ${HEAD_SHA:0:9}${LV:+, running GXCore v$LV}"
+  else
+    echo "✓ $APP deployed at ${HEAD_SHA:0:9}${LV:+, running GXCore v$LV}"
+  fi
 else
-  echo "✓ $APP deployed at ${HEAD_SHA:0:9}${LV:+, running GXCore v$LV}"
+  [ "$RECORD_ONLY" = "1" ] || echo "✓ $APP deployed at ${HEAD_SHA:0:9}${LV:+, running GXCore v$LV}"
+  echo "! core_pins does NOT show ${HEAD_SHA:0:9} for $APP — the pin was not recorded."
+  echo "  The deploy itself is unaffected; only the record of it is missing."
+  echo "  Re-run (safe to repeat):  sh ./gxengine.sh --record-only"
+  exit 1
 fi
