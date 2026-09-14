@@ -82,7 +82,90 @@ function buildDiscountRegistry_() {
   var reg = { builtAt: new Date().toISOString(), byName: byName };
   getProps_().setProperty(GC_DISCOUNT_REGISTRY_KEY, JSON.stringify(reg));
   _discRegMemo_ = reg;
+  publishDiscountRegistry_(reg);
   return reg;
+}
+
+/* ─── The registry, PUBLISHED to GX Core kv `discountRegistry` (2026-09-14) ─────────────────────
+ * GX Crew's discount screen needs the discount NAMES, and until now it fetched them straight from
+ * this app's /exec — app-to-app, and a Leaderboard outage showed managers a partial list. Crew asked
+ * for this shape and will read it with GXCore.getKv, then delete the direct call.
+ *
+ * NOT the second-writer problem saveDiscountSettings_ refuses. That is about `discountRules` (the
+ * overrides), which Crew owns. `discountRegistry` is derived from THIS app's Dutchie credentials and
+ * nothing else can rebuild it, so this app is its only writer and Crew only reads it. There is no
+ * bound-library kv writer, so it goes over Core's documented secret-gated set_config.
+ *
+ * WHAT IS LEFT OUT, ON PURPOSE: every `excluded` flag. Those live only in `discountRules`; publishing
+ * a copy here would bring back two sources for one pay-affecting decision.
+ *
+ * WHEN: on every rebuild — `builtAt` is how Crew tells a stale registry — and, if that publish failed,
+ * retried from refreshDiscountRegistryIfStale_ at most every 30 minutes. Never on the hot path, and a
+ * failure is logged, never thrown: a GX Core hiccup must not break the rebuild it rides on.
+ */
+var GC_DISCOUNT_REGISTRY_CORE_KEY = 'discountRegistry';
+var GC_DISCOUNT_PUBLISHED_KEY     = 'GC_DISCOUNT_REGISTRY_PUBLISHED_AT';   // builtAt of the last publish Core accepted
+var GC_DISCOUNT_PUBLISH_TRY_KEY   = 'GC_DISCOUNT_REGISTRY_PUBLISH_TRIED';  // ms of the last attempt, for the retry throttle
+
+/** The published value: names and classes only, never an exclusion. Pure. */
+function discountRegistryPayload_(reg) {
+  var discretionary = [], automatic = [], loyalty = [];
+  var byName = (reg && reg.byName) || {};
+  Object.keys(byName).forEach(function (nm) {
+    var r = byName[nm] || {};
+    if (r.klass === 'automatic') { automatic.push(nm); return; }
+    if (r.klass === 'loyalty')   { loyalty.push(nm); return; }
+    discretionary.push({ name: nm, code: r.code || '', method: r.appMethod || '' });
+  });
+  discretionary.sort(function (a, b) { return a.name.localeCompare(b.name); });
+  automatic.sort(); loyalty.sort();
+  return {
+    builtAt: (reg && reg.builtAt) || null,
+    counts: { automatic: automatic.length, loyalty: loyalty.length, discretionary: discretionary.length },
+    discretionary: discretionary,
+    autoExcluded: { automatic: automatic, loyalty: loyalty },
+  };
+}
+
+function publishDiscountRegistry_(reg) {
+  var props = getProps_();
+  props.setProperty(GC_DISCOUNT_PUBLISH_TRY_KEY, String(new Date().getTime()));
+  try {
+    var secret = props.getProperty('GX_DEPLOY_SECRET');
+    if (!secret) throw new Error('GX_DEPLOY_SECRET is not set on this script');
+    var payload = discountRegistryPayload_(reg);
+    if (!payload.builtAt) throw new Error('registry has no builtAt');
+    var resp = UrlFetchApp.fetch(GXCORE_EXEC_KEYS_, {
+      method: 'post', contentType: 'text/plain', muteHttpExceptions: true, followRedirects: true,
+      payload: JSON.stringify({
+        action: 'set_config', secret: secret, key: GC_DISCOUNT_REGISTRY_CORE_KEY,
+        value: JSON.stringify(payload),
+        notes: 'Published by Leaderboard on every discount-registry rebuild. Read by GX Crew (discount names). ' +
+               'Names and classes only: which discounts are EXCLUDED lives in discountRules, not here.',
+      }),
+    });
+    var body = resp.getContentText() || '';
+    var out = null;
+    try { out = JSON.parse(body); } catch (e) { /* the /exec flake answers HTML */ }
+    if (!out || !out.ok) {
+      throw new Error('HTTP ' + resp.getResponseCode() + ': ' + (out && out.error ? out.error : body.slice(0, 120)));
+    }
+    props.setProperty(GC_DISCOUNT_PUBLISHED_KEY, payload.builtAt);
+    Logger.log('[discounts] published registry ' + payload.builtAt + ' to GX Core kv `' + GC_DISCOUNT_REGISTRY_CORE_KEY + '`');
+    return { ok: true, builtAt: payload.builtAt };
+  } catch (e) {
+    Logger.log('[discounts] registry publish FAILED (will retry): ' + ((e && e.message) || e));
+    return { ok: false, error: (e && e.message) || String(e) };
+  }
+}
+
+/** Retry an unpublished rebuild, at most every 30 minutes. Cheap when there is nothing to do. */
+function publishDiscountRegistryIfPending_(reg) {
+  var props = getProps_();
+  if (!reg || !reg.builtAt || props.getProperty(GC_DISCOUNT_PUBLISHED_KEY) === reg.builtAt) return null;
+  var tried = Number(props.getProperty(GC_DISCOUNT_PUBLISH_TRY_KEY) || 0);
+  if (new Date().getTime() - tried < 30 * 60000) return null;
+  return publishDiscountRegistry_(reg);
 }
 
 /** Rebuild only if missing or older than maxAgeHours. Off-hot-path (may hit Dutchie). */
@@ -93,7 +176,7 @@ function refreshDiscountRegistryIfStale_(maxAgeHours) {
       var reg = JSON.parse(raw);
       if (reg && reg.builtAt) {
         var ageMs = new Date().getTime() - new Date(reg.builtAt).getTime();
-        if (ageMs < (maxAgeHours || 12) * 3600000) return reg;
+        if (ageMs < (maxAgeHours || 12) * 3600000) { publishDiscountRegistryIfPending_(reg); return reg; }
       }
     } catch (e) {}
   }
