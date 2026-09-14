@@ -25,45 +25,42 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # `secrets` is NOT available in an `if:` condition — a step guarded by `if: secrets.X != ''`
-    # never runs, silently. Map it to env at job level and test that.
-    env:
-      GX_SIBLING_TOKEN: ${{ secrets.GX_SIBLING_TOKEN }}
     steps:
       - name: Check out greencross-leaderboard
         uses: actions/checkout@v7
         with:
+          # Siblings are checked out BESIDE this repo, so the main checkout needs its own `path:`
+          # too — every sibling-reading suite here resolves `__dirname/../../greencross-<name>`.
           path: greencross-leaderboard
 
-      # Cross-repo checkout needs a PAT — the default GITHUB_TOKEN is scoped to THIS repo.
-      # Without GX_SIBLING_TOKEN the job still passes; cross_app_contract_test.js and store_palette_drift_test.js
-      # simply skip, and the summary below says so rather than letting the tick imply coverage.
-      - name: Check out greencross-command-center
-        if: env.GX_SIBLING_TOKEN != ''
-        continue-on-error: true
-        uses: actions/checkout@v7
-        with:
-          repository: greencrosscanna/greencross-command-center
-          path: greencross-command-center
-          token: ${{ secrets.GX_SIBLING_TOKEN }}
-
-      - name: Check out greencross-inventory
-        if: env.GX_SIBLING_TOKEN != ''
-        continue-on-error: true
-        uses: actions/checkout@v7
-        with:
-          repository: greencrosscanna/greencross-inventory
-          path: greencross-inventory
-          token: ${{ secrets.GX_SIBLING_TOKEN }}
-
+      # NO TOKEN, AND NONE SHOULD BE ADDED. greencross-sales is PUBLIC, so actions/checkout reaches
+      # it with the default GITHUB_TOKEN. It is the sibling the hub's canonical cross-app contract
+      # and palette-drift checks read, so having it here means the ONLY sibling this repo's CI is
+      # missing is the private hub — one labeled fact instead of three token-gated steps.
       - name: Check out greencross-sales
-        if: env.GX_SIBLING_TOKEN != ''
-        continue-on-error: true
         uses: actions/checkout@v7
         with:
           repository: greencrosscanna/greencross-sales
           path: greencross-sales
-          token: ${{ secrets.GX_SIBLING_TOKEN }}
+
+      # ─── WHY greencross-command-center IS NOT CHECKED OUT HERE, AND MUST NOT BE "FIXED" ──────────
+      #
+      # Four suites in this repo read the hub as a sibling and SKIP without it:
+      #   cross_app_contract_test.js      · revenue_rules_contract_test.js
+      #   store_palette_drift_test.js     · avatar_write_test.js (its end-to-end half only)
+      #
+      # greencross-command-center is a PRIVATE repo. A spoke's default GITHUB_TOKEN is scoped to the
+      # spoke and cannot reach it. The obvious "fix" is a personal access token — DON'T. It would be a
+      # long-lived credential to the repo that publishes the GXCore library, stored in a public repo's
+      # secrets, to buy coverage that ALREADY RUNS: the hub's own CI checks out all seven repos and
+      # runs those same canonical suites against this repo's real files. The contracts are gated; they
+      # are gated on the other side, which is the side that owns them.
+      #
+      # So those four skipping here is CORRECT, not a gap. They are also still enforced locally by
+      # gx-preflight.sh as the pre-push hook, where the whole suite is a sibling checkout on disk.
+      # This block previously carried three PAT-gated checkout steps and a job summary instructing the
+      # reader to create the PAT — dead scaffolding (the secret was never set) pointing at the wrong
+      # answer. Removed 2026-09-13.
 
       - uses: actions/setup-node@v7
         with:
@@ -106,12 +103,21 @@ jobs:
               fi
             done
             echo ""
-            if [ -d ../greencross-command-center ]; then
-              echo "Sibling repos present — cross-repo suites ran."
+            # greencross-sales is public and checked out unconditionally, so its absence means a
+            # checkout step FAILED — say so rather than reporting it as an expected skip.
+            if [ -d ../greencross-sales ]; then
+              echo "greencross-sales present (public, no token)."
             else
-              echo "> **Siblings absent.** cross_app_contract_test.js and store_palette_drift_test.js did not run here."
-              echo "> They are still gated by this repo's local pre-push hook, so this is reduced CI"
-              echo "> coverage, not an unguarded contract. Add a repo-scoped PAT as \`GX_SIBLING_TOKEN\`"
-              echo "> to close the gap."
+              echo "> **greencross-sales is absent.** It is public and needs no token, so a checkout"
+              echo "> step failed — this is not an expected skip."
             fi
+            echo ""
+            echo "> **greencross-command-center is deliberately NOT checked out here.** It is a PRIVATE"
+            echo "> repo and a spoke's default GITHUB_TOKEN cannot reach it. The four suites that read"
+            echo "> it — cross-app contract, revenue rules, palette drift, and the avatar end-to-end"
+            echo "> half — SKIP here **on purpose**. The same canonical suites run against this repo's"
+            echo "> real files in the hub's own CI, which checks out all seven repos, and locally in"
+            echo "> this repo's pre-push hook. **Do not add a PAT to \"close\" this gap** — that would"
+            echo "> put a long-lived credential for the GXCore library repo into a public repo's"
+            echo "> secrets to duplicate coverage that already exists."
           } >> "$GITHUB_STEP_SUMMARY"
