@@ -450,6 +450,15 @@ function doGet(e) {
         }
       })(), params.callback);
     }
+    // Which way sign-ins actually go, and who the cfg.lbLoginFallback=enforce flip would lock out.
+    // DEPLOY-SECRET twin of the director route below, so the rollout can be checked from a shell
+    // without a director signed in. Names included, hence never public.
+    if (params.action === 'loginfallbackaudit' && params.secret) {
+      var _lfSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+      if (!_lfSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
+      if (params.secret !== _lfSecret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
+      return jsonOut(gxLoginFallbackAudit_(), params.callback);
+    }
     // Public: proves the write gate is really wired, including that a bogus user is actually
     // REFUSED. "hasRoleForApp:true" alone would be a comfortable lie.
     if (params.action === 'writeauthprobe') {
@@ -734,6 +743,12 @@ function doGet(e) {
     if (params.action === 'writegrantaudit') {
       requireRole_(auth, ['owner','director']);
       return jsonOut(gxWriteGrantAudit_(), params.callback);
+    }
+
+    // Management-only: the sign-in record behind the cfg.lbLoginFallback rollout. See gxLocalAfterCoreRefusal_.
+    if (params.action === 'loginfallbackaudit') {
+      requireRole_(auth, ['owner','director']);
+      return jsonOut(gxLoginFallbackAudit_(), params.callback);
     }
 
     // Management-only: does THIS project's session secret match GX Core's? Determines whether our
@@ -1333,6 +1348,11 @@ function doGet(e) {
     if (params.action === 'renew') {
       // Silently re-issue a fresh session token (used by the client heartbeat).
       if (!auth.ok) return jsonOut({ ok: false, error: auth.error || 'Auth required' }, params.callback);
+      // A Core-signed session is not ours to extend: renewing would trade a short dev session for a
+      // 7-day token signed with OUR key, which then skips every Core re-check. See gxCoreSignedSession_.
+      if (auth.via === 'gxcore') {
+        return jsonOut({ ok: false, error: 'This session cannot be renewed here — sign in again.', code: 'not_renewable' }, params.callback);
+      }
       const newToken = issueSessionToken_(auth.user);
       const newExp   = new Date(Date.now() + GC_SESSION_TTL_MS).toISOString();
       return jsonOut({ ok: true, token: newToken, expiresAt: newExp }, params.callback);
