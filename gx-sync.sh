@@ -260,9 +260,21 @@ if [ -d .git ]; then
     # that took the bit off gx-preflight.sh in four repos and every push died with
     # "Permission denied": the guard did not weaken, it stopped running.
     # Running it through sh makes the guard independent of a mode we cannot keep.
-    printf '#!/bin/sh\nexec sh ./gx-preflight.sh\n' > .git/hooks/pre-push
+    # gxclaim FIRST, and this line was missing until 2026-09-14. The suite CLAUDE.md says gxclaim
+    # "refuses the second at commit, at push, and at branch change" — and at PUSH that was false in
+    # all six spokes, because this hook was a bare exec of the preflight. gxclaim was armed at
+    # pre-commit and reference-transaction only, so a second session that committed with
+    # --no-verify, or that simply pushed commits already sitting in the shared tree, walked through.
+    # Found by gxwatchdogs.sh on its first run, which is the argument for having written it: nothing
+    # in the suite could previously answer "is the gate people believe in the gate that is installed".
+    #
+    # Guarded on the file EXISTING so a repo without gxclaim.sh (or a CI checkout, where there is no
+    # claim to hold and never a second session) pushes exactly as before. A gate that fails because
+    # someone cloned one repo alone is a gate people learn to bypass — the same rule the cross-app
+    # suites follow when a sibling is absent.
+    printf '#!/bin/sh\n[ -f ./gxclaim.sh ] && { sh ./gxclaim.sh check "this push" || exit 1; }\nexec sh ./gx-preflight.sh\n' > .git/hooks/pre-push
     chmod +x .git/hooks/pre-push
-    echo "  + .git/hooks/pre-push -> gx-preflight.sh"
+    echo "  + .git/hooks/pre-push -> gxclaim check, then gx-preflight.sh"
   else
     echo "  . .git/hooks/pre-push is custom - add './gx-preflight.sh' to it yourself"
   fi
