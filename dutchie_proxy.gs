@@ -1346,16 +1346,9 @@ function doGet(e) {
     }
 
     if (params.action === 'renew') {
-      // Silently re-issue a fresh session token (used by the client heartbeat).
-      if (!auth.ok) return jsonOut({ ok: false, error: auth.error || 'Auth required' }, params.callback);
-      // A Core-signed session is not ours to extend: renewing would trade a short dev session for a
-      // 7-day token signed with OUR key, which then skips every Core re-check. See gxCoreSignedSession_.
-      if (auth.via === 'gxcore') {
-        return jsonOut({ ok: false, error: 'This session cannot be renewed here — sign in again.', code: 'not_renewable' }, params.callback);
-      }
-      const newToken = issueSessionToken_(auth.user);
-      const newExp   = new Date(Date.now() + GC_SESSION_TTL_MS).toISOString();
-      return jsonOut({ ok: true, token: newToken, expiresAt: newExp }, params.callback);
+      // Silently re-issue a fresh session token (used by the client heartbeat) -- but only while the
+      // person still has access. See renewSession_ for the grant re-check and why a Core ERROR still renews.
+      return jsonOut(renewSession_(auth), params.callback);
     }
 
     if (params.action === 'setuptrigger') {

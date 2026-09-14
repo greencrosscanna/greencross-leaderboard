@@ -148,6 +148,46 @@ function listUsers_() {
 }
 
 /**
+ * The heartbeat's renewal. Re-issues a 7-day token -- ONLY while the person still has access.
+ *
+ * THE HOLE (closed 2026-09-14, found by Sales in its own copy). The client renews every 6 hours once
+ * within 48h of expiry, and this used to mint a fresh token for any valid signature. So a session
+ * never ended: someone removed in the Command Center stayed signed in for as long as their screen
+ * stayed open, and reads never re-check the grant. Now the renewal asks GX Core first:
+ *   - roleForApp answers null  -> refused (no_access). The token they hold still runs to its expiry,
+ *     at most 48h from here, and then they are signed out for good.
+ *   - roleForApp THROWS        -> renewed anyway. A Core bounce on the wrong six-hour tick must not
+ *     sign a wall screen out mid-shift; the next tick asks again.
+ *   - a Core-signed session    -> never renewed here. It is not ours to extend, and renewing would
+ *     trade a short dev session for a 7-day token of ours that skips every Core re-check.
+ *
+ * Safe to ship blind in a way the login fallback was not: writegrantaudit shows every local user
+ * resolves to a Core role (10 of 10 on 2026-09-14), so no current signed-in person is refused.
+ */
+function renewSession_(auth) {
+  if (!auth || !auth.ok) return { ok: false, error: (auth && auth.error) || 'Auth required' };
+  if (auth.via === 'gxcore') {
+    return { ok: false, error: 'This session cannot be renewed here — sign in again.', code: 'not_renewable' };
+  }
+  var role = null, coreErr = null;
+  try {
+    role = GXCore.roleForApp(String(auth.user || '').toLowerCase(), 'performance');
+  } catch (e) {
+    coreErr = (e && e.message) || String(e);
+  }
+  if (!role && !coreErr) {
+    Logger.log('[renew/REFUSED] ' + auth.user + ' — no performance grant in GX Core');
+    return { ok: false, error: 'Your access to Leaderboard has been removed. Ask Sky to restore it.', code: 'no_access' };
+  }
+  if (coreErr) Logger.log('[renew] could not confirm ' + auth.user + ' with GX Core, renewing anyway: ' + coreErr);
+  return {
+    ok: true,
+    token: issueSessionToken_(auth.user),
+    expiresAt: new Date(Date.now() + GC_SESSION_TTL_MS).toISOString(),
+  };
+}
+
+/**
  * Shared sign-on, the same shape Sales already uses: try GX Core first, fall back to this app's own
  * user store so a GX Core hiccup can never lock the floor out at open.
  *

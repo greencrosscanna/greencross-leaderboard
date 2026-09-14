@@ -181,14 +181,42 @@ H.run('shared sign-in', {
   },
 
   renewRefusesCoreSessions: function () {
-    // doGet is not loadable under node, so assert the ORDER in the shipped source: the Core-session
-    // refusal must come before a token of ours is minted, or a 2-hour dev session becomes 7 days.
+    const A = build();
+    const r = A.renewSession_(A.validateSessionToken_(tokenFor('gx-dev', CORE_KEY)));
+    _eq_('a Core-signed session is never renewed into a token of ours', r.code, 'not_renewable');
+    _eq_('and no token comes back', r.token, undefined);
     const src = fs.readFileSync(path.join(__dirname, '..', 'dutchie_proxy.gs'), 'utf8');
     const at = src.indexOf("params.action === 'renew'");
-    const block = src.slice(at, at + 1200);
-    const refuse = block.indexOf("auth.via === 'gxcore'");
-    const mint = block.indexOf('issueSessionToken_(auth.user)');
-    _ok_('renew refuses a Core-signed session before issuing our own token', refuse > 0 && mint > refuse);
+    _ok_('the renew route goes through renewSession_, not a token minted inline',
+      src.slice(at, at + 600).indexOf('renewSession_(auth)') > 0 && src.slice(at, at + 600).indexOf('issueSessionToken_') === -1);
+  },
+
+  // ── 1b. Renewal re-checks the grant ─────────────────────────
+  renewWhileGranted: function () {
+    const A = build({ core: { roleForApp: function (u) { return u === 'dean' ? 'editor' : null; } } });
+    const r = A.renewSession_(A.validateSessionToken_(tokenFor('dean', OUR_KEY)));
+    _eq_('still granted: renewed', r.ok, true);
+    _ok_('with a fresh token of ours that verifies', A.validateSessionToken_(r.token).ok === true);
+  },
+
+  renewRefusedOnceRemoved: function () {
+    const A = build({ core: { roleForApp: function () { return null; } } });
+    const r = A.renewSession_(A.validateSessionToken_(tokenFor('dean', OUR_KEY)));
+    _eq_('removed in the Command Center: renewal refused', r.ok, false);
+    _eq_('as no_access', r.code, 'no_access');
+    _eq_('no token handed out', r.token, undefined);
+  },
+
+  renewSurvivesACoreBounce: function () {
+    const A = build({ core: { roleForApp: function () { throw new Error('GX Core unreachable'); } } });
+    const r = A.renewSession_(A.validateSessionToken_(tokenFor('dean', OUR_KEY)));
+    _eq_('Core throwing: renewed anyway, so a wall screen is not signed out by a hiccup', r.ok, true);
+  },
+
+  renewNeedsAValidSession: function () {
+    const A = build();
+    _eq_('an invalid session renews nothing', A.renewSession_({ ok: false, error: 'Session expired' }),
+      { ok: false, error: 'Session expired' });
   },
 
   // ── 2. The local-password fallback ──────────────────────────
