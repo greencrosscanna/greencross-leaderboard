@@ -1,7 +1,7 @@
 // ============================================================
-//  auth.gs — shared sign-in: Core-signed sessions, and the local-password fallback
+//  auth.gs — shared sign-in: Core-signed sessions, Core-only sign-in, and the GX Core roster
 //
-//  Two holes closed on 2026-09-14, both about the second password list this app keeps:
+//  Two holes closed on 2026-09-14, both about the second password list this app kept:
 //
 //    1. A GX Core token was rejected outright ("Invalid session"), because this app signs with
 //       its OWN key. So the suite's read-only dev session could not open Leaderboard at all.
@@ -10,8 +10,11 @@
 //
 //    2. When GX Core REFUSED a sign-in, the local list was consulted anyway, so someone removed
 //       in the Command Center still got in on an old password. That is now recorded
-//       (cfg.lbLoginFallback = observe) and refused once flipped to enforce. An OUTAGE must still
-//       fall back in both modes, or a Core hiccup locks the floor out at open.
+//       (cfg.lbLoginFallback = observe) and refused once flipped to enforce.
+//
+//  Then on 2026-09-15 the list itself was retired. Sign-in is GX Core only, and a signed-in person's
+//  role and store come from GX Core's app_roster (lbCoreRoster_), with the last roster fetched
+//  standing in during an outage so people already signed in keep working.
 //
 //  Run:  node tests/shared_signin_test.js
 // ============================================================
@@ -34,21 +37,31 @@ function tokenFor(user, key, expMs) {
   return user + ':' + exp + ':' + hmac(user + ':' + exp, key);
 }
 function sha256Bytes(s) { return Array.from(crypto.createHash('sha256').update(String(s)).digest()).map(b => (b > 127 ? b - 256 : b)); }
-function hashHex(s) { return crypto.createHash('sha256').update(String(s)).digest('hex'); }
 
-let props, cache, core, logs;
+let props, cache, core, logs, fetches;
+
+/* GX Core's app_roster answer for performance, in the shape gxAppRoster_ returns. */
+const ROSTER = {
+  ok: true, app: 'performance',
+  grants: [
+    { user_id: 'mike', role: 'director', store: '', displayName: 'Mike Kettler' },
+    { user_id: 'dean', role: 'editor', store: 'hillsboro', displayName: 'Dean Deloof' },
+    { user_id: 'tj',   role: 'editor', store: 'river-rd', displayName: 'TJ Peterson' },
+    { user_id: 'sky',  role: 'editor', store: 'hillsboro', displayName: 'Sky Pinnick' },
+    { user_id: 'odd',  role: 'constructor', store: '', displayName: 'Odd' },
+  ],
+  superadmins: [{ user_id: 'sky', role: 'admin(superadmin)', store: '' }],
+};
 
 function build(opts) {
   opts = opts || {};
   props = Object.assign({
     GC_PERF_SESSION_SECRET: OUR_KEY,
-    gc_perf_users: JSON.stringify({
-      dean: { passHash: hashHex('local-pass'), role: 'store_manager', storeSlug: 'baseline', displayName: 'Dean' },
-      sky:  { passHash: hashHex('sky-pass'),   role: 'owner', displayName: 'Sky' },
-    }),
+    GX_DEPLOY_SECRET: 'deploy-secret',
   }, opts.props || {});
   cache = {};
   logs = [];
+  fetches = [];
   core = Object.assign({
     kv: {},                        // cfg.* values
     kvThrows: false,
@@ -63,10 +76,17 @@ function build(opts) {
       return { ok: true, user: parts[0], app: app, role: role, canEdit: role !== 'viewer' };
     },
     roleForApp: function (u) { return u === 'gx-dev' ? 'viewer' : 'director'; },
+    roster: function () { return JSON.stringify(ROSTER); },   // app_roster body, or throw for an outage
   }, opts.core || {});
 
   return H.load(['dutchie_proxy.gs', 'auth.gs'], {
     stubs: {
+      GXCORE_EXEC_KEYS_: 'https://core.example/exec',
+      UrlFetchApp: { fetch: function (url) {
+        fetches.push(url);
+        const body = core.roster(url);
+        return { getContentText: function () { return body; }, getResponseCode: function () { return 200; } };
+      } },
       Logger: { log: function (m) { logs.push(String(m)); } },
       Utilities: Object.assign({}, {
         computeHmacSha256Signature: function (payload, key) { return hmac(payload, key); },
@@ -74,6 +94,7 @@ function build(opts) {
         computeDigest: function (_, s) { return sha256Bytes(s); },
         DigestAlgorithm: { SHA_256: 'SHA_256' },
         getUuid: function () { return '00000000-0000-0000-0000-000000000000'; },
+        sleep: function () {},
         formatDate: function () { return ''; },
       }),
       PropertiesService: { getScriptProperties: function () {
@@ -219,56 +240,145 @@ H.run('shared sign-in', {
       { ok: false, error: 'Session expired' });
   },
 
-  // ── 2. The local-password fallback ──────────────────────────
+  // ── 2. Sign-in is GX Core only ──────────────────────────────
   coreOkUsesCore: function () {
     const A = build({ core: { login: function () {
       return { ok: true, user: 'dean', role: 'editor', store: 'hillsboro', displayName: 'Dean' };
     } } });
     const r = A.loginUser({ user: 'dean', pass: 'core-pass' });
     _eq_('Core sign-in used when it translates', r.source, 'gxcore');
-    _eq_('recorded as a Core sign-in', JSON.parse(props.GC_LOGIN_PATH_TALLY).gxcore, 1);
+    _eq_('placed on his GX Core home store, in this app\'s slug', r.storeSlug, 'baseline');
+    _ok_('with a token of ours that verifies', A.validateSessionToken_(r.token).ok === true);
   },
 
-  refusalObservedByDefault: function () {
+  coreRefusalIsFinal: function () {
     const A = build({ core: { login: function () { return { ok: false, code: 'bad_credentials' }; } } });
-    const r = A.loginUser({ user: 'dean', pass: 'local-pass' });
-    _eq_('observe (the default): old behavior, local password still admits', r.ok, true);
-    const audit = A.gxLoginFallbackAudit_();
-    _eq_('audit reports observe mode', audit.mode, 'observe');
-    _eq_('and names who the flip would lock out', audit.wouldRefuse.map(x => x.user + '/' + x.core_code), ['dean/bad_credentials']);
-    _eq_('so it is NOT safe to enforce', audit.safeToEnforce, false);
+    const r = A.loginUser({ user: 'dean', pass: 'old-local-pass' });
+    _eq_('Core says no: there is no second list to ask', r, { ok: false, error: 'Invalid username or password', code: 'bad_credentials' });
   },
 
-  refusalEnforced: function () {
-    const A = build({ core: { kv: { 'cfg.lbLoginFallback': 'enforce' },
-                              login: function () { return { ok: false, code: 'no_access' }; } } });
-    const r = A.loginUser({ user: 'dean', pass: 'local-pass' });
-    _eq_('enforce: a Core refusal is final, the old local password no longer admits', r.ok, false);
-    _eq_('with the reason that tells them what to do', r.code, 'no_access');
+  removedPersonToldWhy: function () {
+    const A = build({ core: { login: function () { return { ok: false, code: 'no_access' }; } } });
+    const r = A.loginUser({ user: 'dean', pass: 'right-pass' });
+    _eq_('a removed person is refused', r.ok, false);
+    _eq_('with the reason that tells them what to do', r.error, 'Your access to Leaderboard has been removed. Ask Sky to restore it.');
     _eq_('no token handed out', r.token, undefined);
-    _eq_('recorded as refused, not as a would-refuse', A.gxLoginFallbackAudit_().refused.map(x => x.user), ['dean']);
   },
 
-  outageStillFallsBackWhenEnforcing: function () {
-    const A = build({ props: { GC_LOGIN_FALLBACK_MODE_LAST: 'enforce' },
-                      core: { kv: { 'cfg.lbLoginFallback': 'enforce' },
-                              login: function () { throw new Error('GX Core unreachable'); } } });
-    const r = A.loginUser({ user: 'dean', pass: 'local-pass' });
-    _eq_('Core THROWING is an outage: local still signs the floor in', r.ok, true);
-    _eq_('recorded as unreachable', JSON.parse(props.GC_LOGIN_PATH_TALLY).local_core_unreachable, 1);
+  outageRefusesWithAReason: function () {
+    const A = build({ core: { login: function () { throw new Error('GX Core unreachable'); } } });
+    const r = A.loginUser({ user: 'dean', pass: 'anything' });
+    _eq_('Core down: sign-in refused, not waved through', r.ok, false);
+    _eq_('as core_unreachable, so the screen can say "try again"', r.code, 'core_unreachable');
   },
 
-  unreadableSettingHoldsEnforce: function () {
-    const A = build({ props: { GC_LOGIN_FALLBACK_MODE_LAST: 'enforce' },
-                      core: { kvThrows: true, login: function () { return { ok: false, code: 'bad_credentials' }; } } });
-    _eq_('an unreadable setting holds the last KNOWN mode, never relaxes to observe',
-      A.loginUser({ user: 'dean', pass: 'local-pass' }).ok, false);
+  unplaceableManagerRefused: function () {
+    const A = build({ core: { login: function () { return { ok: true, user: 'dean', role: 'editor', store: '' }; } } });
+    const r = A.loginUser({ user: 'dean', pass: 'core-pass' });
+    _eq_('a manager with no home store is refused rather than sent to Baseline', r.ok, false);
+    _eq_('as core_unusable', r.code, 'core_unusable');
   },
 
-  bothRefuseUnchanged: function () {
-    const A = build({ core: { login: function () { return { ok: false, code: 'bad_credentials' }; } } });
-    const r = A.loginUser({ user: 'dean', pass: 'wrong' });
-    _eq_('both lists say no: same answer as before', r, { ok: false, error: 'Invalid username or password' });
-    _eq_('and nothing recorded as a would-refuse', props.GC_LOGIN_WOULD_REFUSE, undefined);
+  noLocalListLeft: function () {
+    const src = ['auth.gs', 'dutchie_proxy.gs', 'endpoints.gs']
+      .map(f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8')).join('\n');
+    _ok_('nothing reads the retired gc_perf_users property',
+      !/getProperty\(\s*(GC_USERS_KEY|'gc_perf_users')/.test(src) && !/GC_USERS_KEY\s*=/.test(src));
+    _ok_('and no local password check survives', !/_loginUserLocal_|passHash/.test(src));
+  },
+
+  // ── 3. Role and store come from GX Core's roster ─────────────
+  rosterGivesRoleAndStore: function () {
+    const A = build();
+    const dean = A.validateSessionToken_(tokenFor('dean', OUR_KEY));
+    let threw = null;
+    try { A.requireRole_(dean, ['owner', 'director']); } catch (e) { threw = e.message; }
+    _eq_('an editor is not a director', threw, 'Insufficient permissions');
+    threw = null;
+    try { A.requireRole_(dean, ['owner', 'director', 'store_manager', 'asst_manager']); } catch (e) { threw = e.message; }
+    _eq_('an editor is a store manager', threw, null);
+    threw = null;
+    try { A.requireStore_(dean, 'baseline'); } catch (e) { threw = e.message; }
+    _eq_('his own store opens', threw, null);
+    threw = null;
+    try { A.requireStore_(dean, 'river'); } catch (e) { threw = e.message; }
+    _eq_('another store does not', threw, 'Access denied for store: river');
+    _ok_('the roster was asked for with the deploy secret', /action=app_roster&app=performance&secret=deploy-secret/.test(fetches[0]));
+  },
+
+  directorGetsEveryStore: function () {
+    const A = build();
+    const mike = A.validateSessionToken_(tokenFor('mike', OUR_KEY));
+    let threw = null;
+    try { A.requireRole_(mike, ['owner', 'director']); A.requireStore_(mike, 'river'); } catch (e) { threw = e.message; }
+    _eq_('director: director routes and any store', threw, null);
+  },
+
+  superadminIsDirectorWhateverTheGrant: function () {
+    const A = build();
+    const sky = A.validateSessionToken_(tokenFor('sky', OUR_KEY));
+    let threw = null;
+    try { A.requireRole_(sky, ['owner', 'director']); } catch (e) { threw = e.message; }
+    _eq_('a superadmin whose grant row says editor still gets director routes (Core resolves admin first)', threw, null);
+  },
+
+  removedPersonRefusedOnReads: function () {
+    const A = build();
+    const gone = A.validateSessionToken_(tokenFor('gone', OUR_KEY));
+    let threw = null;
+    try { A.requireRole_(gone, ['owner', 'director', 'store_manager', 'asst_manager']); } catch (e) { threw = e.message; }
+    _eq_('a valid token for someone GX Core no longer lists is refused', threw, 'User not found');
+    threw = null;
+    try { A.requireStore_(gone, 'baseline'); } catch (e) { threw = e.message; }
+    _eq_('including on store routes, which the old list let an unknown user through', threw, 'Access denied for store: baseline');
+  },
+
+  unmappedRoleDropped: function () {
+    const A = build();
+    _eq_('a grant role this app cannot translate (even an inherited key) puts nobody on the roster',
+      A.lbRosterUser_('odd'), null);
+  },
+
+  rosterIsCached: function () {
+    const A = build();
+    A.lbRosterUser_('dean'); A.lbRosterUser_('mike'); A.lbRosterUser_('tj');
+    _eq_('one GX Core read serves every lookup inside the cache window', fetches.length, 1);
+  },
+
+  outageUsesLastRoster: function () {
+    const A = build();
+    A.lbRosterUser_('dean');                         // a good read, remembered
+    cache = {};                                      // cache expired
+    core.roster = function () { throw new Error('GX Core unreachable'); };
+    _eq_('Core down: the last roster still places a signed-in manager', A.lbRosterUser_('dean').storeSlug, 'baseline');
+    _eq_('and the fallback is cached briefly, not re-fetched per request', (A.lbRosterUser_('mike') || {}).role, 'director');
+    _ok_('retried a few times, then held', fetches.length <= 4);
+  },
+
+  badReadDoesNotOverwriteGoodRoster: function () {
+    const A = build();
+    A.lbRosterUser_('dean');
+    cache = {};
+    core.roster = function () { return JSON.stringify({ ok: true, grants: [], superadmins: [] }); };
+    _eq_('an EMPTY roster is treated as a bad read, so nobody is locked out by it', (A.lbRosterUser_('dean') || {}).role, 'store_manager');
+    cache = {};
+    core.roster = function () { return '<!DOCTYPE html>'; };
+    _eq_('nor is the /exec HTML flake', (A.lbRosterUser_('dean') || {}).role, 'store_manager');
+  },
+
+  noRosterEverFailsClosed: function () {
+    const A = build({ core: { roster: function () { throw new Error('GX Core unreachable'); } } });
+    let threw = null;
+    try { A.requireRole_(A.validateSessionToken_(tokenFor('mike', OUR_KEY)), ['owner', 'director']); } catch (e) { threw = e.message; }
+    _ok_('no roster ever fetched and Core down: the role check refuses rather than guessing', /could not be reached/.test(threw || ''));
+  },
+
+  managerNamesComeFromRoster: function () {
+    const A = build();
+    const names = A.lbRosterList_().filter(u => u.role === 'store_manager').map(u => u.displayName + '@' + u.storeSlug).sort();
+    _eq_('store managers by home store, for the director and standings views', names, ['Dean Deloof@baseline', 'TJ Peterson@river']);
+    core.roster = function () { throw new Error('down'); };
+    cache = {}; props = { GC_PERF_SESSION_SECRET: OUR_KEY, GX_DEPLOY_SECRET: 'deploy-secret' };
+    _eq_('a display lookup never throws, it just has no names', A.lbRosterList_(), []);
   },
 });

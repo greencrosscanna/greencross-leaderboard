@@ -1,6 +1,6 @@
 // ============================================================
 //  Green Cross — Auth & Session  (auth.gs)
-//  Session tokens, password hashing, role enforcement.
+//  Session tokens and role enforcement (passwords live in GX Core).
 //  All functions are pure request-handlers — no side effects
 //  beyond reading/writing ScriptProperties via getProps_().
 // ============================================================
@@ -13,11 +13,6 @@ function sessionSecret_() {
     props.setProperty(GC_SESSION_SECRET_KEY, secret);
   }
   return secret;
-}
-
-function hashPass_(pass) {
-  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(pass));
-  return bytes.map(b => ('0' + (b & 0xFF).toString(16)).slice(-2)).join('');
 }
 
 function signSession_(payload) {
@@ -58,7 +53,7 @@ function validateSessionToken_(token) {
  * Core role is translated with the same own-key map login uses; an unmapped role is refused. The
  * session carries `via: 'gxcore'`, which requireRole_ / requireStore_ / the write chokepoint / renew
  * all read:
- *   - no local-roster lookup: the role comes from Core, never from gc_perf_users
+ *   - no roster lookup: the role comes from the Core session itself
  *   - a Core store_manager is REFUSED store routes: nothing here can place them on a store, and a
  *     guess puts a manager on another shop's numbers
  *   - writes need Core's canEdit, so the viewer stays read-only whatever the write-grant mode says
@@ -96,9 +91,9 @@ function requireRole_(auth, allowedRoles) {
     if (!allowedRoles.includes(auth.role)) throw new Error('Insufficient permissions');
     return;
   }
-  const props = PropertiesService.getScriptProperties();
-  const users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}');
-  const u = users[auth.user];
+  // Our own token names a user and nothing else. Their role comes from GX Core's roster, so a
+  // role changed or removed in the Command Center applies here within the roster cache window.
+  const u = lbRosterUser_(auth.user);
   if (!u) throw new Error('User not found');
   if (!allowedRoles.includes(u.role)) {
     throw new Error('Insufficient permissions');
@@ -109,8 +104,8 @@ function requireStore_(auth, slug) {
   const store = STORES.find(s => s.slug === slug);
   if (!store) throw new Error('Unknown store: ' + slug);
 
-  // A Core-signed session has no local roster row to place a manager on a store, so refuse rather
-  // than hand them every shop. Directors and viewers pass, exactly as they do on the local path.
+  // A Core-signed session has no roster lookup here to place a manager on a store, so refuse rather
+  // than hand them every shop. Directors and viewers pass.
   if (auth && auth.via === 'gxcore') {
     if (auth.role === 'store_manager' || auth.role === 'asst_manager') {
       throw new Error('Access denied for store: ' + slug);
@@ -118,33 +113,14 @@ function requireStore_(auth, slug) {
     return store;
   }
 
-  // Directors can access all stores; store_manager can only access their own
-  const props = PropertiesService.getScriptProperties();
-  const users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}');
-  const u = users[auth.user];
-  if (u && u.role === 'store_manager' && u.storeSlug !== slug) {
+  // Directors can access all stores; a manager only their own GX Core home store. Someone no longer
+  // on the roster gets no store at all -- the old local list let an unknown user through here.
+  const u = lbRosterUser_(auth.user);
+  if (!u) throw new Error('Access denied for store: ' + slug);
+  if ((u.role === 'store_manager' || u.role === 'asst_manager') && u.storeSlug !== slug) {
     throw new Error('Access denied for store: ' + slug);
   }
   return store;
-}
-
-// Owner-only roster of the local user store — no password hashes. Answers "what users do I have"
-// and lets us diff the local store against GX Core before the shared-login migration.
-function listUsers_() {
-  const props = PropertiesService.getScriptProperties();
-  const users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}');
-  const out = Object.keys(users).sort().map(function(k) {
-    const u = users[k] || {};
-    return {
-      user_id:     k,
-      displayName: u.displayName || '',
-      role:        u.role || '',
-      storeSlug:   u.storeSlug || '',
-      storeName:   u.storeName || '',
-      initials:    u.initials || '',
-    };
-  });
-  return { ok: true, count: out.length, users: out };
 }
 
 /**
@@ -161,7 +137,7 @@ function listUsers_() {
  *   - a Core-signed session    -> never renewed here. It is not ours to extend, and renewing would
  *     trade a short dev session for a 7-day token of ours that skips every Core re-check.
  *
- * Safe to ship blind in a way the login fallback was not: writegrantaudit shows every local user
+ * Safe to ship blind in a way the login fallback was not: writegrantaudit showed every local user
  * resolves to a Core role (10 of 10 on 2026-09-14), so no current signed-in person is refused.
  */
 function renewSession_(auth) {
@@ -188,182 +164,65 @@ function renewSession_(auth) {
 }
 
 /**
- * Shared sign-on, the same shape Sales already uses: try GX Core first, fall back to this app's own
- * user store so a GX Core hiccup can never lock the floor out at open.
+ * Sign-in goes through GX Core, and only GX Core.
+ *
+ * THE LOCAL PASSWORD LIST WAS RETIRED 2026-09-15. This app used to keep its own copy of every
+ * password and role (Script Property gc_perf_users) and fell back to it -- first whenever Core
+ * refused, then (from 2026-09-14, cfg.lbLoginFallback=enforce) only when Core was unreachable. Two
+ * copies of a password that nobody kept in sync is how someone removed in the Command Center kept
+ * signing in here. Now there is one copy.
+ *
+ * THE TRADE, stated plainly: if GX Core is DOWN, nobody can sign in to Leaderboard until it is back.
+ * People already signed in are unaffected -- their token is ours, and role checks fall back to the
+ * last roster GX Core gave us (lbCoreRoster_). Wall screens hold 7-day tokens that renew through a
+ * Core bounce (renewSession_), so an outage does not blank the floor.
  *
  * WHY GX CORE IS NOT SIMPLY TRUSTED
  * Its vocabulary is not this app's. `login` returns the app_access role ('director' / 'editor') and
- * `store` from users.default_store, a GX Core store_id. This app switches on 'owner' /
- * 'store_manager' / 'budtender' and routes on ITS OWN historical slugs (hillsboro is 'baseline',
- * bend is 'century'). Two ways that goes wrong, both silent:
- *   - an unmapped role falls through homeRoute()'s default to '#/director', putting a store manager
- *     on the all-stores view
- *   - an empty or unmapped store makes homeRoute() fall back to 'baseline', sending every manager to
- *     the wrong shop's kiosk
- * When this was written (2026-08) all ten performance grants had default_store empty, so every store
- * manager would have landed somewhere wrong. Hence gxSessionUsable_: a GX Core result is only accepted
- * when it translates cleanly, and anything else falls back to local.
- * *Corrected 2026-09-14:* GX Core's app_roster now shows all ten grants resolving -- four directors,
- * six editors each with a default_store that maps here -- so the fallback is no longer needed by
- * anyone. What remains is the fallback on a REFUSAL, handled by gxLocalAfterCoreRefusal_ below.
- *
- * Directors need no store, so they move to shared sign-on now. Managers follow automatically once
- * users.default_store is filled in on the GX Core side -- no code change needed here.
+ * `store` from users.default_store, a GX Core store_id; this app switches on 'owner' /
+ * 'store_manager' / 'budtender' and routes on its own historical slugs (hillsboro is 'baseline').
+ * An unmapped role would land a manager on the director view, and an unmapped store would send them
+ * to Baseline's kiosk. So gxSessionUsable_ accepts a Core result only when it translates cleanly --
+ * and since there is no longer anything to fall back to, one that does not is REFUSED with a reason
+ * Sky can act on, rather than guessed at.
  */
 function loginUser(params) {
   if (!params.user || !params.pass) {
     return { ok: false, error: 'Missing credentials' };
   }
 
-  var coreRefusal = null, path = 'local_core_unreachable';
+  var g;
   try {
-    if (typeof GXCore !== 'undefined' && GXCore && GXCore.login) {
-      var g = GXCore.login(params.user, params.pass, 'performance');
-      if (g && g.ok) {
-        var mapped = gxSessionUsable_(g);
-        if (mapped) {
-          Logger.log('[login] ' + mapped.user + ' via GX CORE (role=' + mapped.role +
-                     ', store=' + (mapped.storeSlug || 'all') + ')');
-          gxRecordLoginPath_('gxcore', mapped.user, '');
-          return mapped;
-        }
-        Logger.log('[login] ' + params.user + ' authenticated in GX Core but the session was not ' +
-                   'usable here (role=' + g.role + ', store="' + (g.store || '') + '") — using local');
-        path = 'local_core_unusable';
-      } else if (g) {
-        coreRefusal = g;   // Core ANSWERED no. That is a decision, not an outage.
-      }
-    }
+    if (typeof GXCore === 'undefined' || !GXCore || !GXCore.login) throw new Error('GXCore library is not bound');
+    g = GXCore.login(params.user, params.pass, 'performance');
   } catch (e) {
-    Logger.log('[login/GXCore] ' + (e && e.message || e));   // never block sign-in on a Core problem
+    Logger.log('[login/GXCore] unreachable: ' + ((e && e.message) || e));
+    return { ok: false, error: 'Sign-in is unavailable right now because GX Core could not be reached. Try again in a minute.',
+             code: 'core_unreachable' };
   }
-  if (coreRefusal) return gxLocalAfterCoreRefusal_(params, coreRefusal);
-  var local = _loginUserLocal_(params);
-  if (local.ok) gxRecordLoginPath_(path, local.user, '');
-  return local;
-}
 
-/**
- * GX Core said NO, and the local password list might still say yes.
- *
- * THE HOLE. Until 2026-09-14 this fell straight through to _loginUserLocal_, so the local list was
- * consulted on ANY refusal, not only when Core was down. Someone removed in the Command Center, or
- * whose password was changed there, still signed in with the old local password -- for up to 7
- * days of reads, since only writes re-check the grant.
- *
- * WHY IT RECORDS BEFORE IT REFUSES. The local list and Core are two copies of a password that were
- * never kept in sync. A manager whose two passwords differ has been signing in on the LOCAL one
- * without knowing it, and refusing blind would lock them out at open. So cfg.lbLoginFallback starts
- * at 'observe': the old behavior, plus a record of exactly who would have been refused and why
- * (?action=loginfallbackaudit). Flip it to 'enforce' from the Command Center once that record is
- * clean -- the same evidence-first rollout as cfg.lbWriteGrantCheck.
- *
- * An OUTAGE still falls back in both modes: Core throwing never reaches this function.
- */
-function gxLocalAfterCoreRefusal_(params, coreRefusal) {
-  var local = _loginUserLocal_(params);
-  if (!local.ok) return local;   // both said no: unchanged from before
-
-  var code = String(coreRefusal.code || '');
-  var enforcing = gxLoginFallbackMode_() === 'enforce';
-  gxRecordLoginPath_(enforcing ? 'refused_after_core_refusal' : 'local_after_core_refusal', local.user, code);
-  if (!enforcing) {
-    Logger.log('[login/OBSERVE] would refuse ' + local.user + ' — GX Core said ' + (code || coreRefusal.error));
-    return local;
+  if (!g || !g.ok) {
+    var code = String((g && g.code) || 'bad_credentials');
+    Logger.log('[login/REFUSED] ' + params.user + ' — GX Core said ' + code);
+    return {
+      ok: false,
+      error: code === 'no_access'
+        ? 'Your access to Leaderboard has been removed. Ask Sky to restore it.'
+        : 'Invalid username or password',
+      code: code,
+    };
   }
-  Logger.log('[login/REFUSED] ' + local.user + ' — GX Core said ' + (code || coreRefusal.error));
-  return {
-    ok: false,
-    error: code === 'no_access'
-      ? 'Your access to Leaderboard has been removed. Ask Sky to restore it.'
-      : 'Invalid username or password',
-    code: code || 'bad_credentials',
-  };
-}
 
-/**
- * 'observe' (default) or 'enforce', from GX Core kv so it flips without a deploy.
- * An unreadable setting HOLDS the last mode actually read -- a Core hiccup must never relax an
- * enforcing gate (crew's rule; see gxWriteGrantEnforcing_ for the same shape).
- */
-function gxLoginFallbackMode_() {
-  var cache = CacheService.getScriptCache();
-  var hit = cache.get('gxLoginFallbackMode');
-  if (hit == null) {
-    var props = PropertiesService.getScriptProperties();
-    try {
-      hit = String(GXCore.getKv('cfg.lbLoginFallback') || 'observe').trim().toLowerCase();
-      props.setProperty('GC_LOGIN_FALLBACK_MODE_LAST', hit);
-    } catch (e) {
-      hit = String(props.getProperty('GC_LOGIN_FALLBACK_MODE_LAST') || 'observe');
-      Logger.log('[login] could not read cfg.lbLoginFallback, holding last known mode: ' + hit);
-    }
-    cache.put('gxLoginFallbackMode', hit, 60);
+  var mapped = gxSessionUsable_(g);
+  if (!mapped) {
+    Logger.log('[login/UNUSABLE] ' + g.user + ' authenticated in GX Core but cannot be placed here ' +
+               '(role=' + g.role + ', store="' + (g.store || '') + '")');
+    return { ok: false, code: 'core_unusable',
+             error: 'Your Leaderboard access is not fully set up (a manager needs a home store). ' +
+                    'Ask Sky to set it in the Command Center.' };
   }
-  return hit === 'enforce' ? 'enforce' : 'observe';
-}
-
-var GC_LOGIN_PATH_TALLY = 'GC_LOGIN_PATH_TALLY';   // { path: count } since the first recorded sign-in
-var GC_LOGIN_PATH_LOG   = 'GC_LOGIN_PATH_LOG';     // capped ring of sign-ins that did NOT go through Core
-var GC_LOGIN_PATH_CAP   = 50;
-var GC_LOGIN_WOULD_REFUSE = 'GC_LOGIN_WOULD_REFUSE'; // { user: { core_code, last, count } } -- never rolls off
-
-/**
- * Which way each sign-in actually went. Answers the two questions the local list's retirement
- * hangs on and nothing else could: is everyone already signing in through Core, and who would the
- * 'enforce' flip lock out. Best-effort -- a sign-in is never blocked or slowed by a failed record.
- */
-function gxRecordLoginPath_(path, user, code) {
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(2000)) return;
-  try {
-    var props = PropertiesService.getScriptProperties();
-    var tally = JSON.parse(props.getProperty(GC_LOGIN_PATH_TALLY) || '{}');
-    if (!own_(tally, 'since')) tally.since = new Date().toISOString();
-    tally[path] = (Number(own_(tally, path)) || 0) + 1;
-    props.setProperty(GC_LOGIN_PATH_TALLY, JSON.stringify(tally));
-    if (path !== 'gxcore') {
-      var ring = JSON.parse(props.getProperty(GC_LOGIN_PATH_LOG) || '[]');
-      ring.push({ at: new Date().toISOString(), user: String(user || ''), path: path, core_code: code || '' });
-      props.setProperty(GC_LOGIN_PATH_LOG, JSON.stringify(ring.slice(-GC_LOGIN_PATH_CAP)));
-    }
-    // Kept apart from the ring so one busy morning of ordinary fallbacks cannot push a would-be
-    // lockout off the end of the record before anyone reads it.
-    if (path === 'local_after_core_refusal' || path === 'refused_after_core_refusal') {
-      var wr = JSON.parse(props.getProperty(GC_LOGIN_WOULD_REFUSE) || '{}');
-      var key = String(user || '');
-      var prev = own_(wr, key) || { count: 0 };
-      wr[key] = { core_code: code || '', last: new Date().toISOString(), count: (Number(prev.count) || 0) + 1, enforced: path === 'refused_after_core_refusal' };
-      props.setProperty(GC_LOGIN_WOULD_REFUSE, JSON.stringify(wr));
-    }
-  } catch (e) {
-    Logger.log('[login/record] ' + ((e && e.message) || e));
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/** The record above, plus the mode and the one-line answer. Names included: director or secret only. */
-function gxLoginFallbackAudit_() {
-  var props = PropertiesService.getScriptProperties();
-  var tally = {}, ring = [], wr = {};
-  try { tally = JSON.parse(props.getProperty(GC_LOGIN_PATH_TALLY) || '{}'); } catch (e) {}
-  try { ring  = JSON.parse(props.getProperty(GC_LOGIN_PATH_LOG) || '[]'); } catch (e) {}
-  try { wr    = JSON.parse(props.getProperty(GC_LOGIN_WOULD_REFUSE) || '{}'); } catch (e) {}
-  var names = Object.keys(wr).filter(function (u) { return !wr[u].enforced; }).sort();
-  return {
-    ok: true,
-    mode: gxLoginFallbackMode_(),
-    tally: tally,
-    wouldRefuse: names.map(function (u) { return { user: u, core_code: wr[u].core_code, last: wr[u].last, count: wr[u].count }; }),
-    refused: Object.keys(wr).filter(function (u) { return wr[u].enforced; }).sort()
-      .map(function (u) { return { user: u, core_code: wr[u].core_code, last: wr[u].last, count: wr[u].count }; }),
-    recent: ring,
-    safeToEnforce: names.length === 0 && Number(own_(tally, 'gxcore') || 0) > 0,
-    note: names.length
-      ? 'DO NOT set cfg.lbLoginFallback=enforce yet: these people are signing in on a local password GX Core refuses. Fix their GX Core password or access first.'
-      : 'No sign-in has relied on a local password GX Core refused. Enforcing would lock nobody out of what the record has seen.',
-  };
+  Logger.log('[login] ' + mapped.user + ' via GX CORE (role=' + mapped.role + ', store=' + (mapped.storeSlug || 'all') + ')');
+  return mapped;
 }
 
 /**
@@ -478,74 +337,109 @@ function gxSessionUsable_(g) {
   };
 }
 
-function _loginUserLocal_(params) {
-  const props = PropertiesService.getScriptProperties();
-  const users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}');
-  const key   = String(params.user).toLowerCase().trim();
-  const hash  = hashPass_(String(params.pass));
-  const u     = users[key];
-
-  if (!u || u.passHash !== hash) {
-    return { ok: false, error: 'Invalid username or password' };
-  }
-
-  const exp = new Date(Date.now() + GC_SESSION_TTL_MS).toISOString();
-  return {
-    ok:          true,
-    token:       issueSessionToken_(key),
-    user:        key,
-    displayName: u.displayName || key,
-    initials:    u.initials || key.slice(0,2).toUpperCase(),
-    role:        u.role || 'budtender',
-    storeSlug:   u.storeSlug || null,
-    storeName:   u.storeName || null,
-    expiresAt:   exp,
-  };
-}
-
-// ── Setup: run once from the Script Editor ────────────────────
-// Example: setUserPassword_('username', '<password>', 'director', null, 'Display Name', 'IN')
-function setUserPassword_(username, password, role, storeSlug, displayName, initials) {
-  if (!username || !password || !role) throw new Error('username, password, and role are required');
-  const props = PropertiesService.getScriptProperties();
-  const users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}');
-  const store = storeSlug ? STORES.find(s => s.slug === storeSlug) : null;
-  users[username.toLowerCase().trim()] = {
-    passHash:    hashPass_(String(password)),
-    role:        role,
-    storeSlug:   storeSlug || null,
-    storeName:   store ? store.name : null,
-    displayName: displayName || username,
-    initials:    initials || username.slice(0,2).toUpperCase(),
-  };
-  props.setProperty(GC_USERS_KEY, JSON.stringify(users));
-  Logger.log('User set: ' + username + ' / role: ' + role);
-  return { ok: true, user: username };
-}
-
-/**
- * Create or update a user account.
- * Params: username, password, role, storeSlug, displayName, initials
- * Auth:   director token required
+/* ═══ WHO IS ON LEADERBOARD — GX Core's roster, not a local copy ═══════════════════════════════
+ *
+ * Replaces gc_perf_users as the answer to "what role and store does this signed-in person have".
+ * GX Core's app_roster (secret-gated) is the only library-free read that carries BOTH the grant and
+ * users.default_store; GXCore.roleForApp has the role but no store, and a manager without a store
+ * cannot be placed.
+ *
+ * Cached for LB_ROSTER_TTL_S, so a change in the Command Center applies here within five minutes --
+ * reads included, which the old list never managed (only writes and renewals re-checked).
+ *
+ * WHEN GX CORE CANNOT BE READ, the last roster it gave us is used (Script Property
+ * GC_CORE_ROSTER_LAST), cached for a minute so an outage is not a Core call per request. That is a
+ * copy of GX Core's answer, rewritten from GX Core on every refresh and holding no password; it keeps
+ * signed-in people working through a bounce, which is the same fail-open-on-reads line the rest of
+ * this app holds. Only with no roster ever fetched does a role check fail.
  */
-function adminSetUser(params) {
-  if (!params.username) return { ok: false, error: 'username required' };
-  if (!params.password) return { ok: false, error: 'password required' };
-  if (!params.role)     return { ok: false, error: 'role required' };
+var LB_ROSTER_CACHE_KEY = 'lbCoreRoster_v1';
+var LB_ROSTER_LAST_PROP = 'GC_CORE_ROSTER_LAST';
+var LB_ROSTER_TTL_S     = 300;
 
-  const validRoles = ['director', 'store_manager', 'budtender', 'owner'];
-  if (!validRoles.includes(params.role)) {
-    return { ok: false, error: 'Invalid role: ' + params.role };
+function lbCoreRoster_() {
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get(LB_ROSTER_CACHE_KEY);
+  if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+
+  var props = PropertiesService.getScriptProperties();
+  var fresh = null, err = '';
+  try { fresh = lbFetchCoreRoster_(props); } catch (e) { err = (e && e.message) || String(e); }
+  if (fresh) {
+    var text = JSON.stringify(fresh);
+    try { cache.put(LB_ROSTER_CACHE_KEY, text, LB_ROSTER_TTL_S); } catch (e) {}
+    try { props.setProperty(LB_ROSTER_LAST_PROP, text); } catch (e) {}
+    return fresh;
   }
 
-  return setUserPassword_(
-    params.username,
-    params.password,
-    params.role,
-    params.storeSlug || null,
-    params.displayName || params.username,
-    params.initials || ''
-  );
+  var last = props.getProperty(LB_ROSTER_LAST_PROP);
+  if (last) {
+    Logger.log('[roster] GX Core roster unavailable (' + err + '), using the last one fetched');
+    try { cache.put(LB_ROSTER_CACHE_KEY, last, 60); } catch (e) {}
+    return JSON.parse(last);
+  }
+  throw new Error('GX Core could not be reached to confirm who you are. Try again in a minute.');
+}
+
+/** One read of GX Core's app_roster, translated into this app's roles and store slugs. Throws on a bad read. */
+function lbFetchCoreRoster_(props) {
+  var secret = props.getProperty('GX_DEPLOY_SECRET');
+  if (!secret) throw new Error('GX_DEPLOY_SECRET is not set on this script');
+  var url = GXCORE_EXEC_KEYS_ + '?action=app_roster&app=performance&secret=' + encodeURIComponent(secret);
+  var d = null, lastErr = '';
+  for (var i = 0; i < 3 && !d; i++) {
+    try {
+      var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true });
+      var body = resp.getContentText() || '';
+      if (body.charAt(0) === '{') d = JSON.parse(body);
+      else lastErr = 'HTTP ' + resp.getResponseCode();
+    } catch (e) { lastErr = (e && e.message) || String(e); }
+    if (!d) Utilities.sleep(400);   // the /exec second hop 404s on a few percent of calls
+  }
+  if (!d) throw new Error('app_roster unreachable: ' + lastErr);
+  if (!d.ok) throw new Error('app_roster refused: ' + (d.error || 'no reason'));
+
+  var users = {};
+  function add(id, role, storeId, name) {
+    var nm = String(name || id);
+    users[id] = {
+      user: id, role: role,
+      storeSlug: storeId ? gxSlugForStoreId_(storeId) : null,
+      displayName: nm,
+      initials: nm.trim().split(/\s+/).slice(0, 2).map(function (w) { return w.charAt(0); }).join('').toUpperCase() || '??',
+    };
+  }
+  (d.grants || []).forEach(function (g) {
+    var id = String(g.user_id || '').toLowerCase().trim();
+    var role = own_(GX_ROLE_TO_LOCAL, String(g.role || '').toLowerCase());
+    if (id && role) add(id, role, g.store, g.displayName);
+  });
+  // A superadmin resolves to admin in GX Core whatever their grant row says (roleForApp checks it first).
+  (d.superadmins || []).forEach(function (sa) {
+    var id = String(sa.user_id || '').toLowerCase().trim();
+    if (!id) return;
+    var prev = own_(users, id);
+    add(id, 'director', sa.store, (prev && prev.displayName) || sa.displayName);
+  });
+  // An empty roster is a bad read, not a decision to lock everyone out: refuse it so the last good one stands.
+  if (!Object.keys(users).length) throw new Error('app_roster returned nobody');
+  return { fetchedAt: new Date().toISOString(), users: users };
+}
+
+/** The roster row for one signed-in user, or null if GX Core does not list them for Leaderboard. */
+function lbRosterUser_(user) {
+  return own_(lbCoreRoster_().users, String(user || '').toLowerCase().trim()) || null;
+}
+
+/** Every roster row, for display lookups (manager names). Never throws: a name is not worth a blank board. */
+function lbRosterList_() {
+  try {
+    var u = lbCoreRoster_().users;
+    return Object.keys(u).map(function (k) { return u[k]; });
+  } catch (e) {
+    Logger.log('[roster] ' + ((e && e.message) || e));
+    return [];
+  }
 }
 
 /* adminSetStoreKeys was REMOVED 2026-08-31, with the setstorekeys route that called it.
@@ -569,7 +463,7 @@ function adminSetUser(params) {
  * NEW WRITE ACTION? ADD IT HERE.
  */
 var GX_WRITE_ACTIONS = [
-  'backfillsnapshots', 'bootstrapdirectors', 'bustdist', 'clearavatar',
+  'backfillsnapshots', 'bustdist', 'clearavatar',
   'clearmanualgoal', 'goalbackfill', 'goalbackfillbulk', 'goalpush', 'installeodguard',
   // kioskrefresh writes a Script Property, so it belongs here. Note this gates only the SESSION
   // route; the secret-gated twin sits above requireAuth_ and is unaffected — deliberately, since
@@ -577,7 +471,7 @@ var GX_WRITE_ACTIONS = [
   'kioskrefresh',
   'recalculategoals', 'recalculateyoygoals', 'refreshdiscounts', 'refreshtargets', 'saveavatar',
   'savediscountsettings', 'savemanualgoals', 'savesettings', 'setplan',
-  'setuptrigger', 'setuser', 'syncemployees',
+  'setuptrigger', 'syncemployees',
 ];
 // `bugreport` is deliberately NOT here: filing a bug is how someone reports being broken, and it
 // must not be the thing that refuses them. `renew` is not here either -- refusing to renew a
@@ -701,28 +595,7 @@ function gxWriteAuthProbe_() {
     enforcing: gxWriteGrantEnforcing_(),
     gatedActions: GX_WRITE_ACTIONS.length,
     coreError: coreErr,
-    // The ADMIT half, COUNTS ONLY -- no names, so this can stay pre-auth alongside the rest.
-    // refusesUnknownUser proves the gate refuses the bad; this proves whether it would admit the
-    // good, which is the half that decides if the flag can be turned on at all. Names are behind
-    // action=writegrantaudit (owner/director), because WHO is refused is nobody else's business.
-    admit: gxAdmitCounts_(),
   };
-}
-
-/** Counts-only slice of the admit test, cached briefly -- it asks GX Core once per local user. */
-function gxAdmitCounts_() {
-  var cache = CacheService.getScriptCache();
-  var hit = cache.get('gxAdmitCounts');
-  if (hit) { try { return JSON.parse(hit); } catch (e) {} }
-  var out;
-  try {
-    var a = gxWriteGrantAudit_();
-    out = { ok: true, counts: a.counts, safeToEnforce: a.safeToEnforce };
-  } catch (e) {
-    out = { ok: false, error: (e && e.message) || String(e) };
-  }
-  cache.put('gxAdmitCounts', JSON.stringify(out), 300);
-  return out;
 }
 
 /**
@@ -772,56 +645,3 @@ function gxSessionFingerprint_() {
   };
 }
 
-/**
- * THE ADMIT TEST, for OUR population — would enforcing lock anyone out?
- *
- * "Refuses the bad" and "admits the good" are two different assertions, and writeauthprobe only
- * makes the first. This makes the second, against the users we actually have.
- *
- * WHY IT CANNOT BE BORROWED. Inventory ran a positive admit test and it does not transfer: they
- * retired their local-login fallback, so every signed-in Inventory user provably has an app_access
- * row. We kept ours, so our population CAN contain signed-in users with no grant — the exact group
- * sales found roleForApp returning null for, including their own app owner. A green result on their
- * app says nothing about that group on ours.
- *
- * Sky is also the WRONG test subject here: superadmin resolves first inside roleForApp, so he is
- * the account most likely to pass when everyone else fails. What matters is the non-superadmin rows.
- *
- * Read-only, no writes, no grant mutation. Owner/director gated — same audience as listusers, which
- * already returns this roster.
- */
-function gxWriteGrantAudit_() {
-  var users = JSON.parse(PropertiesService.getScriptProperties().getProperty(GC_USERS_KEY) || '{}');
-  var ids = Object.keys(users).sort();
-
-  var admitted = [], refusedNoGrant = [], errored = [];
-  ids.forEach(function (id) {
-    var role = null, err = null;
-    try { role = GXCore.roleForApp(String(id).toLowerCase(), 'performance'); }
-    catch (e) { err = (e && e.message) || String(e); }
-    var rec = { user: id, localRole: (users[id] || {}).role || '' };
-    if (err)        { rec.error = err; errored.push(rec); }
-    else if (role)  { rec.coreRole = role; admitted.push(rec); }
-    else            { refusedNoGrant.push(rec); }
-  });
-
-  return {
-    ok: true,
-    // The three buckets, named. Offered to inventory/pricecards as shared vocabulary so the suite
-    // does not grow three names for the same states.
-    counts: {
-      admitted:        admitted.length,
-      refused_no_grant: refusedNoGrant.length,
-      refused_unavailable: errored.length,
-      total:           ids.length,
-    },
-    // WOULD FLIPPING THE FLAG BE SAFE? This is the whole question, answered rather than estimated.
-    safeToEnforce: refusedNoGrant.length === 0 && errored.length === 0,
-    admitted:         admitted,
-    refused_no_grant: refusedNoGrant,     // <- anyone here is locked out of writes the moment we enforce
-    refused_unavailable: errored,
-    note: refusedNoGrant.length
-      ? 'DO NOT set cfg.lbWriteGrantCheck=on until these users have a performance grant in GX Core, or they lose writes.'
-      : 'Every local user resolves to a GX Core role. Enforcing would admit them all.',
-  };
-}
