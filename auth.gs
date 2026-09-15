@@ -418,6 +418,12 @@ function gxSlugForStoreId_(storeId) {
   var id = String(storeId || '').toLowerCase();
   if (!id) return null;
 
+  // The live store list carries the id->slug pair explicitly (refreshStoreRegistry_), including a
+  // store added in the Command Center since this code was written. A rename cannot move it.
+  for (var k = 0; k < STORES.length; k++) {
+    if (String(STORES[k].storeId || '').toLowerCase() === id) return STORES[k].slug;
+  }
+
   try {
     var reg = getGxStores_();
     if (reg && reg.ok && reg.stores) {

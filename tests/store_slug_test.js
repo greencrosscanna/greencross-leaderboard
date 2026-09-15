@@ -103,8 +103,8 @@ function test_unknownStoreFailsClosed() {
 }
 
 function test_storeCoreKnowsButThisAppCannotServe() {
-  // A seventh store added in the Command Center. This app has no STORES entry, no fixtures
-  // and no Dutchie key for it, so placing a manager there would be a guess. Null, not a slug.
+  // A seventh store added in the Command Center, BEFORE this execution's store list has been
+  // refreshed. Placing a manager there would be a guess. Null, not a slug.
   const S = build(CORE_STORES.concat([
     { store_id: 'gresham', display_name: 'Gresham', dutchie_name: 'Gresham', color: '#fff', sort_order: '7' },
   ]));
@@ -112,16 +112,29 @@ function test_storeCoreKnowsButThisAppCannotServe() {
   _eq_('and the others still resolve',    S.gxSlugForStoreId_('hillsboro'), 'baseline');
 }
 
-function test_aRenameInCoreMovesTheSlugWithoutADeploy() {
-  // The whole reason for deriving. Core renames Baseline; the app follows, because the
-  // renamed display_name is still one this app serves.
+function test_aNewStoreOnTheLiveListResolves() {
+  // *Added 2026-09-14.* Once the store list comes from GX Core (refreshStoreRegistry_), a store added
+  // there IS one this app serves, and a manager placed on it signs in to it.
+  const S = build(CORE_STORES.concat([
+    { store_id: 'gresham', display_name: 'Gresham', dutchie_name: 'Gresham', color: '#fff', sort_order: '7' },
+  ]));
+  S.refreshStoreRegistry_();
+  _eq_('the new store resolves to its own slug', S.gxSlugForStoreId_('gresham'), 'gresham');
+  _eq_('the known six are unchanged', S.gxSlugForStoreId_('bend'), 'century');
+}
+
+function test_aRenameInCoreDoesNotMoveAManager() {
+  // *Reversed 2026-09-14.* This test used to assert the opposite: rename Hillsboro's display name to
+  // "Century" in Core and the manager followed the name to CENTURY's store -- another shop's numbers.
+  // The slug belongs to the store_id, which a rename cannot touch; only the store's NAME follows Core.
   const renamed = CORE_STORES.map(function (s) {
     return s.store_id === 'hillsboro' ? Object.assign({}, s, { display_name: 'Century' }) : s;
   });
   const S = build(renamed);
-  _eq_('follows the live display_name', S.gxSlugForStoreId_('hillsboro'), 'century');
-  _ok_('and disagrees with the stale map on purpose',
-       S.gxSlugForStoreId_('hillsboro') !== S.GX_STOREID_TO_SLUG['hillsboro']);
+  _eq_('a rename keeps the store on its own slug', S.gxSlugForStoreId_('hillsboro'), 'baseline');
+  S.refreshStoreRegistry_();
+  _eq_('still true once the list is live', S.gxSlugForStoreId_('hillsboro'), 'baseline');
+  _eq_('and the live list shows the new name', S.STORES.filter(function (x) { return x.slug === 'baseline'; })[0].name, 'Century');
 }
 
 H.run('store_slug', {
@@ -131,5 +144,6 @@ H.run('store_slug', {
   test_coreOutageFallsBackRatherThanLockingPeopleOut,
   test_unknownStoreFailsClosed,
   test_storeCoreKnowsButThisAppCannotServe,
-  test_aRenameInCoreMovesTheSlugWithoutADeploy,
+  test_aNewStoreOnTheLiveListResolves,
+  test_aRenameInCoreDoesNotMoveAManager,
 });

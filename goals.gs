@@ -137,7 +137,10 @@ function getOrComputeGoals_(forceRecompute) {
   if (!forceRecompute) {
     let cached = {};
     try { cached = JSON.parse(props.getProperty(GC_GOALS_CACHE_KEY) || '{}'); } catch(e) {}
-    if (cached.ppStart === ppStartStr && cached.ver === GOALS_SRC_VER && cached.goals) {
+    // ...and only if it covers every store on the list. A store added in the Command Center mid-period
+    // would otherwise have no goal (drawn as 0) until the next pay period rolled the cache over.
+    var coversAll = cached.goals && STORES.every(function (st) { return Object.prototype.hasOwnProperty.call(cached.goals, st.slug); });
+    if (cached.ppStart === ppStartStr && cached.ver === GOALS_SRC_VER && cached.goals && coversAll) {
       _goalsCache_ = cached.goals;
       return _goalsCache_;
     }
@@ -837,6 +840,7 @@ function getPeriodGoal_(slug, period, range) {
  * Formula: (net_sales over 6 months) / (actual days) × 14
  */
 function refreshTargetsAll() {
+  refreshStoreRegistry_();   // the store list comes from GX Core -- see dutchie_proxy.gs
   const props = PropertiesService.getScriptProperties();
   // Use PT date so that a run at e.g. 11 pm PT (= midnight UTC) uses the correct PT month.
   const pt = ptNow_();
@@ -1385,7 +1389,15 @@ function saveManualGoals_(params) {
   // Validate and clean: only known store slugs, positive numbers (or null/0 to clear)
   var known = {};
   STORES.forEach(function(s) { known[s.slug] = true; });
+  // Start from what is saved, not from nothing. The store list comes from GX Core now, so a store
+  // can be briefly absent from it (removed, or a registry hiccup served the fallback list). This
+  // save used to REPLACE the whole map with only the stores it knew this instant -- which would
+  // have silently erased that store's override. A store not on the list keeps its value untouched.
   var clean = {};
+  try {
+    var saved = JSON.parse(PropertiesService.getScriptProperties().getProperty(GC_MANUAL_PP_KEY) || '{}');
+    Object.keys(saved).forEach(function (slug) { if (!known[slug] && Number(saved[slug]) > 0) clean[slug] = Number(saved[slug]); });
+  } catch (e) {}
   Object.keys(parsed).forEach(function(slug) {
     if (!known[slug]) return;
     var v = parseFloat(parsed[slug]);

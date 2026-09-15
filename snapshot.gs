@@ -105,6 +105,7 @@ function writeSnapshotRow_(sheet, date, store, data) {
  * Called nightly by the time-based trigger.
  */
 function snapshotAllStores_() {
+  refreshStoreRegistry_();   // the store list comes from GX Core -- see dutchie_proxy.gs
   // Warm-instance guard: this trigger builds a cached aggregate that carries the budtender
   // discount rate, and the discount overrides now come from GX Core (readDiscConfig_).
   // Drop the per-execution memo so a warm instance cannot score against rules Crew has changed.
@@ -500,6 +501,7 @@ var EOD_GUARD_MIN_NET   = 200;     // ignore near-zero days (closed/no-data), av
  * @return {{ok, days, threshold, drifts:Array, alerted:boolean}}
  */
 function eodGuardCheck_(dryRun) {
+  refreshStoreRegistry_();   // the store list comes from GX Core -- see dutchie_proxy.gs
   var now     = ptNow_();
   var todayMs = ptDateToUtcMs_(now.dateStr);
   var id2slug = gxStoreIdToAppSlug_();
