@@ -5506,7 +5506,7 @@ GC.api = (function() {
     'apps',
     'aggticker', 'directoralerts', 'directorall', 'directorstaff', 'directorstores',
     'directorsummary', 'discountsettings', 'getavatardata', 'getsettings', 'gxstores', 'kioskbust',
-    'historicaldir', 'incentive', 'leaderboardstaff', 'login', 'renew', 'standings',
+    'historicaldir', 'leaderboardstaff', 'login', 'renew', 'standings',
     'storebadges', 'storeleaderboard', 'storetoday',
     // version_history feeds the What's New / changelog modal. It is a READ, and it was missing:
     // opening the changelog on localhost threw an uncaught GXDev block. Found by opening the
@@ -5514,7 +5514,7 @@ GC.api = (function() {
     'version_history', 'vetflags'
   ];
   // Guarded writes: bugreport, clearavatar, recalculategoals, saveavatar,
-  //                 saveincentive, savemanualgoals, savesettings
+  //                 savemanualgoals, savesettings
   // (savediscountsettings dropped 2026-08-30 — the route refuses; nothing here calls it.)
 
 

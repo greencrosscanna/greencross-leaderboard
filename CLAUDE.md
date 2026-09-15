@@ -44,16 +44,25 @@ as a **pre-push hook** and refuses dev leftovers (fixtures on, writes armed, loc
 **Shared files** (`deploy.sh`, `serve.py`, `gx-preflight.sh`, `.claude/gx-brain-notes.sh`) come from
 **gx-theme** via `./gx-sync.sh`. Edit them **there**, then re-sync. This CLAUDE.md is **not** synced.
 
-## Incentive is moving to GX Crew — sequence matters
+## Incentive lives in GX Crew — the old engine here was retired (2026-09-14)
 
-Incentive/compensation is being pulled **out of** this app into **GX Crew** (decision 2026-08-16; Incentive
-was formerly a Leaderboard view). GX Crew is the HR system-of-record and **feeds** this app, not the reverse.
+Incentive/compensation moved **out of** this app into **GX Crew** (decision 2026-08-16). The sequence
+was: promote the per-employee metrics and discretionary-discount classification to a shared home
+first, then cut Crew over. Both happened — GX Core computes the slice (`incentive_perf`) and Crew
+has read it since `cfg.incentiveEngine` flipped to `gxcore` on 2026-09-01.
 
-The bonus math needs **per-employee, per-transaction** data *with discretionary-discount classification*,
-and that engine still lives **here**, app-side — it is **not** in the GX Core daily cache, which is
-per-store daily only. So the split is sequenced: **first** promote the per-employee metrics and the
-discretionary-discount definition to a canonical shared home, **then** cut Crew over. **Don't move the UI
-before the math has a shared home.** Coordinate with `core-admin`.
+**So the old engine is gone from here.** Removed: the `incentive`, `saveincentive`, `incentiveperf`,
+`frozenperiod`, `frozenperiods` and `applydiscounttargets` routes, `getIncentiveData_`,
+`computeIncentivePerf_`, `saveIncentiveInputs_`, the sky/mike access gate and its tests. Before
+removal, all 28 frozen closed-period snapshots were compared byte-for-byte (sha256) against GX
+Core's `incentive_frozen` archive and matched; the 29th key is the superseded v1 snapshot for
+2026-06-22. **The Script Properties themselves were left in place** (`GC_INC_PERF_*`,
+`GC_INCENTIVE_INPUTS_JSON`) — code only, no pay data deleted.
+
+**What stays, and must:** `discounts.gs` (the registry and classification, published to Core kv
+`discountRegistry`), the `discountrules` route (Crew's fallback read — keep it until this app is
+deleted outright), and `getIncentiveThresholds_` / `incentiveDefaults_`, which the kiosk still uses
+for its discount color target.
 
 ~~This app reads **`spiff_payouts`** through GX Core — a written column contract, never app-to-app.~~
 

@@ -1327,15 +1327,6 @@ function periodStartForDate_(dateStr) {
   return Utilities.formatDate(new Date(ppShift_(cur.ppStartMs, -k)), STORE_TZ, 'yyyy-MM-dd');
 }
 
-/** As-of PP target for a store: frozen ledger for a CLOSED period, live resolveGoal_ for the open one. */
-function asOfPeriodGoal_(slug, periodStart, isCurrent) {
-  if (!isCurrent) {
-    var fz = getFrozenPeriodGoal_(periodStart);
-    if (fz && fz.stores && fz.stores[slug] && fz.stores[slug].periodTotal != null) return fz.stores[slug].periodTotal;
-  }
-  try { return resolveGoal_(slug).effectivePP || 0; } catch (e) { return 0; }
-}
-
 /** As-of daily goal for a store on a PT date: uses that period's frozen DOW shape for closed periods. */
 function asOfDailyGoal_(slug, dateStr) {
   var d   = new Date(Date.UTC(Number(dateStr.slice(0, 4)), Number(dateStr.slice(5, 7)) - 1, Number(dateStr.slice(8, 10)), 12));
