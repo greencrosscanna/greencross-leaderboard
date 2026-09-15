@@ -57,7 +57,6 @@ const GC_SPIFF_SHOW_KEY     = 'GC_SPIFF_SHOW';
 const GC_AVATAR_CONFIGS_KEY  = 'GC_AVATAR_CONFIGS_JSON'; // { nameKey: { ...avatar_config } }
 const GC_HOURLY_DIST_KEY     = 'GC_HOURLY_DIST_JSON';   // per-store same-DOW hourly revenue weights, cached per day
 const GC_EOM_KEY             = 'gc_eom_current';         // { employeeKey, since } — Employee of the Month
-const GC_INCENTIVE_INPUTS_KEY = 'GC_INCENTIVE_INPUTS_JSON';  // { ppStart: { nameKey: { att:bool, spiff:num } } }
 const GC_INCENTIVE_THRESH_KEY = 'GC_INCENTIVE_THRESH_JSON';  // editable bonus thresholds (see incentiveDefaults_)
 const PP_DAYS_DEFAULT        = 14;     // pay-period length — LAST-RESORT default; see payPeriodCfg_
 const TARGET_LOOKBACK_MONTHS = 6;      // rolling lookback for target calculation
@@ -687,112 +686,10 @@ function doGet(e) {
                                                        : saveDiscountSettings_(params), params.callback);
     }
 
-    // ── Incentive PERFORMANCE slice, for GX Crew — DEPLOY-SECRET gated, READ ONLY ──────────
-    // The Incentive dashboard is moving to GX Crew (2026-08-26). The split that survives the move:
-    // Leaderboard stays the PERFORMANCE engine — it owns the Dutchie ingest, aggregateTransactions_,
-    // the discretionary-discount classification and the frozen closed-period snapshots — and Crew
-    // becomes the PAYOUT app, owning the bonus math, the attendance/SPIFF inputs and the Capstone
-    // export. That is Sky's own contract sentence: SPIFF sets the goals, LB tracks the performance,
-    // Crew reads the performance.
-    //
-    // So this hands Crew exactly what `incentive` hands the browser, and NOTHING ELSE:
-    //   • no save twin. Crew owns the payout state; a second writer for one pay period is how the
-    //     numbers diverge, and there would be no way to tell which copy paid people.
-    //   • deploy-secret, not session. incentiveAccessOk_ gates on a logged-in username (sky/mike),
-    //     which a server-to-server caller does not have and should not be issued one to fake.
-    //     Same convention as publishgoals above.
-    //   • the FROZEN path is preserved untouched: a completed period is still computed once and
-    //     cached forever, so Crew reading history cannot cause a recompute of numbers that paid
-    //     people. Crew must therefore never pass refresh for a closed period, and cannot — the
-    //     parameter is deliberately not forwarded.
-    //
-    // TEMPORARY, AND KNOWN TO BE. This is app-to-app, which the shared brain forbids: everything
-    // cross-app is supposed to go through GX Core. It is here because promoting per-employee
-    // performance into GX Core needs a core-admin change plus an immutable library cut plus a
-    // re-pin in every spoke, and Mike needs Incentive in Crew this week. A brain note is filed
-    // asking for that promotion; SPIFF wants the same per-employee data, which is what justifies
-    // doing it properly. DELETE THIS ROUTE when GX Core exposes the slice.
-    // Placed ABOVE requireAuth_ deliberately: this is a machine caller with a secret and no
-    // session, and every route below that line is rejected as 'not signed in' before it is
-    // reached. publishgoals sits up here for the same reason.
-    if (params.action === 'incentiveperf') {
-      var _ipSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
-      if (!_ipSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
-      if ((params.secret || '') !== _ipSecret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
-      var _ipData = getIncentiveData_(params.ppStart, false);   // never forces a refresh — see above
-      _ipData.source = 'leaderboard';                            // so a Crew payload always says where its numbers came from
-      return jsonOut(_ipData, params.callback);
-    }
-
     // Secret-gated, read-only: how today's per-employee targets were derived for one
-    // store. Same secret as incentiveperf. Exists because the target is a per-person
+    // store. Exists because the target is a per-person
     // rolling average, so "why is X's target above Y's" is only answerable from the
     // inputs — and clasp run is unavailable here, so diagnostics ship as web actions.
-    /* Read-only inventory of the FROZEN closed-period snapshots.
-     *
-     * Incentive is being extracted from this app. These snapshots are the one piece of it that
-     * exists ONLY here: GC_INC_PERF_v2_<ppStart> in this project's Script Properties, written once
-     * when a period closes and deliberately never recomputed, because they are the numbers that
-     * paid people. Crew's imported history covers 2025-08-04..2026-08-16 from the payout PDFs, so
-     * anything AFTER that date has no second copy anywhere.
-     *
-     * Nothing can be safely deleted from this app until that set is known, so this names it. It
-     * returns period keys, row counts and totals — never a person, never an amount per person. */
-    /* Hand ONE frozen period over verbatim, so it can be archived in GX Core as the fixture the
-     * engine port is validated against. Deliberately one period per call and never a bulk dump:
-     * this is per-person sales data behind a compensation number, and a route that returns all 29
-     * at once is a route somebody eventually calls by accident. */
-    if (params.action === 'frozenperiod') {
-      var _f1Secret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
-      if (!_f1Secret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
-      if ((params.secret || '') !== _f1Secret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
-      var _f1Start = String(params.pp_start || '').trim();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(_f1Start)) return jsonOut({ ok: false, error: 'pp_start required (YYYY-MM-DD)' }, params.callback);
-      var _f1All = PropertiesService.getScriptProperties().getProperties();
-      // Accept either key generation: the v1 keys predate the v2 aggregation and still hold real periods.
-      var _f1Key = ['GC_INC_PERF_v2_' + _f1Start, 'GC_INC_PERF_' + _f1Start]
-        .filter(function (k) { return _f1All[k]; })[0];
-      if (!_f1Key) return jsonOut({ ok: false, error: 'no frozen snapshot for ' + _f1Start }, params.callback);
-      return jsonOut({ ok: true, pp_start: _f1Start, key: _f1Key,
-                       bytes: String(_f1All[_f1Key]).length, payload: _f1All[_f1Key] }, params.callback);
-    }
-
-    if (params.action === 'frozenperiods') {
-      var _fpSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
-      if (!_fpSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
-      if ((params.secret || '') !== _fpSecret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
-      var _fpProps = PropertiesService.getScriptProperties().getProperties();
-      var _fpOut = [];
-      Object.keys(_fpProps).forEach(function (k) {
-        if (k.indexOf('GC_INC_PERF_') !== 0) return;
-        /* STRIP ONLY A REAL VERSION SEGMENT. The first cut used /^GC_INC_PERF_v?\d*_?/, and on the
-           one v1-format key (GC_INC_PERF_2026-06-22, no `v`) the \d* ate the YEAR, yielding
-           '-06-22'. That period sorts below every real date, so it would silently drop out of
-           exists_only_here — the single field this route exists to produce. It did not change
-           today's answer only because that period predates Crew's history cutoff. A tool that
-           decides which payroll data gets migrated must not have a parser that can lose a year. */
-        var row = { key: k, period: k.replace(/^GC_INC_PERF_(v\d+_)?/, ''), bytes: String(_fpProps[k] || '').length };
-        try {
-          var parsed = JSON.parse(_fpProps[k]);
-          row.stores = parsed && parsed.stores ? Object.keys(parsed.stores).length : null;
-          row.sellers = parsed && parsed.sellers ? Object.keys(parsed.sellers).length
-                      : (parsed && parsed.budtenders ? parsed.budtenders.length : null);
-          row.top_keys = parsed ? Object.keys(parsed).slice(0, 8) : [];
-        } catch (e) { row.parse_error = String(e.message || e); }
-        _fpOut.push(row);
-      });
-      _fpOut.sort(function (a, b) { return String(a.period).localeCompare(String(b.period)); });
-      // The line that matters for the extraction: which of these Crew's imported history does NOT cover.
-      var CREW_HISTORY_THROUGH = '2026-08-16';
-      var _fpOnlyHere = _fpOut.filter(function (r) { return r.period > CREW_HISTORY_THROUGH; })
-                              .map(function (r) { return r.period; });
-      return jsonOut({ ok: true, count: _fpOut.length, periods: _fpOut,
-                       crew_history_through: CREW_HISTORY_THROUGH,
-                       exists_only_here: _fpOnlyHere,
-                       note: 'exists_only_here is what a migration must carry; the rest is duplicated in crew_incentive_history' },
-                     params.callback);
-    }
-
     if (params.action === 'emptargetdiag') {
       var _etSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
       if (!_etSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
@@ -1089,15 +986,6 @@ function doGet(e) {
       requireRole_(auth, ['owner','director','store_manager','asst_manager']);
       return jsonOut(getStandings_(params.refresh === '1' || params.refresh === true), params.callback);
     }
-    // ── Incentive Dashboard (owner + Mike only) ────────────
-    if (params.action === 'incentive' || params.action === 'saveincentive') {
-      if (!incentiveAccessOk_(auth)) return jsonOut({ ok: false, error: 'Forbidden' }, params.callback);
-      return jsonOut(
-        params.action === 'incentive' ? getIncentiveData_(params.ppStart, params.refresh === '1' || params.refresh === true) : saveIncentiveInputs_(params),
-        params.callback
-      );
-    }
-
     // ── Plan management ────────────────────────────────────
     if (params.action === 'setplan') {
       requireRole_(auth, ['owner','director']);
@@ -1350,23 +1238,6 @@ function doGet(e) {
     if (params.action === 'vetflags') {
       requireRole_(auth, ['owner','director']);
       return jsonOut(vetFlags_(parseInt(params.days, 10) || 30, {}), params.callback);
-    }
-
-    // Owner+Mike. Force the incentive discount thresholds to the agreed targets,
-    // patching any saved override so the change actually takes effect.
-    // ?action=applydiscounttargets&token=TOKEN&budtenderMax=1.5[&mgrFull=1.5&mgrPartial=2.0]
-    if (params.action === 'applydiscounttargets') {
-      if (!incentiveAccessOk_(auth)) return jsonOut({ ok: false, error: 'Forbidden' }, params.callback);
-      var _bMax = parseFloat(params.budtenderMax); if (isNaN(_bMax)) _bMax = 1.5;
-      var _mFull = parseFloat(params.mgrFull);    if (isNaN(_mFull)) _mFull = 1.5;
-      var _mPart = parseFloat(params.mgrPartial); if (isNaN(_mPart)) _mPart = 2.0;
-      var _th = getIncentiveThresholds_();   // saved-or-default (deep enough to patch)
-      _th.budtender.discountMaxPct = _bMax;
-      _th.manager.discountTiers = [ { maxPct: _mFull, bonus: _th.manager.discountTiers[0].bonus },
-                                    { maxPct: _mPart, bonus: _th.manager.discountTiers[1].bonus } ];
-      getProps_().setProperty(GC_INCENTIVE_THRESH_KEY, JSON.stringify(_th));
-      return jsonOut({ ok: true, budtenderMax: _bMax, mgrFull: _mFull, mgrPartial: _mPart,
-        discountTiers: _th.manager.discountTiers }, params.callback);
     }
 
     // Director-only. Probe whether transactions expose customer identity / a Vet
