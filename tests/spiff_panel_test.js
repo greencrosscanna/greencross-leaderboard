@@ -81,11 +81,15 @@ const tests = {
     _ok_('but hidden', /\shidden>/.test(b));
   },
 
-  switchOnShowsTheButtonWithACount() {
-    const b = btnOf(ctx.renderHeader({ name: 'Baseline' }, { on: true, programs: [prog(), prog({ id: 'q' })] }));
+  switchOnShowsTheButton() {
+    const h = ctx.renderHeader({ name: 'Baseline' }, { on: true, programs: [prog(), prog({ id: 'q' })] });
+    const b = btnOf(h);
     _ok_('visible', !/\shidden>/.test(b));
-    _ok_('says how many are live', b.indexOf('2 live') > -1);
+    // Sky, 2026-09-14: no "N live" count on the button.
+    _ok_('no "live" count', !/live/i.test(b.replace(/kiosk-spiff-btn/g, '')));
     _ok_('not dimmed', b.indexOf('kiosk-spiff-btn none') === -1);
+    _ok_('sits immediately left of the clock', /kiosk-hd-right">\s*<button class="kiosk-spiff-btn[\s\S]*?<\/button><div class="kiosk-clock"/.test(h));
+    _ok_('and no longer before the logo', h.indexOf('kiosk-spiff-btn') > h.indexOf('gc-logo-img'));
   },
 
   switchOnWithNothingRunningStillShowsIt() {

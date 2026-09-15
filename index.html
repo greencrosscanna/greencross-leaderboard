@@ -1389,9 +1389,11 @@ body.kiosk-bg {
   border-radius: 6px;
   /* Bigger than the back button on purpose: a director clicks that one with a mouse, and a
      budtender taps this one on a wall-mounted screen. 44px is the small end of a touch target. */
-  padding: 9px 16px;
-  min-height: 40px;
-  font-size: 13px;
+  /* Slimmer since 2026-09-14 (Sky), and it sits beside the clock rather than the logo. Still a
+     comfortable tap on a wall screen, just no longer the tallest thing in the header. */
+  padding: 5px 12px;
+  min-height: 32px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.6px;
   cursor: pointer;
@@ -1785,8 +1787,15 @@ body.kiosk-bg {
 }
 
 .kiosk-clock {
-  margin-left: auto;
   text-align: right;
+}
+/* The SPIFF button and the clock share the right edge. The auto margin lives on this wrapper, not
+   on the clock, so a hidden SPIFF button (Include SPIFF off) leaves the clock exactly where it was. */
+.kiosk-hd-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 .kiosk-clock .kc-time {
   font-size: 22px;
@@ -4546,10 +4555,10 @@ GC.spiffRow = function(sp) {
 };
 
 /** The SPIFF button's label: the pulsing dot, the word, and how many programs are live. */
+/* No "N live" count since 2026-09-14 (Sky: remove "1 Live", make it slimmer). Whether anything is
+   running still shows: the dot pulses when a program is live and the button dims when none is. */
 GC.spiffButtonInner = function(n) {
-  n = Math.max(0, +n || 0);
-  return '<span class="ksb-dot"></span>SPIFF'
-    + (n > 0 ? '<span class="ksb-count">' + n + ' live</span>' : '');
+  return '<span class="ksb-dot"></span>SPIFF';
 };
 
 /** The SPIFF panel — Leaderboard's own summary of every program at a store. One summary line, then
@@ -9186,13 +9195,16 @@ var kiosk = (function() {
     // URL (#/standings). See the router's post-login return-to so that link lands on Standings.
     return '<header class="kiosk-header">'
       + backBtn
-      + spiffBtn
       + '<img class="gc-logo-img" src="' + GC.LOGO_PNG + '" alt="Green Cross" height="28">'
       + '<span class="store-live-badge">' + e(store.name) + '</span>'
       + '<span class="ver-badge">' + (window.GC && GC.VERSION ? GC.VERSION : '') + '</span>'
+      // SPIFF sits immediately left of the clock (Sky, 2026-09-14), not beside the logo.
+      + '<div class="kiosk-hd-right">'
+      + spiffBtn
       + '<div class="kiosk-clock">'
       + '  <div class="kc-time num" id="kioskTime">—</div>'
       + '  <div class="kc-date" id="kioskDate">—</div>'
+      + '</div>'
       + '</div>'
       + (function() {
           var nameKey = GC.nameToKey(sess.displayName || sess.user || '');
