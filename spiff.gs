@@ -542,7 +542,7 @@ function spiffForStore_(store) {
   // Closed programs first, then this store's window — order is irrelevant to the result
   // but this way the store filter never has to reason about staleness.
   var rows = spiffFilterRows_(spiffActiveRows_(raw.rows), coreStoreId_(store), pp.ppStartStr, pp.ppEndStr);
-  var idx  = spiffIndexByEmployee_(rows);
+  var idx  = spiffIndexByEmployee_(rows);   // cards: SELLERS only -- a zero row must not put a SPIFF line on every card
 
   var byId = Object.create(null);
   Object.keys(idx).forEach(function (id) {
@@ -568,8 +568,140 @@ function spiffForStore_(store) {
     byId:         byId,
     // The SPIFF panel — same rows grouped by program, joined to SPIFF's program sidecar so the
     // popup can show the product, this store's goal, how the payout is earned, and the tips.
-    programs:     spiffProgramsForStore_(rows, raw.programs, coreStoreId_(store), raw.refreshed_at),
+    // Everyone at the store is listed, not only the people who have sold: see spiffRosterZeroRows_.
+    programs:     spiffProgramsForStore_(
+      rows.concat(spiffRosterZeroRows_(rows, raw.programs, coreStoreId_(store),
+                                       spiffStoreRoster_(coreStoreId_(store)), pp.ppStartStr, pp.ppEndStr)),
+      raw.programs, coreStoreId_(store), raw.refreshed_at),
   };
+}
+
+/* ─── EVERYONE AT THE STORE, NOT ONLY THE SELLERS (Sky, 2026-09-14) ──────────────────────────────
+ * "Need to show all six budtenders, even if one hasn't sold a SPIFF item yet." SPIFF publishes a row
+ * only for people who have sold -- ON PURPOSE: those rows feed Crew's pay screen, so SPIFF keeps them
+ * to measured sellers and adds the zeros at DISPLAY time, on its own grid and its own store page
+ * (confirmed by the SPIFF chat, 2026-09-14; pinned by greencross-spiff/tests/roster_zero_sellers_test.js).
+ * Leaderboard's panel is a display too, so it does the same, by SPIFF's rule:
+ *
+ *   - who: everyone ACTIVE on the GX Core roster whose home_store is this store. No role filter --
+ *     managers and assistant managers are in; SPIFF has no exclusion list.
+ *   - which programs: every one this store takes part in -- the ones with sellers here, and any
+ *     active program in this pay period whose sidecar sets a goal for this store (so a program nobody
+ *     here has sold yet still shows, with everyone at zero).
+ *   - matched to a seller by Dutchie employee id first, then by name (first + last against both the
+ *     full name and the display name, because Dutchie adds middle names).
+ *   - a zero is units 0, not hit, earned 0, against the store's per-budtender goal.
+ *
+ * These rows exist only on the way into the panel. They never reach the staff cards (idx above is
+ * built from the sellers) and nothing is written anywhere.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────── */
+function spiffNameParts_(name) {
+  var t = String(name || '').toLowerCase().replace(/["'`.]/g, '').split(/\s+/).filter(Boolean);
+  return { full: t.join(' '), firstLast: t.length > 1 ? t[0] + ' ' + t[t.length - 1] : (t[0] || ''), first: t[0] || '' };
+}
+
+/** Zero rows for roster people with no row in a program at this store. Pure. */
+function spiffRosterZeroRows_(rows, sidecar, coreStoreId, roster, ppStartStr, ppEndStr) {
+  var storeId = String(coreStoreId || '').trim();
+  if (!storeId || !roster || !roster.length) return [];
+  var d10 = function (v) { return String(v == null ? '' : v).slice(0, 10); };
+  var from = d10(ppStartStr), to = d10(ppEndStr);
+
+  // Programs this store takes part in, keyed by program_id, carrying what a row needs.
+  var progs = Object.create(null), order = [];
+  var meta = Object.create(null);
+  (sidecar || []).forEach(function (m) { if (m && m.program_id != null) meta[String(m.program_id)] = m; });
+  var goalFor = function (m, fallback) {
+    var bt = m && m.bt_goals ? Number(m.bt_goals[storeId]) : 0;
+    return bt || Number(fallback) || 0;
+  };
+  (rows || []).forEach(function (r) {
+    var id = String(r && r.program_id != null ? r.program_id : '').trim();
+    if (!id || progs[id]) return;
+    progs[id] = { program_id: id, vendor: r.vendor, program_name: r.program_name, start_date: r.start_date,
+                  end_date: r.end_date, status: r.status, store_id: r.store_id, target: goalFor(meta[id], r.target) };
+    order.push(id);
+  });
+  Object.keys(meta).forEach(function (id) {
+    if (progs[id]) return;
+    var m = meta[id];
+    var here = (m.bt_goals && Number(m.bt_goals[storeId])) || (m.store_goals && Number(m.store_goals[storeId]));
+    if (!here || String(m.status || '').toLowerCase() !== 'active') return;
+    var a = d10(m.start_date), b = d10(m.end_date);
+    if (a.length !== 10 || b.length !== 10 || a > to || b < from) return;
+    progs[id] = { program_id: id, vendor: m.vendor || '', program_name: m.program_name || '', start_date: a,
+                  end_date: b, status: 'active', store_id: storeId, target: goalFor(m, 0) };
+    order.push(id);
+  });
+
+  var out = [];
+  order.forEach(function (id) {
+    var p = progs[id];
+    var sellers = (rows || []).filter(function (r) { return String(r.program_id) === id; });
+    var ids = Object.create(null), names = Object.create(null), firsts = Object.create(null);
+    sellers.forEach(function (r) {
+      // A row whose name is a bare first name ("Brody") and carries no id is matched on that first
+      // name, but only below, and only when exactly one person at the store has it.
+      var only = spiffNameParts_(r.name);
+      if (only.full && only.full === only.first) firsts[only.first] = true;
+      if (r.employee_id != null && String(r.employee_id).trim()) ids[String(r.employee_id).trim()] = true;
+      [r.name, r.display_name, r.full_name].forEach(function (n) {
+        var np = spiffNameParts_(n);
+        if (np.full) names[np.full] = true;
+        if (np.firstLast) names[np.firstLast] = true;
+      });
+    });
+    var firstCount = Object.create(null);
+    roster.forEach(function (person) {
+      var fp = spiffNameParts_(person.displayName).first;
+      if (fp) firstCount[fp] = (firstCount[fp] || 0) + 1;
+    });
+    roster.forEach(function (person) {
+      if (person.dutchieId && ids[person.dutchieId]) return;
+      var f = spiffNameParts_(person.fullName), d = spiffNameParts_(person.displayName);
+      if (names[f.full] || names[f.firstLast] || names[d.full] || names[d.firstLast]) return;
+      if (d.first && firsts[d.first] && firstCount[d.first] === 1) return;
+      out.push({
+        program_id: id, vendor: p.vendor, program_name: p.program_name, start_date: p.start_date,
+        end_date: p.end_date, status: p.status, store_id: storeId,
+        employee_id: person.dutchieId || '', name: d.first ? String(person.displayName).split(/\s+/)[0] : person.fullName,
+        units: 0, target: p.target, hit: false, earned: 0, rosterZero: true,
+      });
+    });
+  });
+  return out;
+}
+
+/** ACTIVE GX Core roster people whose home_store is this store. Cached 10 min; [] if Core is unreachable. */
+function spiffStoreRoster_(coreStoreId) {
+  var want = String(coreStoreId || '').trim().toLowerCase();
+  if (!want) return [];
+  var cache = null, byStore = null;
+  try { cache = CacheService.getScriptCache(); } catch (e) {}
+  try { var hit = cache && cache.get('GC_SPIFF_ROSTER_v1'); if (hit) byStore = JSON.parse(hit); } catch (e) { byStore = null; }
+  if (!byStore) {
+    try {
+      byStore = {};
+      (GXCore.getEmployees() || []).forEach(function (r) {
+        if (String(r.status || 'active').trim().toLowerCase() !== 'active') return;
+        var home = String(r.home_store || '').trim().toLowerCase();
+        if (!home) return;
+        var fullName = String(r.full_name || '').trim();
+        var pref = String(r.preferred_name || '').trim();
+        var parts = fullName.split(/\s+/).filter(Boolean);
+        var displayName = pref ? (pref + (parts.length > 1 ? ' ' + parts[parts.length - 1] : '')) : fullName;
+        if (!fullName && !displayName) return;
+        (byStore[home] = byStore[home] || []).push({
+          dutchieId: String(r.dutchie_employee_id || '').trim(), fullName: fullName, displayName: displayName,
+        });
+      });
+      try { cache && cache.put('GC_SPIFF_ROSTER_v1', JSON.stringify(byStore), 600); } catch (e) {}
+    } catch (e) {
+      Logger.log('[spiff] GX Core roster unreadable, panel lists sellers only: ' + ((e && e.message) || e));
+      return [];
+    }
+  }
+  return byStore[want] || [];
 }
 
 /**
