@@ -10,9 +10,9 @@
 //  Phase 2 (current):  real Dutchie API data endpoints wired
 //
 //  Setup checklist (run from Script Editor, not HTTP):
-//    1. setUserPassword_('username', '<password>', 'director', null, 'Display Name', 'IN')
-//    2. setUserPassword_('username', '<password>', 'store_manager', 'slug', 'Display Name', 'IN')
-//       ... repeat for each user — do NOT commit passwords to source
+//    1. People and their access live in GX Core (Command Center → app access, users.default_store).
+//       This app keeps no password list — the local one (gc_perf_users) was retired 2026-09-15.
+//    2. (removed)
 //    3. setStorePlans_({ baseline: { monthly: 255000, daily: 8500 }, ... })
 //    4. Store Dutchie keys: Script Properties → DUTCHIE_STORE_KEYS_JSON, keyed by GX CORE store_id:
 //       {"bend":"key...","center":"key...","commercial":"key...","hillsboro":"key...","portland-rd":"key...","river-rd":"key..."}
@@ -24,7 +24,6 @@
 // ============================================================
 
 // ── Constants ─────────────────────────────────────────────────
-const GC_USERS_KEY          = 'gc_perf_users';
 const GC_SESSION_SECRET_KEY = 'GC_PERF_SESSION_SECRET';
 const GC_SESSION_TTL_MS     = 7 * 24 * 60 * 60 * 1000;
 const GC_STORE_PLANS_KEY    = 'GC_STORE_PLANS_JSON';
@@ -581,14 +580,6 @@ function doGet(e) {
       })(), params.callback);
     }
     // Which way sign-ins actually go, and who the cfg.lbLoginFallback=enforce flip would lock out.
-    // DEPLOY-SECRET twin of the director route below, so the rollout can be checked from a shell
-    // without a director signed in. Names included, hence never public.
-    if (params.action === 'loginfallbackaudit' && params.secret) {
-      var _lfSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
-      if (!_lfSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
-      if (params.secret !== _lfSecret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
-      return jsonOut(gxLoginFallbackAudit_(), params.callback);
-    }
     // Public: proves the write gate is really wired, including that a bogus user is actually
     // REFUSED. "hasRoleForApp:true" alone would be a comfortable lie.
     if (params.action === 'writeauthprobe') {
@@ -765,31 +756,11 @@ function doGet(e) {
       if (!grant.ok) return jsonOut(grant, params.callback);
     }
 
-    // Management-only: the ADMIT test. Would enforcing the write gate refuse any real user?
-    // writeauthprobe asserts "refuses the bad"; this asserts "admits the good", which is the
-    // half that decides whether the flag can safely be turned on.
-    if (params.action === 'writegrantaudit') {
-      requireRole_(auth, ['owner','director']);
-      return jsonOut(gxWriteGrantAudit_(), params.callback);
-    }
-
-    // Management-only: the sign-in record behind the cfg.lbLoginFallback rollout. See gxLocalAfterCoreRefusal_.
-    if (params.action === 'loginfallbackaudit') {
-      requireRole_(auth, ['owner','director']);
-      return jsonOut(gxLoginFallbackAudit_(), params.callback);
-    }
-
     // Management-only: does THIS project's session secret match GX Core's? Determines whether our
     // tokens are Core-verifiable at all. Reveals a hash, never the value.
     if (params.action === 'sessionfingerprint') {
       requireRole_(auth, ['owner','director']);
       return jsonOut(gxSessionFingerprint_(), params.callback);
-    }
-
-    // Management-only: current local user roster (no password hashes). Useful for the shared-login migration.
-    if (params.action === 'listusers') {
-      requireRole_(auth, ['owner','director']);
-      return jsonOut(listUsers_(), params.callback);
     }
 
     // Session-gated twin of the secret route above — so a signed-in owner/director can reload the
@@ -1316,18 +1287,8 @@ function doGet(e) {
       return jsonOut({ ok: true, employees: allAvEmployees, avatarConfigs: resolveAvatarConfigs_(allAvEmployees, getAvatarConfigs_()) }, params.callback);
     }
 
-    // ── One-shot: seed director accounts (owner only, safe to re-run) ──
-    if (params.action === 'bootstrapdirectors') {
-      requireRole_(auth, ['owner','director']);
-      bootstrapDirectors();
-      return jsonOut({ ok: true, message: 'Directors bootstrapped' }, params.callback);
-    }
-
-    // ── Admin: user & key management (director only) ───────
-    if (params.action === 'setuser') {
-      requireRole_(auth, ['owner','director']);
-      return jsonOut(adminSetUser(params), params.callback);
-    }
+    // ── Admin ───────────────────────────────────────────────
+    // setuser was REMOVED 2026-09-15 with the local password list: people are managed in GX Core.
     // setstorekeys was REMOVED 2026-08-31. This app no longer stores a Dutchie key: it asks GX Core
     // for one over ?action=dutchie_keys and caches it for ten minutes. A route that writes a
     // property nothing reads is not harmless -- it is a loaded gun for whoever finds it and
@@ -1394,8 +1355,6 @@ function jsonOut(data, callback) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ── ONE-TIME BOOTSTRAP — run from editor, then delete ─────────
-// Select bootstrapAllUsers in the function dropdown and click Run.
 // ── ONE-TIME: install daily roster refresh trigger ────────────
 // Select this function in the Script Editor dropdown and click Run.
 // Requires: Review Permissions → allow "Manage triggers" scope.
@@ -1409,30 +1368,6 @@ function installRosterTrigger() {
     .atHour(6)
     .create();
   Logger.log('Daily roster trigger installed (6am PT).');
-}
-
-function bootstrapAllUsers() {
-  // ⚠️  Credentials have been removed from source control.
-  // Users are already live in ScriptProperties (GC_STORE_USERS_KEY).
-  //
-  // To add or update a single user, call setUserPassword_() directly from the
-  // Script Editor with the desired credentials — do NOT commit passwords to source.
-  //
-  // To remove stale placeholder accounts from an earlier dev build, uncomment:
-  // const props = PropertiesService.getScriptProperties();
-  // const users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}');
-  // ['sofia','maya','devon','priya','marcus','tyler'].forEach(k => delete users[k]);
-  // props.setProperty(GC_USERS_KEY, JSON.stringify(users));
-
-  Logger.log('bootstrapAllUsers: credentials are managed in ScriptProperties — nothing to do here.');
-}
-
-// ── Run once from Script Editor to add/update director accounts ──
-// Safe to re-run — only updates the listed users, leaves others intact.
-function bootstrapDirectors() {
-  // ⚠️  Credentials removed from source — see bootstrapAllUsers() comment above.
-  // Use setUserPassword_() from the Script Editor to update individual accounts.
-  Logger.log('bootstrapDirectors: credentials are managed in ScriptProperties — nothing to do here.');
 }
 
 function bootstrapStorePlans() {
@@ -1990,14 +1925,12 @@ const MANAGEMENT_JOB_TITLES = {
 
 /**
  * Returns director/owner users as employee-like objects for the Management section.
- * Derives the list from existing GC_USERS_KEY entries with role director/owner.
+ * Derived from GX Core's Leaderboard roster (lbRosterList_) -- the directors granted access there.
  */
 function getManagementEmployees_() {
-  var props = PropertiesService.getScriptProperties();
-  var users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}');
   var mgmt = [];
-  Object.keys(users).forEach(function(username) {
-    var u = users[username];
+  lbRosterList_().forEach(function(u) {
+    var username = u.user;
     if (u.role === 'director' || u.role === 'owner') {
       var key = nameToKey_(u.displayName || username);
       mgmt.push({

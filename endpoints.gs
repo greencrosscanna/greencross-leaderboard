@@ -507,10 +507,8 @@ function getDirectorStores(params, pre) {
   const byStore30d   = pre.byStore30d   || null;  // 30-day window for trends (pre-fetched by directorall)
   const storeTrends  = pre.storeTrends  || null;  // pre-computed { slug: {trend30d,trendPct} } from cache
 
-  // Look up user records once for manager info
-  const users = JSON.parse(
-    PropertiesService.getScriptProperties().getProperty(GC_USERS_KEY) || '{}'
-  );
+  // Look up the GX Core roster once for manager info
+  const users = lbRosterList_();
 
   const storeSummaries = STORES.map(function(store) {
     const txnsToday = byStoreToday[store.slug] || [];
@@ -539,7 +537,7 @@ function getDirectorStores(params, pre) {
       ? r3_((projectedRevenue - dailyGoal) / dailyGoal) : null;
 
     // Manager from user records
-    const mgr = Object.values(users).find(u => u.storeSlug === store.slug && u.role === 'store_manager') || {};
+    const mgr = users.find(u => u.storeSlug === store.slug && u.role === 'store_manager') || {};
 
     // Flagged employees (over 2× the discount target)
     const flaggedEmps = Object.values(agg.byEmployee).filter(e => e.discountRate > discountRedLineDec_());
@@ -2275,8 +2273,7 @@ function getStandings_(hardRefresh) {
   }
   var linearFrac = Math.max(0, Math.min(1, (nowMs - ppStartMs) / PP_MS)); // fallback
 
-  var users = {};
-  try { users = JSON.parse(props.getProperty(GC_USERS_KEY) || '{}'); } catch (e) {}
+  var users = lbRosterList_();   // GX Core's roster -- store managers by home store
   var chainTarget = 0, chainSales = 0, chainSoFar = 0, chainTotal = 0;
   var stores = STORES.map(function(store) {
     var sales = ppSales[store.slug] || 0;
@@ -2286,7 +2283,7 @@ function getStandings_(hardRefresh) {
     var parts  = res && res.g ? expectedParts(res.g.dowAvg) : null;
     var ef     = (parts && parts.total > 0) ? parts.soFar / parts.total : linearFrac;
     if (parts) { chainSoFar += parts.soFar; chainTotal += parts.total; }
-    var mgr = Object.values(users).find(function(u) {
+    var mgr = users.find(function(u) {
       return u.storeSlug === store.slug && u.role === 'store_manager';
     }) || {};
     chainTarget += target; chainSales += sales;
