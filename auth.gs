@@ -426,6 +426,28 @@ function lbFetchCoreRoster_(props) {
   return { fetchedAt: new Date().toISOString(), users: users };
 }
 
+/**
+ * EDITOR ONLY — select it in the function dropdown and press Run. Deletes the retired local password
+ * list and the sign-in record that went with it, and nothing else. Nothing reads any of these since
+ * v1.833 (sign-in is GX Core only). Safe to run twice: a key already gone is reported, not an error.
+ *
+ * No trailing underscore on purpose: Apps Script hides underscore functions from the Run menu.
+ * It is not routed, so nothing over HTTP can call it.
+ */
+function deleteRetiredLoginProperties() {
+  var keys = ['gc_perf_users', 'GC_LOGIN_PATH_TALLY', 'GC_LOGIN_PATH_LOG',
+              'GC_LOGIN_WOULD_REFUSE', 'GC_LOGIN_FALLBACK_MODE_LAST'];
+  var props = PropertiesService.getScriptProperties();
+  var deleted = [], notFound = [];
+  keys.forEach(function (k) {
+    if (props.getProperty(k) == null) { notFound.push(k); return; }
+    props.deleteProperty(k);
+    deleted.push(k);
+  });
+  Logger.log('Deleted: ' + (deleted.join(', ') || 'none') + ' | Already gone: ' + (notFound.join(', ') || 'none'));
+  return { deleted: deleted, alreadyGone: notFound };
+}
+
 /** Counts-only health of the roster read, for ?action=accessroster. */
 function lbRosterStatus_() {
   var props = PropertiesService.getScriptProperties();
