@@ -182,6 +182,33 @@ function isDutchieUnavailable_(e) {
   return String((e && e.message) || e || '').indexOf(DUTCHIE_UNAVAILABLE_) === 0;
 }
 
+/* ─── ONE DOWNLOAD OF A DAY PER BUILD ────────────────────────────────────────────────────────────
+ *
+ * refreshDirectorCache builds 'mtd' then 'pp', and each build asks for TODAY from three places
+ * (the period aggregate, the month-to-date aggregate, the raw today list). Every one of those used
+ * to go to Dutchie again with the identical store + window, so a single run downloaded today's full
+ * detailed transactions about five times over. Measured on the live Executions log, 2026-09-15: one
+ * download of today for six stores took ~20s, and runs took 1-7.5 minutes. Every GX web app runs as
+ * the same Google account, capped at 30 simultaneous executions, so a run that long overlapping the
+ * next one held one or two of those slots all day — and Sales, SPIFF and Crew queued behind it.
+ *
+ * withTxnMemo_ opens a scope in which a request for the same store key and window is answered from
+ * the first download. Outside a scope nothing changes, which is deliberate: a warm Apps Script
+ * instance keeps globals between executions, and a memo that outlived its build would serve a kiosk
+ * sales from an earlier request. FAILURES ARE NOT MEMOIZED, so a store that failed once is asked
+ * again by the next caller exactly as before, and is still marked Unavailable if it fails again.
+ * Callers only ever filter the returned rows into new arrays, so handing out a shallow copy of the
+ * same parsed page is safe.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────── */
+var _TXN_MEMO_ = null;
+
+function withTxnMemo_(fn) {
+  var opened = !_TXN_MEMO_;
+  if (opened) _TXN_MEMO_ = { pages: {}, aggs: {} };
+  try { return fn(); }
+  finally { if (opened) _TXN_MEMO_ = null; }
+}
+
 function fetchTxnPagesByKey_(reqs) {
   _TXN_FETCH_FAILS_ = [];
   // A request with no store key never goes on the wire: it is recorded as FAILED (never as an empty
@@ -192,6 +219,17 @@ function fetchTxnPagesByKey_(reqs) {
     skipped[r.key] = true;
     return false;
   });
+  const memo = _TXN_MEMO_ && _TXN_MEMO_.pages;
+  const memoKey = function (r) { return r.storeKey + '|' + r.fromUTC + '|' + r.toUTC; };
+  const reused = {};
+  if (memo) {
+    reqs = reqs.filter(function (r) {
+      const hit = memo[memoKey(r)];
+      if (!hit) return true;
+      reused[r.key] = hit.slice();
+      return false;
+    });
+  }
   const httpReqs = reqs.map(function(r) {
     const qs = [
       'FromDateUTC=' + encodeURIComponent(r.fromUTC),
@@ -215,7 +253,7 @@ function fetchTxnPagesByKey_(reqs) {
   // memory at once and can blow the runtime ceiling. Parse + release each chunk
   // before firing the next. 72 = the long-proven single-call size.
   const CHUNK = 72;
-  const byKey = {};
+  const byKey = reused;
   Object.keys(skipped).forEach(function (k) {
     byKey[k] = [];
     _TXN_FETCH_FAILS_.push({ key: k, why: 'no Dutchie key in GX Core' });
@@ -240,6 +278,7 @@ function fetchTxnPagesByKey_(reqs) {
       }
       var page = Array.isArray(data) ? data : (data.transactions || data.data || []);
       byKey[r.key] = page;
+      if (memo) memo[memoKey(r)] = page.slice();
       if (page.length === DUTCHIE_TAKE) {
         Logger.log('⚠️ ' + r.key + ' returned exactly ' + DUTCHIE_TAKE + ' rows — Dutchie may be ' +
           'enforcing a hard cap; split this date range into smaller windows.');
@@ -1036,26 +1075,52 @@ function daysOfRange_(range) {
  * aggregateTransactions_ over the full range. hardRefresh re-pulls + re-locks.
  */
 function byStoreAggCached_(range, hardRefresh) {
+  // Inside a build scope (withTxnMemo_), the same range asked twice is answered once: the 'pp'
+  // build asks for month-to-date, which the 'mtd' build a moment earlier already assembled. The
+  // stores it could not read are replayed so the second build still says Unavailable for them.
+  const aggMemo = _TXN_MEMO_ && _TXN_MEMO_.aggs;
+  const aggKey  = range.fromUTC + '|' + range.toUTC + '|' + (hardRefresh ? 1 : 0);
+  if (aggMemo && aggMemo[aggKey]) {
+    aggMemo[aggKey].unavailable.forEach(function (u) { markStoreUnavailable_(u.slug, u.why); });
+    return aggMemo[aggKey].out;
+  }
+
   const cache = CacheService.getScriptCache();
   const days  = daysOfRange_(range);
   const settledThru = settledThroughStr_();
   const perStore = {};
   STORES.forEach(function(s) { perStore[s.slug] = []; });
 
-  const liveReqs = [];
+  // ONE cache read and ONE (batched) re-lock for the settled days, not a get + put per store-day.
+  // A month plus its prior month is ~270 store-days; one call each was ~500 round trips a build,
+  // measured as the bulk of the time a refresh spent that was not Dutchie.
+  const cells = [];
   days.forEach(function(d) {
     const settled = d.dateStr <= settledThru;
     STORES.forEach(function(s) {
-      const key = 'GC_DAYAGG_v2_' + s.slug + '_' + d.dateStr;   // v2: discretionary-basis discountRate + registry-classified discountsBdt
-      if (settled && !hardRefresh) {
-        const hit = cache.get(key);
-        if (hit) {
-          try { perStore[s.slug].push(JSON.parse(hit)); cache.put(key, hit, 21600); return; } catch(e) {}
-        }
-      }
-      liveReqs.push({ slug: s.slug, settled: settled, key: key, fromUTC: d.fromUTC, toUTC: d.toUTC });
+      cells.push({ slug: s.slug, settled: settled, d: d,
+                   key: 'GC_DAYAGG_v2_' + s.slug + '_' + d.dateStr });   // v2: discretionary-basis discountRate + registry-classified discountsBdt
     });
   });
+  const wanted = hardRefresh ? [] : cells.filter(function (c) { return c.settled; }).map(function (c) { return c.key; });
+  let hits = {};
+  if (wanted.length) { try { hits = cache.getAll(wanted) || {}; } catch (e) { hits = {}; } }
+
+  const liveReqs = [];
+  const relock = {};
+  cells.forEach(function (c) {
+    if (c.settled && !hardRefresh && hits[c.key]) {
+      try { perStore[c.slug].push(JSON.parse(hits[c.key])); relock[c.key] = hits[c.key]; return; } catch(e) {}
+    }
+    liveReqs.push({ slug: c.slug, settled: c.settled, key: c.key, fromUTC: c.d.fromUTC, toUTC: c.d.toUTC });
+  });
+  const relockKeys = Object.keys(relock);
+  for (let i = 0; i < relockKeys.length; i += 100) {
+    const batch = {};
+    relockKeys.slice(i, i + 100).forEach(function (k) { batch[k] = relock[k]; });
+    try { cache.putAll(batch, 21600); } catch (e) {}
+  }
+  const unavailable = [];
 
   if (liveReqs.length) {
     const reqs = liveReqs.map(function(r, i) {
@@ -1066,7 +1131,7 @@ function byStoreAggCached_(range, hardRefresh) {
     txnFetchFailures_().forEach(function(f) { failedKeys[f.key] = f.why; });
     liveReqs.forEach(function(r, i) {
       const failed = failedKeys[String(i)];
-      if (failed) markStoreUnavailable_(r.slug, failed);
+      if (failed) { markStoreUnavailable_(r.slug, failed); unavailable.push({ slug: r.slug, why: failed }); }
       const txns = (byKey[String(i)] || []).filter(isRetailSale_);
       const agg  = aggregateTransactions_(txns);
       perStore[r.slug].push(agg);
@@ -1081,6 +1146,7 @@ function byStoreAggCached_(range, hardRefresh) {
 
   const out = {};
   STORES.forEach(function(s) { out[s.slug] = mergeAggs_(perStore[s.slug]); });
+  if (aggMemo) aggMemo[aggKey] = { out: out, unavailable: unavailable };
   return out;
 }
 

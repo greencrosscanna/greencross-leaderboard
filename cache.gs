@@ -44,7 +44,7 @@ function getChunkedCache_(cache, key) {
 //
 //  Architecture:
 //    • A time-based GAS trigger calls refreshDirectorCache()
-//      every 2 minutes on Google's servers.
+//      every 5 minutes on Google's servers.
 //    • It builds the full directorall dataset and writes it
 //      to CacheService in 90KB chunks (GAS 100KB limit).
 //    • doGet('directorall') reads from the chunk cache first;
@@ -55,7 +55,7 @@ function getChunkedCache_(cache, key) {
 //  Setup (one-time):
 //    Open this script in script.google.com → Run → setupDirectorTrigger
 //    You'll see "Trigger created" in the Execution Log.
-//    Verify in Triggers (clock icon) that the 2-min trigger exists.
+//    Verify in Triggers (clock icon) that the 5-min trigger exists.
 // ============================================================
 
 /**
@@ -64,6 +64,10 @@ function getChunkedCache_(cache, key) {
  * full directorall payload object.
  */
 function buildDirectorAll_(period, hardRefresh) {
+  return withTxnMemo_(function () { return buildDirectorAllInner_(period, hardRefresh); });   // one download of today per build
+}
+
+function buildDirectorAllInner_(period, hardRefresh) {
   period = period || 'mtd';
   const params = { period: period };
   const range  = getDateRange_(period);
@@ -104,12 +108,42 @@ function buildDirectorAll_(period, hardRefresh) {
   return { summary, stores, staff, alerts, today, avatarConfigs, eomKey, discountTarget: getDiscountTargetDec_(), unavailableStores };
 }
 
+/* How long a built directorall payload is served. Shared by this trigger and the directorall route
+ * so the two cannot drift. It was 360s: a refresh that ran past six minutes (they ran up to 7.5 on
+ * 2026-09-15) let the cache lapse, and the next director tab rebuilt the whole thing inside a web
+ * request — on the same crowded account the slow refresh was already crowding. 15 minutes rides
+ * out a slow or skipped run; a healthy one still replaces it every five. */
+var DIRECTOR_CACHE_TTL_S = 900;
+
 /**
- * Called by the time-based trigger every 2 minutes.
- * Builds and caches directorall for 'mtd' (and 'pp' if needed).
+ * Called by the time-based trigger every 5 minutes.
+ * Builds and caches directorall for 'mtd' and 'pp'.
  * Runs on Google's servers — no browser involved.
  */
 function refreshDirectorCache() {
+  /* NEVER TWO AT ONCE. There was no guard, and a run that outlasted five minutes simply had the next
+   * one start on top of it, both downloading the same day from Dutchie. Every GX app runs as one
+   * Google account capped at 30 simultaneous executions; the overlap is how this trigger came to
+   * hold one or two of those slots nearly all day on 2026-09-15.
+   *
+   * The USER lock, not the script lock, on purpose: bugMailOnce_ waits up to 5s on the script lock
+   * inside a staff-facing request, and a refresh holding it for a minute would put that wait on
+   * every bug report filed meanwhile. Nothing else takes the user lock. tryLock(0): a run that finds
+   * one already going has nothing to add, so it leaves at once rather than queueing. Apps Script
+   * releases the lock itself if a run dies, so a crashed refresh cannot wedge the next. */
+  const runLock = LockService.getUserLock();
+  if (!runLock.tryLock(0)) {
+    Logger.log('refreshDirectorCache: previous run still going — skipped');
+    return;
+  }
+  try {
+    withTxnMemo_(refreshDirectorCacheLocked_);   // mtd and pp share one download of today
+  } finally {
+    runLock.releaseLock();
+  }
+}
+
+function refreshDirectorCacheLocked_() {
   refreshStoreRegistry_();   // the store list comes from GX Core -- see dutchie_proxy.gs
   // Warm-instance guard: this trigger builds a cached aggregate that carries the budtender
   // discount rate, and the discount overrides now come from GX Core (readDiscConfig_).
@@ -125,13 +159,11 @@ function refreshDirectorCache() {
   try { primeHourlyDist_(STORES); } catch (e) { Logger.log('refreshDirectorCache: primeHourlyDist_ error: ' + e.message); }
 
   const periods = ['mtd', 'pp'];
-  // Uncomment to also pre-warm the PP cache:
-  // periods.push('pp');
   periods.forEach(function(period) {
     try {
       const result = buildDirectorAll_(period);
       const json   = JSON.stringify(result);
-      saveChunkedCache_(cache, 'gc_dirall_v2_' + period, json, 360); // 6-min TTL — outlasts 5-min trigger
+      saveChunkedCache_(cache, 'gc_dirall_v2_' + period, json, DIRECTOR_CACHE_TTL_S);
       Logger.log('refreshDirectorCache: cached ' + period + ' (' + json.length + ' bytes)');
     } catch(e) {
       Logger.log('refreshDirectorCache error [' + period + ']: ' + e.message);
@@ -145,7 +177,7 @@ function refreshDirectorCache() {
 
 /**
  * Run once from the GAS editor (Run → setupDirectorTrigger) to install
- * the 2-minute proactive cache trigger.
+ * the 5-minute proactive cache trigger.
  */
 function setupDirectorTrigger() {
   // Remove any existing triggers for this function to avoid duplicates

@@ -862,7 +862,7 @@ function doGet(e) {
       requireRole_(auth, ['owner','director']);
       const period = params.period || 'mtd';
 
-      // Serve from proactive cache — set by the 2-minute time trigger.
+      // Serve from proactive cache — set by the 5-minute time trigger.
       // Browser requests make zero Dutchie UrlFetch calls when cache is warm.
       const dirCacheKey = 'gc_dirall_v2_' + period;
       const dirCache    = CacheService.getScriptCache();
@@ -877,7 +877,7 @@ function doGet(e) {
       // Cache cold (or hard refresh) — fetch now and warm it. hardRefresh re-pulls
       // + re-locks the day cache (retroactive-return case).
       const result = buildDirectorAll_(period, hardRefresh);
-      saveChunkedCache_(dirCache, dirCacheKey, JSON.stringify(result), 360);
+      saveChunkedCache_(dirCache, dirCacheKey, JSON.stringify(result), DIRECTOR_CACHE_TTL_S);
       return jsonOut(result, params.callback);
     }
     if (params.action === 'directorsummary') {

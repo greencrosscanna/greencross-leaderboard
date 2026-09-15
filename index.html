@@ -9073,6 +9073,12 @@ var kiosk = (function() {
   var _retryTimer    = null;   // re-attempt of a failed first load
   var _staleSince    = null;   // Date the data stopped updating, or null when healthy
   var RETRY_MS       = 30000;
+  /* PLUS A RANDOM 0-30s, so six screens that failed together do not retry together. Every GX app
+     runs as one Google account capped at 30 simultaneous executions. On 2026-09-15 Leaderboard took
+     ~1 request a minute from 12:16 to 12:23 PM, then 86 in the minute of 12:24 — the screens that
+     had been failing all came back on the same beat, and a full kiosk load is ~10 server calls, so
+     a synchronized retry is exactly the crowd that made them fail. */
+  function retryDelay_() { return RETRY_MS + Math.floor(Math.random() * 30000); }
 
   function _staleBanner(msg) {
     var el = document.getElementById('kioskStaleBanner');
@@ -9142,7 +9148,7 @@ var kiosk = (function() {
       + '<div style="font-size:14px;max-width:520px;margin:0 auto 6px">'
       + 'This screen is not showing today&rsquo;s sales. It is not a $0 day &mdash; the numbers '
       + 'could not be loaded.</div>'
-      + '<div style="font-size:12px;opacity:.65;margin-bottom:20px">Retrying every 30 seconds · '
+      + '<div style="font-size:12px;opacity:.65;margin-bottom:20px">Retrying every 30&ndash;60 seconds · '
       + e(String(why || '')) + '</div>'
       + '<button class="unavail-refresh-btn" onclick="GC.views.forceKioskRefresh()">Refresh now</button>'
       + '</div>';
@@ -9151,7 +9157,7 @@ var kiosk = (function() {
     clearTimeout(_retryTimer);
     _retryTimer = setTimeout(function() {
       if (kioskRouteSlug_() === slug) GC.views.renderKiosk(slug);
-    }, RETRY_MS);
+    }, retryDelay_());
   }
 
   // ── Remote reload ────────────────────────────────────────────────────────────────────────────
@@ -9166,8 +9172,12 @@ var kiosk = (function() {
     var prev = GC._kioskRefreshTokens[slug];
     GC._kioskRefreshTokens[slug] = token;
     if (prev && prev !== token) {
-      console.log('[kiosk] remote refresh requested — reloading');
-      window.location.reload();
+      /* Not all at once: a "reload every store" reaches every screen on the same 60s poll, and a
+         reload is ~10 server calls apiece. Spread over a minute it costs the shared account nothing
+         noticeable; landing together it is a burst on the account every GX app shares. */
+      var wait = Math.floor(Math.random() * 60000);
+      console.log('[kiosk] remote refresh requested — reloading in ' + Math.round(wait / 1000) + 's');
+      setTimeout(function () { window.location.reload(); }, wait);
     }
   }
 
