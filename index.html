@@ -12603,8 +12603,10 @@ GC.loadStoreColors = function(opts) {
          * route is what hid this for as long as it hid. */
         var slug  = String(s.app_slug || '').trim().toLowerCase();
         var color = String(s.color || '').trim();
-        if (s.is_dc) return;                         // a distribution center is never on the board
         if (!slug) {
+          // The engine leaves app_slug empty for a location it does not put on the board (a new
+          // warehouse-only DC). NOT skipped on is_dc here: River Rd is flagged is_dc and is a store.
+          if (s.is_dc) return;
           try {
             console.warn('[GC.loadStoreColors] cannot place store ' +
               JSON.stringify({ store_id: s.store_id, app_slug: s.app_slug, display_name: s.display_name }) +

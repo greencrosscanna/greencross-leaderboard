@@ -7,7 +7,7 @@
 //      ledgers and Sales' goal keys cannot move); only their NAME follows Core
 //    - a new store is added after them, in Core's sort_order
 //    - a store removed from the registry leaves the live board
-//    - distribution centers are never on the board
+//    - a NEW location flagged is_dc is left off; a KNOWN store never is (River Rd is the DC AND a store)
 //    - the list is NEVER empty: Core -> last good answer -> the six
 //  And one knock-on: saving manual goals must not erase a store that is briefly off the list.
 //
@@ -23,7 +23,9 @@ const CORE = [
   { store_id: 'commercial',  display_name: 'Commercial', dutchie_name: 'Commercial',  sort_order: 3, is_dc: false },
   { store_id: 'hillsboro',   display_name: 'Baseline',   dutchie_name: 'Hillsboro',   sort_order: 4, is_dc: false },
   { store_id: 'portland-rd', display_name: 'Portland',   dutchie_name: 'Portland Rd', sort_order: 5, is_dc: false },
-  { store_id: 'river-rd',    display_name: 'River',      dutchie_name: 'River Rd',    sort_order: 6, is_dc: false },
+  // is_dc TRUE, exactly as the live registry has it. This fixture said false when v1.821 shipped,
+  // which is why no test here noticed that rule taking River off the board.
+  { store_id: 'river-rd',    display_name: 'River',      dutchie_name: 'River Rd',    sort_order: 6, is_dc: true },
 ];
 
 let rows, coreThrows, props, cache;
@@ -90,12 +92,26 @@ H.run('store_registry', {
     _eq_('center gone, order of the rest kept', slugs(A), ['baseline', 'century', 'commercial', 'portland', 'river']);
   },
 
-  distributionCentersNeverOnTheBoard: function () {
+  aNewWarehouseOnlyDcIsLeftOff: function () {
     rows = CORE.concat([{ store_id: 'dc', display_name: 'Warehouse', is_dc: 'TRUE', sort_order: 8 }]);
     coreThrows = false;
     const A = build();
     A.refreshStoreRegistry_();
-    _ok_('a DC (text TRUE, as a sheet stores it) is excluded', slugs(A).indexOf('warehouse') === -1 && A.STORES.length === 6);
+    _ok_('a NEW location flagged is_dc (text TRUE, as a sheet stores it) is left off', slugs(A).indexOf('warehouse') === -1 && A.STORES.length === 6);
+  },
+
+  riverIsTheDcAndStaysOnTheBoard: function () {
+    // THE LIVE REGISTRY, 2026-09-14: River Rd is flagged is_dc because it is the distribution hub,
+    // and it is also a retail store. v1.821 dropped it from the live board. Never again.
+    rows = CORE.map((r) => r.store_id === 'river-rd' ? Object.assign({}, r, { is_dc: true }) : r);
+    coreThrows = false;
+    const A = build();
+    A.refreshStoreRegistry_();
+    _eq_('River stays, in its place', slugs(A), ['baseline', 'center', 'century', 'commercial', 'portland', 'river']);
+    rows = CORE.map((r) => r.store_id === 'river-rd' ? Object.assign({}, r, { is_dc: 'TRUE' }) : r);
+    cache = {};
+    A.refreshStoreRegistry_();
+    _ok_('also when the sheet stores the flag as text', slugs(A).indexOf('river') === 5);
   },
 
   renameFollowsTheNameNotTheSlug: function () {

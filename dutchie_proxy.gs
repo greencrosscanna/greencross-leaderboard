@@ -124,7 +124,10 @@ const STORES = STORES_KNOWN_.map(function (s) { return Object.assign({}, s); });
  *   - the six known stores keep their order, slugs and locationName; only their NAME follows Core
  *   - a NEW store is added after them (in Core's sort_order), with a slug made from its name
  *   - a store REMOVED from the registry leaves the live board; its history stays where it is
- *   - distribution centers (is_dc) are never on the board
+ *   - a NEW location flagged is_dc is left off (a location added as a distribution center is a
+ *     warehouse until someone says otherwise). A KNOWN store is never dropped for is_dc: River Rd is
+ *     flagged is_dc because it is the chain's distribution hub AND a retail store. v1.821 excluded
+ *     every is_dc row and took River off the live board for a few minutes on 2026-09-14.
  * A store that is on the list but has no Dutchie connection yet shows "Unavailable" rather than
  * taking the other stores down (markStoreUnavailable_, dutchie_fetch.gs).
  *
@@ -135,8 +138,10 @@ const STORES = STORES_KNOWN_.map(function (s) { return Object.assign({}, s); });
  * Reads GXCore.getStores() directly, NOT getGxStores_: that function builds app_slug FROM this list,
  * and gxStoreIdToAppSlug_ calls it, so going through either would loop.
  * ─────────────────────────────────────────────────────────────────────────────────────────────── */
-var GC_STORE_REGISTRY_CACHE_ = 'GC_STORE_REGISTRY_v1';
-var GC_STORE_REGISTRY_LKG_   = 'GC_STORE_REGISTRY_LKG';
+// v2 / _v2: v1.821 wrote a list WITHOUT River (see the is_dc note above) to both of these. New keys,
+// so neither that cached answer nor that "last good" copy can ever be read back.
+var GC_STORE_REGISTRY_CACHE_ = 'GC_STORE_REGISTRY_v2';
+var GC_STORE_REGISTRY_LKG_   = 'GC_STORE_REGISTRY_LKG_v2';
 var _storeRegistrySource_    = 'known';
 
 function storeTextTruthy_(v) {
@@ -151,8 +156,12 @@ function storeSlugify_(text) {
 
 /** Registry rows -> this app's store list, or null when the rows cannot produce one. Pure. */
 function storeListFromRegistry_(rows) {
+  var knownIds = Object.create(null);
+  STORES_KNOWN_.forEach(function (k) { knownIds[k.storeId] = true; });
   var live = (rows || []).filter(function (r) {
-    return r && String(r.store_id || '').trim() && !storeTextTruthy_(r.is_dc);
+    if (!r || !String(r.store_id || '').trim()) return false;
+    // is_dc only keeps a NEW location off the board. See the header: River Rd is a store and the DC.
+    return knownIds[String(r.store_id).trim()] || !storeTextTruthy_(r.is_dc);
   });
   if (!live.length) return null;
   var byId = Object.create(null);
@@ -167,8 +176,6 @@ function storeListFromRegistry_(rows) {
                 storeId: k.storeId, locationName: k.locationName });
   });
 
-  var knownIds = Object.create(null);
-  STORES_KNOWN_.forEach(function (k) { knownIds[k.storeId] = true; });
   live.filter(function (r) { return !knownIds[String(r.store_id).trim()]; })
     .sort(function (a, b) {
       return ((Number(a.sort_order) || 9999) - (Number(b.sort_order) || 9999))
@@ -2025,7 +2032,8 @@ function getGxStores_() {
         dutchie_name: String(s.dutchie_name || ''),
         color:        String(s.color || ''),
         sort_order:   String(s.sort_order || ''),
-        // So the page can skip a distribution center quietly instead of warning it "cannot place" it.
+        // Informational only. The page must NOT skip on it: River Rd is a store and the DC. Whether a
+        // row is on the board is decided here, by app_slug being set, and nowhere else.
         is_dc:        storeTextTruthy_(s.is_dc),
         // Name as it shows on THIS board. A store added in the Command Center has no entry in the
         // page's compiled-in table, so the page builds one from this row.
