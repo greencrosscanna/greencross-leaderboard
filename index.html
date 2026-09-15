@@ -5937,7 +5937,9 @@ GC.router = (function() {
     },
     {
       id: 'store',
-      pattern: /^\/store\/([a-z]+)$/,
+      // Hyphen and digits allowed: a store added in the Command Center gets a slug made from its name
+      // ("Hood River" -> hood-river), and [a-z]+ would never match its kiosk URL.
+      pattern: /^\/store\/([a-z0-9-]+)$/,
       roles: ['owner','director','store_manager','asst_manager','budtender'],
       render: function(params) { GC.views.renderKiosk(params[1]); },
     },
@@ -6645,11 +6647,14 @@ var director = (function() {
   // ── Render: Store filter pills (above staff table) ────
   function renderFilterPills() {
     return '<div class="filter-row" id="filterRow">'
-      + ['All Stores','Baseline','Center','Century','Commercial','Portland','River']
-          .map(function(s, i) {
-            var val = i === 0 ? 'all' : s.toLowerCase();
-            var active = (i === 0 && _storeFilter === 'all') || _storeFilter === val;
-            return '<button class="pill' + (active ? ' active' : '') + '" data-store="' + val + '">' + e(s) + '</button>';
+      // From the live store list, not a typed-in six: a store added in the Command Center gets a pill,
+      // and a removed one stops offering a filter that matches nothing.
+      + [{ slug: 'all', name: 'All Stores' }].concat(GC.STORE_SLUGS.map(function (slug) {
+            return { slug: slug, name: (GC.STORES[slug] || {}).name || slug };
+          }))
+          .map(function(st) {
+            var active = _storeFilter === st.slug;
+            return '<button class="pill' + (active ? ' active' : '') + '" data-store="' + e(st.slug) + '">' + e(st.name) + '</button>';
           }).join('')
       + '<div class="filter-right">'
       + '<button class="pill" data-tag="top10">Top 10</button>'
@@ -8298,7 +8303,12 @@ var sky = (function() {
       var grid = document.getElementById('skyGrid');
       var rem  = document.getElementById('skyRem');
       if (agg)  agg.innerHTML  = aggHtml(summary);
-      if (grid) grid.innerHTML = stores.map(storeCard).join('');
+      if (grid) {
+        // Three across, as many rows as the stores need. Fixed at 3x2 until 2026-09-14, which would
+        // have pushed a seventh store into a row the layout did not size.
+        grid.style.gridTemplateRows = 'repeat(' + Math.max(1, Math.ceil(stores.length / 3)) + ', 1fr)';
+        grid.innerHTML = stores.map(storeCard).join('');
+      }
       if (rem) { var r = today.timeRemainingLabel || ''; rem.textContent = (r && r !== 'Closed') ? r + ' left' : r; }
       renderAggLive();
     }).catch(function(err) { console.warn('[sky] wall fetch failed:', err); });
@@ -12574,8 +12584,9 @@ GC.loadStoreColors = function(opts) {
   try {
     GC.api.gasCall('gxstores', {}).then(function(resp) {
       if (!resp || !resp.ok || !Array.isArray(resp.stores)) return;
-      var jsChanged = false;
+      var jsChanged = false, setChanged = false;
       var root = document.documentElement;
+      var placed = [];
       resp.stores.forEach(function(s) {
         /* MATCH ON THE KEY THE SERVER RESOLVED, not on the display name.
          *
@@ -12587,23 +12598,31 @@ GC.loadStoreColors = function(opts) {
          * No error, no log, a screen that looks entirely fine. (Found by core-admin, 2026-09-09;
          * gx-stores.js's own header names this app as the example.)
          *
-         * app_slug is resolved engine-side from the explicit STORES table, so a rename cannot
-         * touch it. display_name is deliberately NOT kept as a fallback: silently succeeding by
-         * the broken route is what hid this for as long as it hid. */
+         * app_slug is resolved engine-side from the live store list, so a rename cannot touch it.
+         * display_name is deliberately NOT kept as a fallback: silently succeeding by the broken
+         * route is what hid this for as long as it hid. */
         var slug  = String(s.app_slug || '').trim().toLowerCase();
         var color = String(s.color || '').trim();
-        if (!slug || !GC.STORES[slug]) {
-          /* The skip is what made the old failure invisible, so say something. A store the engine
-             sent that this page cannot place is either a store added to Core and not to GC.STORES,
-             or app_slug not coming through — both worth one line in the console rather than a
-             color that quietly stops tracking. */
+        if (s.is_dc) return;                         // a distribution center is never on the board
+        if (!slug) {
           try {
             console.warn('[GC.loadStoreColors] cannot place store ' +
               JSON.stringify({ store_id: s.store_id, app_slug: s.app_slug, display_name: s.display_name }) +
-              ' — its color will not update. Add it to GC.STORES, or check the engine is sending app_slug.');
+              ' — the engine sent no app_slug for it.');
           } catch (e) {}
           return;
         }
+        placed.push(slug);
+        /* A STORE ADDED IN THE COMMAND CENTER (2026-09-14). The engine's list comes from GX Core now,
+           so a slug this page has never heard of is a real store, not a mistake. Give it an entry so
+           every screen that looks a store up by slug can draw it. */
+        if (!GC.STORES[slug]) {
+          GC.STORES[slug] = { name: String(s.app_name || s.display_name || slug), slug: slug, color: color || '#6b7280' };
+          ensureStoreDotRule(slug);
+          jsChanged = true;
+        }
+        if (GC.STORE_SLUGS.indexOf(slug) === -1) { GC.STORE_SLUGS.push(slug); setChanged = true; }
+        if (s.app_name && GC.STORES[slug].name !== s.app_name) { GC.STORES[slug].name = String(s.app_name); jsChanged = true; }
         if (!color) return;
         // CSS-var consumers (.store-dot.<slug> etc.) update instantly via setProperty — no re-render.
         root.style.setProperty('--store-' + slug, color);
@@ -12615,13 +12634,34 @@ GC.loadStoreColors = function(opts) {
           jsChanged = true;
         }
       });
-      // Only a genuine color change needs a re-render (for canvas/JS-drawn store colors); the wall
-      // opts out (reRender:false) since it repaints on its own 30s cadence and its dots are CSS-var.
-      if (reRender && jsChanged && GC.router && GC.router.currentRoute()) {
+      /* A STORE REMOVED IN THE COMMAND CENTER leaves the live list. Changed IN PLACE, because the
+         slideshow holds a reference to this very array. GC.STORES keeps its entry, so history for
+         that store still has a name and a color. Only trusted when the engine placed at least one
+         store — an empty answer is an outage, not a chain with no stores. */
+      if (placed.length) {
+        for (var i = GC.STORE_SLUGS.length - 1; i >= 0; i--) {
+          if (placed.indexOf(GC.STORE_SLUGS[i]) === -1) { GC.STORE_SLUGS.splice(i, 1); setChanged = true; }
+        }
+      }
+      // A color change needs a re-render only for canvas/JS-drawn colors; a change to WHICH stores
+      // exist always does. The wall opts out of both (reRender:false) — it repaints every 30s.
+      if (reRender && (jsChanged || setChanged) && GC.router && GC.router.currentRoute()) {
         try { GC.router.navigate(window.location.hash); } catch (e) {}
       }
     }).catch(function() {});
   } catch (e) {}
+
+  // .store-dot.<slug> rules are compiled in for the original six; a new store gets its rule here.
+  function ensureStoreDotRule(slug) {
+    try {
+      var el = document.getElementById('gc-store-dyn-css');
+      if (!el) { el = document.createElement('style'); el.id = 'gc-store-dyn-css'; document.head.appendChild(el); }
+      var safe = slug.replace(/[^a-z0-9-]/g, '');
+      if (el.textContent.indexOf('.store-dot.' + safe + ' ') === -1) {
+        el.textContent += '.store-dot.' + safe + ' { background: var(--store-' + safe + ', #6b7280); }\n';
+      }
+    } catch (e) {}
+  }
 };
 
 // ── Nightly refresh: the kiosk reloads itself before the stores open ─────────────────────────

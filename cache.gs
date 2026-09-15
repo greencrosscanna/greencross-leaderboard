@@ -110,6 +110,7 @@ function buildDirectorAll_(period, hardRefresh) {
  * Runs on Google's servers — no browser involved.
  */
 function refreshDirectorCache() {
+  refreshStoreRegistry_();   // the store list comes from GX Core -- see dutchie_proxy.gs
   // Warm-instance guard: this trigger builds a cached aggregate that carries the budtender
   // discount rate, and the discount overrides now come from GX Core (readDiscConfig_).
   // Drop the per-execution memo so a warm instance cannot score against rules Crew has changed.

@@ -99,7 +99,13 @@ const EXCLUDED_DISCOUNT_KEYWORDS = [
 // table below carried a compensating swap (slug 'century' → dutchieName 'Hillsboro') to cancel it out.
 // Two errors multiplying to the right answer is why the mapping kept getting "fixed" and breaking the
 // kiosk (PR #8, 2026-08-26). store_id is Core-owned and unambiguous, so the swap cannot recur.
-const STORES = [
+//
+// *Since 2026-09-14 this table is no longer the store list.* The list comes from GX Core's store
+// registry on every execution (refreshStoreRegistry_, below). These six are what the registry is
+// matched AGAINST: a store they know keeps its slug, board position and locationName exactly as
+// before, so kiosk URLs, saved goals, ledgers and Sales' goal keys cannot move. They are also the
+// last-resort list when neither GX Core nor a remembered copy of its answer is available.
+const STORES_KNOWN_ = [
   { slug: 'baseline',   name: 'Baseline',   storeId: 'hillsboro',   locationName: 'Hillsboro'   },
   { slug: 'center',     name: 'Center',     storeId: 'center',      locationName: 'Center'      },
   { slug: 'century',    name: 'Century',    storeId: 'bend',        locationName: 'Bend'        },
@@ -107,6 +113,122 @@ const STORES = [
   { slug: 'portland',   name: 'Portland',   storeId: 'portland-rd', locationName: 'Portland Rd' },
   { slug: 'river',      name: 'River',      storeId: 'river-rd',    locationName: 'River'       },
 ];
+
+// The LIVE list. Same shape and the same name every caller already uses (about a hundred of them),
+// but its CONTENTS are replaced in place by refreshStoreRegistry_ at the start of each execution.
+const STORES = STORES_KNOWN_.map(function (s) { return Object.assign({}, s); });
+
+/* ─── THE STORE LIST, FROM GX CORE (2026-09-14) ───────────────────────────────────────────────────
+ * A store added in the Command Center never appeared on this board, because the list above was
+ * typed into the code. Now the registry decides, with rules Sky chose:
+ *   - the six known stores keep their order, slugs and locationName; only their NAME follows Core
+ *   - a NEW store is added after them (in Core's sort_order), with a slug made from its name
+ *   - a store REMOVED from the registry leaves the live board; its history stays where it is
+ *   - distribution centers (is_dc) are never on the board
+ * A store that is on the list but has no Dutchie connection yet shows "Unavailable" rather than
+ * taking the other stores down (markStoreUnavailable_, dutchie_fetch.gs).
+ *
+ * NEVER EMPTY. An empty list would not look like an outage -- it would look like a chain with no
+ * stores, and saveManualGoals_ would have dropped every override against it. Order of preference:
+ * GX Core (cached 5 min) -> the last good answer Core gave (Script Property) -> the six above.
+ *
+ * Reads GXCore.getStores() directly, NOT getGxStores_: that function builds app_slug FROM this list,
+ * and gxStoreIdToAppSlug_ calls it, so going through either would loop.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────── */
+var GC_STORE_REGISTRY_CACHE_ = 'GC_STORE_REGISTRY_v1';
+var GC_STORE_REGISTRY_LKG_   = 'GC_STORE_REGISTRY_LKG';
+var _storeRegistrySource_    = 'known';
+
+function storeTextTruthy_(v) {
+  if (v === true) return true;
+  var t = String(v == null ? '' : v).trim().toLowerCase();
+  return t === 'true' || t === 'yes' || t === '1' || t === 'y';
+}
+
+function storeSlugify_(text) {
+  return String(text || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/** Registry rows -> this app's store list, or null when the rows cannot produce one. Pure. */
+function storeListFromRegistry_(rows) {
+  var live = (rows || []).filter(function (r) {
+    return r && String(r.store_id || '').trim() && !storeTextTruthy_(r.is_dc);
+  });
+  if (!live.length) return null;
+  var byId = Object.create(null);
+  live.forEach(function (r) { byId[String(r.store_id).trim()] = r; });
+
+  var list = [], used = Object.create(null);
+  STORES_KNOWN_.forEach(function (k) {
+    var r = byId[k.storeId];
+    if (!r) return;                                        // removed in the Command Center
+    used[k.slug] = true;
+    list.push({ slug: k.slug, name: String(r.display_name || '').trim() || k.name,
+                storeId: k.storeId, locationName: k.locationName });
+  });
+
+  var knownIds = Object.create(null);
+  STORES_KNOWN_.forEach(function (k) { knownIds[k.storeId] = true; });
+  live.filter(function (r) { return !knownIds[String(r.store_id).trim()]; })
+    .sort(function (a, b) {
+      return ((Number(a.sort_order) || 9999) - (Number(b.sort_order) || 9999))
+        || String(a.display_name || '').localeCompare(String(b.display_name || ''));
+    })
+    .forEach(function (r) {
+      var id = String(r.store_id).trim();
+      var name = String(r.display_name || '').trim() || id;
+      var slug = storeSlugify_(name) || storeSlugify_(id);
+      if (!slug) return;
+      if (used[slug]) slug = slug + '-' + storeSlugify_(id);
+      if (used[slug]) return;                              // cannot be placed without guessing
+      used[slug] = true;
+      list.push({ slug: slug, name: name, storeId: id,
+                  locationName: String(r.dutchie_name || '').trim() || name, added: true });
+    });
+  return list.length ? list : null;
+}
+
+/** Replace STORES' contents from the registry. Call at the start of every execution. */
+function refreshStoreRegistry_() {
+  var list = null, source = 'known';
+  var cache = null, props = null;
+  try { cache = CacheService.getScriptCache(); } catch (e) {}
+  try { props = PropertiesService.getScriptProperties(); } catch (e) {}
+
+  try {
+    var hit = cache && cache.get(GC_STORE_REGISTRY_CACHE_);
+    if (hit) { list = JSON.parse(hit); source = 'core'; }
+  } catch (e) { list = null; }
+
+  if (!list) {
+    try {
+      list = storeListFromRegistry_(GXCore.getStores());
+      if (list) {
+        source = 'core';
+        var json = JSON.stringify(list);
+        try { cache && cache.put(GC_STORE_REGISTRY_CACHE_, json, 300); } catch (e) {}
+        try { if (props && props.getProperty(GC_STORE_REGISTRY_LKG_) !== json) props.setProperty(GC_STORE_REGISTRY_LKG_, json); } catch (e) {}
+      }
+    } catch (e) {
+      Logger.log('[stores] GX Core registry unreadable, using the last good list: ' + ((e && e.message) || e));
+    }
+  }
+  if (!list) {
+    try {
+      var lkg = props && props.getProperty(GC_STORE_REGISTRY_LKG_);
+      if (lkg) { list = JSON.parse(lkg); source = 'last-good'; }
+    } catch (e) { list = null; }
+  }
+  if (!Array.isArray(list) || !list.length) {
+    list = STORES_KNOWN_.map(function (s) { return Object.assign({}, s); });
+    source = 'known';
+  }
+
+  STORES.length = 0;
+  list.forEach(function (s) { STORES.push(s); });
+  _storeRegistrySource_ = source;
+  return { source: source, slugs: STORES.map(function (s) { return s.slug; }) };
+}
 
 // Chunk size for CacheService (leave headroom below 100KB limit)
 const CHUNK_SIZE = 90000; // bytes per chunk
@@ -338,6 +460,8 @@ function doGet(e) {
      isExcludedDiscount_ runs per discount line per transaction — so the memo has to be dropped here
      or a warm kiosk instance keeps scoring against rules Crew already changed. */
   resetDiscountMemos_();
+  // The store list comes from GX Core now; refresh it before anything reads STORES.
+  refreshStoreRegistry_();
 
   // Serve the frontend when no action
   if (!params.action) {
@@ -1471,6 +1595,7 @@ function getEmployeeRoster_() {
  * Run manually via the syncemployees action, or call from a time-based trigger.
  */
 function syncEmployeeRoster_() {
+  refreshStoreRegistry_();
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const range30 = {
     fromUTC: thirtyDaysAgo.toISOString(),
@@ -1517,6 +1642,7 @@ function syncEmployeeRoster_() {
 // Warms storetoday AND storeleaderboard so fetchKioskAll (which needs
 // both) renders the heatmap instantly on first page view.
 function warmAllKioskCaches_() {
+  refreshStoreRegistry_();
   // Warm-instance guard: this trigger builds a cached aggregate that carries the budtender
   // discount rate, and the discount overrides now come from GX Core (readDiscConfig_).
   // Drop the per-execution memo so a warm instance cannot score against rules Crew has changed.
@@ -1866,7 +1992,7 @@ function bugMailOnce_(b, kind) {
 function getGxStores_() {
   try {
     const cache = CacheService.getScriptCache();
-    const hit = cache.get('GC_GXSTORES_v2')   /* v2: rows carry app_slug now */;
+    const hit = cache.get('GC_GXSTORES_v3')   /* v3: rows carry is_dc + app_name */;
     if (hit) return JSON.parse(hit);
     const rows = GXCore.getStores() || [];
     /* app_slug IS RESOLVED HERE, not in the browser.
@@ -1899,10 +2025,15 @@ function getGxStores_() {
         dutchie_name: String(s.dutchie_name || ''),
         color:        String(s.color || ''),
         sort_order:   String(s.sort_order || ''),
+        // So the page can skip a distribution center quietly instead of warning it "cannot place" it.
+        is_dc:        storeTextTruthy_(s.is_dc),
+        // Name as it shows on THIS board. A store added in the Command Center has no entry in the
+        // page's compiled-in table, so the page builds one from this row.
+        app_name:     String((STORES.filter(function (st) { return st.slug === id2slug[String(s.store_id || '')]; })[0] || {}).name || s.display_name || ''),
       };
     });
     const out = { ok: true, stores: stores };
-    cache.put('GC_GXSTORES_v2', JSON.stringify(out), 300);   // 5 min — matches the Sky wall's color poll
+    cache.put('GC_GXSTORES_v3', JSON.stringify(out), 300);   // 5 min — matches the Sky wall's color poll
     return out;
   } catch (e) {
     return { ok: false, error: String((e && e.message) || e), stores: [] };
