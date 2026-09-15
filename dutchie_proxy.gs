@@ -1353,6 +1353,34 @@ function doGet(e) {
 // JSONP WRAPPER
 // ============================================================
 
+/**
+ * POST door, for ONE action: a bug report with its screenshot attached.
+ *
+ * WHY IT EXISTS. Every other call to this app is a JSONP GET, which cannot carry an image. The shared
+ * bug form used to upload the picture straight to GX Core with THIS app's session token -- and GX Core
+ * validates with GC_SESSION_SECRET while this app signs with GC_PERF_SESSION_SECRET, so every
+ * Leaderboard screenshot was refused. The report itself still filed, which is why nobody saw it fail.
+ * Sending the image here, on a session this app can verify, and letting gxIngestBug store it needs no
+ * change to GX Core and no second key.
+ *
+ * Deliberately narrow: an unknown action is refused, and the session is checked exactly as doGet
+ * checks it before `bugreport`. Nothing else is reachable through this door.
+ */
+function doPost(e) {
+  var body;
+  try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}') || {}; }
+  catch (err) { return jsonOut({ ok: false, error: 'Request body is not JSON' }); }
+  try {
+    if (body.action !== 'bugreport') return jsonOut({ ok: false, error: 'Unknown action: ' + body.action });
+    var auth = requireAuth_(body);
+    if (!auth.ok) return jsonOut(auth);
+    return jsonOut(handleBugReport_(body));
+  } catch (err) {
+    Logger.log('doPost error: ' + ((err && err.message) || err));
+    return jsonOut({ ok: false, error: String((err && err.message) || err) });
+  }
+}
+
 function jsonOut(data, callback) {
   const json = JSON.stringify(data);
   if (callback) {
@@ -1702,7 +1730,20 @@ function handleBugReport_(b) {
   var res = null, why = '';
   try {
     res = GXCore.gxIngestBug('performance', b.reporter, {
-      title: b.title, desc: b.desc, priority: b.priority, store: b.appStore, appVer: b.appVer
+      title: b.title, priority: b.priority, store: b.appStore, appVer: b.appVer,
+      /* EVERYTHING THE REPORT CARRIED, not just the title and description. This used to forward five
+         fields and drop the rest one line short of the board:
+           · `detail` — where gx-bugreport writes "[a screenshot was attached but could not be
+             uploaded: …]". GX Core reads detail before desc, so both are joined into it.
+           · `context` — the page snapshot, including the JS errors thrown before submit, which is
+             the most useful field on a report that says "it didn't go through".
+           · the screenshot — a Drive url if one was uploaded elsewhere, or the image itself when it
+             arrives through doPost below; gxIngestBug stores it either way.
+         Found 2026-09-15: 28 Leaderboard reports on the board and not one had a screenshot. */
+      desc: b.desc, detail: [b.desc, b.detail].filter(function (x) { return x; }).join('\n\n'),
+      context: b.context || '',
+      screenshot_url: b.screenshot_url || '',
+      screenshot: b.screenshot || '', screenshot_name: b.screenshot_name || '', screenshot_type: b.screenshot_type || ''
     }) || {};
     /* A REFUSAL IS NOT A FILING. gxIngestBug returns {ok:false, error} without throwing when it will
        not take a report — an empty one, a missing app key. Treating any non-throw as success (which

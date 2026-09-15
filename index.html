@@ -4907,7 +4907,8 @@ GC.renderKpiBlock = function(summary, periodLabel) {
     + smallKpi('Total Discounts', GC.fmtCurrencyFull(summary.totalDiscounts), '▲ +' + GC.fmtCurrency(d.totalDiscounts), 'v-amber')
     + smallKpi('Discount Rate',   GC.fmtPct(summary.discountRate),        discDelta, 'v-amber')
     + smallKpi('Flagged Staff',   String(summary.flaggedStaff),            flagSub, 'v-red')
-    + smallKpi('Active Staff',    String(summary.activeStaff),             'across ' + summary.storeCount + ' stores')
+    + smallKpi('Active Staff',    String(summary.activeStaff),
+        (summary.sellingStaff != null ? summary.sellingStaff + ' with sales · ' : 'across ') + summary.storeCount + ' stores')
     + smallKpi('Sales / Hour',    '$' + GC.fmtNum(summary.salesPerHour),  GC.fmtDeltaNum(d.salesPerHour, '$'))
     + '</div>';
 
@@ -12809,6 +12810,7 @@ GC.bug = (function () {
   function _user() {
     try { return (GC.auth.load() || {}).user || 'unknown'; } catch (e) { return 'unknown'; }
   }
+  var _bugShot = null;   // the image read by uploadShot, sent with the report by submit
   if (window.GXBugReport) {
     GXBugReport.init({
       app: 'performance',
@@ -12822,13 +12824,46 @@ GC.bug = (function () {
       },
       /* gasCall resolves on the proxy's JSON body. gx-bugreport treats a resolved {ok:false} as a
          failure, so a rejected report can no longer close the modal saying "Bug reported — thanks!" */
-      submit: function (payload) { return GC.api.gasCall('bugreport', payload); },
-      // Screenshot upload. A separate call from `submit` because the image cannot ride the report
-      // payload — see gx-bugreport.js. The shared uploader is the transport; this app supplies only
-      // its own session token, so auth still originates here.
-      uploadShot: GXBugReport.gxCoreUploader(window.GXCORE_URL, function () {
-        try { return (GC.auth.load() || {}).token || ''; } catch (e) { return ''; }
-      }),
+      /* THE SCREENSHOT GOES THROUGH THIS APP'S OWN ENGINE, not straight to GX Core.
+         The shared uploader (GXBugReport.gxCoreUploader) sends the picture to GX Core with our session
+         token, and GX Core cannot verify it -- this app signs with its own key -- so every Leaderboard
+         screenshot was refused while the words still filed. So uploadShot only READS the image, and
+         submit POSTs report + image to our doPost, where the session is ours to check and gxIngestBug
+         stores the picture. With no image, it is the same JSONP call as always.
+         The picture still must not sink the report: if the POST fails, the words are filed alone and
+         the board says why the image is missing. A retry of the POST is safe -- GX Core merges a
+         repeat of the same open report. */
+      submit: function (payload) {
+        var shot = _bugShot;
+        if (!shot || typeof window.GXClient !== 'function') return GC.api.gasCall('bugreport', payload);
+        var token = '';
+        try { token = (GC.auth.load() || {}).token || ''; } catch (e) {}
+        var body = Object.assign({}, payload, { action: 'bugreport', token: token,
+          screenshot: shot.data, screenshot_name: shot.name, screenshot_type: shot.type });
+        return window.GXClient(GC.api.GAS_URL).postJSON('bugreport', body, { retries: 1 })
+          .then(function (res) {
+            if (res && res.ok === true) { _bugShot = null; return res; }
+            throw new Error((res && res.error) || 'no confirmation');
+          })
+          .catch(function (e) {
+            var words = Object.assign({}, payload, { detail: String(payload.detail || '') +
+              '\n\n[a screenshot was attached but could not be uploaded: ' + ((e && e.message) || 'upload failed') + ']' });
+            return GC.api.gasCall('bugreport', words);
+          });
+      },
+      uploadShot: function (file) {
+        return new Promise(function (resolve, reject) {
+          var fr = new FileReader();
+          fr.onload = function () {
+            var str = String(fr.result || ''), comma = str.indexOf(',');
+            _bugShot = { data: comma >= 0 ? str.slice(comma + 1) : str,
+                         name: file.name || 'screenshot.png', type: file.type || 'image/png' };
+            resolve({ ok: true });
+          };
+          fr.onerror = function () { reject(new Error('could not read that file')); };
+          fr.readAsDataURL(file);
+        });
+      },
     });
     /* Stale-build check. autoReload because this is a KIOSK: it runs unattended for days with
        nobody there to click a toast, so a stale build would persist until someone noticed. Every

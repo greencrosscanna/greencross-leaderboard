@@ -71,7 +71,7 @@ const rosterProps = {
   setProperties: function () { return this; },
 };
 
-const S = H.load(['gx_roster.gs', 'dutchie_proxy.gs', 'endpoints.gs', 'dutchie_fetch.gs', 'goals.gs', 'auth.gs'], {
+const S = H.load(['gx_roster.gs', 'dutchie_proxy.gs', 'endpoints.gs', 'dutchie_fetch.gs', 'goals.gs', 'auth.gs', 'discounts.gs'], {
   stubs: {
     PropertiesService: {
       getScriptProperties: function () { return rosterProps; },
@@ -191,6 +191,34 @@ function test_directorStaff_corporateWhoTransacts_() {
   }
 }
 
+// The Active Staff card and the Top Performers table must count the SAME people.
+// Sky, 2026-09-15: "active staff KPI card says 25, but there are 36". The card counted only sellers;
+// the table lists sellers plus the active crew at $0. Both now read activeCrewFill_.
+function test_activeStaffCard_matchesTable_() {
+  H.setNow(RealDateUTC(2026, 6, 15, 19, 0, 0));
+  S.resetPPCache();
+  try {
+    const pre = {
+      byStoreAgg: {
+        portland: { byEmployee: {
+          '202': { id: '202', name: 'Drew Phillips', initials: 'DP', sales: 1250, transactions: 20,
+                   items: 48, discounts: 30, discountsBdt: 12, subtotal: 1280, discountRate: 0.01 },
+        }, sales: 1250, transactions: 20, items: 48, discounts: 30, discountsBdt: 12, subtotal: 1280 },
+      },
+      prevByStoreAgg: {},
+      byStoreToday: {},
+    };
+    const table = S.getDirectorStaff({ period: 'mtd' }, pre);
+    const card  = S.getDirectorSummary({ period: 'mtd' }, pre);
+    _eq_('the card counts exactly the people the table lists', card.activeStaff, table.staff.length);
+    _eq_('and still says how many of them have sold', card.sellingStaff, 1);
+    _ok_('which is fewer than the whole crew, or this proves nothing', card.activeStaff > card.sellingStaff);
+  } finally {
+    H.setNow(null);
+    S.resetPPCache();
+  }
+}
+
 H.run('gx_roster', {
   test_gxBelongsToStore_,
   test_gxBelongsToStore_failsOpen_,
@@ -198,4 +226,5 @@ H.run('gx_roster', {
   test_gateActiveSignal_,
   test_directorStaff_rosterFill_,
   test_directorStaff_corporateWhoTransacts_,
+  test_activeStaffCard_matchesTable_,
 });

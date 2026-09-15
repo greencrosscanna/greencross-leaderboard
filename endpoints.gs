@@ -437,6 +437,28 @@ function getDirectorToday(byStoreToday) {
   };
 }
 
+/**
+ * The active crew, whether or not they have sold yet: everyone on a store's roster who belongs to that
+ * store and is not excluded. ONE definition, read by both the Top Performers table (which lists them at
+ * $0) and the Active Staff card (which counts them), so the two cannot disagree again.
+ *
+ * gxBelongsToStore_ is the gate because the roster is derived from 30 days of transactions: one covered
+ * shift would otherwise leave someone on a store indefinitely, and put them under whichever store the
+ * loop reached first. It never hides a seller -- sellers come from transactions, not from here.
+ */
+function activeCrewFill_() {
+  const roster = getEmployeeRoster_();
+  const out = [];
+  STORES.forEach(function(store) {
+    (roster[store.slug] || []).forEach(function(p) {
+      if (gxIsExcluded_(p)) return;
+      if (!gxBelongsToStore_(p, store)) return;
+      out.push({ key: p.name.toLowerCase().replace(/\s+/g, '_'), person: p, store: store });
+    });
+  });
+  return out;
+}
+
 function getDirectorSummary(params, pre) {
   pre = pre || {};
   const period = params.period || 'mtd';
@@ -453,6 +475,12 @@ function getDirectorSummary(params, pre) {
     : aggregateTransactions_(Object.values(pre.prevByStore || fetchAllStoresTransactions_(prior)).flat());
 
   const allEmps       = Object.values(curr.byEmployee).filter(e => !gxIsExcluded_(e));
+  // ACTIVE STAFF = everyone who sold this period PLUS the active crew who have not yet -- the same
+  // people the Top Performers table lists. This card used to count sellers only, so two days into a
+  // pay period it read 25 while the table directly below it listed 36 (Sky, 2026-09-15).
+  const activeKeys    = Object.create(null);
+  allEmps.forEach(function (e) { activeKeys[String(e.name || '').toLowerCase().replace(/\s+/g, '_')] = true; });
+  activeCrewFill_().forEach(function (r) { activeKeys[r.key] = true; });
   const _discRed      = discountRedLineDec_();   // 2× the discount target
   const flaggedEmps   = allEmps.filter(e => e.discountRate > _discRed);
 
@@ -475,7 +503,8 @@ function getDirectorSummary(params, pre) {
     discountRate:   curr.discountRate,
     flaggedStaff:   flaggedEmps.length,
     flaggedStaffBreakdown: { repeat: flaggedEmps.length, new: 0 },
-    activeStaff:    allEmps.length,
+    activeStaff:    Object.keys(activeKeys).length,
+    sellingStaff:   allEmps.length,   // of those, how many have rung a sale this period
     storeCount:     STORES.length,
     salesPerHour:   salesPerHour,
     deltas: {
@@ -664,23 +693,19 @@ function getDirectorStaff(params, pre) {
   // which this gate does not touch — so a corporate covering a shift still ranks with their real
   // numbers. The gate fails open on an unknown home_store, and in that case attribution stays
   // first-store-wins as before.
-  STORES.forEach(function(store) {
-    (getEmployeeRoster_()[store.slug] || []).forEach(function(p) {
-      const key = p.name.toLowerCase().replace(/\s+/g, '_');
-      if (gxIsExcluded_(p)) return;
-      if (!gxBelongsToStore_(p, store)) return;
-      if (globalEmps[key]) return;   // already present from transactions — keep real stats
-      globalEmps[key] = {
-        initials:     p.initials,
-        name:         p.name,
-        role:         p.role || '',
-        roleLabel:    p.roleLabel || '',
-        storeSlug:    store.slug,
-        storeName:    store.name,
-        sales: 0, transactions: 0, items: 0, discounts: 0, discountsBdt: 0, subtotal: 0,
-        tags: [],
-      };
-    });
+  activeCrewFill_().forEach(function(r) {
+    const p = r.person, store = r.store;
+    if (globalEmps[r.key]) return;   // already present from transactions — keep real stats
+    globalEmps[r.key] = {
+      initials:     p.initials,
+      name:         p.name,
+      role:         p.role || '',
+      roleLabel:    p.roleLabel || '',
+      storeSlug:    store.slug,
+      storeName:    store.name,
+      sales: 0, transactions: 0, items: 0, discounts: 0, discountsBdt: 0, subtotal: 0,
+      tags: [],
+    };
   });
 
   // Per-employee TODAY aggregation (for the Top Performers "Today" tab) — from byStoreToday,

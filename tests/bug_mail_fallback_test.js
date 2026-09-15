@@ -309,6 +309,47 @@ const tests = {
     _eq_('silent', SENT.length, 0);
   },
 
+
+  /* EVERYTHING THE REPORT CARRIED REACHES THE BOARD (2026-09-15). This used to forward five fields,
+     so the page's recent errors, the "screenshot could not be uploaded" note and the image itself
+     all stopped one line short of GX Core -- 28 Leaderboard reports and not one screenshot. */
+  'the snapshot, the failure note and the screenshot are forwarded': function () {
+    reset();
+    const m = M();
+    m.handleBugReport_(Object.assign({}, MIKE, {
+      context: '{"errors":["boom"]}', detail: '[a screenshot was attached but could not be uploaded: x]',
+      screenshot: 'aGVsbG8=', screenshot_name: 'shot.png', screenshot_type: 'image/png',
+    }));
+    const p = INGESTED[0].payload;
+    _eq_('context forwarded verbatim', p.context, '{"errors":["boom"]}');
+    _ok_('the words come first in detail', p.detail.indexOf(MIKE.desc) === 0);
+    _ok_('and the upload note is kept with them', p.detail.indexOf('could not be uploaded') > 0);
+    _eq_('the image itself reaches gxIngestBug', [p.screenshot, p.screenshot_name, p.screenshot_type], ['aGVsbG8=', 'shot.png', 'image/png']);
+  },
+
+  'a report with no extras still files with its description as the detail': function () {
+    reset();
+    const m = M();
+    m.handleBugReport_(MIKE);
+    _eq_('detail is just the description', INGESTED[0].payload.detail, MIKE.desc);
+    _eq_('no screenshot invented', INGESTED[0].payload.screenshot, '');
+  },
+
+  /* THE POST DOOR IS ONE ACTION WIDE, AND SIGNED IN. It exists only so a screenshot can ride a bug
+     report; it must not become a second, unguarded entrance to everything doGet routes. */
+  'doPost takes only a signed-in bug report': function () {
+    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'dutchie_proxy.gs'), 'utf8');
+    const at = src.indexOf('function doPost(e)');
+    _ok_('doPost exists', at >= 0);
+    const body = src.slice(at, src.indexOf('\n}\n', at));
+    const refuse = body.indexOf("body.action !== 'bugreport'");
+    const authed = body.indexOf('requireAuth_(body)');
+    const files  = body.indexOf('handleBugReport_(body)');
+    _ok_('anything but bugreport is refused first', refuse >= 0 && refuse < authed);
+    _ok_('the session is checked before the report is filed', authed >= 0 && authed < files);
+    _eq_('and no other handler is reachable from it', (body.match(/\b[a-zA-Z]+_\(/g) || [])
+      .filter(function (f) { return ['requireAuth_(', 'handleBugReport_('].indexOf(f) < 0; }), []);
+  },
 };
 
 run('bug mail fallback', tests);
