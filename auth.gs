@@ -426,6 +426,30 @@ function lbFetchCoreRoster_(props) {
   return { fetchedAt: new Date().toISOString(), users: users };
 }
 
+/** Counts-only health of the roster read, for ?action=accessroster. */
+function lbRosterStatus_() {
+  var props = PropertiesService.getScriptProperties();
+  var out = { ok: true, live: null, lastKnown: null };
+  try {
+    var r = lbFetchCoreRoster_(props), byRole = {}, managersPlaced = 0, managers = 0;
+    Object.keys(r.users).forEach(function (k) {
+      var u = r.users[k];
+      byRole[u.role] = (byRole[u.role] || 0) + 1;
+      if (u.role === 'store_manager' || u.role === 'asst_manager') { managers++; if (u.storeSlug) managersPlaced++; }
+    });
+    out.live = { ok: true, people: Object.keys(r.users).length, byRole: byRole,
+                 managers: managers, managersPlacedOnAStore: managersPlaced };
+  } catch (e) {
+    out.ok = false;
+    out.live = { ok: false, error: (e && e.message) || String(e) };
+  }
+  try {
+    var last = JSON.parse(props.getProperty(LB_ROSTER_LAST_PROP) || 'null');
+    out.lastKnown = last ? { fetchedAt: last.fetchedAt, people: Object.keys(last.users || {}).length } : null;
+  } catch (e) { out.lastKnown = { error: 'unreadable' }; }
+  return out;
+}
+
 /** The roster row for one signed-in user, or null if GX Core does not list them for Leaderboard. */
 function lbRosterUser_(user) {
   return own_(lbCoreRoster_().users, String(user || '').toLowerCase().trim()) || null;

@@ -373,6 +373,17 @@ H.run('shared sign-in', {
     _ok_('no roster ever fetched and Core down: the role check refuses rather than guessing', /could not be reached/.test(threw || ''));
   },
 
+  rosterStatusCountsOnly: function () {
+    const A = build();
+    const st = A.lbRosterStatus_();
+    _eq_('status reads the roster live', st.live.ok, true);
+    _eq_('counts people by role (the unmapped grant is dropped)', st.live.byRole, { director: 2, store_manager: 2 });
+    _eq_('and says every manager has a store', [st.live.managers, st.live.managersPlacedOnAStore], [2, 2]);
+    _ok_('with no names anywhere in it', !/Dean|Mike|TJ|Sky|dean|mike/.test(JSON.stringify(st)));
+    core.roster = function () { throw new Error('down'); };
+    _eq_('a failing live read is reported, not hidden behind the cache', A.lbRosterStatus_().ok, false);
+  },
+
   managerNamesComeFromRoster: function () {
     const A = build();
     const names = A.lbRosterList_().filter(u => u.role === 'store_manager').map(u => u.displayName + '@' + u.storeSlug).sort();

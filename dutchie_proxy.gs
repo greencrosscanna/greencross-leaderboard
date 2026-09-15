@@ -677,6 +677,16 @@ function doGet(e) {
                                                        : saveDiscountSettings_(params), params.callback);
     }
 
+    // Secret-gated, read-only: can this engine read GX Core's Leaderboard roster, which every role
+    // and store check now depends on (lbCoreRoster_)? COUNTS ONLY -- no names. Does a LIVE read, so
+    // "the cached copy is fine" cannot hide a read that has started failing.
+    if (params.action === 'accessroster') {
+      var _arSecret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+      if (!_arSecret) return jsonOut({ ok: false, error: 'GX_DEPLOY_SECRET is not set on this script' }, params.callback);
+      if ((params.secret || '') !== _arSecret) return jsonOut({ ok: false, error: 'Unauthorized' }, params.callback);
+      return jsonOut(lbRosterStatus_(), params.callback);
+    }
+
     // Secret-gated, read-only: how today's per-employee targets were derived for one
     // store. Exists because the target is a per-person
     // rolling average, so "why is X's target above Y's" is only answerable from the
