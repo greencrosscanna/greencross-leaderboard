@@ -53,12 +53,28 @@ gx_fetch() {   # gx_fetch <curl args...> -> body on stdout; empty only if every 
   while [ "$_n" -le "$_tries" ]; do
     [ "$_n" -gt 1 ] && sleep "$((_n - 1))"          # linear backoff: 1s, 2s, 3s
     _body="$(curl -sL --http1.1 "$@" 2>/dev/null || true)"
-    # A hit is JSON. The miss is Google's HTML page, which starts with '<' and arrives with a 200,
-    # so the status code is no help — never add -f here and expect it to catch this.
+    # A DELIVERY MISS is Google's HTML page, which starts with '<' and arrives with a 200, so the
+    # status code is no help — never add -f here and expect it to catch this. Only this shape is
+    # worth retrying: the request never reached Apps Script, so asking again is a fresh chance.
     case "$_body" in
-      '{'*|'['*) printf '%s' "$_body"; return 0 ;;
+      '{'*|'['*) ;;
+      *) _n=$((_n + 1)); continue ;;
     esac
-    _n=$((_n + 1))
+    # AN ERROR PAYLOAD IS JSON TOO, AND THAT IS THE TRAP. '{"error":"Unknown action"}' starts with
+    # '{', so a bare shape check calls it a hit and the caller reads a refusal as a pass. GX Core
+    # answers ?action=libversion with exactly that — it only answers `health` — so this is not
+    # hypothetical, it is the first route this script asks for. Found by the session writing
+    # check-lib-version.sh, which would have shipped the same trap.
+    #
+    # It is NOT retried: the request reached Apps Script and Apps Script said no. Asking four more
+    # times cannot change "Unknown action", and at today's ~40% delivery loss a pointless retry is
+    # expensive. So the body is returned — a caller that wants to read the error still can — and the
+    # EXIT CODE carries the distinction. Callers that only care about a parseable value (the route
+    # fallback below, the config key loop) are unaffected and still fall through correctly.
+    case "$_body" in
+      *'"error"'*|*'"ok":false'*|*'"ok": false'*) printf '%s' "$_body"; return 2 ;;
+    esac
+    printf '%s' "$_body"; return 0
   done
   printf ''
   return 1
