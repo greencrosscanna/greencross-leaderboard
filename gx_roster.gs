@@ -38,7 +38,8 @@ const GC_GX_ROSTER_TTL_SEC   = 600;
 /**
  * The GX Core roster, indexed for Leaderboard's use. Cached.
  * Returns { byKey: { nameKey: rec }, retiredKeys: [nameKey], stats: {...} }
- * where rec = { employeeId, displayName, preferredName, fullName, avatarConfig, roleTitle, status }
+ * where rec = { employeeId, displayName, shortName, preferredName, fullName, avatarConfig,
+ *               roleTitle, status }
  */
 // Request-scoped memo, same pattern as _goalsCache_ in dutchie_proxy.gs. The eligibility helpers
 // below are called once PER TRANSACTION on a busy store's ticker, and CacheService.get() is a real
@@ -88,6 +89,9 @@ function gxRosterBuild_() {
       employeeId:    String(r.employee_id || '').trim(),
       fullName:      String(r.full_name || '').trim(),
       preferredName: String(r.preferred_name || '').trim(),
+      // GX Core DERIVES this (nickname + last initial); it is not a column. Absent on an older
+      // pinned library version, in which case every consumer falls back to preferredName.
+      shortName:     gxShortNameOf_(r.short_name),
       roleTitle:     String(r.role_title || '').trim(),
       status:        String(r.status || 'active').trim().toLowerCase(),
       // Crew's home_store, which is a GX Core store_id ('hillsboro'), NOT this app's slug
@@ -327,6 +331,50 @@ function gxDisplayNameOf_(rec) {
   const parts = String(rec.fullName || '').split(/\s+/).filter(Boolean);
   const last = parts.length > 1 ? parts[parts.length - 1] : '';
   return last ? (rec.preferredName + ' ' + last) : rec.preferredName;
+}
+
+/* COMPACT display: nickname + last initial, as GX Core derives it. "Zach B", "Nate S", "Sky P".
+ * This is the form the kiosk wants -- a tile has no room for a surname, and a bare first name cannot
+ * tell two Zachs or two Nates apart.
+ *
+ * THE ONE THING IT GUARDS, AND WHY IT IS TEMPORARY. Before a short form existed, the disambiguator
+ * was written into preferred_name itself: "Zach B" for Zachary Babcock. GX Core then appends the
+ * surname initial to that, so its short_name arrives as "Zach B B" -- worse on a wall screen than
+ * what is there today. Core is fixing both halves (strip the repeat when deriving, and clear
+ * preferred_name back to "Zach"), but a library cut and a data write land at different times, and
+ * the gap between them is a kiosk in front of staff reading wrong.
+ *
+ * So collapse a doubled trailing initial HERE and the order stops mattering: right before Core's
+ * write, right after it, right whether or not the pinned library carries the strip. It fires on one
+ * shape only -- two identical single letters at the end -- and goes inert the moment either of
+ * Core's halves lands. Delete it then, not before.
+ */
+function gxShortNameOf_(raw) {
+  const s = String(raw || '').trim().replace(/\s+/g, ' ');
+  if (!s) return '';
+  const m = /^(.*\S)\s+([A-Za-z])\.?\s+([A-Za-z])\.?$/.exec(s);
+  if (!m) return s;
+  return m[2].toUpperCase() === m[3].toUpperCase() ? (m[1] + ' ' + m[2]) : s;
+}
+
+/* The name somebody goes by when nothing needs telling apart -- "Amirah", "Chris", "Zach".
+ *
+ * Taken off the SHORT name rather than off preferred_name, because preferred_name is where the old
+ * disambiguator was smuggled in: Zachary Babcock's reads "Zach B", and grouping on that would make
+ * him and Zachary Rodriguez look like two different first names instead of the collision they are.
+ * Strip Core's trailing initial back off and both come back "Zach", which is the question being
+ * asked -- who would be indistinguishable on a tile.
+ */
+function gxCasualNameOf_(rec) {
+  if (!rec) return '';
+  const s = String(rec.shortName || '').trim();
+  if (s) {
+    const m = /^(.*\S)\s+[A-Za-z]\.?$/.exec(s);
+    return m ? m[1] : s;
+  }
+  if (rec.preferredName) return rec.preferredName;
+  const parts = String(rec.fullName || '').trim().split(/\s+/).filter(Boolean);
+  return parts[0] || '';
 }
 
 function gxParseJson_(v) {

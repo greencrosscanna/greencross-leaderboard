@@ -126,6 +126,29 @@ the program sidecar, Leaderboard's own panel wherever the copy is complete. Cove
 has ever existed*), which also holds the reason the window must close with the board: a wall screen
 has no chrome, so a popup nobody can dismiss is the board gone for the shift.
 
+## The name on a tile is DERIVED, and only disambiguates when it has to (2026-09-15)
+
+A kiosk tile has no room for a surname, so the board shows first names — **except** where two people
+on the live roster would read the same, and those get GX Core's `short_name` ("Nate S", "Zach B").
+Sky's call over initials for all 42. The comparison is on the **casual** form, which is `short_name`
+with Core's trailing initial taken back off; grouping on `preferred_name` instead would see "Zach B"
+and "Zach R" as two different names and find no collision at all. A name can therefore change when
+somebody ELSE is hired or leaves — that is the point, not a bug.
+
+**Why it is not simply `preferred_name`.** Before a short form existed the disambiguator was written
+INTO the nickname — "Zach B" for Zachary Babcock — which is right here and wrong in every app that
+also shows a surname ("Zach B Babcock"). Core derives `short_name` for exactly this surface, so the
+kiosk takes that and `preferred_name` goes back to the plain nickname suite-wide.
+
+**`gxShortNameOf_` carries a stopgap: delete it when Core's data is clean.** Until `preferred_name`
+is cleared to plain "Zach", Core derives `short_name` as **"Zach B B"**, so we collapse a doubled
+trailing initial locally. That is what let this ship WITHOUT a coordination window — the board reads
+right on either side of core-admin's data write, in either order. It goes inert the moment Core
+strips the repeat itself or the data is corrected; it is not load-bearing after that.
+
+Gated by `tests/short_name_test.js`, which asserts BOTH data states and was proven red against each
+of its four guards individually. `getNicknames_` is in `goals.gs`; the helpers are in `gx_roster.gs`.
+
 ## Sync with the brain — run `/gxbrain` (or say "brain sync")
 
 This app is on the shared brain. **`/gxbrain`** loads the shared rules and reconciles this chat with GX Core

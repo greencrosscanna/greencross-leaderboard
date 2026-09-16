@@ -24,13 +24,49 @@ function getStorePlans_() {
  *
  * preferred_name is the nickname alone ("Nate"); applyNickname_ pairs it with the surname where a
  * full display name is wanted.
+ *
+ * A LAST INITIAL IS ADDED ONLY WHERE TWO PEOPLE WOULD OTHERWISE READ THE SAME. Two people on the
+ * active roster go by Nate (Nathaniel Schneider, Robert Wydick) and two go by Zach (Babcock,
+ * Rodriguez); everybody else is unambiguous on a first name and the board stays first names, which
+ * is how the shop talks. Sky's call, 2026-09-15, over initials for all 42.
+ *
+ * WHY IT IS DERIVED HERE RATHER THAN STORED. The disambiguator used to live in preferred_name
+ * itself -- "Zach B" -- which is right on a kiosk tile and wrong in every app that also shows a
+ * surname ("Zach B Babcock"). GX Core derives short_name for exactly this surface, so the tile takes
+ * that and preferred_name goes back to being the plain nickname everywhere. The cost of deriving is
+ * that a name can change when somebody ELSE is hired or leaves: a second Amirah turns the first one
+ * into "Amirah M". That is the behavior we want -- the board disambiguates when it has to.
+ *
+ * Falls back to preferredName where short_name is absent -- an older pinned library version does not
+ * derive it, and bare first names are the behavior we already had, not a new failure.
  */
 function getNicknames_() {
   var out = {};
   try {
     var recs = gxAllRecs_();
-    Object.keys(recs).forEach(function (k) {
-      if (recs[k].preferredName) out[k] = recs[k].preferredName;
+    var keys = Object.keys(recs);
+
+    // How many DISTINCT LIVE people answer to each casual name. Distinct matters: gxAllRecs_ files
+    // one person under several name keys (legal name and display name both), so counting keys would
+    // make everybody collide with themselves. Live matters: somebody who left should not be putting
+    // an initial on the tile of somebody who is still here.
+    var seen = {}, casualCount = {};
+    keys.forEach(function (k) {
+      var rec = recs[k];
+      if (!gxIsLive_(rec.status)) return;
+      var id = rec.employeeId || k;
+      if (seen[id]) return;
+      seen[id] = true;
+      var c = gxCasualNameOf_(rec).toLowerCase();
+      if (c) casualCount[c] = (casualCount[c] || 0) + 1;
+    });
+
+    keys.forEach(function (k) {
+      var rec = recs[k];
+      var casual = gxCasualNameOf_(rec);
+      var shared = casual && casualCount[casual.toLowerCase()] > 1;
+      var n = shared ? (rec.shortName || casual) : rec.preferredName;
+      if (n) out[k] = n;
     });
   } catch (e) { gxRosterWarn_(e); }
   return out;
