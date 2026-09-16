@@ -152,8 +152,50 @@ the two could only disagree: it added a period the card has not ("Zach R."), and
 not work at that store it truncated back to "Nate" under a card reading "Nate S". It is gone;
 `makeTicker_` uses the name it was given.
 
+**The initial comes back OFF wherever a surname is shown (2026-09-16).** The disambiguator exists
+for a surface with NO surname. Put it back next to one and it reads "Zach B Babcock" — the initial
+answering a question the surname has already answered. Sky filed that the day after the tile fix
+shipped. `gxWithSurname_` in `gx_roster.gs` is the one rule, used by `gxDisplayNameOf_` and by the
+director's staff table (which pairs the nickname with the surname **Dutchie** holds, not the one
+Core holds — two callers, and they were allowed to differ). It drops a trailing lone initial only
+when that initial is the surname's own first letter, so a nickname that genuinely ends in a letter
+survives, and it goes inert once Core derives `short_name` for everyone.
+
+*The first shape of that fix carried a second casual-name map as well, and it was decoration:*
+backing it out on its own left every test green, because the nickname is only ever found by matching
+the Dutchie name, and then the two surnames agree by construction. It was deleted rather than
+shipped as belt-and-braces — a branch no test can fail is a branch nobody can trust.
+
 Gated by `tests/short_name_test.js`, which asserts BOTH data states, drives the real `getStoreToday`
-for the ticker, and was proven red against each guard individually. `getNicknames_` is in `goals.gs`; the helpers are in `gx_roster.gs`.
+for the ticker and the real `getDirectorStaff` for the table, and was proven red against each guard
+individually. `getNicknames_` is in `goals.gs`; the helpers are in `gx_roster.gs`.
+
+## A number never reads "+0%" or "−0%" (2026-09-16)
+
+There is no amount of below-zero that displays as zero. Every readout rounds, and each one used to
+decide the sign from the RAW value and then print the ROUNDED one, so a value that survived `< 0`
+and then rounded away left a minus sign in front of a zero. Sky, off the director screen: *"how can
+a number be +0% or -0%, shouldn't it just be 0%"*.
+
+**`GC.fmtSignedPct(frac, decimals)` is the one definition** — it asks "does this round to zero at
+the precision THIS surface shows?", which no single epsilon could answer, because the gauges round
+to whole percent and the store table to one decimal. There were **six** hand-rolled copies of
+`(p >= 0 ? '+' : '−') + Math.abs(...)` — the store table's vs.-plan column, the director and kiosk
+pace gauges, the sparkline badge, the historical store cards and the Sky wall — so fixing the panel
+in the screenshot would have left five. The same rule in other units: `fmtDeltaNum` judges the
+rounded value (a Sales/Hour delta of −$0.30 printed "▼ −$0"), and the standings rows sign off
+rounded dollars.
+
+**Three KPI deltas hardcoded `▲ +` and then printed the raw number**, so a period that discounted
+LESS than the one before read "▲ +-$412.00" — an up arrow, a plus and a minus, on a decline. Avg
+UPT, Total Discounts and Discount Rate now go through `fmtDeltaDecimal` / `fmtDeltaCurrency` /
+`fmtDeltaPts`.
+
+`tests/signed_zero_test.js` drives every call site and the real `GC.renderKpiBlock`, not just the
+helper — the three prefixes were in the WIRING, and a helper-only assertion would have passed with
+them still there. It also greps for a **two-way** sign split (plus or minus, no branch for zero),
+which is the shape that cannot print a bare 0% whatever it is fed; a three-way split on a rounded
+value is the fix, not the bug. All eleven guards were proven red individually.
 
 ## A secret must never reach the screen inside an error (2026-09-15)
 
