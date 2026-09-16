@@ -152,11 +152,20 @@ const FAILED = { ok: false, error: 'Dutchie unavailable' };
 
 const KIOSK_KEY = 'kiosk_river-rd';
 
+/* THE BUNDLE IS ASSEMBLED ON THE SERVER NOW (kioskall, 2026-09-16) — and this suite is about the
+ * CACHE, not about who assembled it. Both are served: the single route with the three payloads in
+ * their slots, and the three legacy routes fixture mode and the polls still use. Which of them
+ * fetchKioskAll actually calls is kiosk_one_call_test.js's question; every assertion below reads
+ * the bundle that comes back, so it holds either way and would survive the route being renamed. */
 function kioskFetch(env, over) {
   over = over || {};
-  env.reply('storetoday',       'today'       in over ? over.today       : GOOD_TODAY);
-  env.reply('storeleaderboard', 'leaderboard' in over ? over.leaderboard : GOOD_LB);
-  env.reply('storebadges',      'badges'      in over ? over.badges      : GOOD_BADGES);
+  const today  = 'today'       in over ? over.today       : GOOD_TODAY;
+  const lb     = 'leaderboard' in over ? over.leaderboard : GOOD_LB;
+  const badges = 'badges'      in over ? over.badges      : GOOD_BADGES;
+  env.reply('kioskall',         { today: today, leaderboard: lb, badges: badges });
+  env.reply('storetoday',       today);
+  env.reply('storeleaderboard', lb);
+  env.reply('storebadges',      badges);
   return env.api.kioskAll('river-rd');
 }
 

@@ -5586,7 +5586,8 @@ GC.api = (function() {
     // Command Center holds rather than a constant baked in here.
     'apps',
     'aggticker', 'directoralerts', 'directorall', 'directorstaff', 'directorstores',
-    'directorsummary', 'discountsettings', 'getavatardata', 'getsettings', 'gxstores', 'kioskbust',
+    'directorsummary', 'discountsettings', 'getavatardata', 'getsettings', 'gxstores', 'kioskall',
+    'kioskbust',
     'historicaldir', 'leaderboardstaff', 'login', 'renew', 'standings',
     'storebadges', 'storeleaderboard', 'storetoday',
     // version_history feeds the What's New / changelog modal. It is a READ, and it was missing:
@@ -5927,7 +5928,22 @@ GC.api = (function() {
     return gasCall('leaderboardstaff', { period: period || 'mtd' });
   }
 
-  // onFresh(data) — optional callback fired when background network refresh lands.
+  /* ── THE BOARD IS ONE REQUEST ────────────────────────────────────────────────────────────────
+   *
+   * This used to fire storetoday, storeleaderboard and storebadges together and assemble the
+   * bundle here. Six wall screens mounting a store every 30 seconds made that the most constant
+   * consumer in the suite, and every GX app runs as one Google account capped at 30 simultaneous
+   * executions — the cap the whole suite hit at 114 on 2026-09-15, when every app's screens queued.
+   *
+   * The `kioskall` route returns the identical { today, leaderboard, badges } shape, so everything
+   * downstream is untouched: normalizeKioskData_, kioskDataError_, paintStale and _isErrorPayload
+   * all read the same keys they always did, and a part that failed still arrives as
+   * { ok:false, error } in its own slot rather than failing the whole reply. That last point is
+   * the reason the server assembles it inside a per-part try — see getKioskAll_ in endpoints.gs.
+   *
+   * FIXTURE MODE STILL FANS OUT, on purpose. Fixtures are three files on disk; there is no round
+   * trip to save and no bundle fixture to keep in step with the three.
+   */
   function fetchKioskAll(storeSlug, onFresh) {
     var cacheKey = 'kiosk_' + storeSlug;
     var TTL = 3 * 60 * 1000; // 3 minutes (kiosk data changes more frequently)
@@ -5941,13 +5957,11 @@ GC.api = (function() {
       });
     }
     return _withCache(cacheKey, TTL, function() {
-      return Promise.all([
-        fetchStoreToday(storeSlug),
-        fetchStoreLeaderboard(storeSlug),
-        fetchStoreBadges(storeSlug, 'week'),
-      ]).then(function(results) {
-        return { today: results[0], leaderboard: results[1], badges: results[2] };
-      });
+      var extra = { store: storeSlug, period: 'week' };
+      // Same as fetchStoreToday: the server returns the sales still inside the big-sale reward
+      // window, and it needs this app's threshold to know which ones those are.
+      if (GC.THRESHOLDS && GC.THRESHOLDS.bigTransactionMin) extra.bigMin = GC.THRESHOLDS.bigTransactionMin;
+      return gasCall('kioskall', extra);
     }, onFresh);
   }
 
@@ -9083,7 +9097,8 @@ GC.views.renderKiosk = function(slug) {
   // fetch below revalidates behind it — read the comment on paintStale for why this is an instant
   // paint and not a failure fallback. Only when there is nothing cached at all does anyone see the
   // loading shell, and then it is the honest thing to show.
-  if (!GC.api.hasKioskCache(slug)) {
+  var cacheWasWarm = GC.api.hasKioskCache(slug);
+  if (!cacheWasWarm) {
     if (!kiosk.paintStale(slug)) app.innerHTML = kiosk.renderLoading(slug);
   }
 
@@ -9104,9 +9119,18 @@ GC.views.renderKiosk = function(slug) {
       var data = kiosk.normalize(rawData);
       app.innerHTML = kiosk.render(data, slug);
       kiosk.init(data, slug);
-      // Fast-path the by-hour chart: if the (possibly stale-cached) initial render came up without hour
-      // targets, a standalone storetoday (~4s, cache-warm) fills them in so the bars don't sit "maxed"
-      // until the 60s poll. No-op when the first paint already had targets.
+      /* Fast-path the by-hour chart: a standalone storetoday (~4s, cache-warm) fills in hour
+         targets and fresher hours so the bars don't sit "maxed" until the 60s poll.
+         ONLY WHEN THE BOARD WE JUST PAINTED CAME OUT OF THE CLIENT CACHE. The comment here used
+         to claim this was a "no-op when the first paint already had targets", and it was not: it
+         fetched unconditionally, so every mount cost a fourth request whether or not it could
+         change anything. When the cache was COLD, _withCache had no entry to resolve from and the
+         board above IS the network response — asking storetoday again a moment later re-reads the
+         same 55-second server cache and the same hourly-shape script property, so it cannot
+         return anything the bundle did not already carry. When the cache was WARM the paint is up
+         to three minutes old and this genuinely freshens it, which is the case it was written for
+         and the case it still runs in. */
+      if (!cacheWasWarm) return;
       GC.api.fetchStoreToday(slug).then(function(td) {
         if (kioskRouteSlug_() !== slug) return;
         if (!td || td.ok === false) return;         // same rule: never repaint bars from an error

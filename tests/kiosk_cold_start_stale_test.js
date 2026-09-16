@@ -93,10 +93,17 @@ function build(opts) {
   const timers = [];
   const log = { renders: [], inits: [], loading: 0, reloads: 0 };
 
-  // fetchKioskAll fans out to three calls; each gets its own deferred so a test can land a real
-  // storetoday payload at the level the code actually reads it from.
+  /* fetchKioskAll asks the server for the assembled board in ONE call now (`kioskall`,
+   * 2026-09-16) instead of fanning out to three. Both are wired here and both are held open by
+   * the same land()/die(), because this suite is about what the SCREEN does while the network is
+   * slow or dead — which is the same question whoever assembled the payload. The three fixture-mode
+   * deferreds stay: fetchKioskAll still fans out when USE_FIXTURES is on. */
   const defer = () => { const d = {}; d.p = new Promise((res, rej) => { d.res = res; d.rej = rej; }); return d; };
-  const dToday = defer(), dLb = defer(), dBadges = defer();
+  const dToday = defer(), dLb = defer(), dBadges = defer(), dBundle = defer();
+  // The three fixture-mode deferreds have no consumer on the live path any more, and node kills
+  // the process on an unhandled rejection — so die() rejecting them would abort the suite rather
+  // than exercise it. One inert handler each; the assertions still read dBundle.
+  [dToday, dLb, dBadges].forEach((d) => d.p.catch(() => {}));
 
   const doc = {
     getElementById(id) {
@@ -137,6 +144,10 @@ function build(opts) {
     fetchStoreToday: () => dToday.p,
     fetchStoreLeaderboard: () => dLb.p,
     fetchStoreBadges: () => dBadges.p,
+    // The one call the board is fetched with. Anything else a lifted function might reach for
+    // hangs forever rather than resolving by accident — a silent resolve would make a test about
+    // waiting pass without waiting.
+    gasCall: (action) => (action === 'kioskall' ? dBundle.p : new Promise(() => {})),
     // Stubs — markup and shape conversion, neither of which is what this suite is about.
     render: (data, slug) => { log.renders.push({ slug, revenue: data.today.revenue });
                               return '<div id="kioskGoalSold">$' + data.today.revenue + '</div>'; },
@@ -174,9 +185,10 @@ function build(opts) {
     ctx, app, nodes, log, store, timers,
     banner: () => (nodes.kioskStaleBanner ? nodes.kioskStaleBanner.innerHTML : ''),
     render: () => ctx.GC.views.renderKiosk('river-rd'),
-    land: (today) => { dToday.res(today); dLb.res({ staff: [] }); dBadges.res({ badges: [] });
+    land: (today) => { dBundle.res({ today: today, leaderboard: { staff: [] }, badges: { badges: [] } });
+                       dToday.res(today); dLb.res({ staff: [] }); dBadges.res({ badges: [] });
                        return new Promise((r) => setTimeout(r, 0)); },
-    die: (e2) => { dToday.rej(e2); dLb.rej(e2); dBadges.rej(e2);
+    die: (e2) => { dBundle.rej(e2); dToday.rej(e2); dLb.rej(e2); dBadges.rej(e2);
                    return new Promise((r) => setTimeout(r, 0)); },
   };
 }
