@@ -1400,14 +1400,18 @@ function doPost(e) {
  *
  * 1. NOT ANCHORED to `?` or `&`. This app's highest-value secret travels as `connector_secret=`, so
  *    an anchored form matches nothing -- `secret=` there follows an underscore, not a separator.
- *    Matching the bare parameter name catches the prefixed and unprefixed spellings alike. (The
- *    belt-and-braces alternative, and the better one to copy if you are writing a new one, is
- *    Inventory's SECRET_PARAM_RE_: anchored, but with every prefixed name listed out.)
+ *    Matching the bare parameter name catches the prefixed and unprefixed spellings alike.
  *
  * 2. EVERY NAME THE SESSION TOKEN ARRIVES UNDER. requireAuth_ accepts `token`, `session` OR `auth`
- *    (auth.gs), so a scrub that knows only about `token=` leaves two thirds of the door open. That
- *    was true of this helper for its first hour; found by core-admin comparing the suite's four
- *    versions of it, 2026-09-15.
+ *    (auth.gs:86), so a scrub that knows only about `token=` leaves two thirds of the door open.
+ *    That was true of this helper for its first hour.
+ *
+ * DERIVE THE NAMES FROM requireAuth_, DO NOT COPY ANOTHER APP'S REGEX -- not even the best one.
+ * When core-admin compared all four on 2026-09-15, inventory, sales and crew ALL missed `session=`
+ * and two also missed `auth=`, although each of their own auth call sites reads the same three
+ * names. The suite converged on a good-looking regex that nobody had checked against the door it
+ * guards. If this app ever teaches requireAuth_ a fourth name, that name belongs here in the same
+ * commit; the list above is not decoration, it is the call site written twice.
  */
 function scrubSecrets_(msg) {
   return String((msg && msg.message) || msg || '')

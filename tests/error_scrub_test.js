@@ -109,9 +109,11 @@ function test_scrubSecrets_() {
   const deployUrl = 'https://script.google.com/macros/s/AKfy.../exec?action=app_roster&app=performance&secret=' + DEPLOY;
   noSecretIn('secret=', S.scrubSecrets_('Address unavailable: ' + deployUrl));
 
-  // THE ANCHORED FORM MISSES THE ONE THAT MATTERS. Crew's helper requires the parameter to follow a
-  // `?` or `&`; this app's highest-value secret travels as `connector_secret=`, where `secret=` is
-  // preceded by an underscore. Asserted here so nobody "tidies" our looser regex into that one.
+  // THE ANCHORED FORM MISSES THE ONE THAT MATTERS. An anchor-only helper requires the parameter to
+  // follow a `?` or `&`; this app's highest-value secret travels as `connector_secret=`, where
+  // `secret=` is preceded by an underscore. Asserted here so nobody "tidies" ours into that one.
+  // Named as a SHAPE, not as an app: every shipped version in the suite has had a hole of its own,
+  // so the rule is to derive the names from requireAuth_ rather than to copy anybody.
   const anchored = String('Address unavailable: ' + connectorUrl)
     .replace(/([?&](?:secret|token|key|pass|password)=)[^&\s]*/gi, '$1[redacted]');
   _ok_('the anchored form would have leaked it', anchored.indexOf(CONNECTOR) !== -1);

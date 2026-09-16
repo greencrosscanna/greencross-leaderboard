@@ -176,9 +176,17 @@ session token arrives under**: `requireAuth_` accepts `token`, `session` *or* `a
 `token=` leaves two thirds of the door open (ours did, for an hour). `tests/error_scrub_test.js`
 asserts both — it runs an anchor-only regex on the real URL and requires it to leak.
 
-The reference shape to copy is **Inventory's `SECRET_PARAM_RE_`** (`dutchie_proxy.gs`), which is
-anchored but lists every prefixed name explicitly. Crew's is anchor-only; that is safe in Crew, which
-has no prefixed secret parameter at all, and wrong to copy anywhere that does — this app has seven.
+**Derive the names from `requireAuth_`, and do not copy another app's regex — not even the best
+one.** This section named Inventory's `SECRET_PARAM_RE_` as the shape to copy for about an hour, and
+core-admin's comparison then showed that Inventory, Sales and Crew *all* miss `session=` (two also
+miss `auth=`), although each of their own auth call sites reads the same three names. The suite had
+converged on a good-looking regex nobody had checked against the door it guards — the same miss as
+ours, one layer up, and copying it into GX Core would have reproduced it where every key lives.
+
+Crew's is anchor-only, which is safe *in Crew* — it carries no prefixed secret parameter at all —
+and wrong to copy anywhere that does. Prefixed parameters by app, counted 2026-09-15: leaderboard 7,
+inventory 9, core-admin 5, and crew, sales, spiff, pricecards 0. **If `requireAuth_` ever learns a
+fourth name, it goes in `scrubSecrets_` in the same commit.**
 
 That suite **never greps a file for the scrub**, which is how SPIFF's own version passed while
 proving nothing (it matched a scrub inside a different function). It drives the real `doGet` and
