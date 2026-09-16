@@ -9033,9 +9033,16 @@ GC.views.renderKiosk = function(slug) {
   var app = document.getElementById('app');
   if (!app) return;
 
-  // Only show loading shell if cache is cold — skip the flash when data is preloaded
+  // Cache warm (inside fetchKioskAll's 3-minute TTL)? _withCache resolves from it on this tick,
+  // so painting a loading shell would only be a flash.
+  //
+  // Cache COLD? The board must still not be blank while the network is asked. kiosk.paintStale
+  // puts the last board this store had on screen immediately, labeled with its real age, and the
+  // fetch below revalidates behind it — read the comment on paintStale for why this is an instant
+  // paint and not a failure fallback. Only when there is nothing cached at all does anyone see the
+  // loading shell, and then it is the honest thing to show.
   if (!GC.api.hasKioskCache(slug)) {
-    app.innerHTML = kiosk.renderLoading(slug);
+    if (!kiosk.paintStale(slug)) app.innerHTML = kiosk.renderLoading(slug);
   }
 
   // No onFresh callback — the 60-second sinceTs poll already updates numbers/hourly
@@ -9044,6 +9051,12 @@ GC.views.renderKiosk = function(slug) {
   GC.api.fetchKioskAll(slug)
     .then(function(rawData) {
       if (kioskRouteSlug_() !== slug) return;      // slideshow moved on — this paint is for a store we left
+      /* BOTH FAILURE BRANCHES END UP IN THE SAME PLACE, and they must. A backend answering
+         { ok:false } is the commoner wobble by far — an expired session, a Dutchie outage — and it
+         RESOLVES, so the .catch below never sees it. showUnavailable is what keeps them together:
+         when a board is already on screen (including one paintStale put there) it downgrades to
+         the stale label instead of wiping it. Fix one branch only and the morning power-on still
+         goes blank on the commoner one. */
       var bad = kioskDataError_(rawData);
       if (bad) { kiosk.showUnavailable(slug, bad); return; }
       var data = kiosk.normalize(rawData);
@@ -9140,19 +9153,24 @@ var kiosk = (function() {
   }
 
   // ══ DATA UNAVAILABLE ══════════════════════════════════════════════════════════════════════════
-  // The three functions below exist to enforce one rule: the kiosk shows numbers it was given, or
+  // The functions below exist to enforce one rule: the kiosk shows numbers it was given, or
   // it shows nothing and says why. It never shows a number it made up.
   //
-  // There are two shapes of "nothing", and they want opposite treatment:
+  // There are three shapes of "nothing", and they want different treatment:
   //   • nothing YET (the first load failed)  → a plain panel saying so, and keep retrying.
   //   • nothing NEW (a poll failed mid-day)  → LEAVE THE BOARD ALONE and mark it stale. The last
   //     real numbers, clearly labelled as of a time, beat both a blank screen and a fresh $0.
+  //   • nothing FRESH YET (a cold load, cache on disk) → paint the cached board immediately and
+  //     say how old it is, rather than staring at a loading shell for up to 65 seconds. See
+  //     paintStale.
   // The second is the one that bit us: the old code took a failed poll and wrote zeros over a
   // perfectly good board, once a minute, for seven hours.
 
   var _painted       = null;   // slug whose board is currently on screen, or null
   var _retryTimer    = null;   // re-attempt of a failed first load
-  var _staleSince    = null;   // Date the data stopped updating, or null when healthy
+  // WHEN THE NUMBERS ON SCREEN WERE TAKEN — not when we noticed they had stopped arriving. Null
+  // while the board is live. See markStale for why the difference is not pedantry.
+  var _staleSince    = null;
   var RETRY_MS       = 30000;
   /* PLUS A RANDOM 0-30s, so six screens that failed together do not retry together. Every GX app
      runs as one Google account capped at 30 simultaneous executions. On 2026-09-15 Leaderboard took
@@ -9200,17 +9218,113 @@ var kiosk = (function() {
     _staleSince = null;
   }
 
-  /** A poll failed. Keep every number that is already on screen; say how old it is. */
-  function markStale(why) {
-    if (!_staleSince) _staleSince = new Date();
-    var mins = Math.max(1, Math.round((Date.now() - _staleSince.getTime()) / 60000));
-    _staleBanner('Live data unavailable — showing numbers from ' + mins + ' min ago. Retrying…'
+  /* HOW OLD THE NUMBERS ARE IS A FACT ABOUT THE DATA, NEVER ABOUT THE FAILURE.
+   *
+   * "843 min ago" is true and unreadable at ten feet, so minutes are the unit below the hour (where
+   * they are the natural one for a poll that just failed) and hours above it. Never rounded up into
+   * a larger unit: the one direction this must not err is making the numbers look FRESHER than they
+   * are, so the remainder is printed rather than absorbed.
+   */
+  function staleAgeLabel_(ms) {
+    var mins = Math.max(1, Math.round(ms / 60000));
+    if (mins < 60) return mins + ' min';
+    var hrs = Math.floor(mins / 60), rmin = mins % 60;
+    if (hrs < 24) return hrs + ' hr' + (rmin ? ' ' + rmin + ' min' : '');
+    var days = Math.floor(hrs / 24), rhr = hrs % 24;
+    return days + (days === 1 ? ' day' : ' days') + (rhr ? ' ' + rhr + ' hr' : '');
+  }
+
+  /* A poll failed. Keep every number that is already on screen; say how old it is.
+   *
+   * `asOfMs` is when the numbers on screen were TAKEN, and a caller that knows it must pass it.
+   *
+   * WHY THAT ARGUMENT EXISTS. This used to stamp `new Date()` the first time it was called, which
+   * is right for the only case that could reach it then: a board painted fresh that later stopped
+   * updating. On a COLD start it is a fabrication — _staleSince is null, so an hour-old board
+   * painted off localStorage announced "showing numbers from 1 min ago". That is an invented number
+   * on a screen the public can see, and worse than a blank panel because it looks authoritative. It
+   * also breaks the rule this whole section exists to enforce, three lines above where it is
+   * written. The director path has always done it correctly, off the cache entry's own `ts`.
+   *
+   * A caller with no `asOfMs` still means "as of now", because the board it is labeling was fresh
+   * a moment ago; and a `_staleSince` already seeded from real data is never overwritten by one,
+   * so the age keeps growing from the right instant instead of resetting on each failed poll.
+   */
+  function markStale(why, asOfMs) {
+    if (asOfMs != null) _staleSince = new Date(asOfMs);
+    else if (!_staleSince) _staleSince = new Date();
+    _staleBanner('Live data unavailable — showing numbers from '
+      + staleAgeLabel_(Date.now() - _staleSince.getTime()) + ' ago. Retrying…'
       + (why ? ' (' + why + ')' : ''));
+  }
+
+  /* A cached board is on screen and the live fetch is still in the air. NOTHING HAS FAILED YET, so
+   * this must not say that it has — same rule as the age itself: state only what is known. If the
+   * fetch does go on to fail, markStale replaces this with its own wording, and the age carries on
+   * from the instant seeded here rather than restarting. */
+  function markAging(asOfMs) {
+    _staleSince = new Date(asOfMs);
+    _staleBanner('Showing numbers from ' + staleAgeLabel_(Date.now() - asOfMs) + ' ago — updating…');
+  }
+
+  /* ── THE MORNING POWER-ON MUST NOT BE A BLANK BOARD ──────────────────────────────────────────
+   *
+   * fetchKioskAll caches for 3 minutes, so a load inside that window already paints instantly.
+   * Outside it — the 04:00 nightly reload, a TV switched on, a slideshow coming back to a store it
+   * has not shown for a while — the first paint waits on the network, and that wait has no useful
+   * ceiling. Sales measured the /exec second hop on 2026-09-15: ~3.4% of requests do not FAIL, they
+   * HANG, 11 to 60 seconds, while their siblings answer in three. Our JSONP timeout is 65s and
+   * deliberately so (a cold GAS cache build takes ~30s). So a stalled first request holds a BLANK
+   * BOARD for over a minute before any failure handler can run.
+   *
+   * That is why "fall back to cache when the fetch fails" is the wrong shape: the damage is done
+   * while everyone waits, and the handler that would repair it runs after the wait, not instead of
+   * it. Paint whatever is on disk on the FIRST FRAME instead and let the network revalidate behind
+   * it — the stale-while-revalidate shape _withCache already uses for FRESH entries, extended to
+   * stale ones. The board is then never blank when anything is cached, whatever the hop does, and
+   * the 65-second timeout stops being a number anybody sees.
+   *
+   * Worth keeping: this is indifferent to WHY the request is slow. Per-request loss, concurrency
+   * against the shared 30-execution cap, a cold GAS cache, a dead backend — all land the same way,
+   * so it does not depend on a failure model that may turn out to be wrong.
+   *
+   * It is also why retryDelay_'s randomized 30-60s spread wants no tightening: first paint no
+   * longer waits on a retry at all. Synchronizing six screens' retries is a documented outage here
+   * (see retryDelay_), so the spread stays exactly as it is.
+   *
+   * THREE RULES IT DOES NOT BEND.
+   *   1. A cached ERROR is not a board. kioskDataError_ vets the payload first, or normalizeKioskData_
+   *      would default every missing field to 0 and paint a confident $0 day — the seven-hour bug,
+   *      served from localStorage.
+   *   2. The age on the banner comes from the entry's own `ts`. See markStale.
+   *   3. The remote-reload token is NOT seeded from a cached payload — see below.
+   */
+  function paintStale(slug) {
+    var app = document.getElementById('app');
+    if (!app) return false;
+    var entry = GC.api.getStaleCache('kiosk_' + slug);
+    if (!entry || !entry.data || !entry.ts) return false;
+    if (kioskDataError_(entry.data)) return false;
+    var data;
+    try { data = normalizeKioskData_(entry.data); } catch (e2) { return false; }
+    app.innerHTML = render(data, slug);
+    init(data, slug);            // clears the stale banner, so the label goes on AFTER it
+    /* The token a store "booted with" has to come from a LIVE payload. Seeded from a cached one,
+       the very next real response carries a different token and reads as a remote-reload request —
+       so a screen that had simply been switched off would reload itself once for nothing. Drop it;
+       the live paint seeds it properly seconds later. */
+    if (GC._kioskRefreshTokens) delete GC._kioskRefreshTokens[slug];
+    markAging(entry.ts);
+    return true;
   }
 
   /** Nothing to show at all. Say so plainly and keep trying — a kiosk has nobody to press reload. */
   function showUnavailable(slug, why) {
     // A board already on screen is worth more than this message; downgrade to the stale banner.
+    // That board may be one paintStale put up from localStorage seconds ago, which is exactly the
+    // case this has to cover — and no as-of is passed, deliberately, because _staleSince is already
+    // holding the cache entry's own timestamp. Passing "now" here would reset an hour-old board's
+    // age to a minute on the first failed poll.
     if (_painted === slug && document.getElementById('kioskGoalSold')) {
       markStale(why);
       return;
@@ -11720,6 +11834,7 @@ var kiosk = (function() {
     renderLoading:   renderLoading,
     showUnavailable: showUnavailable,
     markStale:       markStale,
+    paintStale:      paintStale,
     forceRefresh:    forceRefresh,
     init:            init,
     normalize:       normalizeKioskData_,
