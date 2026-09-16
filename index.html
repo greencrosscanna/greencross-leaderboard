@@ -5644,6 +5644,48 @@ GC.api = (function() {
     } catch(e) { return null; }
   }
 
+  /* ── WHAT COUNTS AS AN ERROR, WHEN THE THING BEING CACHED WAS ASSEMBLED ──────────────────────
+   *
+   * A single route's reply says `ok:false` at its top, and `!data || data.ok === false` was enough
+   * for that. But neither caller of _withCache passes a single route's reply. fetchKioskAll
+   * assembles { today, leaderboard, badges } from three separate calls, and directorall returns
+   * { summary, stores, staff, alerts, ... } — and a BUNDLE has no top-level `ok` at all. So a kiosk
+   * payload whose `today.ok === false` sailed past that guard and was written to localStorage,
+   * where it survived a reload and could be served off disk at 4am as a board reading $0 sold, 0%,
+   * no ticker, in front of the floor. (Found 2026-09-15 next to the cold-start work; its own fix,
+   * because it changes caching for every path that goes through here.)
+   *
+   * THE RULE IS ABOUT SHAPE, NOT KEY NAMES. A response is cacheable only if neither it nor any part
+   * it was assembled from reports failure. Naming `today` would have fixed the case we found and
+   * missed its siblings: a failed `leaderboard` normalizes to an empty staff array — a board
+   * announcing that nobody sold anything — and a failed `badges` to an empty trophy row. Same
+   * invented fact, one panel over, and nothing downstream flags either (kioskDataError_ vets
+   * `today` alone, correctly: it is the paint gate, not the cache gate). A named-key guard would
+   * also go stale the day a fourth call joins the bundle.
+   *
+   * ONE LEVEL DEEP, DELIBERATELY. Every value here is a whole route's reply and `ok` lives at its
+   * top. Going deeper would start reading fields that carry ok:false as DATA rather than as
+   * failure — getStoreLeaderboard's SPIFF state is exactly that, and had to be renamed `spiffOk`
+   * to get out of the collision's way.
+   *
+   * A PART FAILING FAILS THE WHOLE ENTRY, and that costs no usable board. This only declines to
+   * WRITE: the fetched data is still returned to the caller and still painted, and the last wholly
+   * good entry stays on disk for the stale path. So the real choice is between an older board that
+   * is true and labeled with its age, and a newer one carrying a panel of invented zeros. Caching
+   * half a bundle is not on the table — one entry carries one timestamp, and an age label that is
+   * right about `today` and a day wrong about the standings is a worse lie than either.
+   */
+  function _isErrorPayload(data) {
+    if (!data || typeof data !== 'object') return true;
+    if (data.ok === false) return true;
+    for (var k in data) {
+      if (!Object.prototype.hasOwnProperty.call(data, k)) continue;
+      var part = data[k];
+      if (part && typeof part === 'object' && !Array.isArray(part) && part.ok === false) return true;
+    }
+    return false;
+  }
+
   // Stale-while-revalidate wrapper.
   // Returns a Promise that resolves immediately with cached data (if fresh),
   // or with the network response if no cache. Either way a background network
@@ -5651,7 +5693,7 @@ GC.api = (function() {
   function _withCache(key, ttlMs, fetcher, onFresh) {
     var cached = _getCached(key, ttlMs);
     var networkPromise = fetcher().then(function(data) {
-      if (!data || data.ok === false) return data; // don't cache errors
+      if (_isErrorPayload(data)) return data; // don't cache errors — see above
       _setCache(key, data);
       return data;
     });
