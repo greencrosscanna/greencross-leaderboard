@@ -234,6 +234,42 @@ That suite **never greps a file for the scrub**, which is how SPIFF's own versio
 proving nothing (it matched a scrub inside a different function). It drives the real `doGet` and
 `doPost` and reads the served body, and every one of the five scrubs was proven red by removing it.
 
+## A part period is compared against the same PART of the one before (2026-09-16)
+
+`getDateRange_('pp')` runs to `ppEndMs` — the end of the **whole** fortnight, including days that
+have not happened. The prior range was that full width shifted back, so on day three the director's
+card held three days of trade up against fourteen: Transactions and Total Discounts opened every pay
+period deeply negative and climbed back to level by the end, which is the calendar, not a signal.
+Sales / Hour was worse and not a judgment call at all — it divided fourteen days of prior takings by
+**three days** of open hours, reporting the chain ~$19,000/hour down.
+
+**`getPriorRange_` is now the elapsed-aligned window; `getPriorFullRange_` is the whole period.**
+Aligning on elapsed days also aligns the **weekdays**, which is why it is the right comparison and
+not just a fairer one: a pay period is a whole number of weeks, so day N of this one is the same
+weekday as day N of the last. Three days against three is Mon-Tue-Wed against Mon-Tue-Wed; against a
+whole period folds in two weekends.
+
+**Totals use the aligned window, rates use the full period, and that split is deliberate.** An AOV
+or a discount rate is not distorted by how long you measure it, and the longer window is the steadier
+benchmark — Sky's own read in the same report ("AOV seems to make sense that it compares to the
+average AOV over the last period, that sets the benchmark"). Sales / Hour is the exception among the
+rates: it is aligned, because the weekday argument above beats the steadiness one inside a period.
+
+**The card SAYS which basis each number used** (`summary.comparison` → the `.kpi-basis` line). Half
+of "these KPI over/unders are confusing" was the arithmetic; the other half was a card that never
+told you what it was comparing you to. When a caller pre-fetched the aligned window and not the full
+one, the rates fall back to the aligned window and `rateDays` reports that, so a narrower benchmark
+is labeled rather than silent — going and fetching would put a live Dutchie call inside a path whose
+contract is "I already have the data".
+
+Gated by `tests/kpi_comparison_window_test.js`: the windows, the DST close instant (a window
+containing the fall-back must end at PT midnight, not an hour early), the February clamp, the
+registry-driven period length, and the summary end to end with numbers chosen so each basis gives a
+different answer. Nine guards, each proven red alone. Note the two places a wrong divisor passes by
+accident — the Sales/Hour divisor only differs from `daysElapsed` when the window is **clamped**,
+and `toLocal` survives naive ms arithmetic because PT midnight is 07:00/08:00 UTC either way. The
+first version of this suite missed both.
+
 ## Sync with the brain — run `/gxbrain` (or say "brain sync")
 
 This app is on the shared brain. **`/gxbrain`** loads the shared rules and reconciles this chat with GX Core

@@ -70,8 +70,9 @@ function buildDirectorAll_(period, hardRefresh) {
 function buildDirectorAllInner_(period, hardRefresh) {
   period = period || 'mtd';
   const params = { period: period };
-  const range  = getDateRange_(period);
-  const prior  = getPriorRange_(range);
+  const range     = getDateRange_(period);
+  const prior     = getPriorRange_(range);       // same elapsed days of the period before — totals
+  const priorFull = getPriorFullRange_(range);   // the whole period before — rate benchmarks
   const todayR = getDateRange_('today');
   const mtdR   = period === 'mtd' ? null : getDateRange_('mtd');
 
@@ -82,6 +83,11 @@ function buildDirectorAllInner_(period, hardRefresh) {
   // only today (+ pre-6am yesterday) is pulled live. hardRefresh re-pulls + re-locks.
   const byStoreAgg     = byStoreAggCached_(range, hardRefresh);
   const prevByStoreAgg = byStoreAggCached_(prior, hardRefresh);                 // prior period fully settled → all cached
+  // The rate benchmark's days are a superset of the aligned window's and every one is settled, so
+  // this is a second pass over the same day-cache rather than a second Dutchie fetch. When the
+  // period has fully elapsed the two ranges are identical and withTxnMemo_ answers it from the
+  // first call without touching the cache at all.
+  const prevFullByStoreAgg = byStoreAggCached_(priorFull, hardRefresh);
   const byStoreMTDAgg  = mtdR ? byStoreAggCached_(mtdR, hardRefresh) : byStoreAgg;
 
   // Still pulled live/raw: TODAY (intraday pace, ticker, today card) and the
@@ -93,7 +99,7 @@ function buildDirectorAllInner_(period, hardRefresh) {
   const byStore30d   = storeTrendCache ? null : rawFetched[rawList.length - 1];
   const storeTrends  = storeTrendCache || saveStoreTrendCache_(byStore30d) || {};
 
-  const summary       = getDirectorSummary(params, { byStoreAgg, prevByStoreAgg });
+  const summary       = getDirectorSummary(params, { byStoreAgg, prevByStoreAgg, prevFullByStoreAgg });
   const stores        = getDirectorStores(params,  { byStoreAgg, byStoreToday, byStore30d, storeTrends });
   const staff         = getDirectorStaff(params,   { byStoreAgg, byStore30d, byStoreToday });
   const alerts        = getDirectorAlerts(         { byStoreAgg: byStoreMTDAgg });

@@ -411,6 +411,14 @@ html, body {
 }
 .kpi .kpi-delta.up   { color: var(--green); }
 .kpi .kpi-delta.down { color: var(--red); }
+/* What the over/under is measured against. Deliberately quiet and always present: the number above
+   it is meaningless without it, but it is not the thing you read the card for. */
+.kpi .kpi-basis {
+  font-size: 10px;
+  margin-top: 2px;
+  color: var(--text-mute);
+  opacity: 0.75;
+}
 
 /* Value color modifiers */
 .v-green  { color: var(--green); }
@@ -3820,7 +3828,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      slideshow bar at 9999, so nothing here contests it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.862';
+window.GC = window.GC || {}; GC.VERSION = 'v1.864';
 
 // ── GX Core web-app URL — ONE definition ──
 // This was previously a `var` inside loadChangelogFromGXCore(), i.e. function-scoped, while the
@@ -4914,28 +4922,49 @@ GC.renderKpiBlock = function(summary, periodLabel) {
   if (!summary) return '';
   var d = summary.deltas || {};
   periodLabel = periodLabel || 'MTD';
-  var priorLabel = periodLabel === 'MTD' ? 'vs. last month' : 'vs. prior period';
 
-  function bigKpi(label, value, deltaHtml, colorClass) {
-    return '<div class="kpi">'
+  /* SAY WHAT THE NUMBER IS MEASURED AGAINST. Half of "these KPI over/unders are confusing"
+     (Sky, 2026-09-16) was arithmetic — a part period compared against a whole one — and the other
+     half was a card that never told you which. Totals are measured against the same elapsed slice
+     of the period before; rates against the whole period before, which is the steadier benchmark
+     and does not care how long you measure it. Two bases, so each one says which it is.
+     `comparison` comes from getDirectorSummary; the fallbacks are for an older cached payload. */
+  var cmp        = summary.comparison || {};
+  var priorNoun  = periodLabel === 'MTD' ? 'last month' : 'last period';
+  var partial    = cmp.totalsDays && cmp.periodDays && cmp.totalsDays < cmp.periodDays;
+  var totalsLabel = partial
+    ? 'vs. first ' + cmp.totalsDays + (cmp.totalsDays === 1 ? ' day' : ' days') + ' of ' + priorNoun
+    : 'vs. ' + priorNoun;
+  var rateLabel  = (cmp.rateDays && cmp.periodDays && cmp.rateDays < cmp.periodDays)
+    ? 'vs. first ' + cmp.rateDays + (cmp.rateDays === 1 ? ' day' : ' days') + ' of ' + priorNoun
+    : 'vs. ' + priorNoun + ' avg';
+  var priorLabel = totalsLabel;   // kept: the Transactions card appends it inline
+
+  /* A delta with no basis under it is the thing being fixed, so `basis` is passed, never assumed.
+     It is dropped only where there is no delta to explain (Flagged/Active Staff, which carry a
+     breakdown line of their own instead). */
+  function kpiCard(small, label, value, deltaHtml, basis, colorClass) {
+    return '<div class="kpi' + (small ? ' small' : '') + '">'
       + '<div class="kpi-label">' + GC.esc(label) + '</div>'
       + '<div class="kpi-value' + (colorClass ? ' ' + colorClass : '') + '">' + value + '</div>'
-      + (deltaHtml ? '<div class="kpi-delta ' + (deltaHtml.startsWith('▲') ? 'up' : deltaHtml.startsWith('▼') ? 'down' : '') + '">' + deltaHtml + '</div>' : '')
+      + (deltaHtml ? '<div class="kpi-delta ' + (deltaHtml.indexOf('▲') === 0 ? 'up' : deltaHtml.indexOf('▼') === 0 ? 'down' : '') + '">' + deltaHtml + '</div>' : '')
+      + (deltaHtml && basis ? '<div class="kpi-basis">' + GC.esc(basis) + '</div>' : '')
       + '</div>';
   }
-
-  function smallKpi(label, value, deltaHtml, colorClass) {
-    return '<div class="kpi small">'
-      + '<div class="kpi-label">' + GC.esc(label) + '</div>'
-      + '<div class="kpi-value' + (colorClass ? ' ' + colorClass : '') + '">' + value + '</div>'
-      + (deltaHtml ? '<div class="kpi-delta">' + deltaHtml + '</div>' : '')
-      + '</div>';
+  function bigKpi(label, value, deltaHtml, basis, colorClass) {
+    return kpiCard(false, label, value, deltaHtml, basis, colorClass);
+  }
+  function smallKpi(label, value, deltaHtml, basis, colorClass) {
+    return kpiCard(true, label, value, deltaHtml, basis, colorClass);
   }
 
   var bigRow = '<div class="kpi-row large">'
-    + bigKpi('Total Sales · ' + periodLabel, GC.fmtCurrencyFull(summary.totalSales),   GC.fmtDeltaPct(d.totalSalesPct))
-    + bigKpi('Transactions',         GC.fmtNum(summary.transactions),       GC.fmtDeltaNum(d.transactions, '') + ' ' + priorLabel)
-    + bigKpi('Avg Order Value',      GC.fmtCurrency(summary.avgOrderValue), GC.fmtDeltaCurrency(d.avgOrderValue), 'v-green')
+    + bigKpi('Total Sales · ' + periodLabel, GC.fmtCurrencyFull(summary.totalSales),
+        GC.fmtDeltaPct(d.totalSalesPct),   totalsLabel)
+    + bigKpi('Transactions',         GC.fmtNum(summary.transactions),
+        GC.fmtDeltaNum(d.transactions, ''), totalsLabel)
+    + bigKpi('Avg Order Value',      GC.fmtCurrency(summary.avgOrderValue),
+        GC.fmtDeltaCurrency(d.avgOrderValue), rateLabel, 'v-green')
     + '</div>';
 
   // These three used to hardcode "▲ +" and then print the raw number, so a period that discounted
@@ -4946,13 +4975,21 @@ GC.renderKpiBlock = function(summary, periodLabel) {
     : '';
 
   var smallRow = '<div class="kpi-row small">'
-    + smallKpi('Avg UPT',         GC.fmtDecimal(summary.avgUPT),         GC.fmtDeltaDecimal(d.avgUPT))
-    + smallKpi('Total Discounts', GC.fmtCurrencyFull(summary.totalDiscounts), GC.fmtDeltaCurrency(d.totalDiscounts), 'v-amber')
-    + smallKpi('Discount Rate',   GC.fmtPct(summary.discountRate),        discDelta, 'v-amber')
-    + smallKpi('Flagged Staff',   String(summary.flaggedStaff),            flagSub, 'v-red')
+    + smallKpi('Avg UPT',         GC.fmtDecimal(summary.avgUPT),
+        GC.fmtDeltaDecimal(d.avgUPT), rateLabel)
+    + smallKpi('Total Discounts', GC.fmtCurrencyFull(summary.totalDiscounts),
+        GC.fmtDeltaCurrency(d.totalDiscounts), totalsLabel, 'v-amber')
+    + smallKpi('Discount Rate',   GC.fmtPct(summary.discountRate),
+        discDelta, rateLabel, 'v-amber')
+    + smallKpi('Flagged Staff',   String(summary.flaggedStaff),            flagSub, '', 'v-red')
     + smallKpi('Active Staff',    String(summary.activeStaff),
-        (summary.sellingStaff != null ? summary.sellingStaff + ' with sales · ' : 'across ') + summary.storeCount + ' stores')
-    + smallKpi('Sales / Hour',    '$' + GC.fmtNum(summary.salesPerHour),  GC.fmtDeltaNum(d.salesPerHour, '$'))
+        (summary.sellingStaff != null ? summary.sellingStaff + ' with sales · ' : 'across ') + summary.storeCount + ' stores', '')
+    // Sales / Hour is a rate, but it is compared on the ALIGNED window rather than the whole prior
+    // period — and in a pay period that is the better comparison, not a compromise. A period is a
+    // whole number of weeks, so the first three days of this one are the same three weekdays as the
+    // first three of the last; the full-period average would fold in two weekends.
+    + smallKpi('Sales / Hour',    '$' + GC.fmtNum(summary.salesPerHour),
+        GC.fmtDeltaNum(d.salesPerHour, '$'), totalsLabel)
     + '</div>';
 
   return bigRow + smallRow;

@@ -96,15 +96,91 @@ function getDateRange_(period, ptPinned) {
   };
 }
 
-/** Return the immediately prior period of the same length (for delta calculations). */
+/* ══ ONE definition of "the period before this one" ═══════════════════════════════════════════════
+ *
+ * THE RULE: a part period is only ever compared against the SAME PART of the period before it.
+ * Three days into a pay period, "vs. prior period" means the first three days of the last one.
+ *
+ * This used to take the prior range as `fromMs - span`, where span was the CURRENT range's full
+ * width — and for a pay period `getDateRange_('pp')` runs to ppEndMs, the end of the whole 14 days,
+ * including the days that have not happened yet. So on day three the board compared three days of
+ * sales against fourteen, and Transactions and Total Discounts read hugely negative every time a
+ * period opened. Sky, 2026-09-16: "we are 3 days into the period, it should show if we're +/- to
+ * the first 3 days of last period, not the whole period."
+ *
+ * Sales / Hour was wrong in the other direction and worse, because the error was arithmetic rather
+ * than a choice: it divided fourteen days of prior sales by THREE days of open hours.
+ *
+ * ALIGNING ON ELAPSED DAYS ALSO ALIGNS THE WEEKDAYS, which is why it is the right comparison and
+ * not merely a fairer one. A pay period is a whole number of weeks, so day N of this period is the
+ * same weekday as day N of the last. Comparing the first three days to the first three days is
+ * Mon-Tue-Wed against Mon-Tue-Wed; comparing against a whole period mixes in two weekends.
+ *
+ * RATES DO NOT USE THIS — they use getPriorFullRange_. An average order value or a discount rate is
+ * not distorted by how long you measure it, and the full prior period is the steadier benchmark.
+ * Sky's own read, same report: "AOV seems to make sense that it compares to the average AOV over
+ * the last period, that sets the benchmark." Totals are the ones that need like-for-like.
+ */
 function getPriorRange_(currentRange) {
-  const fromMs = new Date(currentRange.fromUTC).getTime();
-  const toMs   = new Date(currentRange.toUTC).getTime();
-  const span   = toMs - fromMs;
+  return priorWindow_(currentRange, currentRange.daysElapsed);
+}
+
+/** The WHOLE period before this one — the benchmark for rates (AOV, UPT, discount rate). */
+function getPriorFullRange_(currentRange) {
+  return priorWindow_(currentRange, null);
+}
+
+/* Shared by both. `wantDays` null means the whole prior period.
+ *
+ * Day boundaries come from PT calendar-date shifts, never from fixed-ms arithmetic: a period that
+ * contains a DST change is a whole number of calendar days but not a whole number of 24-hour spans,
+ * and ms arithmetic lands an hour off midnight and formats back to the wrong date. Same rule, and
+ * the same reason, as ptDateShift_/ppShift_ in dutchie_proxy.gs. */
+function priorWindow_(currentRange, wantDays) {
+  const DAY_MS    = 24 * 60 * 60 * 1000;
+  const startStr  = priorPeriodStartStr_(currentRange);
+  const startMs   = ptDateToUtcMs_(startStr);
+  const curFromMs = ptDateToUtcMs_(currentRange.fromLocal);
+  // The prior period ends the day before this one starts, so its length falls out of the two
+  // starts — no per-period length table to drift out of step with priorPeriodStartStr_.
+  const periodDays = Math.max(1, Math.round((curFromMs - startMs) / DAY_MS));
+  // Clamped: a 31-day month-to-date has no 31st day to compare against in February.
+  const days = wantDays == null
+    ? periodDays
+    : Math.max(1, Math.min(Math.round(wantDays), periodDays));
+  const endStr = ptDateShift_(startStr, days - 1);
   return {
-    fromUTC: new Date(fromMs - span - 1).toISOString(),
-    toUTC:   new Date(fromMs - 1).toISOString(),
+    fromUTC:    new Date(startMs).toISOString(),
+    toUTC:      new Date(ptDateToUtcMs_(ptDateShift_(startStr, days)) - 1).toISOString(),
+    fromLocal:  startStr,
+    toLocal:    endStr,
+    days:       days,          // how many days this window actually covers
+    periodDays: periodDays,    // how long the whole prior period is
+    period:     currentRange.period,
   };
+}
+
+/** PT date the period before `currentRange` started on. */
+function priorPeriodStartStr_(currentRange) {
+  const from = currentRange.fromLocal;
+  switch ((currentRange.period || 'mtd').toLowerCase()) {
+    case 'today': return ptDateShift_(from, -1);
+    case 'wtd':   return ptDateShift_(from, -7);
+    case '30d':   return ptDateShift_(from, -30);
+    case 'pp':    return ptDateShift_(from, -payPeriodCfg_().days);
+    case 'qtd':   return ptMonthStartBack_(from, 3);
+    case 'ytd':   return ptMonthStartBack_(from, 12);
+    case 'mtd':
+    default:      return ptMonthStartBack_(from, 1);
+  }
+}
+
+/** First of the month `monthsBack` before the one `dateStr` falls in. Calendar math, not ms. */
+function ptMonthStartBack_(dateStr, monthsBack) {
+  const y = Number(String(dateStr).slice(0, 4));
+  const m = Number(String(dateStr).slice(5, 7));
+  const t = y * 12 + (m - 1) - monthsBack;
+  return Math.floor(t / 12) + '-' + String((t % 12) + 1).padStart(2, '0') + '-01';
 }
 
 /** Format a local-time date string "YYYY-MM-DD" from ms-since-epoch (UTC). */
@@ -462,8 +538,9 @@ function activeCrewFill_() {
 function getDirectorSummary(params, pre) {
   pre = pre || {};
   const period = params.period || 'mtd';
-  const range  = getDateRange_(period);
-  const prior  = getPriorRange_(range);
+  const range     = getDateRange_(period);
+  const prior     = getPriorRange_(range);        // same elapsed days of the period before — TOTALS
+  const priorFull = getPriorFullRange_(range);    // the whole period before — RATE benchmarks
 
   // Prefer the day-cached per-store aggregates (merge to a chain total); fall back
   // to a raw fetch + aggregate when called standalone (directorsummary action).
@@ -473,6 +550,25 @@ function getDirectorSummary(params, pre) {
   const prev = pre.prevByStoreAgg
     ? mergeAggs_(Object.values(pre.prevByStoreAgg))
     : aggregateTransactions_(Object.values(pre.prevByStore || fetchAllStoresTransactions_(prior)).flat());
+  // The rate benchmark. Its days are a superset of `prior`'s and every one of them is settled, so
+  // in a directorall build this is a second pass over the same day-cache, not a second fetch.
+  //
+  // WHEN IT IS NOT AVAILABLE THE CARD SAYS SO RATHER THAN PRETENDING. A caller that pre-fetched the
+  // aligned window and not the full one gets the aligned window for the rates too — going and
+  // fetching behind a caller that told us what it had is how a "pre-fetched" path grows a live
+  // Dutchie call nobody costed. `rateDays` below reports which window was really used, and the
+  // label on the card is drawn from that, so a narrower benchmark is visible instead of silent.
+  let prevFull = prev, rateDays = prior.days;
+  if (pre.prevFullByStoreAgg) {
+    prevFull = mergeAggs_(Object.values(pre.prevFullByStoreAgg));
+    rateDays = priorFull.days;
+  } else if (prior.days === priorFull.days) {
+    rateDays = priorFull.days;                     // whole period elapsed — same window, don't re-ask
+  } else if (!pre.byStoreAgg && !pre.prevByStoreAgg) {
+    prevFull = aggregateTransactions_(Object.values(
+      pre.prevFullByStore || fetchAllStoresTransactions_(priorFull)).flat());
+    rateDays = priorFull.days;
+  }
 
   const allEmps       = Object.values(curr.byEmployee).filter(e => !gxIsExcluded_(e));
   // ACTIVE STAFF = everyone who sold this period PLUS the active crew who have not yet -- the same
@@ -484,12 +580,15 @@ function getDirectorSummary(params, pre) {
   const _discRed      = discountRedLineDec_();   // 2× the discount target
   const flaggedEmps   = allEmps.filter(e => e.discountRate > _discRed);
 
-  // Sales per hour: total sales ÷ (elapsed days × store open hours)
+  // Sales per hour: total sales ÷ (elapsed days × store open hours).
+  // The prior side divides by ITS OWN day count, not this period's. It used to divide the prior
+  // window's sales by `range.daysElapsed` — fourteen days of takings over three days of open hours
+  // — which is not a comparison anyone could have read correctly.
   const salesPerHour  = range.daysElapsed > 0
     ? Math.round(curr.sales / (range.daysElapsed * STORE_HOURS))
     : 0;
-  const prevSPH       = range.daysElapsed > 0
-    ? Math.round(prev.sales / (range.daysElapsed * STORE_HOURS))
+  const prevSPH       = prior.days > 0
+    ? Math.round(prev.sales / (prior.days * STORE_HOURS))
     : 0;
 
   return {
@@ -507,14 +606,27 @@ function getDirectorSummary(params, pre) {
     sellingStaff:   allEmps.length,   // of those, how many have rung a sale this period
     storeCount:     STORES.length,
     salesPerHour:   salesPerHour,
+    // TOTALS are compared against the same elapsed slice of the period before (`prev`); RATES
+    // against the whole period before (`prevFull`). See getPriorRange_ for why they differ.
     deltas: {
       totalSalesPct:   prev.sales       > 0 ? r3_((curr.sales - prev.sales) / prev.sales) : 0,
       transactions:    curr.transactions - prev.transactions,
-      avgOrderValue:   r2_(curr.avgOrderValue  - prev.avgOrderValue),
-      avgUPT:          r1_(curr.avgUPT         - prev.avgUPT),
       totalDiscounts:  r2_(curr.totalDiscounts - prev.totalDiscounts),
-      discountRatePts: r3_(curr.discountRate   - prev.discountRate),
       salesPerHour:    salesPerHour - prevSPH,
+      avgOrderValue:   r2_(curr.avgOrderValue  - prevFull.avgOrderValue),
+      avgUPT:          r1_(curr.avgUPT         - prevFull.avgUPT),
+      discountRatePts: r3_(curr.discountRate   - prevFull.discountRate),
+    },
+    // What each delta is measured against, so the card can SAY it. The report that prompted this
+    // was titled "These KPI over/unders are confusing", and half of that was the arithmetic being
+    // wrong — the other half was a card that never said what it was comparing you to.
+    comparison: {
+      currentDays: range.daysElapsed,   // how far into this period we are
+      totalsDays:  prior.days,          // the window the totals are measured against
+      rateDays:    rateDays,            // the window the rates are measured against
+      periodDays:  prior.periodDays,    // how long the prior period was in full
+      totalsFrom:  prior.fromLocal,
+      totalsTo:    prior.toLocal,
     },
     lastUpdated: new Date().toISOString(),
   };
