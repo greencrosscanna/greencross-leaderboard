@@ -1344,8 +1344,16 @@ function doGet(e) {
     return jsonOut({ ok: false, error: 'Unknown action: ' + params.action }, params.callback);
 
   } catch(err) {
-    Logger.log('doGet error: ' + err.message + '\n' + err.stack);
-    return jsonOut({ ok: false, error: err.message }, params.callback);
+    /* SCRUBBED, because this text is PRINTED ON A WALL SCREEN. Three of this app's URLs carry a
+       secret in their query string -- GX_CONNECTOR_SECRET on dutchie_keys (the one route that
+       returns Dutchie credentials) and GX_DEPLOY_SECRET on app_roster and gxCoreRoute_ -- and when
+       UrlFetchApp cannot reach a host it does not return a status, it THROWS, with Google's own
+       message: "Address unavailable: <the whole url>". Unscrubbed, that lands in the kiosk's error
+       banner in front of the whole shop. Reported by SPIFF via core-admin, 2026-09-15.
+       Each of the three also scrubs at its own fetch, so nothing secret is inside a thrown message
+       in the first place; this is the backstop that covers the route added next year. */
+    Logger.log('doGet error: ' + scrubSecrets_(err && err.message || err) + '\n' + (err && err.stack || ''));
+    return jsonOut({ ok: false, error: scrubSecrets_(err && err.message || err) }, params.callback);
   }
 }
 
@@ -1376,9 +1384,25 @@ function doPost(e) {
     if (!auth.ok) return jsonOut(auth);
     return jsonOut(handleBugReport_(body));
   } catch (err) {
-    Logger.log('doPost error: ' + ((err && err.message) || err));
-    return jsonOut({ ok: false, error: String((err && err.message) || err) });
+    Logger.log('doPost error: ' + scrubSecrets_((err && err.message) || err));
+    return jsonOut({ ok: false, error: scrubSecrets_((err && err.message) || err) });   // see doGet's catch
   }
+}
+
+/**
+ * Take any secret back out of a message before it is shown or logged.
+ *
+ * The shape it exists for is not ours to control: UrlFetchApp throws "Address unavailable: <url>"
+ * with the full query string when it cannot reach a host, so a secret WE put in a URL comes back to
+ * us inside Google's exception text. Same helper and same pattern as SPIFF (Code.gs) and GX Crew.
+ *
+ * The prefix is deliberately NOT anchored to `?` or `&`: this app's highest-value secret travels as
+ * `connector_secret=`, and an anchored form (Crew's) walks straight past it because `secret=` is not
+ * preceded by a separator. Matching the bare parameter name catches both.
+ */
+function scrubSecrets_(msg) {
+  return String((msg && msg.message) || msg || '')
+    .replace(/(secret|token|key|pass|password)=[^&\s"']*/gi, '$1=[redacted]');
 }
 
 function jsonOut(data, callback) {

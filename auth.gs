@@ -393,7 +393,9 @@ function lbFetchCoreRoster_(props) {
       var body = resp.getContentText() || '';
       if (body.charAt(0) === '{') d = JSON.parse(body);
       else lastErr = 'HTTP ' + resp.getResponseCode();
-    } catch (e) { lastErr = (e && e.message) || String(e); }
+    // The URL carries GX_DEPLOY_SECRET, and an unreachable host throws it back at us inside
+    // "Address unavailable: <the whole url>". lastErr is re-thrown below and reaches the screen.
+    } catch (e) { lastErr = scrubSecrets_(e); }
     if (!d) Utilities.sleep(400);   // the /exec second hop 404s on a few percent of calls
   }
   if (!d) throw new Error('app_roster unreachable: ' + lastErr);

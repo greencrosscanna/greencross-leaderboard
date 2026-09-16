@@ -155,6 +155,29 @@ not work at that store it truncated back to "Nate" under a card reading "Nate S"
 Gated by `tests/short_name_test.js`, which asserts BOTH data states, drives the real `getStoreToday`
 for the ticker, and was proven red against each guard individually. `getNicknames_` is in `goals.gs`; the helpers are in `gx_roster.gs`.
 
+## A secret must never reach the screen inside an error (2026-09-15)
+
+Three of this app's URLs carry a secret **in the query string**: `dutchie_keys?connector_secret=`
+(`GX_CONNECTOR_SECRET` — the key that unlocks the Dutchie credentials), and `app_roster` and
+`gxCoreRoute_`, both with `GX_DEPLOY_SECRET`. **`muteHttpExceptions: true` silences a STATUS code,
+not a transport failure** — an unreachable host still throws, and Google's own message is
+`Address unavailable: <the whole url>`. Unscrubbed, that renders in the kiosk's error banner in
+front of the shop. Reported by SPIFF through core-admin.
+
+`scrubSecrets_` (in `dutchie_proxy.gs`, next to `jsonOut`) is applied at **both router catches and at
+all three fetches** — at source so nothing secret is ever inside a thrown message, at the router as
+the backstop that covers the route added next year. Source matters on its own: several handlers
+catch and return `{ok:false, error}` straight into `jsonOut` without ever reaching `doGet`'s catch.
+
+**Do not "tidy" the regex into Crew's anchored form.** Crew requires the parameter to follow `?` or
+`&`; this app's highest-value secret travels as `connector_**secret**=`, where `secret=` is preceded
+by an underscore, so the anchored form walks straight past it. `tests/error_scrub_test.js` asserts
+that specifically — it runs the anchored regex on the real URL and requires it to leak.
+
+That suite **never greps a file for the scrub**, which is how SPIFF's own version passed while
+proving nothing (it matched a scrub inside a different function). It drives the real `doGet` and
+`doPost` and reads the served body, and every one of the five scrubs was proven red by removing it.
+
 ## Sync with the brain — run `/gxbrain` (or say "brain sync")
 
 This app is on the shared brain. **`/gxbrain`** loads the shared rules and reconciles this chat with GX Core

@@ -42,7 +42,12 @@ function gxDutchieKeyMap_() {
   const url = GXCORE_EXEC_KEYS_ + '?action=dutchie_keys&connector_secret=' + encodeURIComponent(secret);
   let lastErr = '';
   for (let i = 0; i < 5; i++) {
-    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    // muteHttpExceptions silences a STATUS, not a transport failure: an unreachable host still
+    // throws, and Google's message is "Address unavailable: <the whole url>" — this one carrying
+    // GX_CONNECTOR_SECRET, the key that unlocks the Dutchie credentials. Scrub before it travels.
+    let resp;
+    try { resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true }); }
+    catch (e) { throw new Error(scrubSecrets_(e)); }
     let data = null;
     try { data = JSON.parse(resp.getContentText()); } catch (e) { lastErr = 'unparseable body'; }
     if (data && data.ok === true && data.keys && Object.keys(data.keys).length) {
@@ -427,7 +432,11 @@ function gxCoreRoute_(action, params) {
     url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
   });
   for (let i = 0; i < 3; i++) {          // fewer tries than the key fetch: this has a local fallback
-    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    // Carries GX_DEPLOY_SECRET in the query string — see gxDutchieKeyMap_ for why a fetch that
+    // cannot reach the host hands the whole URL back inside the exception.
+    let resp;
+    try { resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true }); }
+    catch (e) { throw new Error(scrubSecrets_(e)); }
     let data = null;
     try { data = JSON.parse(resp.getContentText()); } catch (e) {}
     if (data && data.ok === true) return data;

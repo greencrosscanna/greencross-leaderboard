@@ -347,8 +347,11 @@ const tests = {
     const files  = body.indexOf('handleBugReport_(body)');
     _ok_('anything but bugreport is refused first', refuse >= 0 && refuse < authed);
     _ok_('the session is checked before the report is filed', authed >= 0 && authed < files);
+    // scrubSecrets_ is allowed and is not a door: it FORMATS the error on the way out, taking a
+    // secret back out of an exception message before it reaches a screen (2026-09-15). The list is
+    // the point — anything that ROUTES or ACTS still fails this.
     _eq_('and no other handler is reachable from it', (body.match(/\b[a-zA-Z]+_\(/g) || [])
-      .filter(function (f) { return ['requireAuth_(', 'handleBugReport_('].indexOf(f) < 0; }), []);
+      .filter(function (f) { return ['requireAuth_(', 'handleBugReport_(', 'scrubSecrets_('].indexOf(f) < 0; }), []);
   },
 };
 
