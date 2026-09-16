@@ -30,7 +30,8 @@ except:
 
   if [ "$BUILD_STATUS" = "built" ] && [ "$BUILD_SHA" = "$SHORT" ]; then
     # macOS desktop notification (audible)
-    osascript -e "display notification \"Cmd+Shift+R to see $LABEL\" with title \"✅ Pages live\" sound name \"Glass\"" 2>/dev/null || true
+    # Disabled 2026-09-16 at Sky's request (reload ping no longer wanted):
+    # osascript -e "display notification \"Cmd+Shift+R to see $LABEL\" with title \"✅ Pages live\" sound name \"Glass\"" 2>/dev/null || true
     # Signal to Claude monitor (stdout line picked up by Monitor tool)
     echo "PAGES_LIVE:$SHORT:$LABEL"
     exit 0
