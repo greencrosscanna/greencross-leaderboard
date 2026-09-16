@@ -169,10 +169,16 @@ all three fetches** — at source so nothing secret is ever inside a thrown mess
 the backstop that covers the route added next year. Source matters on its own: several handlers
 catch and return `{ok:false, error}` straight into `jsonOut` without ever reaching `doGet`'s catch.
 
-**Do not "tidy" the regex into Crew's anchored form.** Crew requires the parameter to follow `?` or
-`&`; this app's highest-value secret travels as `connector_**secret**=`, where `secret=` is preceded
-by an underscore, so the anchored form walks straight past it. `tests/error_scrub_test.js` asserts
-that specifically — it runs the anchored regex on the real URL and requires it to leak.
+**Two things the obvious regex gets wrong, and this app is bitten by both.** It must not be anchored
+to `?`/`&` — the highest-value secret here travels as `connector_**secret**=`, where `secret=`
+follows an underscore, so an anchor-only form matches nothing. And it must cover **every name the
+session token arrives under**: `requireAuth_` accepts `token`, `session` *or* `auth`, so knowing only
+`token=` leaves two thirds of the door open (ours did, for an hour). `tests/error_scrub_test.js`
+asserts both — it runs an anchor-only regex on the real URL and requires it to leak.
+
+The reference shape to copy is **Inventory's `SECRET_PARAM_RE_`** (`dutchie_proxy.gs`), which is
+anchored but lists every prefixed name explicitly. Crew's is anchor-only; that is safe in Crew, which
+has no prefixed secret parameter at all, and wrong to copy anywhere that does — this app has seven.
 
 That suite **never greps a file for the scrub**, which is how SPIFF's own version passed while
 proving nothing (it matched a scrub inside a different function). It drives the real `doGet` and

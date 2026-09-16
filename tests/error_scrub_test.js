@@ -116,7 +116,12 @@ function test_scrubSecrets_() {
     .replace(/([?&](?:secret|token|key|pass|password)=)[^&\s]*/gi, '$1[redacted]');
   _ok_('the anchored form would have leaked it', anchored.indexOf(CONNECTOR) !== -1);
 
-  noSecretIn('a session token', S.scrubSecrets_('boom at ?action=setplan&token=gx-dev:1:' + DEPLOY));
+  // EVERY NAME THE SESSION TOKEN ARRIVES UNDER. requireAuth_ reads params.token || params.session
+  // || params.auth, so a scrub that only knows `token=` leaves two of the three open.
+  ['token', 'session', 'auth'].forEach(function (p) {
+    noSecretIn('the session token as ' + p + '=', S.scrubSecrets_('boom at ?action=setplan&' + p + '=gx-dev:1:' + DEPLOY));
+  });
+  noSecretIn('a prefixed spelling', S.scrubSecrets_('?deploy_secret=' + DEPLOY + '&api_key=' + CONNECTOR));
   _eq_('nothing to scrub is left alone', S.scrubSecrets_('Dutchie 502: upstream'), 'Dutchie 502: upstream');
   _eq_('an absent message is a string',  S.scrubSecrets_(null), '');
   _eq_('an Error is accepted directly',  S.scrubSecrets_(new Error('secret=' + DEPLOY)), 'secret=[redacted]');

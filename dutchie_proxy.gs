@@ -1396,13 +1396,22 @@ function doPost(e) {
  * with the full query string when it cannot reach a host, so a secret WE put in a URL comes back to
  * us inside Google's exception text. Same helper and same pattern as SPIFF (Code.gs) and GX Crew.
  *
- * The prefix is deliberately NOT anchored to `?` or `&`: this app's highest-value secret travels as
- * `connector_secret=`, and an anchored form (Crew's) walks straight past it because `secret=` is not
- * preceded by a separator. Matching the bare parameter name catches both.
+ * TWO THINGS THE OBVIOUS VERSION GETS WRONG, and this app can be bitten by both.
+ *
+ * 1. NOT ANCHORED to `?` or `&`. This app's highest-value secret travels as `connector_secret=`, so
+ *    an anchored form matches nothing -- `secret=` there follows an underscore, not a separator.
+ *    Matching the bare parameter name catches the prefixed and unprefixed spellings alike. (The
+ *    belt-and-braces alternative, and the better one to copy if you are writing a new one, is
+ *    Inventory's SECRET_PARAM_RE_: anchored, but with every prefixed name listed out.)
+ *
+ * 2. EVERY NAME THE SESSION TOKEN ARRIVES UNDER. requireAuth_ accepts `token`, `session` OR `auth`
+ *    (auth.gs), so a scrub that knows only about `token=` leaves two thirds of the door open. That
+ *    was true of this helper for its first hour; found by core-admin comparing the suite's four
+ *    versions of it, 2026-09-15.
  */
 function scrubSecrets_(msg) {
   return String((msg && msg.message) || msg || '')
-    .replace(/(secret|token|key|pass|password)=[^&\s"']*/gi, '$1=[redacted]');
+    .replace(/(secret|token|session|auth|key|pass|password)=[^&\s"']*/gi, '$1=[redacted]');
 }
 
 function jsonOut(data, callback) {
