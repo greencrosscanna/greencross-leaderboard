@@ -2002,8 +2002,45 @@ function getStoreLeaderboard(store, params) {
   return result;
 }
 
+/* ── THE TROPHIES ARE A WEEKLY FACT AND WERE BEING REBUILT EVERY MINUTE ──────────────────────────
+ *
+ * getStoreToday and getStoreLeaderboard have each cached their response for 55 seconds since they
+ * were written. This one never cached anything, and it is the MOST expensive of the three: today
+ * is one day of transactions, the trophies are the whole week to date — up to seven days of
+ * detailed rows downloaded from Dutchie, aggregated, and then used to pick six winners whose names
+ * change on the order of hours.
+ *
+ * Nothing noticed because the cost is invisible from the client: it is one JSONP call either way.
+ * What it actually spends is a slot against the 30-simultaneous-execution cap every GX app shares
+ * as one Google account — the cap that pinned the whole suite at 114 executions on 2026-09-15.
+ *
+ * TEN MINUTES, and the number is chosen against what the data can do rather than what feels safe.
+ * A trophy flips when one person overtakes another on a week-to-date average, which no ten minutes
+ * of a shift decides. The kiosk's own client cache is already three minutes, so a board is never
+ * showing these to the second anyway, and the "Refresh now" button drops this key with the other
+ * two (see bustKioskCache_) so a screen that looks wrong can still be made current by hand.
+ *
+ * Keyed by PERIOD as well as store: the route takes a period parameter, and a key that ignored it
+ * would serve a week's trophies under a month's heading.
+ */
+var STORE_BADGES_TTL_S = 600;   // 10 minutes
+
 function getStoreBadges(store, params) {
   const period = (params && params.period) || 'week';
+
+  const scriptCache = CacheService.getScriptCache();
+  const badgeKey    = 'storeBadges:' + store.slug + ':' + period;
+  const badgeHit    = scriptCache.get(badgeKey);
+  if (badgeHit) {
+    try { return JSON.parse(badgeHit); } catch (e) {}
+  }
+  /** Cache on the way out. Both return paths go through here — including the no-eligible-staff one,
+   *  which costs exactly the same week-wide fetch to discover and so is exactly as worth keeping. */
+  const done = function (result) {
+    try { scriptCache.put(badgeKey, JSON.stringify(result), STORE_BADGES_TTL_S); } catch (e) {}
+    return result;
+  };
+
   const range  = getDateRange_(period === 'week' ? 'wtd' : period);
   const txns   = fetchStoreTransactions_(store.slug, range.fromUTC, range.toUTC);
   const agg    = aggregateTransactions_(txns);
@@ -2023,11 +2060,11 @@ function getStoreBadges(store, params) {
     .filter(e => gxBelongsToStore_(e, store));
 
   if (emps.length === 0) {
-    return {
+    return done({
       storeSlug: store.slug, storeName: store.name,
       period:    period,     badges:    [],
       lastUpdated: new Date().toISOString(),
-    };
+    });
   }
 
   const badges = [];
@@ -2093,13 +2130,98 @@ function getStoreBadges(store, params) {
     if (b.winner) b.winner = applyNickname_(b.winner, _badgeNicks);
   });
 
-  return {
+  return done({
     storeSlug:   store.slug,
     storeName:   store.name,
     period:      period,
     badges:      badges,
     lastUpdated: new Date().toISOString(),
-  };
+  });
+}
+
+/* ── ONE CALL FOR THE WHOLE KIOSK BOARD ──────────────────────────────────────────────────────────
+ *
+ * The kiosk used to assemble its board client-side out of three separate JSONP calls fired
+ * together — storetoday, storeleaderboard, storebadges. That is three of everything: three trips
+ * over Google's /exec second hop, three auth checks, three store lookups, and three independent
+ * Dutchie downloads. This returns the same three payloads, under the same three keys, from one
+ * request.
+ *
+ * WHY IT IS NOT JUST ABOUT ROUND TRIPS. getStoreToday and getStoreLeaderboard both ask Dutchie for
+ * THE SAME WINDOW — getDateRange_('today') runs PT-midnight to PT-end-of-day, so the two requests
+ * are byte-identical, not merely overlapping. Fired as separate executions they were two downloads
+ * of the same day. Inside withTxnMemo_ the second is answered from the first, which is the same
+ * saving the director build already takes (see the note on withTxnMemo_ in dutchie_fetch.gs).
+ * Badges are a WIDER window (week to date) so they do not share that download; their saving is the
+ * response cache added above, which is the bigger one for them.
+ *
+ * Sales measured the second hop on 2026-09-15: ~3.4% of /exec requests do not fail, they HANG,
+ * 11-60 seconds. Three calls is three rolls of that die per board; this is one.
+ *
+ * ── A FAILED PART MUST NOT KILL THE BOARD, and this is the sharp edge ───────────────────────────
+ * Before this route, a storebadges that threw cost the kiosk its trophy row and nothing else:
+ * today and the leaderboard were separate requests and answered normally. Let a throw out of here
+ * and doGet's catch turns the WHOLE bundle into { ok:false }, kioskDataError_ refuses to paint, and
+ * a failed trophy row blanks the board in front of the shop. That is a strictly worse kiosk than
+ * the one we started with, and it is the default behavior unless this is written deliberately.
+ *
+ * So each part is built inside its own try, and a failure becomes { ok:false, error } IN THAT SLOT
+ * — the exact shape the router's catch produces for a single route today, which is what makes the
+ * two client-side gates keep working unchanged:
+ *   · kioskDataError_ vets `today` alone, so a failed badges still paints a board;
+ *   · _isErrorPayload scans one level for any part reporting ok:false, so a bundle with a failed
+ *     part is still RETURNED and painted but is never written to localStorage — no half-true board
+ *     survives to be served off disk at 4am.
+ * Both of those already existed and both are asserted against this shape in
+ * tests/kiosk_one_call_test.js.
+ *
+ * FAILURES ARE NOT MEMOIZED (see withTxnMemo_), so a Dutchie blip that loses `today` does not also
+ * poison the leaderboard's own attempt — it asks again, exactly as it did when they were separate
+ * requests.
+ */
+function getKioskAll_(store, params) {
+  return withTxnMemo_(function () {
+    // A bundle is always the FULL board. sinceTs is the ticker poll's delta cursor and would turn
+    // getStoreToday's reply into an increment, which nothing on this path knows how to paint.
+    const sub = {};
+    Object.keys(params || {}).forEach(function (k) {
+      if (k !== 'sinceTs' && k !== 'callback') sub[k] = params[k];
+    });
+
+    // One read, not two. The router asked getEomCurrent_() separately for today and for the
+    // leaderboard; it is the same answer to the same question within one request.
+    let eomKey = null;
+    try { eomKey = (getEomCurrent_() || {}).employeeKey || null; }
+    catch (e) { Logger.log('[kioskall] eom lookup failed: ' + e); }
+
+    const part = function (name, fn) {
+      try {
+        const out = fn();
+        if (out && typeof out === 'object') return out;
+        return { ok: false, error: name + ' returned no data' };
+      } catch (e) {
+        // scrubSecrets_ at SOURCE: an unreachable host throws the whole URL, secret and all, and
+        // this string is rendered in the kiosk's error banner. See scrubSecrets_ in dutchie_proxy.gs.
+        const why = scrubSecrets_((e && e.message) || String(e));
+        Logger.log('[kioskall] ' + store.slug + ' ' + name + ' failed: ' + why);
+        return { ok: false, error: why };
+      }
+    };
+
+    const today = part('today', function () { return getStoreToday(store, sub); });
+    if (today.ok !== false) today.eomKey = eomKey;
+
+    const leaderboard = part('leaderboard', function () { return getStoreLeaderboard(store, sub); });
+    if (leaderboard.ok !== false) leaderboard.eomKey = eomKey;
+
+    const badges = part('badges', function () {
+      return getStoreBadges(store, { period: sub.period || 'week' });
+    });
+
+    // The keys are the client's existing bundle contract — fetchKioskAll assembled exactly this
+    // shape, and paintStale / normalizeKioskData_ / _isErrorPayload all read it.
+    return { today: today, leaderboard: leaderboard, badges: badges };
+  });
 }
 
 // ============================================================

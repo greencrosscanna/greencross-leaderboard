@@ -915,6 +915,14 @@ function doGet(e) {
     }
 
     // ── Store / Kiosk endpoints ────────────────────────────
+    /* The whole kiosk board in one request — today + leaderboard + trophies. The three routes
+       below still exist and still answer: the 60-second ticker poll uses storetoday with a sinceTs
+       cursor and the 5-minute refresh uses storeleaderboard, and neither of those wants a bundle.
+       This is the MOUNT path — see getKioskAll_ for why a part that fails must not blank a board. */
+    if (params.action === 'kioskall') {
+      const kaStore = requireStore_(auth, params.store);
+      return jsonOut(getKioskAll_(kaStore, params), params.callback);
+    }
     if (params.action === 'storetoday') {
       const store    = requireStore_(auth, params.store);
       const todayRes = getStoreToday(store, params);
@@ -1626,7 +1634,10 @@ function bustKioskCache_(slug) {
   }
   cache.put(guard, '1', 10);   // one real bust per store per 10s
   try {
-    cache.removeAll(['storeToday:' + slug, 'storeLB:' + slug]);
+    // The trophies cache for ten minutes now (see STORE_BADGES_TTL_S). Leaving it out would make
+    // "Refresh now" a button that half works: a board whose trophy row looks wrong would keep
+    // looking wrong for up to ten minutes after somebody pressed the thing that exists to fix it.
+    cache.removeAll(['storeToday:' + slug, 'storeLB:' + slug, 'storeBadges:' + slug + ':week']);
   } catch (e) {
     Logger.log('[kioskbust] ' + slug + ' failed: ' + e);
     return { ok: false, error: 'Could not clear the cache: ' + (e && e.message || e) };
@@ -1655,7 +1666,8 @@ function bumpKioskRefresh_(slug) {
     var slugs = target === 'all' ? STORES.map(function (s) { return s.slug; }) : [target];
     busted = slugs.slice();
     cache.removeAll(slugs.map(function (s) { return 'storeToday:' + s; })
-             .concat(slugs.map(function (s) { return 'storeLB:' + s; })));
+             .concat(slugs.map(function (s) { return 'storeLB:' + s; }))
+             .concat(slugs.map(function (s) { return 'storeBadges:' + s + ':week'; })));
   } catch (e) { Logger.log('[kioskrefresh] cache bust failed: ' + e); }
 
   return {
