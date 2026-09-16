@@ -146,8 +146,14 @@ trailing initial locally. That is what let this ship WITHOUT a coordination wind
 right on either side of core-admin's data write, in either order. It goes inert the moment Core
 strips the repeat itself or the data is corrected; it is not load-bearing after that.
 
-Gated by `tests/short_name_test.js`, which asserts BOTH data states and was proven red against each
-of its four guards individually. `getNicknames_` is in `goals.gs`; the helpers are in `gx_roster.gs`.
+**One name per person, one place that decides it.** The ticker used to carry its own disambiguator,
+counting first names across a single store's roster, and once the card's name was derived suite-wide
+the two could only disagree: it added a period the card has not ("Zach R."), and where the twin does
+not work at that store it truncated back to "Nate" under a card reading "Nate S". It is gone;
+`makeTicker_` uses the name it was given.
+
+Gated by `tests/short_name_test.js`, which asserts BOTH data states, drives the real `getStoreToday`
+for the ticker, and was proven red against each guard individually. `getNicknames_` is in `goals.gs`; the helpers are in `gx_roster.gs`.
 
 ## Sync with the brain — run `/gxbrain` (or say "brain sync")
 

@@ -69,6 +69,11 @@ const APP_ROSTER = {
     { id: '901', name: 'Zachary Babcock',   initials: 'ZB' },
     { id: '902', name: 'Zachary Rodriguez', initials: 'ZR' },
   ],
+  // Nate S covers shifts at Century, where the other Nate never works. The old ticker counted
+  // first names per STORE, so his initial survived on the card here and vanished from the ticker.
+  century: [
+    { id: '903', name: 'Nathaniel Schneider', initials: 'NS' },
+  ],
   portland: [
     { id: '903', name: 'Nathaniel Schneider', initials: 'NS' },
     { id: '904', name: 'Robert Wydick',       initials: 'RW' },
@@ -89,8 +94,9 @@ const rosterProps = {
 };
 
 /** Load the shipped source with GX Core answering `rows`. */
-function app(rows) {
+function app(rows, extraExports) {
   return H.load(['gx_roster.gs', 'dutchie_proxy.gs', 'endpoints.gs', 'dutchie_fetch.gs', 'goals.gs', 'auth.gs', 'discounts.gs'], {
+    extraExports: extraExports || '',
     stubs: {
       PropertiesService: {
         getScriptProperties:   function () { return rosterProps; },
@@ -186,7 +192,64 @@ function test_casualNameStripsCoresTrailingInitial_() {
   _eq_('neither — the legal first name',   S.gxCasualNameOf_({ fullName: 'Casey Nguyen' }), 'Casey');
 }
 
+// ── The ticker and the staff card say the same thing ─────────────────────────────────────────────
+// They did not. The ticker carried its own disambiguator, counting first names across one store's
+// roster, and it rewrote a clash as "Zach R." — a period the card does not have — while on a day
+// only one Zach worked it truncated to plain "Zach". Same person, two names, one screen.
+function test_tickerSaysTheSameNameAsTheCard_() {
+  const S = app(ROWS_BEFORE,
+    '"setTxns": function (rows) { fetchStoreTransactions_ = function () { return rows; }; },' +
+    '"resetCaches": function () { _propsCache_ = null; _ppStartCache_ = null; _gxRosterMemo_ = null; }');
+
+  function txn(hour, total, id, name) {
+    const hh = String(hour).padStart(2, '0');
+    return {
+      transactionType: 'Retail',
+      transactionDateLocalTime: '2026-08-31T' + hh + ':30:00',
+      transactionDate:          '2026-08-31T' + hh + ':30:00',
+      total: total, totalBeforeTax: total, subtotal: total,
+      employeeId: id, employeeName: name,
+      itemsSold: [{ productName: 'Flower 1g', totalPrice: total, quantity: 1 }],
+    };
+  }
+
+  try {
+    H.setNow(Date.UTC(2026, 7, 31, 16 + 7, 0, 0));   // 4pm PDT
+    S.resetCaches();
+
+    // BOTH Zachs selling — the clash the old ticker code fired on.
+    S.setTxns([txn(11, 120, '901', 'Zachary Babcock'), txn(12, 140, '902', 'Zachary Rodriguez')]);
+    const both = S.getStoreToday({ slug: 'baseline', name: 'Baseline' }, {});
+    const whoBoth = (both.ticker || []).map(function (t) { return t.who; }).sort();
+    _eq_('no stray period, and both told apart', whoBoth, ['Zach B', 'Zach R']);
+
+    // ONE Zach selling. The card still reads "Zach R", so the ticker must too — the old code
+    // dropped the initial here, because nobody in THIS ticker clashed.
+    H.setNow(Date.UTC(2026, 7, 31, 16 + 7, 0, 0));
+    S.resetCaches();
+    S.setTxns([txn(12, 140, '902', 'Zachary Rodriguez')]);
+    const one = S.getStoreToday({ slug: 'baseline', name: 'Baseline' }, {});
+    const card = (one.onShift || []).filter(function (e) { return /Zach/.test(e.name); })[0];
+    _eq_('the ticker keeps the initial', (one.ticker || []).map(function (t) { return t.who; }), ['Zach R']);
+    _eq_('and the card agrees with it',  card && card.name, 'Zach R');
+
+    // The other half: a store where the twin does not work at all. The card says "Nate S" because
+    // the collision is a fact about the COMPANY; the old ticker said "Nate" because it was only
+    // ever a fact about this store.
+    H.setNow(Date.UTC(2026, 7, 31, 16 + 7, 0, 0));
+    S.resetCaches();
+    S.setTxns([txn(13, 90, '903', 'Nathaniel Schneider')]);
+    const away = S.getStoreToday({ slug: 'century', name: 'Century' }, {});
+    const awayCard = (away.onShift || []).filter(function (e) { return /Nate/.test(e.name); })[0];
+    _eq_('not truncated to "Nate"', (away.ticker || []).map(function (t) { return t.who; }), ['Nate S']);
+    _eq_('and the card agrees',     awayCard && awayCard.name, 'Nate S');
+  } finally {
+    H.setNow(null);
+  }
+}
+
 H.run('short_name', {
+  test_tickerSaysTheSameNameAsTheCard_,
   test_doubledTrailingInitialCollapses_,
   test_casualNameStripsCoresTrailingInitial_,
   test_boardReadsRight_beforeCoreClearsPreferredName_,

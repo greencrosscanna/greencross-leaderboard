@@ -63,17 +63,19 @@ fi
 #      SAME Script Property Core reads. Same key, same payload format, so a Core-minted token
 #      validates identically. inventory and sales do this.
 #
-# The one that CANNOT work is an app that signs with a DIFFERENT key. Its HMAC is computed over a
-# secret Core has never seen, so a Core-minted token fails its signature check no matter how valid
-# it is upstream. Only `performance` is in that position: greencross-leaderboard/dutchie_proxy.gs
-# reads GC_PERF_SESSION_SECRET, not GC_SESSION_SECRET — a different property, which every project
-# auto-generates independently, so the two values are unrelated by construction.
+# The one that CANNOT work is an app that signs with a DIFFERENT key and stops there. Its HMAC is
+# computed over a secret Core has never seen, so a Core-minted token fails its signature check no
+# matter how valid it is upstream. A different key is fine IF the app then falls back to asking Core
+# (way 1) when its own check fails — that is what `performance` does now, and the only reason it can
+# be on the list: greencross-leaderboard/dutchie_proxy.gs still reads GC_PERF_SESSION_SECRET, not
+# GC_SESSION_SECRET, and its auth.gs hands any token its own key rejects to GXCore.verifySession.
 #
-# THE FAILURE MODE IS WHY THIS REFUSES RATHER THAN WARNS. Installing the session still "works": the
-# app's PUBLIC routes answer, so a page paints and looks signed in, while every gated route quietly
-# returns "Invalid session". That is worse than not working — it is a screen you would report on.
-# Leaderboard measured it on 2026-09-09 (?action=storetoday -> {"ok":false,"error":"Invalid session"}
-# on all six stores) after this tool shipped claiming all seven apps.
+# THE FAILURE MODE IS WHY AN APP WITHOUT THAT FALLBACK IS REFUSED RATHER THAN WARNED. Installing the
+# session still "works": the app's PUBLIC routes answer, so a page paints and looks signed in, while
+# every gated route quietly returns "Invalid session". That is worse than not working — it is a
+# screen you would report on. Leaderboard measured it on 2026-09-09 (?action=storetoday ->
+# {"ok":false,"error":"Invalid session"} on all six stores) after this tool shipped claiming all
+# seven apps.
 #
 # ─── CORRECTED 2026-09-09: inventory and sales were refused on a premise that was never true. ───
 # This block used to say "three apps have their own signSession_ and their own secret". Three apps
@@ -97,27 +99,22 @@ fi
 #   sales        ?action=stores             -> {"stores":[...6 stores...]}     control -> Invalid session
 #   performance  ?action=storetoday&store=Bend -> Invalid session              control -> Invalid session
 #
-# performance is the only genuine refusal, and it is refused below for the reason that is actually
-# true. TO ADD IT: point it at GC_SESSION_SECRET (or at GXCore.verifySession) — a backend change in
-# greencross-leaderboard, not something this tool can work around. Its own auth.gs already publishes
-# a fingerprint route for comparing the two values without revealing either.
+# performance was then the only genuine refusal, and was refused for the reason that was actually true.
+#
+# ─── CORRECTED 2026-09-14: performance is supported. ────────────────────────────────────────────
+# Leaderboard v1.813 (engine @587) keeps its own key and, on a mismatch, asks GXCore.verifySession —
+# which re-checks the grant, not just the signature. Verified live by Leaderboard with a minted dev
+# session, forged token as the control:
+#
+#   performance  ?action=storetoday&store=river -> full kiosk payload          control -> Invalid session
+#                ?action=directorsummary        -> Insufficient permissions (a viewer is not a director)
+#                ?action=renew                  -> not_renewable (no trading 2 hours for a 7-day token)
+#
+# No app is refused today. The refusal branch is gone rather than left empty, and
+# tests/devlogin_supported_apps_test.js in the hub still requires any app that signs with its own
+# key AND has no Core fallback in its validator to be refused — so the next one gets caught.
 case "$APP" in
-  inventory|sales|pricecards|spiff|crew|core-admin) ;;     # a Core-minted token validates — measured
-  performance)
-    cat >&2 <<UNSUPPORTED
-gxdevlogin: performance signs sessions with its OWN key, so a GX Core token cannot work here.
-
-  greencross-leaderboard reads the Script Property GC_PERF_SESSION_SECRET; GX Core reads
-  GC_SESSION_SECRET. Different property, independently generated value — so this token fails its
-  signature check on every gated route, measured 2026-09-09 (?action=storetoday -> Invalid session).
-  The page would still paint from public routes and LOOK signed in, which is why this refuses
-  instead of printing a snippet.
-
-  Works today: inventory, sales, pricecards, spiff, crew, core-admin.
-  To change that, greencross-leaderboard has to sign with GC_SESSION_SECRET or validate through
-  GXCore.verifySession — a backend change in that repo, not something this tool can work around.
-UNSUPPORTED
-    exit 1 ;;
+  inventory|sales|pricecards|spiff|crew|core-admin|performance) ;;   # a Core-minted token validates — measured
   *) echo "gxdevlogin: unknown app '$APP' (inventory performance sales pricecards spiff crew core-admin)" >&2; exit 2 ;;
 esac
 
@@ -125,7 +122,7 @@ esac
 SECRET="$(cat .gx_deploy_secret)"
 
 # ─── where each app keeps its session ───────────────────────────────────────────────────────────
-# Read out of each app's own source, not invented here — inventory's LS.AUTH, sales' GC_SALES_AUTH,
+# Read out of each app's own source, not invented here — inventory's LS.AUTH, Leaderboard's GC.auth, sales' GC_SALES_AUTH,
 # Price Cards' PC_AUTH_KEY, spiff's session(), crew's TOKEN_KEY, Master Control's AUTH_KEY. They
 # genuinely differ, including WHICH storage: spiff and crew use sessionStorage on purpose (a
 # credentialed admin session on a machine that may not be the user's), and crew stores a bare token
@@ -144,6 +141,7 @@ case "$APP" in
   spiff)      STORE=sessionStorage; KEY=spiff_session ;;
   crew)       STORE=sessionStorage; KEY=gx_crew_token ;;   # plus gx_crew_user — handled below
   core-admin) STORE=localStorage;   KEY=gx_mc_auth ;;
+  performance) STORE=localStorage;  KEY=GC_PERF_SESSION ;; # GC.auth SESSION_KEY in index.html
 esac
 
 # ─── mint ───────────────────────────────────────────────────────────────────────────────────────
@@ -205,15 +203,33 @@ sess = {
     "displayName": r.get("displayName", ""), "expiresAt": r.get("expiresAt", ""),
     "canEdit": False, "devSession": True,
 }
-# Leaderboard names the store fields differently; harmless elsewhere, so it is not special-cased.
 sess["storeId"] = r.get("store", "")
 sess["store"]   = r.get("store", "")
 # Inventory'"'"'s client-side gate is `(Date.now() - ts) < GC_AUTH_TTL`, so a session with no `ts`
 # reads as NaN < TTL == false and the app shows its login screen while the token itself is perfectly
-# good — the same silent half-working state this tool refuses `performance` to avoid. Set for every
+# good — the same silent half-working state this tool refuses a divergent-key app to avoid. Set for every
 # app rather than special-cased: nothing else reads it, and the next app to adopt the field gets it.
 # It is the LOCAL freshness stamp, not the expiry; `expiresAt` above is what actually runs out.
 sess["ts"] = int(time.time() * 1000)
+
+if app == "performance":
+    # Leaderboard routes on ITS OWN role words. homeRoute() sends a role it does not recognize to
+    # #/director, which a viewer is refused — so `viewer` would land on an error screen that looks
+    # like a broken tool. Its backend maps viewer -> budtender (GX_ROLE_TO_LOCAL in auth.gs); the
+    # client has to say the same word. dev_session only ever issues viewer, so anything else is a
+    # contract change worth stopping on rather than guessing a mapping for.
+    if r["role"] != "viewer":
+        sys.stderr.write("gxdevlogin: expected a viewer session, got %r — refusing to guess a Leaderboard role\n" % r["role"])
+        sys.exit(1)
+    # A budtender with no storeSlug falls back to #/store/baseline. River is chosen instead because it
+    # is a real store name everywhere; "baseline" is the Leaderboard slug for Hillsboro, which is a trap.
+    # Change stores by editing the #/store/<slug> URL — the session does not pin you to one.
+    sess = {
+        "token": r["token"], "user": r["user"], "role": "budtender",
+        "storeSlug": "river", "storeName": "River",
+        "displayName": r.get("displayName", "Dev Viewer"), "initials": "DV",
+        "expiresAt": r.get("expiresAt", ""), "devSession": True,
+    }
 
 if app == "crew":
     # crew keeps a bare token string and a separate user string, not one JSON blob.

@@ -1310,27 +1310,19 @@ function getStoreToday(store, params) {
   const agg    = aggregateTransactions_(txns);
   const hourMap = aggregateByHour_(txns);
 
-  // First-name frequency map so ticker can show "Zachary B." vs "Zachary R."
-  // Use the full employee roster (all known staff at this store) so that
-  // an off-shift Zachary still triggers disambiguation for the on-shift one.
-  // Apply nicknames first so we disambiguate on display names, not raw Dutchie names.
+  // The ticker shows the SAME name as the staff card, with no second opinion.
+  //
+  // It used to keep its own disambiguator: count first names across THIS STORE's roster and, on a
+  // clash, rebuild the name as "Zach R." Once the card's name is derived suite-wide, that second
+  // opinion can only disagree with the first, and it did so two ways. It appended a period the card
+  // does not have, so one person read "Zach R" on their card and "Zach R." in the ticker. And with
+  // no clash at this store it returned parts[0] — TRUNCATING a name that already carried an initial,
+  // so Nate S covering a shift where the other Nate does not work had a card saying "Nate S" and a
+  // ticker saying "Nate".
+  //
+  // getNicknames_ already answers the question, and answers it better: it compares against the live
+  // roster suite-wide rather than against whoever happens to sell at one store.
   const _tickerNicks = getNicknames_();
-  const tickerFirstNames = Object.create(null);
-  const fullRoster = (getEmployeeRoster_()[store.slug] || []);
-  const rosterSource = fullRoster.length > 0 ? fullRoster : Object.values(agg.byEmployee);
-  rosterSource.forEach(emp => {
-    const displayName = applyNickname_(emp.name, _tickerNicks);
-    const fn = (displayName || '').split(' ')[0].toLowerCase();
-    tickerFirstNames[fn] = (tickerFirstNames[fn] || 0) + 1;
-  });
-  function disambiguateTicker_(name) {
-    const parts = (name || '').trim().split(/\s+/);
-    const fn    = (parts[0] || '').toLowerCase();
-    if ((tickerFirstNames[fn] || 0) > 1 && parts.length > 1) {
-      return parts[0] + ' ' + parts[parts.length - 1][0].toUpperCase() + '.';
-    }
-    return parts[0] || name;
-  }
 
   // Goal: use yesterday's DOW when pre-open so % reflects how yesterday did
   // vs yesterday's target. Pre-open DOW: (today.dow + 6) % 7 (e.g. Mon→Sun).
@@ -1494,7 +1486,7 @@ function getStoreToday(store, params) {
     const emp = txEmployee_(tx);
     const displayName = applyNickname_(emp.name, _tickerNicks);
     return {
-      who:    disambiguateTicker_(displayName),
+      who:    displayName,
       // Stable key so the kiosk can tie a sale to that person's card without name guessing
       whoKey: nameToKey_(emp.name),
       qty:    txItems_(tx),   // distinct SKUs — see txItems_ for cannabis UPT rationale
