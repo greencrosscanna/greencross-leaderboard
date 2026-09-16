@@ -24,6 +24,46 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"   # before any cd; $0 is usually rel
 cd "$SCRIPT_DIR"
 
 GXCORE="https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec"
+
+# ── Every GX Core call here retries the two-hop miss ────────────────────────────────────────────
+# GX Core's /exec is a TWO-HOP redirect and the second hop intermittently serves Google's "Page Not
+# Found" / "unable to open the file" HTML instead of our JSON. It is Google's delivery layer, not
+# doGet. The suite has known this for a while: gx-client.js retries it, gxpins.sh retries it, and
+# deploy.sh carries a long comment explaining why. This script had FIVE bare curls and retried none
+# of them, and a bare `curl -sL` fetches the HTML page happily and exits 0 — so the body shape is
+# the only tell there is.
+#
+# It cost two deploys on 2026-09-15/16, crew and inventory, both within an hour. Both times the
+# engine deployed correctly and the script then reported "core_pins does NOT show <sha> — the pin
+# was not recorded", each needing a manual --record-only. That is the exact shape that left four
+# spokes misrecorded on 2026-09-03: a deploy that worked, with a record that silently did not.
+#
+# WORSE, AND THE REAL REASON THIS IS A BUG RATHER THAN AN ANNOYANCE: the read-back that VERIFIES the
+# record was itself unretried. A miss there reports a failed write that actually succeeded, so the
+# tool built to turn a guess into an answer was handing back a guess — and pointing at the wrong one.
+#
+# WHY RETRYING THE RECORD WRITE IS SAFE, stated rather than assumed, the same test deploy.sh applies:
+# the miss is on the second hop, so the request reached Apps Script and the write MAY ALREADY HAVE
+# RUN. A retry re-runs it. record_pins upserts on `app`, so a replay rewrites the same row rather
+# than appending — which is also why --record-only is documented as safe to repeat. Do not copy this
+# onto a route without checking the same thing.
+gx_fetch() {   # gx_fetch <curl args...> -> body on stdout; empty only if every attempt missed
+  _tries=4
+  _n=1
+  while [ "$_n" -le "$_tries" ]; do
+    [ "$_n" -gt 1 ] && sleep "$((_n - 1))"          # linear backoff: 1s, 2s, 3s
+    _body="$(curl -sL --http1.1 "$@" 2>/dev/null || true)"
+    # A hit is JSON. The miss is Google's HTML page, which starts with '<' and arrives with a 200,
+    # so the status code is no help — never add -f here and expect it to catch this.
+    case "$_body" in
+      '{'*|'['*) printf '%s' "$_body"; return 0 ;;
+    esac
+    _n=$((_n + 1))
+  done
+  printf ''
+  return 1
+}
+
 APP="performance"
 DEPLOY=0; RECORD_ONLY=0
 for a in "$@"; do
@@ -157,7 +197,7 @@ echo "deployment : $TARGET @$CURVER  ($HOW)"
 # ── What is about to ship? ───────────────────────────────────────────────────────────────────────
 # The sha last recorded to core_pins is the only reliable answer to "what is running", because it was
 # written BY the deploy rather than inferred from a deployment description afterwards.
-LAST_SHA="$(curl -sL --max-time 15 "$GXCORE?action=core_pins" 2>/dev/null | python3 -c "
+LAST_SHA="$(gx_fetch --max-time 15 "$GXCORE?action=core_pins" | python3 -c "
 import json,sys
 try: pins=json.load(sys.stdin).get('pins',[])
 except Exception: pins=[]
@@ -209,7 +249,7 @@ fi
 # cfg.<app>ExecUrl, and inventing a second name for a key that exists is how pricecards/pricetags
 # broke the auth gate and the dev-server port on the same day. Check the established name first.
 for _k in "cfg.${APP}EngineUrl" "cfg.${APP}ExecUrl"; do
-EXEC_URL="$(curl -sL --max-time 12 "$GXCORE?action=config&key=$_k" 2>/dev/null | python3 -c "
+EXEC_URL="$(gx_fetch --max-time 12 "$GXCORE?action=config&key=$_k" | python3 -c "
 import json,sys
 try:
     d=json.load(sys.stdin); v=d.get('value') or ''
@@ -253,7 +293,7 @@ if [ -n "$EXEC_URL" ]; then
   for _ in $(seq 1 12); do
     READ=""
     for route in libversion health; do
-      READ="$(curl -sL --max-time 12 "$EXEC_URL?action=$route" 2>/dev/null | python3 -c "
+      READ="$(gx_fetch --max-time 12 "$EXEC_URL?action=$route" | python3 -c "
 import json,sys
 try: d=json.load(sys.stdin)
 except Exception: raise SystemExit
@@ -294,11 +334,11 @@ if [ -z "$LV" ]; then
     echo "  Recording the sha without it; run ./gxpins.sh --record in a minute or two."
   fi
 fi
-RESP="$(curl -sL --max-time 20 -G "$GXCORE" \
+RESP="$(gx_fetch --max-time 20 -G "$GXCORE" \
   --data-urlencode action=record_pins \
   --data-urlencode "secret=$(tr -d '\r\n' < "$SECRET_FILE")" \
   --data-urlencode "by=gxengine@$(hostname -s 2>/dev/null || echo local)" \
-  --data-urlencode "rows=$ROWS" 2>/dev/null)"
+  --data-urlencode "rows=$ROWS")"
 echo "recorded   : $RESP"
 
 # ── Did the record actually land? ───────────────────────────────────────────────────────────────
@@ -314,7 +354,7 @@ case "$RESP" in
   *'"ok":true'*) _pin_ok=1 ;;
   *)
     _pin_ok=0
-    _seen="$(curl -sL --max-time 20 "$GXCORE?action=core_pins" 2>/dev/null | python3 -c "
+    _seen="$(gx_fetch --max-time 20 "$GXCORE?action=core_pins" | python3 -c "
 import sys, json
 try:
     d = json.loads(sys.stdin.read(), strict=False)
