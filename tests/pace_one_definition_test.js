@@ -27,8 +27,13 @@ const fs = require('fs'), path = require('path'), vm = require('vm');
 const src = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const m = src.match(/\nGC\.PACE_RANGE = [\s\S]*?\nGC\.paceView = function[\s\S]*?\n\};\n/);
 if (!m) throw new Error('GC.paceView not found in index.html');
-const ctx = { Math: Math, GC: {} };
+const ctx = { Math: Math, Number: Number, isNaN: isNaN, GC: {} };
 vm.createContext(ctx);
+// paceView formats its own percentage through the shared signed-percent rule, so that one is the
+// real shipped function too — a stub here could print "−0%" while the board did not.
+const sp = src.match(/\nGC\.fmtSignedPct = function[\s\S]*?\n\};\n/);
+if (!sp) throw new Error('GC.fmtSignedPct not found in index.html');
+vm.runInContext(sp[0], ctx);
 vm.runInContext(m[0], ctx);
 const paceView = ctx.GC.paceView;
 
@@ -108,7 +113,10 @@ console.log('\nEdges');
 {
   ok('no goal → no projection, no divide by zero',
      paceView({ goal: 0, projectedRevenue: 2000, pace: 0.1 }).isProjected === false);
-  ok('empty payload does not throw', paceView().str === '+0%');
+  // Zero is zero: no payload means no pace, and a sign in front of it ("+0%", "−0%") is a number
+  // that cannot exist. Sky reported it off the director screen, 2026-09-16.
+  ok('empty payload does not throw, and reads 0% unsigned', paceView().str === '0%');
+  ok('a pace that rounds away loses its sign too', paceView({ pace: -0.004 }).str === '0%');
   ok('a wild projection clamps to the end stop',
      Math.abs(paceView({ goal: 1000, projectedRevenue: 9000 }).deg) === 90);
   ok('ahead of plan reads green',

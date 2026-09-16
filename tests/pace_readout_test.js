@@ -34,6 +34,8 @@ function grab(name) {
 // about the pace TEXT, not about currency formatting.
 const ctx = {
   Math: Math,
+  Number: Number,
+  isNaN: isNaN,
   e: (s) => String(s == null ? '' : s),
   GC: {
     fmtCurrency: (n) => '$' + Math.round(Number(n) || 0),
@@ -48,6 +50,9 @@ vm.createContext(ctx);
 // passing, which is the exact failure tests/_harness.js exists to forbid. Same for the ±80 scale:
 // it used to be a local DIR_PACE_RANGE this test supplied itself, so the test could not have
 // noticed the kiosk drawing the same number on a ±30 gauge.
+const signedPctSrc = src.match(/\nGC\.fmtSignedPct = function[\s\S]*?\n\};\n/);
+if (!signedPctSrc) throw new Error('GC.fmtSignedPct not found in index.html');
+vm.runInContext(signedPctSrc[0], ctx);
 const paceViewSrc = src.match(/\nGC\.PACE_RANGE = [\s\S]*?\nGC\.paceView = function[\s\S]*?\n\};\n/);
 if (!paceViewSrc) throw new Error('GC.paceView not found in index.html');
 vm.runInContext(paceViewSrc[0], ctx);

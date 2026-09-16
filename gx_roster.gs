@@ -325,12 +325,46 @@ function gxBelongsToStore_(emp, store) {
   return home === String((store && store.slug) || '').trim().toLowerCase();
 }
 
-/** nickname + surname, matching GX Core's own derivation, so one person reads the same everywhere. */
+/* nickname + surname, matching GX Core's own derivation, so one person reads the same everywhere.
+ *
+ * THE NICKNAME HERE IS THE CASUAL ONE, NOT THE DISAMBIGUATED ONE, and that is the whole point of
+ * the pairing. A disambiguator exists to tell two people apart on a surface that shows NO surname —
+ * a kiosk tile. Put it back next to the surname and it reads "Zach B Babcock", which is the initial
+ * answering a question the surname beside it has already answered. Sky, 2026-09-16.
+ *
+ * The disambiguator gets here through preferred_name, which is where it was smuggled in before a
+ * short form existed: Zachary Babcock's still says "Zach B" in GX Core today. gxWithSurname_ takes
+ * it back off, so this reads "Zach Babcock" on either side of core-admin's data cleanup — the same
+ * reason gxShortNameOf_ collapses the doubled initial.
+ *
+ * It deliberately does NOT go through gxCasualNameOf_ first. That was the first shape of this fix
+ * and it was redundant here: both names come off the SAME record, so a casual name stripped off
+ * short_name and a preferred_name stripped beside the surname can never disagree. Backing either
+ * one out on its own left every test green, which is the signal that one of them was decoration. */
 function gxDisplayNameOf_(rec) {
   if (!rec.preferredName) return rec.fullName;
   const parts = String(rec.fullName || '').split(/\s+/).filter(Boolean);
   const last = parts.length > 1 ? parts[parts.length - 1] : '';
-  return last ? (rec.preferredName + ' ' + last) : rec.preferredName;
+  return gxWithSurname_(rec.preferredName, last);
+}
+
+/* ONE definition of "nickname beside a surname". Used here and by the director's staff table, which
+ * pairs the same nickname with the surname DUTCHIE holds rather than the one GX Core holds — two
+ * callers, one rule, because they were allowed to differ and immediately did.
+ *
+ * It drops a trailing lone initial when that initial is the surname's own first letter. An older
+ * pinned library derives no short_name, so the casual name falls back to preferred_name with the
+ * old disambiguator still inside it ("Zach B"), and beside "Babcock" that B says nothing the
+ * surname has not already said. It fires on that one shape only, so a nickname that genuinely ends
+ * in a letter survives, and it goes inert the moment Core derives short_name for everyone. Same
+ * idea as gxShortNameOf_'s collapse, one surface along. */
+function gxWithSurname_(casual, last) {
+  let n = String(casual || '').trim();
+  const surname = String(last || '').trim();
+  if (!surname) return n;
+  const m = /^(.*\S)\s+([A-Za-z])\.?$/.exec(n);
+  if (m && m[2].toUpperCase() === surname.charAt(0).toUpperCase()) n = m[1];
+  return n ? (n + ' ' + surname) : surname;
 }
 
 /* COMPACT display: nickname + last initial, as GX Core derives it. "Zach B", "Nate S", "Sky P".

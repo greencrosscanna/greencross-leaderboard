@@ -73,6 +73,14 @@ function getNicknames_() {
 }
 
 
+/* A SECOND map of casual names used to live here, so the director's staff table could pair the
+ * plain nickname with the surname while the kiosk tile kept the disambiguated one. It is gone: the
+ * lookup is by DUTCHIE name, so a nickname is only ever found when the Dutchie surname matches the
+ * one GX Core holds — which means gxWithSurname_, taking the initial back off beside that surname,
+ * already covered every case the map did. Backing the map out left every test green, and a branch
+ * no test can fail is a branch nobody can trust. One rule, in gx_roster.gs. */
+
+
 /**
  * Returns which goal set is active for a store: whichever of rolling vs. YoY
  * produces the higher PP goal. Never lowers the bar.

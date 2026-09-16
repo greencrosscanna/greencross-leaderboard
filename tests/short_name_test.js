@@ -248,8 +248,86 @@ function test_tickerSaysTheSameNameAsTheCard_() {
   }
 }
 
+// ── The surname already told them apart ──────────────────────────────────────────────────────────
+// The kiosk tile has no surname, so it needs the initial. The director's staff table HAS one, and
+// pairing the initial with it reads "Zach B Babcock" — the disambiguator answering a question the
+// surname beside it has already answered. Sky filed exactly that on 2026-09-16, the day after the
+// tile fix shipped: "Zach B Babcock, should just be Zach Babcock".
+//
+// Driven through the REAL getDirectorStaff, with pre-aggregated sales standing in for Dutchie.
+// Asserting the helper alone would not have caught it: gxCasualNameOf_ was already correct that
+// day, and the bug was the caller reaching for the wrong one of the two maps.
+function test_directorTableShowsTheCasualNameWithTheSurname_() {
+  const S = app(ROWS_BEFORE);
+
+  function emp(id, name, initials, sales) {
+    return { id: id, name: name, initials: initials, sales: sales, transactions: 4, items: 8,
+             discounts: 0, discountsBdt: 0, subtotal: sales };
+  }
+  const pre = { byStoreAgg: { baseline: { byEmployee: {
+    zachary_babcock:   emp('901', 'Zachary Babcock',   'ZB', 900),
+    zachary_rodriguez: emp('902', 'Zachary Rodriguez', 'ZR', 800),
+    casey_nguyen:      emp('905', 'Casey Nguyen',      'CN', 700),
+    christopher_carney:emp('906', 'Christopher Carney','CC', 600),
+  } } } };
+
+  try {
+    H.setNow(Date.UTC(2026, 7, 31, 16 + 7, 0, 0));
+    const byName = {};
+    (S.getDirectorStaff({ period: 'mtd' }, pre).staff || []).forEach(function (s) {
+      byName[s.nameKey] = s;
+    });
+
+    _eq_('NOT "Zach B Babcock" — the bug as reported',
+         byName.zachary_babcock && byName.zachary_babcock.fullName, 'Zach Babcock');
+    _eq_('the other Zach, same rule',
+         byName.zachary_rodriguez && byName.zachary_rodriguez.fullName, 'Zach Rodriguez');
+    _eq_('a nickname with nobody to be confused with was never touched',
+         byName.christopher_carney && byName.christopher_carney.fullName, 'Chris Carney');
+    _eq_('no nickname at all still means the full Dutchie name',
+         byName.casey_nguyen && byName.casey_nguyen.fullName, 'Casey Nguyen');
+
+    // The other half of the same row is unchanged: the SHORT name still carries the initial,
+    // because that one is what the kiosk paints and it has no surname to lean on.
+    _eq_('the tile keeps its disambiguator',
+         byName.zachary_babcock && byName.zachary_babcock.name, 'Zach B');
+    _eq_('and so does the other one',
+         byName.zachary_rodriguez && byName.zachary_rodriguez.name, 'Zach R');
+  } finally {
+    H.setNow(null);
+  }
+}
+
+// Same assertion on the other side of core-admin's data write, for the same reason the tile fix
+// asserts both: the code change and the data change land at different times, and the screen has to
+// read right in the gap either way.
+//
+// Read the records out of the REAL roster build rather than hand-rolling one. shortName on a record
+// has already been through gxShortNameOf_, so a literal "Zach B B" here would be a state that never
+// reaches this function — a test that fails on an input production cannot produce.
+function test_directorNameReadsRight_onBothSidesOfCoresDataWrite_() {
+  function displayOf(rows, key) {
+    const S = app(rows);
+    const recs = S.gxAllRecs_();
+    const hit = Object.keys(recs).map(function (k) { return recs[k]; })
+      .filter(function (r) { return r.employeeId === key; })[0];
+    return hit && S.gxDisplayNameOf_(hit);
+  }
+
+  _eq_('today, with the initial still smuggled into preferred_name',
+       displayOf(ROWS_BEFORE, 'zachary_babcock'), 'Zach Babcock');
+  _eq_('after core-admin clears it back to plain "Zach"',
+       displayOf(ROWS_AFTER,  'zachary_babcock'), 'Zach Babcock');
+  _eq_('an older pinned library that derives no short_name at all',
+       displayOf(ROWS_NO_SHORT, 'zachary_babcock'), 'Zach Babcock');
+  _eq_('no nickname — the legal name, untouched',
+       displayOf(ROWS_BEFORE, 'casey_nguyen'), 'Casey Nguyen');
+}
+
 H.run('short_name', {
   test_tickerSaysTheSameNameAsTheCard_,
+  test_directorTableShowsTheCasualNameWithTheSurname_,
+  test_directorNameReadsRight_onBothSidesOfCoresDataWrite_,
   test_doubledTrailingInitialCollapses_,
   test_casualNameStripsCoresTrailingInitial_,
   test_boardReadsRight_beforeCoreClearsPreferredName_,

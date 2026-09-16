@@ -3820,7 +3820,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      slideshow bar at 9999, so nothing here contests it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.860';
+window.GC = window.GC || {}; GC.VERSION = 'v1.862';
 
 // ── GX Core web-app URL — ONE definition ──
 // This was previously a `var` inside loadChangelogFromGXCore(), i.e. function-scoped, while the
@@ -4751,6 +4751,30 @@ GC.fmtPct = function(n, decimals) {
   return (n * 100).toFixed(d) + '%';
 };
 
+/** ══ ONE definition of "a signed percentage" ═══════════════════════════════════════════════════
+ *  0.031 → "+3%" · -0.031 → "−3%" · -0.004 → "0%" (NOT "−0%").
+ *
+ *  THE RULE: the sign is decided by the number we are about to PRINT, not by the raw one. Every
+ *  readout on the board rounds — most to whole percent, the store table to one decimal — and a
+ *  value that survives `< 0` but rounds away leaves a minus sign in front of a zero. "-0%" is not
+ *  a quantity; there is no amount of below-zero that displays as zero. Sky, 2026-09-16: "how can a
+ *  number be +0% or -0%, shouldn't it just be 0%".
+ *
+ *  It was six hand-rolled copies of `(p >= 0 ? '+' : '−') + Math.abs(...)` — the store table's vs.
+ *  plan column, the director and kiosk pace gauges, the sparkline badge, the historical store
+ *  cards and the Sky wall. Each one could print a signed zero at its own threshold, so fixing the
+ *  panel in the screenshot would have left the other five. They all come through here now.
+ *
+ *  @param {number} frac      the value as a FRACTION (0.031 = 3.1%), not as percent-points
+ *  @param {number} [decimals=0]  digits after the point, matching what that surface shows
+ */
+GC.fmtSignedPct = function(frac, decimals) {
+  if (frac == null || isNaN(frac)) return '';
+  const abs = Math.abs(frac * 100).toFixed(decimals != null ? decimals : 0);
+  if (Number(abs) === 0) return abs + '%';          // rounds to zero → unsigned, at that precision
+  return (frac > 0 ? '+' : '−') + abs + '%';
+};
+
 /** 8247 → "8,247" */
 GC.fmtNum = function(n) {
   if (n == null || isNaN(n)) return '—';
@@ -4781,13 +4805,33 @@ GC.fmtDeltaCurrency = function(n) {
   return '—';
 };
 
-/** 14 → "▲ +14" | -14 → "▼ −14" */
+/** 14 → "▲ +14" | -14 → "▼ −14"
+ *  Judged on the ROUNDED value, not the raw one: fmtNum rounds to whole units, so a Sales/Hour
+ *  delta of -$0.30 used to pass `n < 0` and then print "▼ −$0". Same rule as GC.fmtSignedPct. */
 GC.fmtDeltaNum = function(n, prefix) {
   if (n == null || isNaN(n)) return '';
   const pre = prefix || '';
-  if (n > 0)  return '▲ +' + pre + GC.fmtNum(n);
-  if (n < 0)  return '▼ −' + pre + GC.fmtNum(Math.abs(n));
+  const r = Math.round(n);
+  if (r > 0)  return '▲ +' + pre + GC.fmtNum(r);
+  if (r < 0)  return '▼ −' + pre + GC.fmtNum(Math.abs(r));
   return '—';
+};
+
+/** 0.3 → "▲ +0.3" | -0.3 → "▼ −0.3" | 0.04 → "—" (rounds away at one decimal) */
+GC.fmtDeltaDecimal = function(n, places) {
+  if (n == null || isNaN(n)) return '';
+  const p = places != null ? places : 1;
+  const abs = Math.abs(n).toFixed(p);
+  if (Number(abs) === 0) return '—';
+  return (n > 0 ? '▲ +' : '▼ −') + abs;
+};
+
+/** 0.004 → "▲ +0.4 pts" | -0.004 → "▼ −0.4 pts" — a percentage-POINT gap, not a ratio. */
+GC.fmtDeltaPts = function(n) {
+  if (n == null || isNaN(n)) return '';
+  const abs = Math.abs(n * 100).toFixed(1);
+  if (Number(abs) === 0) return '—';
+  return (n > 0 ? '▲ +' : '▼ −') + abs + ' pts';
 };
 
 // ── Threshold Classifiers ─────────────────────────────────
@@ -4850,8 +4894,7 @@ GC.sparklineCell = function(trend30d, trendPct) {
     return x + ',' + y;
   }).join(' ');
   var stroke = (trendPct == null || trendPct >= 0) ? 'var(--green)' : 'var(--red)';
-  var sign   = (trendPct > 0) ? '+' : '';
-  var pctStr = (trendPct != null) ? (sign + Math.round(trendPct * 100) + '%') : '';
+  var pctStr = GC.fmtSignedPct(trendPct);
   var cls    = (trendPct == null || trendPct >= 0) ? 'up' : 'down';
   return '<span class="sparkline-cell">'
     + '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">'
@@ -4895,16 +4938,16 @@ GC.renderKpiBlock = function(summary, periodLabel) {
     + bigKpi('Avg Order Value',      GC.fmtCurrency(summary.avgOrderValue), GC.fmtDeltaCurrency(d.avgOrderValue), 'v-green')
     + '</div>';
 
-  var discDelta = d.discountRatePts
-    ? '▲ +' + (d.discountRatePts * 100).toFixed(1) + ' pts'
-    : '';
+  // These three used to hardcode "▲ +" and then print the raw number, so a period that discounted
+  // LESS than the last one read "▲ +-$412" — an up arrow, a plus sign and a minus, on a decline.
+  var discDelta = GC.fmtDeltaPts(d.discountRatePts);
   var flagSub  = summary.flaggedStaffBreakdown
     ? summary.flaggedStaffBreakdown.repeat + ' repeat · ' + summary.flaggedStaffBreakdown.new + ' new'
     : '';
 
   var smallRow = '<div class="kpi-row small">'
-    + smallKpi('Avg UPT',         GC.fmtDecimal(summary.avgUPT),         '▲ +' + GC.fmtDecimal(d.avgUPT))
-    + smallKpi('Total Discounts', GC.fmtCurrencyFull(summary.totalDiscounts), '▲ +' + GC.fmtCurrency(d.totalDiscounts), 'v-amber')
+    + smallKpi('Avg UPT',         GC.fmtDecimal(summary.avgUPT),         GC.fmtDeltaDecimal(d.avgUPT))
+    + smallKpi('Total Discounts', GC.fmtCurrencyFull(summary.totalDiscounts), GC.fmtDeltaCurrency(d.totalDiscounts), 'v-amber')
     + smallKpi('Discount Rate',   GC.fmtPct(summary.discountRate),        discDelta, 'v-amber')
     + smallKpi('Flagged Staff',   String(summary.flaggedStaff),            flagSub, 'v-red')
     + smallKpi('Active Staff',    String(summary.activeStaff),
@@ -4983,7 +5026,7 @@ GC.paceView = function(today) {
     deg:         deg,
     zone:        zone,
     zoneColor:   zone === 'red' ? 'var(--red)' : zone === 'green' ? 'var(--green)' : 'var(--amber)',
-    str:         (pct >= 0 ? '+' : '\u2212') + Math.abs(Math.round(pct * 100)) + '%',
+    str:         GC.fmtSignedPct(pct),
     title:       isProjected ? 'Projected \u00b7 vs. Plan' : 'Pace \u00b7 vs. Plan',
     sub:         isProjected
       ? (zone === 'red' ? 'Proj. behind plan' : zone === 'green' ? 'Proj. ahead of plan' : 'Proj. near plan')
@@ -6304,7 +6347,7 @@ var director = (function() {
   function vsPlanHtml(vsplan) {
     var cls   = vsplan >= 0.005 ? 'up' : vsplan <= -0.005 ? 'down' : 'flat';
     var arrow = vsplan >= 0.005 ? '▲' : vsplan <= -0.005 ? '▼' : '';
-    var pct   = (vsplan >= 0 ? '+' : '−') + Math.abs(vsplan * 100).toFixed(1) + '%';
+    var pct   = GC.fmtSignedPct(vsplan, 1);
     return '<span class="vs-plan ' + cls + '">'
       + (arrow ? '<span class="vp-arrow">' + arrow + '</span>' : '')
       + e(pct) + '</span>';
@@ -7808,7 +7851,7 @@ var director = (function() {
     return '<div class="hist-store-grid">'
       + histStores.map(function(st) {
           var pace    = st.goal > 0 ? (st.revenue - st.goal) / st.goal : 0;
-          var paceStr = (pace >= 0 ? '+' : '−') + Math.abs(Math.round(pace * 100)) + '%';
+          var paceStr = GC.fmtSignedPct(pace);
           var paceCls = pace >= 0.005 ? 'up' : pace <= -0.005 ? 'down' : 'flat';
           var store   = GC.STORES[st.slug] || {};
           return '<div class="hist-store-card">'
@@ -8149,7 +8192,7 @@ var sky = (function() {
   var _goal = 0, _projected = 0, _pace = 0, _dayFrac = 0, _chainShape = null;
 
   function e(s) { return GC.esc(String(s == null ? '' : s)); }
-  function paceLabel(p) { return (p > 0 ? '+' : '') + Math.round((p || 0) * 100) + '%'; }
+  function paceLabel(p) { return GC.fmtSignedPct(p || 0); }
   // Pace band for the Sky wall: GREEN whenever at/above pace (the same condition
   // that triggers the glow), otherwise amber/red by how far behind — so the bar,
   // chevron, % and header badge always agree.
@@ -8514,7 +8557,10 @@ var standingsMobileView = (function() {
     var rows = c.stores.map(function(s) {
       var fill = Math.max(1, Math.min(100, s.pctGoal * 100));
       var mark = Math.max(0, Math.min(100, s.ef * 100));
-      var sign = s.delta >= 0 ? '+' : '−';
+      // Sign off the ROUNDED dollars: mk() rounds to whole dollars, so a delta of -$0.40 would
+      // otherwise print "−$0". Same rule as GC.fmtSignedPct.
+      var _d   = Math.round(s.delta || 0);
+      var sign = _d > 0 ? '+' : _d < 0 ? '−' : '';
       return '<div class="stnm-row ' + s.status + '">'
         + '<div class="stnm-nm">' + e(s.name) + '</div>'
         + '<div class="stnm-rt ' + s.status + '">' + pct0(s.pace) + ' pace</div>'
@@ -8609,7 +8655,8 @@ var standingsView = (function() {
 
     var rows = c.stores.map(function(s, i) {
       var deltaCls = s.status === 'on' ? 'up' : (s.status === 'slight' ? 'flat' : 'down');
-      var sign     = s.delta >= 0 ? '+' : '−';
+      var _d       = Math.round(s.delta || 0);
+      var sign     = _d > 0 ? '+' : _d < 0 ? '−' : '';   // never "−$0" — see mk() above
       var fillW    = Math.max(1, Math.min(100, s.pctGoal * 100));
       return '<div class="stn-row' + (s.status === 'on' ? ' lead' : '') + '">'
         + '<div class="stn-rank">' + (i + 1) + '</div>'
@@ -9044,10 +9091,7 @@ var kiosk = (function() {
     return '$' + Math.round(n).toLocaleString();
   }
 
-  function fmtPace(pace) {
-    var sign = pace >= 0 ? '+' : '−';
-    return sign + Math.abs(Math.round(pace * 100)) + '%';
-  }
+  function fmtPace(pace) { return GC.fmtSignedPct(pace); }
 
   // ── Render: Loading ────────────────────────────────────
   function renderLoading(slug) {

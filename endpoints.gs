@@ -783,7 +783,7 @@ function getDirectorStaff(params, pre) {
     if (_nk) {
       var _parts = s.name.trim().split(/\s+/);
       var _last  = _parts.length > 1 ? _parts[_parts.length - 1] : '';   // surname = last token
-      s.fullName = _last ? _nk + ' ' + _last : _nk;                       // "Nickname Lastname"
+      s.fullName = gxWithSurname_(_nk, _last);                            // "Nickname Lastname"
     } else {
       s.fullName = s.name;   // full Dutchie name
     }
