@@ -123,9 +123,11 @@ const tests = {
     const h = panel([]);
     _ok_('the headline', h.indexOf('Nothing running right now') > -1);
     _ok_('names the store in the body', h.indexOf('The next SPIFF at Baseline shows up here') > -1);
-    /* The handoff's "last one" chip needs the last finished program, which the publication does
-       not carry. Its own instruction is to drop the chip rather than fake it client-side. */
-    _ok_('and invents no last program', h.indexOf('Last one') === -1 && h.indexOf('LAST') === -1);
+    /* NO "LAST ONE" CHIP — Sky's call on 2026-09-17 ("no, we don't need the last one option"), not
+       a missing field. SPIFF publishes `last_programs` on every scope now, so this guard is the
+       only thing standing between a future session and building a screen he declined. The headline
+       and two lines are the whole state: there is nothing to chase today. */
+    _ok_('and shows no last program', h.indexOf('Last one') === -1 && h.indexOf('LAST') === -1);
   },
 
   /* NO PAGE-LEVEL STORE NAME AND NO PROGRAM COUNT. The popup's own bar already says SPIFF and

@@ -4703,9 +4703,18 @@ GC.spiffPanel = function(programs, opts) {
   }
   /* "Nothing running" is a real screen, not a dead one. It is also NOT the same as a failed read —
      telling the floor there is no SPIFF when we simply could not reach the numbers sends them
-     looking in the wrong place. The handoff's "last one" chip is deliberately not drawn: it needs
-     the last finished program from SPIFF, which the publication does not carry, and the README's
-     own instruction is to drop the chip rather than fake it client-side. */
+     looking in the wrong place.
+   *
+   * THE HANDOFF'S "LAST ONE" CHIP IS NOT DRAWN, AND THAT IS SKY'S DECISION (2026-09-17), NOT A
+   * MISSING FIELD. "no, we don't need the last one option." Two lines and a headline is the whole
+   * screen: it says what a budtender needs, which is that there is nothing to chase today.
+   *
+   * The distinction matters because the OLD reason here is now false and pointed the other way.
+   * This comment used to say the chip could not be drawn because SPIFF's publication did not carry
+   * the last finished program — true when it was written, and SPIFF shipped `last_programs` onto
+   * every published scope hours later specifically so we could. So a future session reading the old
+   * note would find the blocker gone and "finish" a screen nobody asked for. The field is available;
+   * we are choosing not to use it. Do not add the chip without asking him again. */
   if (!list.length) {
     return '<div class="ksp-card ksp-none"><b>Nothing running right now</b>'
       + '<span>The next SPIFF at ' + store + ' shows up here on its own. Nothing to do but sell.</span></div>';
