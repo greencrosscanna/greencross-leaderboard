@@ -178,6 +178,13 @@ const tests = {
                                measuredAt: '2026-09-09 21:56:08',
                                tips: ['Lead with the live resin', 'Pair it with a pre-roll'] })]);
     _ok_('product', full.indexOf('Live Resin Dank Tank | 2g') > -1);
+    /* SELL SHARES A LINE WITH THE PROGRAM NAME (Sky, 2026-09-17). It had its own full-width row,
+       and on a real kiosk that row cost exactly the height Tawny's tips needed — on a wall screen
+       nobody scrolls, so below the fold is gone, not merely further down. Asserting the STRUCTURE
+       rather than the pixels: the well is inside .ksp-top with the name, above the status row. */
+    _ok_('the well is beside the name, not under it',
+         /<div class="ksp-top"><div class="ksp-name">[^<]*<\/div><div class="ksp-sell">/.test(full));
+    _ok_('and the status row comes after both', full.indexOf('ksp-top') < full.indexOf('ksp-tags'));
     _ok_('store goal, as the board\'s own track', full.indexOf('7 of 42 units') > -1);
     _ok_('tips as a list', /<ul class="ksp-tips"><li><span>Lead with the live resin<\/span><\/li><li><span>Pair it with a pre-roll<\/span><\/li><\/ul>/.test(full));
     _ok_('and still no stamp even when SPIFF published one', full.indexOf('as of') === -1);
@@ -311,6 +318,31 @@ const tests = {
     _ok_('a slug that is not a slug is refused outright', bad.indexOf('</style>') === -1);
     _ok_('and falls back rather than composing a broken var',
       bad.indexOf('background:var(--green)') > -1);
+  },
+
+  /* THE POPUP MUST NOT GO BACK TO A FIXED HEIGHT. This one is a grep, and a grep is weak evidence
+     on its own — node has no layout, so there is no way here to assert what actually fits. It is
+     narrow on purpose: it catches the exact regression that produced the bug, which is `.kso-win`
+     being given a `height` that ignores its content. That fixed 880px was wrong in both directions
+     at once — Tawny's tips fell off a six-person board, and a short program left a slab of empty
+     card under them. The real check is the measurement in the commit; this stops the CSS silently
+     reverting under it. */
+  theWindowSizesToItsContent() {
+    const found = src.match(/\.kso-win \{[\s\S]*?\n\}/);
+    _ok_('found the popup window rule', !!found);
+    /* Comments out first, or the guard reads the prose ABOVE the rule as the rule — the paragraph
+       there quotes the old `height:min(880px,88vh)` by name to explain why it went, and the first
+       version of this test failed on its own documentation. */
+    const win = found[0].replace(/\/\*[\s\S]*?\*\//g, '');
+    _ok_('height is auto, not a fixed slab', /height:\s*auto/.test(win));
+    _ok_('with a ceiling so it cannot outgrow the screen', /max-height:\s*min\(/.test(win));
+    // The boundary matters: "max-height: min(...)" contains "height: min(...)" as a substring, so
+    // an unanchored form would flag the ceiling we deliberately want.
+    _ok_('and no leftover fixed height', !/(^|[^-])height:\s*min\(/m.test(win));
+    /* The frame has no intrinsic height, so an auto-height window would collapse to its title bar
+       if the fallback branch ever woke up. */
+    _ok_('the iframe fallback still forces a tall card',
+         /\.kso-frame \{[^}]*min-height:/.test(src));
   },
 
   namesAreEscaped() {

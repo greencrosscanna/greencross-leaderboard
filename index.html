@@ -1450,7 +1450,16 @@ body.kiosk-bg {
   display: flex;
   flex-direction: column;
   width: min(1180px, 92vw);
-  height: min(880px, 88vh);
+  /* THE CARD HUGS ITS CONTENT NOW, up to a ceiling. It used to be a FIXED height:min(880px,88vh),
+     which got it wrong in both directions at once: the board's own tips fell off the bottom on a
+     six-person store, and every shorter program left a slab of empty card under the tips. Auto
+     height with a max means a small program draws a small card and a big one grows into the room
+     880px was not using — ~200px of a 1080p wall screen. Tightening the spacing alone made
+     Portland's six-person board fit with nothing to spare; a seventh budtender would have put the
+     tips straight back under the edge. There is now room for four more people before anything
+     scrolls, and nothing scrolls at all below that. */
+  height: auto;
+  max-height: min(1000px, 92vh);
   background: var(--bg);
   border: 1px solid var(--gold-line);
   border-radius: 14px;
@@ -1490,7 +1499,11 @@ body.kiosk-bg {
   letter-spacing: 0.5px;
 }
 .kso-close:hover { background: var(--surface-2); }
-.kso-frame { flex: 1; width: 100%; border: 0; background: var(--bg); }
+/* min-height, because the window is height:auto now: an iframe has no intrinsic content height to
+   hug, so the fallback path would otherwise collapse the card to its title bar. Only reachable if
+   the frame branch is ever taken again — but a dead branch that breaks the layout when it wakes up
+   is worse than one that just sits there. */
+.kso-frame { flex: 1; width: 100%; min-height: min(880px, 82vh); border: 0; background: var(--bg); }
 
 /* ── SPIFF panel: what the button opens (Sky picked "built into Leaderboard", 2026-09-10) ──
    Same bar language as the SPIFF row on each staff card (gold = hit, a hash left of the end =
@@ -1503,7 +1516,7 @@ body.kiosk-bg {
 /* flex:1 on the context line pushes the countdown and Close to the right — an auto margin on a
    sibling would hinge on which of them is present. */
 .kso-ctx  { flex: 1; color: var(--text-dim); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.kso-body { flex: 1; overflow: auto; padding: 18px 22px 24px; display: flex; flex-direction: column; gap: 14px; }
+.kso-body { flex: 1; overflow: auto; padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 10px; }
 .kso-body[hidden], .kso-frame[hidden] { display: none; }
 /* ── The SPIFF panel: SPIFF's kiosk-board design, drawn here ────────────────────────────────
    Sky decided on 2026-09-16 that Leaderboard ADOPTS SPIFF's redesigned kiosk board in its own
@@ -1526,15 +1539,25 @@ body.kiosk-bg {
    --surface #121715, --border #232a27, --text #e6ece9, --text-dim #8a958f, --text-mute #5e6864,
    --surface-3 #1a221f, --green #4ade80, --green-soft, --gold #d4a847. The two that did not exist
    here, --green-bright and --green-deep, were added beside them. */
-.ksp-progs { display: flex; flex-direction: column; gap: 12px; }
-.ksp-prog-set { display: flex; flex-direction: column; gap: 12px; }
+/* THE WHOLE BOARD HAS TO FIT WITHOUT SCROLLING (Sky, 2026-09-17: "we need to consolidate the
+   spacing a bit so it all fits inside the window"). A kiosk is a wall screen with no chrome and
+   nobody standing at it, so anything below the fold is not "further down", it is GONE — and what
+   fell off was Tawny's selling tips, which is the one block on here that tells somebody what to
+   do. The handoff's spacing rhythm is kept, just one step down it (12→10, 16→14, 18→14, 46→42);
+   the TYPE is untouched, because the sizes are what make it readable from across the room. */
+.ksp-progs { display: flex; flex-direction: column; gap: 10px; }
+.ksp-prog-set { display: flex; flex-direction: column; gap: 10px; }
 .ksp-card {
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
 }
-.ksp-prog { padding: 18px 20px 20px; }
+.ksp-prog { padding: 14px 18px 16px; }
 .ksp-vendor { font-size: 10px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--text-mute); font-weight: 700; }
-.ksp-name   { font-size: 30px; font-weight: 900; letter-spacing: -0.5px; line-height: 1.12; margin-top: 5px; }
-.ksp-tags   { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
+/* The name and the SELL well share a line. `baseline` would hang the well off the name's baseline
+   and leave a gap under it, so they are centered against each other; the name takes the space it
+   needs and the well shrinks, then wraps to its own line before either is squeezed. */
+.ksp-top    { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 18px; margin-top: 3px; }
+.ksp-name   { font-size: 30px; font-weight: 900; letter-spacing: -0.5px; line-height: 1.12; }
+.ksp-tags   { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; }
 /* Green, not gold: "running" is a state, and gold on this panel means the clock. */
 .ksp-pill   {
   border: 1px solid rgba(74, 222, 128, 0.3); background: rgba(74, 222, 128, 0.12);
@@ -1542,18 +1565,22 @@ body.kiosk-bg {
   color: var(--green-bright); font-size: 10px; font-weight: 700; letter-spacing: 1.1px;
 }
 .ksp-when   { color: var(--text-dim); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+/* No margin-top: it is a column of .ksp-top now, not a row of its own. min-width:0 is what lets it
+   actually shrink inside the flex row rather than forcing an overflow, and the wrap keeps a long
+   product name whole on two lines instead of clipping it. */
 .ksp-sell   {
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-top: 16px;
-  background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px;
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;
+  min-width: 0; flex: 0 1 auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 9px 13px;
 }
 .ksp-sell-k { font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-mute); font-weight: 700; }
 .ksp-sell-v { font-size: 15px; font-weight: 600; }
 /* Three figures, and they stay three across the popup's width until there is genuinely no room —
    auto-fit would drop one to its own row the moment a 40px number grew a digit. */
-.ksp-figs   { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
-.ksp-fig    { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 15px 16px 14px; }
+.ksp-figs   { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.ksp-fig    { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 11px 14px 10px; }
 .ksp-fig b    { display: block; font-size: 40px; font-weight: 900; line-height: 1; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
-.ksp-fig span { display: block; font-size: 12px; line-height: 1.35; color: var(--text-dim); margin-top: 7px; }
+.ksp-fig span { display: block; font-size: 12px; line-height: 1.3; color: var(--text-dim); margin-top: 5px; }
 /* The payout is the only colored figure — it is the reason to read the rest. */
 .ksp-fig.pays   { border-color: rgba(74, 222, 128, 0.32); }
 .ksp-fig.pays b { color: var(--green); }
@@ -1561,14 +1588,14 @@ body.kiosk-bg {
 .ksp-fig.soon b { color: var(--gold); }
 
 /* ── The board: the centerpiece, not a footnote under the figures ── */
-.ksp-board  { padding: 16px 20px 18px; }
+.ksp-board  { padding: 13px 18px 14px; }
 .ksp-bhead  { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px; }
 .ksp-btitle { font-size: 17px; font-weight: 800; letter-spacing: -0.2px; }
 .ksp-bcount { font-size: 12.5px; font-weight: 700; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .ksp-bcount.any { color: var(--green-bright); }
 .ksp-store  {
-  display: flex; align-items: center; gap: 10px; margin-top: 12px;
-  padding-bottom: 14px; border-bottom: 1px solid var(--surface-2);
+  display: flex; align-items: center; gap: 10px; margin-top: 9px;
+  padding-bottom: 10px; border-bottom: 1px solid var(--surface-2);
 }
 .ksp-store-k { font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-mute); font-weight: 700; }
 .ksp-store-track {
@@ -1586,7 +1613,7 @@ body.kiosk-bg {
 .ksp-people { margin-top: 4px; }
 .ksp-row    {
   display: grid; grid-template-columns: 26px minmax(0, 1fr) minmax(52px, 1.5fr) 64px;
-  gap: 12px; align-items: center; min-height: 46px;
+  gap: 12px; align-items: center; min-height: 42px;
   padding: 0 10px; margin: 0 -10px; border-radius: 7px;
 }
 .ksp-row.hit { background: var(--green-soft); }
@@ -1619,13 +1646,15 @@ body.kiosk-bg {
 .ksp-nobar  { display: block; }
 
 /* ── Tips ── */
-.ksp-tipcard { padding: 16px 20px 18px; }
+.ksp-tipcard { padding: 13px 18px 14px; }
 .ksp-tiphead { font-size: 10px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--text-mute); font-weight: 700; }
-.ksp-tips   { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 11px; counter-reset: ksptip; }
-.ksp-tips li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 15px; line-height: 1.55; }
+.ksp-tips   { list-style: none; margin: 9px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; counter-reset: ksptip; }
+/* 15px and 1.45 is the floor here: these are full sentences somebody reads to learn how to sell
+   the thing, so the tips keep body size even when the spacing comes in around them. */
+.ksp-tips li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 15px; line-height: 1.45; }
 .ksp-tips li::before {
   counter-increment: ksptip; content: counter(ksptip);
-  font-size: 11px; font-weight: 800; line-height: 1.55; color: var(--green);
+  font-size: 11px; font-weight: 800; line-height: 1.45; color: var(--green);
 }
 
 /* ── Nothing running, and the unavailable case that must not be mistaken for it ── */
@@ -4779,14 +4808,20 @@ GC.spiffPanel = function(programs, opts) {
     return '<div class="ksp-prog-set">'
       + '<article class="ksp-card ksp-prog">'
       +   '<div class="ksp-vendor">' + esc(p.vendor) + '</div>'
-      +   '<div class="ksp-name">' + esc(p.name || p.vendor) + '</div>'
+      /* SELL SITS BESIDE THE PROGRAM NAME, not under it (Sky, 2026-09-17). It had its own full-width
+         row, and on a real kiosk that row was the difference between Tawny's tips fitting on the
+         screen and being below the fold — on a wall nobody scrolls, below the fold is gone. The
+         name never gives up width to it: .ksp-top wraps the well onto its own line instead. */
+      +   '<div class="ksp-top">'
+      +     '<div class="ksp-name">' + esc(p.name || p.vendor) + '</div>'
+      +     (p.product
+              ? '<div class="ksp-sell"><span class="ksp-sell-k">SELL</span>'
+                + '<span class="ksp-sell-v">' + esc(p.product) + '</span></div>'
+              : '')
+      +   '</div>'
       +   '<div class="ksp-tags"><span class="ksp-pill">RUNNING NOW</span>'
       +     (dates ? '<span class="ksp-when">' + dates + '</span>' : '')
       +   '</div>'
-      +   (p.product
-            ? '<div class="ksp-sell"><span class="ksp-sell-k">SELL</span>'
-              + '<span class="ksp-sell-v">' + esc(p.product) + '</span></div>'
-            : '')
       +   '<div class="ksp-figs">'
       +     (pay !== null
               ? '<div class="ksp-fig pays"><b>' + money(pay) + '</b><span>'
