@@ -196,11 +196,15 @@ const tests = {
 
     const h = panel(joined);
     _ok_('the product is on the card', h.indexOf('Live Resin Dank Tank | 2g') > -1);
-    _ok_('the store target too', h.indexOf('Store target: <b>18</b> units') > -1);
-    _ok_('the payout, as a threshold', h.indexOf('<b>$25</b><span>when you hit it') > -1);
+    _ok_('the store target too, now as the board\'s own track', h.indexOf('of 18 units</span>') > -1);
+    _ok_('the payout, as a threshold', h.indexOf('<b>$25</b><span>when you hit your goal') > -1);
     _ok_('the personal target', h.indexOf('<b>3</b><span>units to hit your bonus') > -1);
     _ok_('the tips as a list', h.indexOf('<ul class="ksp-tips">') > -1);
-    _ok_('and the measurement time, in words', h.indexOf('as of 10:56pm') > -1);
+    /* The "as of" stamp is deliberately GONE from this screen (SPIFF's kiosk-board handoff,
+       2026-09-16): the popup's own bar carries the chrome, and a timestamp under a board nobody is
+       standing at answers a question nobody asked. measuredAt still reaches the consumer intact —
+       asserted above — it simply is not drawn. */
+    _ok_('and no measurement stamp on the board', h.indexOf('as of') === -1);
     _ok_('nothing rendered blank', h.indexOf('undefined') === -1 && h.indexOf('NaN') === -1);
   },
 
@@ -248,7 +252,12 @@ const tests = {
     _ok_('never as a threshold', h.indexOf('when you hit it') === -1);
     _ok_('and no target tile, though the row still carries a number',
          h.indexOf('units to hit your bonus') === -1);
-    _ok_('counted in units', h.indexOf('9 units · +$6.75') > -1);
+    _ok_('counted in units, with no goal suffix to be a fraction of',
+         h.indexOf('<span class="ksp-count">9</span>') > -1);
+    /* NO EARNINGS ON A SHARED SCREEN. The old panel printed "· +$6.75" beside anyone who had hit.
+       A customer can read a kiosk over the counter, which is why SPIFF's own storeView returns no
+       earnings at all — the figure is in our payload and must not reach this card. */
+    _ok_('and what this person was paid is nowhere on it', h.indexOf('6.75') === -1);
   },
 
   /* A BRAND-WIDE PROGRAM HAS NO NAMED PRODUCT, and "All Mule Extracts products" is the label
@@ -257,7 +266,7 @@ const tests = {
     const { joined } = pipeline([BRANDWIDE], [row({ program_id: BRANDWIDE.program_id })]);
     _eq_('the brand-wide label', joined[0].product, 'All Mule Extracts products');
     _eq_('no tips written is an empty array', joined[0].tips.length, 0);
-    _ok_('and no heading over nothing', panel(joined).indexOf('HOW TO SELL IT') === -1);
+    _ok_('and no heading over nothing', panel(joined).indexOf('How to sell it') === -1);
   },
 
   /* A PROGRAM WITH NO SIDECAR ENTRY MUST NOT BORROW ANOTHER ONE'S. programsFor_ only emits the

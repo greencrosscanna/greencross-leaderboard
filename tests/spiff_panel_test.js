@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 /* The kiosk's SPIFF button and panel — GC.spiffButtonInner, GC.spiffPanel and renderHeader in
  * index.html. Settings → Include SPIFF is the ONE switch for the button and the card rows
- * (Sky, 2026-09-10), and the panel now draws SPIFF's own store-page layout in Leaderboard's
- * progress-bar treatment (Sky, 2026-09-11: "i want the previously submitted screenshot data
- * inside. I do like this treatment of the progress bars").
+ * (Sky, 2026-09-10), and since 2026-09-17 the panel draws SPIFF's REDESIGNED kiosk board — Sky's
+ * decision of 2026-09-16 that Leaderboard adopts that design in its own panel rather than framing
+ * SPIFF's page, so SPIFF's uptime is not the wall screen's uptime. The design is SPIFF's handoff
+ * bundle (greencross-spiff/design_handoff_spiff_kiosk_board/README.md), which is the source of
+ * truth for the look — not this file and not store.css.
  *
  * What these lock down, each a way the most visible screen in the company could say something
  * untrue:
@@ -12,6 +14,10 @@
  *     link instead, which no store had, so the setting and the button could never agree.
  *   • NO GUESSED BOUNTY. A program with no stated payout and nobody hit yet shows no dollar amount
  *     at all — never one worked out from thin air.
+ *   • NO EARNINGS PER PERSON. A kiosk is a shared screen a customer can read over the counter, so
+ *     what somebody was paid never reaches it — even though it is sitting on the payload we hold.
+ *   • THE BOARD IS RANKED AND KEEPS ITS ZEROS, and a bar is only drawn against a denominator that
+ *     exists — a goal for a flat program, the leader for a per-unit one, nothing otherwise.
  *   • SPIFF'S COPY IS OPTIONAL. The product, the store goal and Tawny's tips only exist if SPIFF
  *     published them; every block is absent-safe, because absent is the normal state.
  *   • "UNAVAILABLE" IS NOT "NOTHING RUNNING". A failed read must not tell the floor there is no SPIFF.
@@ -111,26 +117,38 @@ const tests = {
     _ok_('does NOT say nothing is running', h.indexOf('No SPIFF running') === -1);
   },
 
+  /* NOTHING RUNNING IS A REAL SCREEN, not a dead one — the handoff's own point. It still must not
+     be reachable from a failed read, which unavailableIsNotNothingRunning covers from the other side. */
   emptyListSaysSoByStore() {
-    _ok_('names the store', panel([]).indexOf('No SPIFF running at Baseline right now.') > -1);
+    const h = panel([]);
+    _ok_('the headline', h.indexOf('Nothing running right now') > -1);
+    _ok_('names the store in the body', h.indexOf('The next SPIFF at Baseline shows up here') > -1);
+    /* The handoff's "last one" chip needs the last finished program, which the publication does
+       not carry. Its own instruction is to drop the chip rather than fake it client-side. */
+    _ok_('and invents no last program', h.indexOf('Last one') === -1 && h.indexOf('LAST') === -1);
   },
 
-  headIsTheStoreAndTheCount() {
+  /* NO PAGE-LEVEL STORE NAME AND NO PROGRAM COUNT. The popup's own bar already says SPIFF and
+     names the store; repeating it above nothing else is what Sky filed on 2026-09-16 ("we can
+     remove the top header text Century 1 program running since this is embedded in Century's
+     kiosk"), and the handoff had removed it for the same reason. This is the guard that keeps it
+     removed — the old header is exactly the thing a future "let's label the panel" would restore. */
+  noHeaderChromeTheModalAlreadySupplies() {
     const h = panel([
       prog(),
       prog({ id: 'q', reward: 25, earned: 25, people: [ { name: 'Marcus Chen', units: 9, target: 9, hit: true, earned: 25 } ] }),
     ]);
-    _ok_('store named', /<b>Baseline<\/b>/.test(h));
-    _ok_('and the count', /2 programs running/.test(h));
-    _ok_('one program reads singular', /1 program running/.test(panel([prog()])));
+    _ok_('no store name heading', h.indexOf('ksp-head') === -1);
+    _ok_('no "N programs running" count', !/programs? running/.test(h));
+    _ok_('but both programs are still drawn', (h.match(/ksp-prog-set/g) || []).length === 2);
   },
 
   /* NO GUESSED BOUNTY, and the rule got sharper when SPIFF started publishing the payout: a stated
      payout is right from the first morning, an inferred one is null until somebody has hit. */
   statedPayoutBeatsTheInferredOne() {
-    _ok_('inferred reward shows', panel([prog()]).indexOf('<b>$15</b><span>when you hit it') > -1);
+    _ok_('inferred reward shows', panel([prog()]).indexOf('<b>$15</b><span>when you hit your goal') > -1);
     _ok_('SPIFF\'s stated payout wins over it',
-         panel([prog({ payout: 20 })]).indexOf('<b>$20</b><span>when you hit it') > -1);
+         panel([prog({ payout: 20 })]).indexOf('<b>$20</b><span>when you hit your goal') > -1);
     _ok_('and it shows before anyone has hit',
          panel([prog({ payout: 20, reward: null, earned: 0,
                        people: [ { name: 'A', units: 1, target: 5, hit: false, earned: 0 } ] })])
@@ -149,19 +167,22 @@ const tests = {
   spiffCopyRendersWhenPublishedAndVanishesWhenNot() {
     const bare = panel([prog()]);
     _ok_('no SELL block without a product', bare.indexOf('ksp-sell') === -1);
-    _ok_('no store target line without one', bare.indexOf('Store target') === -1);
-    _ok_('no "HOW TO SELL IT" over nothing', bare.indexOf('HOW TO SELL IT') === -1);
-    _ok_('and no "as of" stamped from our own clock', bare.indexOf('as of') === -1);
+    _ok_('no store track without a store goal', bare.indexOf('ksp-store') === -1);
+    _ok_('no tips card over nothing — absent, not empty', bare.indexOf('How to sell it') === -1);
+    /* The "as of" stamp is gone from this surface by design: the popup's own bar carries the
+       chrome. measuredAt still arrives on the payload, it is simply never drawn — so this asserts
+       absence even when SPIFF published one, which the `full` case below feeds in. */
+    _ok_('and no "as of" stamp at all', bare.indexOf('as of') === -1);
 
     const full = panel([prog({ product: 'Live Resin Dank Tank | 2g', storeGoal: 42,
                                measuredAt: '2026-09-09 21:56:08',
                                tips: ['Lead with the live resin', 'Pair it with a pre-roll'] })]);
     _ok_('product', full.indexOf('Live Resin Dank Tank | 2g') > -1);
-    _ok_('store target', full.indexOf('Store target: <b>42</b> units') > -1);
-    _ok_('tips as a list', /<ul class="ksp-tips"><li>Lead with the live resin<\/li><li>Pair it with a pre-roll<\/li><\/ul>/.test(full));
-    _ok_('SPIFF\'s measurement time, converted to 12-hour', full.indexOf('as of 9:56pm') > -1);
+    _ok_('store goal, as the board\'s own track', full.indexOf('7 of 42 units') > -1);
+    _ok_('tips as a list', /<ul class="ksp-tips"><li><span>Lead with the live resin<\/span><\/li><li><span>Pair it with a pre-roll<\/span><\/li><\/ul>/.test(full));
+    _ok_('and still no stamp even when SPIFF published one', full.indexOf('as of') === -1);
     _ok_('a blank tip is dropped, not rendered as an empty bullet',
-         panel([prog({ tips: ['Real one', '  ', ''] })]).indexOf('<li></li>') === -1);
+         panel([prog({ tips: ['Real one', '  ', ''] })]).indexOf('<li><span></span></li>') === -1);
   },
 
   /* TODAY COUNTS as a selling day (Sky, 2026-09-11: "use spiff's day count, today counts"). SPIFF's
@@ -169,27 +190,50 @@ const tests = {
      "2 days left" on the kiosk. The last two days keep the clearer wording. */
   daysLeftIsCalendarArithmetic() {
     const t = (end) => panel([prog({ end })]);   // TODAY is 2026-09-09
-    _ok_('today',    t('2026-09-09').indexOf('Ends today') > -1);
-    _ok_('tomorrow', t('2026-09-10').indexOf('Ends tomorrow') > -1);
-    _ok_('two days out reads THREE — today is one of them', t('2026-09-11').indexOf('3 days left') > -1);
-    _ok_('four days out reads five', t('2026-09-13').indexOf('5 days left') > -1);
-    _ok_('and never the exclusive count again', t('2026-09-13').indexOf('4 days left') === -1);
-    _ok_('across a month end', panel([prog({ end: '2026-10-01' })], { today: '2026-09-30' }).indexOf('Ends tomorrow') > -1);
-    _ok_('ending soon is flagged', t('2026-09-10').indexOf('ksp-prog ending') > -1);
-    _ok_('a later one is not',      t('2026-09-13').indexOf('ksp-prog ending') === -1);
+    /* It is a FIGURE now, not a phrase in the date line — the handoff's third headline number,
+       beside what it pays and what you have to sell. The arithmetic is unchanged and still
+       inclusive, so a program ending today has one day left on it, not none. */
+    _ok_('today is one day left, singular', t('2026-09-09').indexOf('<b>1</b><span>day left, ends Sep 9') > -1);
+    _ok_('tomorrow is two',  t('2026-09-10').indexOf('<b>2</b><span>days left') > -1);
+    _ok_('two days out reads THREE — today is one of them', t('2026-09-11').indexOf('<b>3</b><span>days left') > -1);
+    _ok_('four days out reads five', t('2026-09-13').indexOf('<b>5</b><span>days left') > -1);
+    _ok_('and never the exclusive count again', t('2026-09-13').indexOf('<b>4</b><span>days') === -1);
+    _ok_('across a month end', panel([prog({ end: '2026-10-01' })], { today: '2026-09-30' }).indexOf('<b>2</b><span>days left, ends Oct 1') > -1);
+    /* Gold at three or fewer, which is the handoff's threshold — not the two-day "ending" border
+       the old card used. The one thing on this panel that is running out gets the attention color. */
+    _ok_('three days out is gold',  t('2026-09-11').indexOf('ksp-fig soon') > -1);
+    _ok_('four days out is not',    t('2026-09-12').indexOf('ksp-fig soon') === -1);
     _ok_('date range printed',      t('2026-09-13').indexOf('Sep 1 – Sep 13') > -1);
   },
 
-  peopleRowsCarryTheCardsBarLanguage() {
+  /* IT IS A BOARD, NOT A ROSTER. Ranked by units descending with a rank number, everyone at the
+     store on it including everyone at zero — a board that lists only sellers cannot tell you
+     whether you are behind or simply not in this one. */
+  theBoardIsRankedAndKeepsItsZeros() {
     const h = panel([prog({ people: [
-      { name: 'Lina Park', units: 110, target: 55, hit: true, earned: 25 },
-      { name: 'Avery Liu', units: 0,   target: 6,  hit: false, earned: 0 },
+      { name: 'Avery Liu',  units: 0,   target: 6,  hit: false, earned: 0 },
+      { name: 'Lina Park',  units: 110, target: 55, hit: true,  earned: 25 },
+      { name: 'Marcus Chen', units: 7,  target: 55, hit: false, earned: 0 },
     ] })]);
-    _ok_('over target → hash slides to 50%', h.indexOf('emp-spiff-mark" style="left:50%') > -1);
-    _ok_('over target glows', h.indexOf('bar-over') > -1);
-    _ok_('hit row is gold', h.indexOf('ksp-row hit') > -1 && h.indexOf('emp-spiff hit') > -1);
-    _ok_('payout beside a hit', h.indexOf('110/55 · +$25') > -1);
-    _ok_('zero draws an EMPTY track, not a floor', /0\/6<\/span>/.test(h) && !/has-progress[^]*0\/6/.test(h.slice(h.indexOf('Avery'))));
+    _ok_('the leader is rank 1', h.indexOf('<span class="ksp-rank">1</span><span class="ksp-who">Lina Park') > -1);
+    _ok_('second by units',      h.indexOf('<span class="ksp-rank">2</span><span class="ksp-who">Marcus Chen') > -1);
+    _ok_('the zero is still on the board, last', h.indexOf('<span class="ksp-rank">3</span><span class="ksp-who">Avery Liu') > -1);
+    _ok_('the payload order is not what was drawn', h.indexOf('Lina Park') < h.indexOf('Avery Liu'));
+    _ok_('board title',  h.indexOf('Where everyone stands') > -1);
+    _ok_('and the hit count', h.indexOf('>1 of 3 hit<') > -1);
+
+    /* THE BAR IS CLAMPED AT THE GOAL. 110 of 55 is twice the target and draws a full bar, not a
+       double-width one — the overshoot is already stated in words one column to the right. */
+    _ok_('a hit row is flagged', h.indexOf('class="ksp-row hit"') > -1);
+    _ok_('over target clamps to 100%', h.indexOf('<span style="width:100%"></span>') > -1);
+    _ok_('a partial bar is its own fraction', h.indexOf('<span style="width:13%"></span>') > -1);
+    _ok_('zero draws a genuinely empty track', h.indexOf('<span style="width:0%"></span>') > -1);
+    _ok_('and is marked as a zero row', h.indexOf('class="ksp-row zero"') > -1);
+    _ok_('counts carry the goal as a suffix', h.indexOf('>110<i>/55</i>') > -1);
+
+    /* NO EARNINGS ON A SHARED SCREEN — a customer can read a kiosk over the counter, which is why
+       SPIFF's own storeView returns none. The figure is on our payload and must not reach here. */
+    _ok_('nobody\'s pay is on the board', h.indexOf('$25') === -1 && h.indexOf('+$') === -1);
   },
 
   /* PER-UNIT HAS NO THRESHOLD (SPIFF, 2026-09-12). It pays for every unit sold, so "when you hit
@@ -202,15 +246,34 @@ const tests = {
                 { name: 'Avery Liu',   units: 0, target: 0, hit: false, earned: 0 } ] })]);
     _ok_('the rate, with its cents', h.indexOf('<b>$0.75</b>') > -1);
     _ok_('said as a rate', h.indexOf('for every unit you sell') > -1);
-    _ok_('and never as a threshold', h.indexOf('when you hit it') === -1);
-    _ok_('no target tile at all', h.indexOf('units to hit your bonus') === -1);
-    _ok_('counts read as units, not a fraction of nothing', h.indexOf('9 units · +$6.75') > -1);
-    _ok_('one unit is singular', h.indexOf('1 unit · +$0.75') > -1);
+    _ok_('and never as a threshold', h.indexOf('when you hit your goal') === -1);
+    _ok_('no target figure at all', h.indexOf('units to hit your bonus') === -1);
+    /* "Any" rather than a 0, which would read as "you are not in this one" — the handoff's call,
+       and the same distinction the payout wording draws. */
+    _ok_('the goal figure says every unit pays', h.indexOf('<b>Any</b><span>unit pays — no personal goal') > -1);
+    _ok_('counts read as units, not a fraction of nothing', h.indexOf('<span class="ksp-count">9</span>') > -1);
     _ok_('nobody is shown as x/0', h.indexOf('/0') === -1);
-    _ok_('no bar drawn against a target that does not exist', h.indexOf('emp-spiff-bar') === -1);
-    _ok_('but the column is held open so the rows still line up',
-         (h.match(/ksp-nobar/g) || []).length === 3);
+    /* A per_unit board still gets bars — scaled against the LEADER, not a goal. That makes the bar
+       a comparison rather than a promise, which is the only honest thing it can be when there is
+       no threshold to be a fraction of. */
+    _ok_('the leader fills the bar', h.indexOf('<span style="width:100%"></span>') > -1);
+    _ok_('one of nine is a ninth', h.indexOf('<span style="width:11%"></span>') > -1);
+    _ok_('and a zero seller draws nothing', h.indexOf('<span style="width:0%"></span>') > -1);
+    _ok_('the board is titled for volume', h.indexOf('Sold so far') > -1);
+    _ok_('and counts units rather than hits', h.indexOf('>10 units sold<') > -1);
     _ok_('a zero seller still gets a row', h.indexOf('Avery Liu') > -1);
+    _ok_('and nobody\'s earnings are on it', h.indexOf('6.75') === -1);
+  },
+
+  /* NOTHING HONEST TO DRAW MEANS NO BAR — but the column still has to exist, or the names and the
+     counts close up against each other and the rows stop lining up with the ones above. */
+  noDenominatorHoldsTheColumnOpenInsteadOfFaking() {
+    const h = panel([prog({ payoutType: 'per_unit', payout: 0.5, reward: null, target: 0,
+      people: [ { name: 'A', units: 0, target: 0, hit: false, earned: 0 },
+                { name: 'B', units: 0, target: 0, hit: false, earned: 0 } ] })]);
+    _ok_('no bar anywhere — there is no leader to scale against', h.indexOf('ksp-bar') === -1);
+    _ok_('the column is held open for both rows', (h.match(/ksp-nobar/g) || []).length === 2);
+    _ok_('and the board says nothing has sold', h.indexOf('>0 units sold<') > -1);
   },
 
   /* A per_unit program must not borrow the flat wording even when the type arrives with a target
@@ -220,15 +283,34 @@ const tests = {
       people: [ { name: 'A', units: 3, target: 6, hit: true, earned: 1.5 } ] })]);
     _ok_('still no threshold tile', h.indexOf('units to hit your bonus') === -1);
     _ok_('still a rate', h.indexOf('<b>$0.50</b><span>for every unit you sell') > -1);
-    _ok_('still counted in units', h.indexOf('3 units · +$1.50') > -1);
+    _ok_('still counted in units, with no borrowed goal suffix',
+         h.indexOf('<span class="ksp-count">3</span>') > -1);
   },
 
   /* An older payload states no type at all. That is every program SPIFF published before the
      sidecar, and all of them were flat — so absent must read as flat, not as a missing tile. */
   noPayoutTypeReadsAsFlat() {
     const h = panel([prog()]);
-    _ok_('the threshold wording', h.indexOf('when you hit it') > -1);
-    _ok_('and the target tile', h.indexOf('<b>5</b><span>units to hit your bonus') > -1);
+    _ok_('the threshold wording', h.indexOf('when you hit your goal') > -1);
+    _ok_('and the target figure', h.indexOf('<b>5</b><span>units to hit your bonus') > -1);
+  },
+
+  /* THE STORE TRACK TAKES THE STORE'S REGISTRY COLOR, and it gets there through a CSS var that
+     GC.loadStoreColors() has already overlaid with live GX Core values — so a Command Center edit
+     reaches the wall without a deploy, and a seventh store inherits its own color rather than
+     nothing. The slug arrives off the URL hash and is going inside a style attribute, so it is
+     whitelisted to the shape a slug can have rather than escaped: --store-<anything> is a var name,
+     and an escaper that is right for text is not the right tool for one. */
+  theStoreTrackUsesTheLiveRegistryColor() {
+    const p = prog({ storeGoal: 40 });
+    _ok_('the store\'s own var', panel([p], { storeSlug: 'century' })
+      .indexOf('background:var(--store-century, var(--green))') > -1);
+    _ok_('a store we have no color for falls back to green, not to nothing',
+      panel([p], { storeSlug: '' }).indexOf('background:var(--green)') > -1);
+    const bad = panel([p], { storeSlug: 'x);}</style><script>' });
+    _ok_('a slug that is not a slug is refused outright', bad.indexOf('</style>') === -1);
+    _ok_('and falls back rather than composing a broken var',
+      bad.indexOf('background:var(--green)') > -1);
   },
 
   namesAreEscaped() {

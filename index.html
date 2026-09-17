@@ -66,6 +66,11 @@
   --green:        #4ade80;
   --green-dim:    #2f8a52;
   --green-soft:   rgba(74, 222, 128, 0.10);
+  /* From SPIFF's kiosk-board handoff. --green-bright is the hit TEXT color: --text-mute on
+     --surface is ~3.2:1 at 16px and fails contrast, so a name or a count never uses it.
+     --green-deep is the unfinished bar fill and the dim end of the hit gradient. */
+  --green-bright: #5ee68f;
+  --green-deep:   #265939;
   --red:          #ef4444;
   --red-soft:     rgba(239, 68, 68, 0.08);
   --orange:       #f97316;
@@ -1500,68 +1505,133 @@ body.kiosk-bg {
 .kso-ctx  { flex: 1; color: var(--text-dim); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .kso-body { flex: 1; overflow: auto; padding: 18px 22px 24px; display: flex; flex-direction: column; gap: 14px; }
 .kso-body[hidden], .kso-frame[hidden] { display: none; }
-/* ── The SPIFF panel: SPIFF's store-page layout, in Leaderboard's bar treatment ──────────────
-   Sky, 2026-09-11 — "i want the previously submitted screenshot data inside. I do like this
-   treatment of the progress bars." So the SHAPE is SPIFF's page (vendor, program, what to sell,
-   the two numbers that matter, everyone's progress, Tawny's tips) and the BARS are the kiosk staff
-   cards' own language: gold once a target is hit, a hash left of the end showing by how much it
-   was beaten. One column, not a grid — this is read standing at a wall screen, and a second column
-   puts half the content past the edge of somebody's attention. */
-.ksp-head { display: flex; align-items: baseline; gap: 10px; }
-.ksp-head b    { font-size: 22px; font-weight: 800; letter-spacing: -0.3px; }
-.ksp-head span { font-size: 13px; color: var(--text-dim); font-weight: 600; }
-.ksp-progs { display: flex; flex-direction: column; gap: 14px; }
-.ksp-prog {
+/* ── The SPIFF panel: SPIFF's kiosk-board design, drawn here ────────────────────────────────
+   Sky decided on 2026-09-16 that Leaderboard ADOPTS SPIFF's redesigned kiosk board in its own
+   panel rather than framing SPIFF's page — so SPIFF's uptime is not the wall screen's uptime.
+   The source of truth for the LOOK is SPIFF's handoff bundle
+   (greencross-spiff/design_handoff_spiff_kiosk_board/README.md), not either codebase's CSS.
+
+   THE PANEL NO LONGER BORROWS THE STAFF CARDS' BAR. It used to reuse .emp-spiff outright — gold
+   once a target was hit, plus a hash showing by how much it was beaten. The handoff specifies
+   green, and the overshoot is already stated in words one column to the right ("11/8"), so the
+   hash carried nothing the row did not already say. Gold still means money on the cards; here it
+   is reserved for the one thing that is running out, which is time.
+
+   NO PAGE-LEVEL STORE NAME AND NO "as of" STAMP. The popup's own bar already says SPIFF and names
+   the store, and repeats it above nothing else. Sky filed that as a bug against the old panel on
+   2026-09-16 ("we can remove the top header text Century 1 program running since this is embedded
+   in Century's kiosk"); the design had already removed it for the same reason.
+
+   Palette note: every value below is a Leaderboard token that already equals the handoff's hex —
+   --surface #121715, --border #232a27, --text #e6ece9, --text-dim #8a958f, --text-mute #5e6864,
+   --surface-3 #1a221f, --green #4ade80, --green-soft, --gold #d4a847. The two that did not exist
+   here, --green-bright and --green-deep, were added beside them. */
+.ksp-progs { display: flex; flex-direction: column; gap: 12px; }
+.ksp-prog-set { display: flex; flex-direction: column; gap: 12px; }
+.ksp-card {
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-  padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 12px;
 }
-.ksp-prog.ending { border-color: var(--gold-line); }
-.ksp-vendor { font-size: 11px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--text-dim); font-weight: 700; }
-.ksp-name   { font-size: 26px; font-weight: 800; letter-spacing: -0.4px; margin-top: -6px; }
-.ksp-tags   { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 12px; margin-top: -4px; }
-/* Green, not gold: "running" is a state, and gold on this panel means money. */
+.ksp-prog { padding: 18px 20px 20px; }
+.ksp-vendor { font-size: 10px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--text-mute); font-weight: 700; }
+.ksp-name   { font-size: 30px; font-weight: 900; letter-spacing: -0.5px; line-height: 1.12; margin-top: 5px; }
+.ksp-tags   { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
+/* Green, not gold: "running" is a state, and gold on this panel means the clock. */
 .ksp-pill   {
-  border: 1px solid var(--good, #4ade80); border-radius: 12px; padding: 3px 10px;
-  color: var(--good, #4ade80); font-size: 11px; font-weight: 800; letter-spacing: 0.8px;
+  border: 1px solid rgba(74, 222, 128, 0.3); background: rgba(74, 222, 128, 0.12);
+  border-radius: 5px; padding: 4px 9px;
+  color: var(--green-bright); font-size: 10px; font-weight: 700; letter-spacing: 1.1px;
 }
-.ksp-when   { color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.ksp-when.ending { color: var(--gold-bright); font-weight: 700; }
+.ksp-when   { color: var(--text-dim); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .ksp-sell   {
-  display: flex; align-items: center; gap: 12px;
-  background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-top: 16px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px;
 }
-.ksp-sell-k { font-size: 10px; letter-spacing: 1.2px; color: var(--text-mute); font-weight: 800; }
-.ksp-sell-v { font-size: 16px; font-weight: 700; }
-.ksp-tiles  { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
-.ksp-tiles:empty { display: none; }
-.ksp-tile   {
-  background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+.ksp-sell-k { font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-mute); font-weight: 700; }
+.ksp-sell-v { font-size: 15px; font-weight: 600; }
+/* Three figures, and they stay three across the popup's width until there is genuinely no room —
+   auto-fit would drop one to its own row the moment a 40px number grew a digit. */
+.ksp-figs   { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.ksp-fig    { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 15px 16px 14px; }
+.ksp-fig b    { display: block; font-size: 40px; font-weight: 900; line-height: 1; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+.ksp-fig span { display: block; font-size: 12px; line-height: 1.35; color: var(--text-dim); margin-top: 7px; }
+/* The payout is the only colored figure — it is the reason to read the rest. */
+.ksp-fig.pays   { border-color: rgba(74, 222, 128, 0.32); }
+.ksp-fig.pays b { color: var(--green); }
+/* Gold at three days or fewer: the one thing on this panel that is running out. */
+.ksp-fig.soon b { color: var(--gold); }
+
+/* ── The board: the centerpiece, not a footnote under the figures ── */
+.ksp-board  { padding: 16px 20px 18px; }
+.ksp-bhead  { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px; }
+.ksp-btitle { font-size: 17px; font-weight: 800; letter-spacing: -0.2px; }
+.ksp-bcount { font-size: 12.5px; font-weight: 700; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.ksp-bcount.any { color: var(--green-bright); }
+.ksp-store  {
+  display: flex; align-items: center; gap: 10px; margin-top: 12px;
+  padding-bottom: 14px; border-bottom: 1px solid var(--surface-2);
 }
-.ksp-tile b    { display: block; font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; }
-.ksp-tile span { display: block; font-size: 12px; color: var(--text-dim); margin-top: 4px; }
-.ksp-tile.gold b { color: var(--good, #4ade80); }
-.ksp-storegoal { font-size: 12px; color: var(--text-dim); margin-top: -4px; }
-.ksp-storegoal b { color: var(--text); font-variant-numeric: tabular-nums; }
-/* A rule above each section heading, so the card reads as bands rather than one long list. */
-.ksp-sec {
-  display: flex; align-items: baseline; gap: 10px;
-  border-top: 1px solid var(--border); padding-top: 14px; margin-top: 2px;
+.ksp-store-k { font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-mute); font-weight: 700; }
+.ksp-store-track {
+  flex: 1; min-width: 40px; height: 5px; border-radius: 999px; background: var(--surface-3); overflow: hidden;
 }
-.ksp-sec span { font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-dim); font-weight: 700; }
-.ksp-sec i    { margin-left: auto; font-style: normal; font-size: 11px; color: var(--text-mute); }
-.ksp-people { display: flex; flex-direction: column; gap: 10px; }
-.ksp-row    { display: grid; grid-template-columns: minmax(0, 160px) 1fr auto; gap: 14px; align-items: center; font-size: 14px; }
-.ksp-who    { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ksp-count  { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; min-width: 86px; }
-.ksp-row.hit .ksp-who   { color: var(--gold-bright); }
-.ksp-row.hit .ksp-count { color: var(--gold-bright); }
-.ksp-row .emp-spiff { margin: 0; padding: 0; border: 0; }
-/* A per_unit SPIFF has no target, so there is no bar to draw — this holds the middle column open
-   so the names and the counts stay in the same two lines they are in on every other program. */
+/* The store's own registry color. GC.loadStoreColors() overlays live GX Core values onto these
+   vars on boot, so this follows a Command Center edit without a deploy; the :root value is the
+   first-paint fallback and --green the fallback for a store we have no color for at all. */
+.ksp-store-track > span { display: block; height: 100%; border-radius: 999px; }
+.ksp-store-v { font-size: 12.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+/* The units column is a FIXED 64px, not auto: with auto, a two-digit leader resizes its own row's
+   columns and knocks its bar off the axis of every row below it — on a panel whose entire job is
+   row-to-row comparison. */
+.ksp-people { margin-top: 4px; }
+.ksp-row    {
+  display: grid; grid-template-columns: 26px minmax(0, 1fr) minmax(52px, 1.5fr) 64px;
+  gap: 12px; align-items: center; min-height: 46px;
+  padding: 0 10px; margin: 0 -10px; border-radius: 7px;
+}
+.ksp-row.hit { background: var(--green-soft); }
+.ksp-rank   { font-size: 13px; font-weight: 800; text-align: right; color: var(--text-mute); font-variant-numeric: tabular-nums; }
+.ksp-row.hit .ksp-rank { color: var(--green); }
+/* Names are never clipped to fit a bar — the bar column gives up width first. The name is the
+   fact; the bar is the quick read. --text-mute is not a name color at any size: see the tokens. */
+.ksp-who    { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ksp-count  { font-size: 16px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.ksp-count i { font-style: normal; font-weight: 600; color: var(--text-mute); }
+.ksp-row.hit  .ksp-who, .ksp-row.hit  .ksp-count { color: var(--green-bright); }
+.ksp-row.zero .ksp-who, .ksp-row.zero .ksp-count { color: var(--text-dim); }
+.ksp-bar    { height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.ksp-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--green-deep); }
+.ksp-row.hit .ksp-bar > span {
+  background: linear-gradient(90deg, var(--green-deep), var(--green));
+  animation: kspHitGlow 2.6s ease-in-out infinite;
+}
+@keyframes kspHitGlow {
+  0%, 100% { box-shadow: 0 0 4px rgba(74, 222, 128, 0.35); }
+  50%      { box-shadow: 0 0 10px rgba(74, 222, 128, 0.65); }
+}
+/* An idle loop that never stops is exactly what vestibular-triggered users ask not to have on a
+   wall they cannot walk away from. */
+@media (prefers-reduced-motion: reduce) {
+  .ksp-row.hit .ksp-bar > span { animation: none; }
+}
+/* A per_unit SPIFF has no personal target, so there is no bar to draw against one — this holds
+   the column open so names and counts stay on the same two axes as every other program. */
 .ksp-nobar  { display: block; }
-.ksp-tips   { margin: 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: 8px; }
-.ksp-tips li { font-size: 14px; line-height: 1.45; }
-.ksp-tips li::marker { color: var(--good, #4ade80); }
+
+/* ── Tips ── */
+.ksp-tipcard { padding: 16px 20px 18px; }
+.ksp-tiphead { font-size: 10px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--text-mute); font-weight: 700; }
+.ksp-tips   { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 11px; counter-reset: ksptip; }
+.ksp-tips li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 15px; line-height: 1.55; }
+.ksp-tips li::before {
+  counter-increment: ksptip; content: counter(ksptip);
+  font-size: 11px; font-weight: 800; line-height: 1.55; color: var(--green);
+}
+
+/* ── Nothing running, and the unavailable case that must not be mistaken for it ── */
+.ksp-none   { padding: 40px 28px; text-align: center; }
+.ksp-none b { display: block; font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }
+.ksp-none span { display: block; font-size: 15px; line-height: 1.6; color: var(--text-dim); margin-top: 10px; }
 .ksp-empty  { color: var(--text-dim); font-size: 15px; padding: 48px 0; text-align: center; }
 
 /* ── Slideshow bar ─────────────────────────────────────── */
@@ -4569,24 +4639,32 @@ GC.spiffButtonInner = function(n) {
   return '<span class="ksb-dot"></span>SPIFF';
 };
 
-/** The SPIFF panel — Leaderboard's own summary of every program at a store. One summary line, then
- *  a card per program listing everyone at the store who is in it.
+/** The SPIFF panel — SPIFF's kiosk board, drawn by Leaderboard from data Leaderboard already holds.
  *
- *  IT IS THE FALLBACK NOW, NOT THE FRONT DOOR. It was what the kiosk's SPIFF button opened for one
- *  day (Sky chose "built into Leaderboard" on 2026-09-10, and "should open the Store page in a
- *  popup, not the leaderboard SPIFF page" on 2026-09-11). The button opens SPIFF's own page; this
- *  is what a store with no kiosk token gets, so that button always does something. Pure — programs in, HTML out — so tests/spiff_panel_test.js runs
- *  this exact function.
+ *  IT IS THE FRONT DOOR NOW, NOT THE FALLBACK. Sky decided on 2026-09-16 that this panel ADOPTS
+ *  SPIFF's redesigned store board rather than framing SPIFF's page. The reason is coupling, not
+ *  taste: store.html calls SPIFF's engine for its own data, so framing it puts SPIFF's uptime in
+ *  front of the most visible screen in the company. This panel reads GX Core's published copy,
+ *  which AGES rather than dies — and spiff.gs already refuses a scope older than the watchdog
+ *  threshold, so it cannot go quietly stale either.
  *
- *  THE BARS ARE THE CARDS' BARS: same classes, same geometry as GC.spiffRow (gold = hit, a hash left
- *  of the end = beaten by that much), with the width set directly because the overlay is not part
- *  of the board's count-up animation. GC.spiffRow is deliberately not refactored to share this —
- *  its own test loads it alone.
+ *  THE LOOK IS SPIFF'S HANDOFF, NOT EITHER CODEBASE:
+ *  greencross-spiff/design_handoff_spiff_kiosk_board/README.md. Three stacked cards — the program,
+ *  the board, the tips — where the BOARD is the centerpiece. It was a footnote under the figures
+ *  before, and the board is what staff actually cross the room to read.
  *
- *  THE REWARD IS NEVER GUESSED. It is shown only when spiffProgramsForStore_ could state it (people
- *  who hit were all paid the same); otherwise the card just says how many units the target is.
+ *  NO EARNINGS PER PERSON, EVER. The old panel printed "· +$25" beside anyone who had hit. A kiosk
+ *  is a shared screen a customer can read over the counter, and SPIFF's own storeView deliberately
+ *  returns no earnings, cost, investment or ROI for exactly that reason. The figure is still in the
+ *  payload; it just never reaches this screen.
  *
- *  opts: { ok, today: 'YYYY-MM-DD' in PT, storeName }
+ *  THE REWARD IS NEVER GUESSED. The stated payout is shown when SPIFF published one; otherwise the
+ *  inference from what people have already been paid, which is null until somebody hits. On a
+ *  per_unit program the inference is meaningless and is never used.
+ *
+ *  Pure — programs in, HTML out — so tests/spiff_panel_test.js runs this exact function.
+ *
+ *  opts: { ok, today: 'YYYY-MM-DD' in PT, storeName, storeSlug }
  */
 GC.spiffPanel = function(programs, opts) {
   var esc   = GC.esc || function(v) { return String(v == null ? '' : v); };
@@ -4596,7 +4674,15 @@ GC.spiffPanel = function(programs, opts) {
   if (!o.ok) {
     return '<div class="ksp-empty">SPIFF numbers aren’t available right now. They’ll be back on the next refresh.</div>';
   }
-  if (!list.length) return '<div class="ksp-empty">No SPIFF running at ' + store + ' right now.</div>';
+  /* "Nothing running" is a real screen, not a dead one. It is also NOT the same as a failed read —
+     telling the floor there is no SPIFF when we simply could not reach the numbers sends them
+     looking in the wrong place. The handoff's "last one" chip is deliberately not drawn: it needs
+     the last finished program from SPIFF, which the publication does not carry, and the README's
+     own instruction is to drop the chip rather than fake it client-side. */
+  if (!list.length) {
+    return '<div class="ksp-card ksp-none"><b>Nothing running right now</b>'
+      + '<span>The next SPIFF at ' + store + ' shows up here on its own. Nothing to do but sell.</span></div>';
+  }
 
   var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   var ymd = function(s) { return /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s == null ? '' : s).slice(0, 10)); };
@@ -4604,127 +4690,147 @@ GC.spiffPanel = function(programs, opts) {
   // Whole days between two TEXT dates, built in UTC and read in UTC — no timezone can shift it.
   var day = function(s) { var m = ymd(s); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86400000 : null; };
   var today = day(o.today);
+  // $25, not $25.00 — but $0.75 keeps its cents, because a per-unit rate is rarely whole dollars.
+  var money = function(n) { return '$' + (n === Math.round(n) ? n : n.toFixed(2)); };
 
-  function bar(u, t, hit) {
-    var units = Math.max(0, +u || 0), target = Math.max(0, +t || 0);
-    var raw  = target > 0 ? Math.round((units / target) * 100) : 0;
-    var over = raw > 100, pct = over ? 100 : raw;
-    var mk   = over ? Math.round(100 / raw * 100) : null;
-    return '<div class="emp-spiff' + (hit ? ' hit' : '') + '">'
-      + '<div class="emp-spiff-bar-wrap' + (over ? ' bar-over' : '') + (units > 0 ? ' has-progress' : '') + '">'
-      +   '<div class="emp-spiff-bar"><span style="width:' + pct + '%' + (over ? '; --mark-pct:' + mk + '%' : '') + '"></span></div>'
-      +   (mk !== null ? '<div class="emp-spiff-mark" style="left:' + mk + '%"></div>' : '')
-      + '</div></div>';
-  }
+  /* The store's own registry color for the attainment track. GC.loadStoreColors() has already
+     overlaid live GX Core values onto --store-<slug> by the time a kiosk paints, so this follows a
+     Command Center edit without a deploy and a seventh store inherits its own color rather than
+     nothing. The slug comes off the URL hash, so it is whitelisted to the shape a slug can have
+     before it is ever put inside a style attribute. */
+  var slug  = /^[a-z0-9-]{1,40}$/.test(String(o.storeSlug || '')) ? String(o.storeSlug) : '';
+  var track = slug ? 'var(--store-' + slug + ', var(--green))' : 'var(--green)';
 
-  /* "as of 9:56pm" — SPIFF's measurement time, not our clock. Only shown when SPIFF published one:
-     stamping the current time onto figures that were measured an hour ago is the kind of small lie
-     that makes somebody trust a stale number. */
-  function asOf(ts) {
-    var m = /(\d{1,2}):(\d{2})/.exec(String(ts == null ? '' : ts));
-    if (!m) return '';
-    var h = +m[1], ap = h >= 12 ? 'pm' : 'am', h12 = h % 12 === 0 ? 12 : h % 12;
-    return 'as of ' + h12 + ':' + m[2] + ap;
-  }
-
-  var html = '<div class="ksp-head"><b>' + store + '</b><span>'
-    + list.length + (list.length === 1 ? ' program running' : ' programs running') + '</span></div>';
-
-  html += '<div class="ksp-progs">' + list.map(function(p) {
+  var html = list.map(function(p) {
     var target = Math.max(0, +p.target || 0);
-    /* DAYS LEFT COUNTS TODAY (Sky, 2026-09-11: "use spiff's day count, today counts").
-     *
-     * `d` is whole days from today to the end date, so the number a budtender is owed — days they
-     * can still sell this — is d + 1. We used to print `d`, which is one fewer than SPIFF's own
-     * page said for the same program on the same day. Neither was wrong arithmetic; they answered
-     * different questions, and a kiosk is no place for two answers.
-     *
-     * THE LAST TWO DAYS KEEP THEIR WORDS. "Ends today" and "Ends tomorrow" say the same thing as
-     * "1 day left" and "2 days left" and say it better on a wall screen — the count is what was
-     * out of step, not the phrasing. */
-    var d      = (today === null || day(p.end) === null) ? null : Math.round(day(p.end) - today);
-    var ending = d !== null && d <= 1;
-    var leftTxt = d === null ? '' : d <= 0 ? 'Ends today' : d === 1 ? 'Ends tomorrow'
-                : (d + 1) + ' days left';
-    var dates  = md(p.start) && md(p.end) ? md(p.start) + ' – ' + md(p.end) : '';
-    var when   = [dates, leftTxt].filter(Boolean).join(' · ');
 
     /* TWO WAYS A SPIFF PAYS, and they cannot share a sentence.
      *
-     *   flat     — the amount ONCE, per person, for clearing a personal target. "$25 when you hit
-     *              it" is exactly right, and the target tile is the thing to hit.
+     *   flat     — the amount ONCE, per person, for clearing a personal target. The goal figure is
+     *              the thing to hit, and "when you hit your goal" is exactly right.
      *   per_unit — the amount for EVERY unit sold, with NO threshold at all. "$0.75 when you hit
-     *              it" would be a wrong dollar figure on the most-read screen in the company, and
-     *              a target tile would promise a bonus that does not exist at that number.
+     *              it" would be a wrong dollar figure on the most-read screen in the company, and a
+     *              goal figure would promise a bonus at a number that buys nothing. A `0` there
+     *              reads as "you are not in this one", so the handoff prints "Any".
      *
-     * So per_unit drops the threshold entirely (SPIFF's own wording, 2026-09-12) and the rows
-     * print units and money rather than a fraction of a target nobody is chasing. Anything that
-     * is not the string 'per_unit' — including an older payload that states no type at all — is
-     * treated as flat, which is what every program was before SPIFF published the distinction. */
+     * Anything that is not the string 'per_unit' — including an older payload stating no type at
+     * all — is flat, which is what every program was before SPIFF published the distinction. */
     var perUnit = String(p.payoutType || '') === 'per_unit';
 
     /* THE STATED PAYOUT BEATS THE INFERRED ONE. `reward` is worked out from what people have
        already been paid and is null until somebody hits; `payout` is what SPIFF says the program
-       pays, and is right from the first morning. On per_unit the inference is meaningless (it
-       would read somebody's units × rate as a bounty), so only a stated rate is ever shown. */
+       pays, and is right from the first morning. */
     var pay = (p.payout != null && +p.payout > 0) ? +p.payout
             : (!perUnit && p.reward != null && +p.reward > 0) ? +p.reward : null;
-    // $25, not $25.00 — but $0.75 keeps its cents, because a per-unit rate is rarely whole dollars.
-    var money = function(n) { return '$' + (n === Math.round(n) ? n : n.toFixed(2)); };
 
-    var rows = (p.people || []).map(function(x) {
-      var u = Math.max(0, +x.units || 0), t = Math.max(0, +x.target || target);
-      var paid = +x.earned > 0 ? ' · +' + money(+x.earned) : '';
-      return '<div class="ksp-row' + (x.hit ? ' hit' : '') + '">'
+    /* DAYS LEFT COUNTS TODAY (Sky, 2026-09-11: "use spiff's day count, today counts"), which is
+       also how the handoff counts it: a program running through the 30th has one day left on the
+       30th. `d` is whole days from today to the end date, so the number of days somebody can still
+       sell this is d + 1. Gold at three or fewer — the one thing here that is running out. */
+    var d     = (today === null || day(p.end) === null) ? null : Math.round(day(p.end) - today);
+    var left  = d === null ? null : Math.max(0, d + 1);
+    var soon  = left !== null && left <= 3;
+    var dates = md(p.start) && md(p.end) ? md(p.start) + ' – ' + md(p.end) : '';
+
+    /* RANKED BY UNITS, DESCENDING — this is a board, not a roster. Everyone at the store is on it
+       including everyone at zero: a board that lists only sellers cannot tell you whether you are
+       behind or simply not in it. Ties fall back to name so the order is stable between refreshes
+       rather than reshuffling under somebody mid-read. The copy is sorted, not the payload. */
+    var people = (p.people || []).slice().sort(function(a, b) {
+      var u = (+b.units || 0) - (+a.units || 0);
+      if (u) return u;
+      return String(a.name || '') < String(b.name || '') ? -1 : String(a.name || '') > String(b.name || '') ? 1 : 0;
+    });
+    var totalUnits = people.reduce(function(n, x) { return n + Math.max(0, +x.units || 0); }, 0);
+    var hits   = people.filter(function(x) { return !!x.hit; }).length;
+    var leader = people.reduce(function(n, x) { return Math.max(n, Math.max(0, +x.units || 0)); }, 0);
+    var storeGoal = Math.max(0, +p.storeGoal || 0);
+
+    var rows = people.map(function(x, i) {
+      var u = Math.max(0, +x.units || 0);
+      var t = Math.max(0, +x.target || target);
+      /* What the bar is drawn AGAINST. A flat program has a personal goal, so it is that. A
+         per_unit program has none, so it scales against the leader — which makes the bar a
+         comparison rather than a promise, and is what the handoff specifies. Neither available
+         (a flat program with no goal at all, or a per_unit board where nobody has sold) means
+         there is nothing honest to draw, so the column is held open instead. */
+      var den = perUnit ? leader : t;
+      var pct = den > 0 ? Math.max(0, Math.min(100, Math.round((u / den) * 100))) : null;
+      var cls = 'ksp-row' + (x.hit ? ' hit' : '') + (u === 0 ? ' zero' : '');
+      return '<div class="' + cls + '">'
+        + '<span class="ksp-rank">' + (i + 1) + '</span>'
         + '<span class="ksp-who">' + esc(x.name) + '</span>'
-        // No target means no bar to draw, but the middle column still has to exist or the name
-        // and the count close up against each other in the grid.
-        + (perUnit || !(t > 0) ? '<span class="ksp-nobar"></span>' : bar(u, t, x.hit))
-        + '<span class="ksp-count">'
-        +   (perUnit || !(t > 0) ? u + (u === 1 ? ' unit' : ' units') : u + '/' + t)
-        +   paid + '</span>'
+        + (pct === null
+            ? '<span class="ksp-nobar"></span>'
+            : '<span class="ksp-bar"><span style="width:' + pct + '%"></span></span>')
+        + '<span class="ksp-count">' + u
+        +   (!perUnit && t > 0 ? '<i>/' + t + '</i>' : '')
+        + '</span>'
         + '</div>';
     }).join('');
 
     var tips = (p.tips || []).filter(function(t) { return !!String(t || '').trim(); });
-    var when2 = asOf(p.measuredAt);
 
     /* EVERY BLOCK BELOW IS OPTIONAL ON PURPOSE. product, storeGoal, payout and tips arrive on
-       SPIFF's per-program sidecar and only exist once SPIFF publishes them; a store or a program
-       that has none of them still gets a complete card, rather than a heading over empty space. */
-    return '<article class="ksp-prog' + (ending ? ' ending' : '') + '">'
-      + '<div class="ksp-vendor">' + esc(p.vendor) + '</div>'
-      + '<div class="ksp-name">' + esc(p.name || p.vendor) + '</div>'
-      + '<div class="ksp-tags">'
-      +   '<span class="ksp-pill">RUNNING NOW</span>'
-      +   (when ? '<span class="ksp-when' + (ending ? ' ending' : '') + '">' + when + '</span>' : '')
-      + '</div>'
-      + (p.product
-          ? '<div class="ksp-sell"><span class="ksp-sell-k">SELL</span>'
-            + '<span class="ksp-sell-v">' + esc(p.product) + '</span></div>'
-          : '')
-      + '<div class="ksp-tiles">'
-      +   (!perUnit && target > 0
-            ? '<div class="ksp-tile"><b>' + target + '</b><span>units to hit your bonus</span></div>' : '')
-      +   (pay !== null
-            ? '<div class="ksp-tile gold"><b>' + money(pay) + '</b><span>'
-              + (perUnit ? 'for every unit you sell' : 'when you hit it') + '</span></div>' : '')
-      + '</div>'
-      + (+p.storeGoal > 0
-          ? '<div class="ksp-storegoal">Store target: <b>' + (+p.storeGoal) + '</b> units</div>' : '')
+       SPIFF's per-program sidecar and only exist once SPIFF publishes them; a program that has
+       none of them still gets a complete set of cards rather than a heading over empty space.
+       The tips card in particular is ABSENT, not empty — "How to sell it" over nothing reads as a
+       broken screen. */
+    return '<div class="ksp-prog-set">'
+      + '<article class="ksp-card ksp-prog">'
+      +   '<div class="ksp-vendor">' + esc(p.vendor) + '</div>'
+      +   '<div class="ksp-name">' + esc(p.name || p.vendor) + '</div>'
+      +   '<div class="ksp-tags"><span class="ksp-pill">RUNNING NOW</span>'
+      +     (dates ? '<span class="ksp-when">' + dates + '</span>' : '')
+      +   '</div>'
+      +   (p.product
+            ? '<div class="ksp-sell"><span class="ksp-sell-k">SELL</span>'
+              + '<span class="ksp-sell-v">' + esc(p.product) + '</span></div>'
+            : '')
+      +   '<div class="ksp-figs">'
+      +     (pay !== null
+              ? '<div class="ksp-fig pays"><b>' + money(pay) + '</b><span>'
+                + (perUnit ? 'for every unit you sell' : 'when you hit your goal') + '</span></div>' : '')
+      +     (perUnit
+              ? '<div class="ksp-fig"><b>Any</b><span>unit pays — no personal goal</span></div>'
+              : target > 0
+                ? '<div class="ksp-fig"><b>' + target + '</b><span>units to hit your bonus</span></div>' : '')
+      +     (left !== null
+              ? '<div class="ksp-fig' + (soon ? ' soon' : '') + '"><b>' + left + '</b><span>'
+                + (left === 1 ? 'day left' : 'days left')
+                + (md(p.end) ? ', ends ' + md(p.end) : '') + '</span></div>' : '')
+      +   '</div>'
+      + '</article>'
       + (rows
-          ? '<div class="ksp-sec"><span>HOW EVERYONE IS DOING</span>'
-            + (when2 ? '<i>' + esc(when2) + '</i>' : '') + '</div>'
+          ? '<section class="ksp-card ksp-board">'
+            + '<div class="ksp-bhead">'
+            +   '<span class="ksp-btitle">' + (perUnit ? 'Sold so far' : 'Where everyone stands') + '</span>'
+            +   '<span class="ksp-bcount' + (!perUnit && hits ? ' any' : '') + '">'
+            +     (perUnit ? totalUnits + (totalUnits === 1 ? ' unit sold' : ' units sold')
+                           : hits + ' of ' + people.length + ' hit')
+            +   '</span>'
+            + '</div>'
+            + (storeGoal > 0
+                ? '<div class="ksp-store"><span class="ksp-store-k">Store</span>'
+                  + '<span class="ksp-store-track"><span style="width:'
+                  +   Math.max(0, Math.min(100, Math.round((totalUnits / storeGoal) * 100)))
+                  +   '%;background:' + track + '"></span></span>'
+                  + '<span class="ksp-store-v">' + totalUnits + ' of ' + storeGoal + ' units</span></div>'
+                : '')
             + '<div class="ksp-people">' + rows + '</div>'
+            + '</section>'
           : '')
       + (tips.length
-          ? '<div class="ksp-sec"><span>HOW TO SELL IT</span></div>'
+          ? '<section class="ksp-card ksp-tipcard">'
+            + '<div class="ksp-tiphead">How to sell it · from Tawny</div>'
             + '<ul class="ksp-tips">' + tips.map(function(t) {
-                return '<li>' + esc(String(t).trim()) + '</li>'; }).join('') + '</ul>'
+                return '<li><span>' + esc(String(t).trim()) + '</span></li>'; }).join('') + '</ul>'
+            + '</section>'
           : '')
-      + '</article>';
-  }).join('') + '</div>';
-  return html;
+      + '</div>';
+  }).join('');
+
+  return '<div class="ksp-progs">' + html + '</div>';
 };
 
 /** True when a real curve is available — i.e. the pace marker is weighted, not linear. */
@@ -8937,7 +9043,12 @@ GC._kioskSpiff = { on: false, ok: false, programs: [], store: '' };
 
 function kioskSpiffPanelHtml_() {
   var s = GC._kioskSpiff;
-  return GC.spiffPanel(s.programs, { ok: s.ok, today: GC.todayStr(), storeName: s.store });
+  /* The slug is what lets the board's store track take the store's own registry color. It is
+     seeded with the rest of this state by the kiosk render, so it always belongs to the store
+     whose board is on screen — a slideshow that has moved on re-renders and re-seeds. */
+  return GC.spiffPanel(s.programs, {
+    ok: s.ok, today: GC.todayStr(), storeName: s.store, storeSlug: s.slug || '',
+  });
 }
 
 /* The 5-minute leaderboard refresh hands the server's SPIFF state here, so flipping the setting,
@@ -10549,6 +10660,7 @@ var kiosk = (function() {
       ok:       data.leaderboard.spiffOk === true,
       programs: data.leaderboard.spiffPrograms || [],
       store:    store.name || '',
+      slug:     slug || _slug || '',
     };
 
     return [
