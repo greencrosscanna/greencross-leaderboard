@@ -2215,7 +2215,19 @@ function getStoreBadges(store, params) {
  * response cache added above, which is the bigger one for them.
  *
  * Sales measured the second hop on 2026-09-15: 6 of 174 requests fired SIX-WIDE (3.4%) do not fail,
- * they HANG, 11-60 seconds. Three calls is three rolls of that die per board; this is one.
+ * they HANG, 11-60 seconds.
+ *
+ * "Three calls is three rolls of that die" was the original argument here and it is WRONG — noted
+ * 2026-09-17, do not restore it. Two independent six-wide libversion runs that day each put every
+ * stall they saw inside a SINGLE round, all six requests of it, every other round clean
+ * (p ≈ 1.6e-10 if per-request draws were independent). The endpoint goes away for ~27 seconds and
+ * everything in flight dies together, so three calls in one load are not three independent rolls:
+ * a board either misses the window entirely or loses all three. Bundling does not cut the odds of
+ * being hit.
+ *
+ * It is still right, for the reason below and one more: three calls hold three of the account's 30
+ * simultaneous execution slots for the whole stall instead of one, so the old shape made a bad
+ * window worse for every other app. Same conclusion, a different and more honest mechanism.
  *
  * Six-wide is the right condition to quote here because six-wide is the shape a load fires. It is
  * also the whole claim: those 174 were authenticated store-month pulls rather than `libversion`, so

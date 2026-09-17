@@ -680,7 +680,9 @@ function doGet(e) {
         _pg.carrierTrigger = _pgCarrier;
         return jsonOut(_pg, params.callback);
       } catch (e) {
-        return jsonOut({ ok: false, error: String((e && e.message) || e), carrierTrigger: _pgCarrier }, params.callback);
+        // scrubSecrets_: publishGoalsToCore_ fetches GX Core with the deploy secret in the query
+        // string, so UrlFetchApp's "Address unavailable: <url>" carries it into this catch.
+        return jsonOut({ ok: false, error: scrubSecrets_((e && e.message) || e), carrierTrigger: _pgCarrier }, params.callback);
       }
     }
 
@@ -867,7 +869,7 @@ function doGet(e) {
     if (params.action === 'goalpeek') {
       requireRole_(auth, ['owner','director']);
       try { return jsonOut({ ok: true, central: GXCore.getPeriodGoals(params.store || '', params.pp || '') }, params.callback); }
-      catch (e) { return jsonOut({ ok: false, error: String(e) }, params.callback); }
+      catch (e) { return jsonOut({ ok: false, error: scrubSecrets_(e) }, params.callback); }   // a GXCore fetch throws the URL
     }
     // Bust the cached hourly-target distribution so it recomputes (e.g., after widening the sample /
     // adding smoothing). Next storetoday/director load re-fetches the same-DOW shape.
@@ -1460,8 +1462,59 @@ function scrubSecrets_(msg) {
     .replace(/(secret|token|session|auth|key|pass|password)=[^&\s"']*/gi, '$1=[redacted]');
 }
 
+/* ── EVERY EMAIL LEAVES THROUGH HERE ─────────────────────────────────────────────────────────────
+ *
+ * v1.851 put scrubSecrets_ on both router catches, and that fixed REPLIES. Mail was never counted,
+ * and mail is the worse exit of the two: a screen shows an error to one person and is gone, an
+ * email sits in a mailbox, gets forwarded, and stays searchable for years.
+ *
+ * The leak is not hypothetical here. bugNotify_'s body interpolates `res.mail_error` — an error
+ * string handed back by GX Core, which is a different project's exception text — and the shape this
+ * whole file guards against is exactly that: UrlFetchApp throws "Address unavailable: <the whole
+ * url>", query string and all, so a secret WE put in a URL comes back inside somebody's error
+ * message. One hop further away does not make it safer.
+ *
+ * ONE EXIT, NOT A SCRUB AT EACH CALL SITE, and that is the point rather than tidiness. Crew had a
+ * correct, derived, tested scrub and still shipped seven sends with exactly one scrubbed — the one
+ * somebody had gone looking at. A scrub at one exit says nothing about a second exit, and the next
+ * person to add a send will not read this comment. Funnel it and the question stops being asked.
+ *
+ * IDEMPOTENT ON PURPOSE: scrubSecrets_ replaces `name=<value>` with `name=[redacted]`, and
+ * `[redacted]` contains no `=`, so a caller that already scrubbed stays correct rather than
+ * double-mangling. That is what lets a call site scrub for its own reasons without coordinating.
+ *
+ * Copies the message rather than mutating the caller's object — a caller that builds one payload
+ * and reuses it must not find its own fields rewritten underneath it.
+ */
+function sendMail_(msg) {
+  var m = {}, k;
+  for (k in msg) if (Object.prototype.hasOwnProperty.call(msg, k)) m[k] = msg[k];
+  ['subject', 'body', 'htmlBody'].forEach(function (f) {
+    if (m[f] != null) m[f] = scrubSecrets_(m[f]);
+  });
+  MailApp.sendEmail(m);
+}
+
+/* ── EVERY REPLY LEAVES THROUGH HERE, AND IT SCRUBS THE FINISHED BODY ────────────────────────────
+ *
+ * v1.851 put scrubSecrets_ on the two router catches, and this repo's own note to core-admin on
+ * 2026-09-15 said why that is not enough: the leak is not one catch. Handlers return
+ * {ok:false, error: …} and hand it straight to jsonOut without ever passing a router catch, so a
+ * router-only scrub leaves every one of those leaking. That argument was right, it was accepted,
+ * and GX Core and Crew both acted on it by scrubbing at the single reply builder — while the repo
+ * that made it kept fixing catches one at a time.
+ *
+ * Scrubbing the SERIALIZED body instead of each field makes the rule true by construction: no reply
+ * can carry `secret=…` out of this app, whatever route built it and whether or not anyone
+ * remembered. The hand-scrubbed catches upstream stay — scrubSecrets_ is idempotent — and they are
+ * now belt to this brace rather than the only fence.
+ *
+ * SAFE ON JSON because the pattern stops at a quote: `[^&\s"']*` cannot run past the end of a string
+ * value, so a redaction never eats a closing `"` and the body stays parseable. `[redacted]` adds no
+ * character JSON cares about.
+ */
 function jsonOut(data, callback) {
-  const json = JSON.stringify(data);
+  const json = scrubSecrets_(JSON.stringify(data));
   if (callback) {
     return ContentService
       .createTextOutput(callback + '(' + json + ')')
@@ -1879,7 +1932,7 @@ function handleBugReport_(b) {
    for the reason every send in this file is: mail is the enhancement, the report is the thing. */
 function bugNotify_(o) {
   try {
-    MailApp.sendEmail({
+    sendMail_({
       to:      'sky@greencrosscanna.com',
       subject: o.subject,
       body: o.lead.concat([
@@ -2016,16 +2069,22 @@ function gxStoreIdToAppSlug_() {
 /**
  * Run ONCE from the Apps Script editor (select reauthMail → Run) to re-grant the
  * send-email scope after a manifest change. Zero args so it runs directly, and it
- * calls MailApp — so running it triggers the "Authorization required" consent for
- * script.send_mail. Approve it, and you'll receive the confirmation email. After
- * that, bug-report emails work again (verify with ?action=bugpipetest).
+ * reaches MailApp through sendMail_ — so running it triggers the "Authorization
+ * required" consent for script.send_mail. Approve it, and you'll receive the
+ * confirmation email. After that, bug-report emails work again (verify with
+ * ?action=bugpipetest).
+ *
+ * Its three strings are literals with no caught error and no URL in them, so this send could have
+ * carried a `@gx-exit-ok` marker instead. It goes through sendMail_ anyway: a marker is a promise
+ * about what a body contains today, and the next person to add a variable here would have to notice
+ * the marker and remove it. One exit needs no promise.
  */
 function reauthMail() {
-  MailApp.sendEmail(
-    'sky@greencrosscanna.com',
-    '✅ Leaderboard re-auth test',
-    'If you received this, the send-email scope is restored — bug-report emails will work again.'
-  );
+  sendMail_({
+    to:      'sky@greencrosscanna.com',
+    subject: '✅ Leaderboard re-auth test',
+    body:    'If you received this, the send-email scope is restored — bug-report emails will work again.',
+  });
   return 'sent';
 }
 

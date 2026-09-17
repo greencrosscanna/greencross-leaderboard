@@ -10,7 +10,14 @@
  *  the most constant consumer in the suite, and every GX app runs as one Google account capped at
  *  30 simultaneous executions — the cap the suite hit at 114 on 2026-09-15 while every app's
  *  screens queued. Sales also measured 6 of 174 /exec requests fired SIX-WIDE (3.4%) HANGING
- *  11-60s rather than failing; four calls is four rolls of that die per board, one is one.
+ *  11-60s rather than failing.
+ *
+ *  NOT "four rolls of that die", which is what this said until 2026-09-17: two independent six-wide
+ *  runs that day each put every stall inside a single round and took all six requests of it, so the
+ *  hop goes away for ~27s and everything in flight dies together. Four calls in one load are not
+ *  four independent draws. What four calls DID cost is four of the account's 30 execution slots held
+ *  for the length of the stall instead of one — which is the cap in the sentence above, so the two
+ *  halves of this paragraph are the same fact rather than two.
  *
  *  The two facts above are closer together than they look, which is why the rate is quoted
  *  six-wide and only six-wide. Sales' wider sweeps in that run stalled more often, but a 30-wide
