@@ -2,8 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "greencross-leaderboard",
-      "url": "https://greencrosscanna.github.io/greencross-leaderboard/"
+      "name": "performance",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["/private/tmp/claude-501/-Users-skypinnick-Library-CloudStorage-Dropbox-GX-Dashboards-greencross-leaderboard/e0910ab5-199a-404a-8f4d-2e6424eb5d0b/scratchpad/serve.py"],
+      "port": 8181
     }
   ]
 }
