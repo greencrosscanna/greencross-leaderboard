@@ -62,7 +62,7 @@ FOREIGN_HOST_STALE_HOURS=12
 # ─── reading the claim ──────────────────────────────────────────────────────────────────────────
 c_pid=""; c_session=""; c_host=""; c_started=""; c_label=""; c_branch=""; c_epoch=""
 read_claim() {
-  c_pid=""; c_session=""; c_host=""; c_started=""; c_label=""; c_branch=""; c_epoch=""
+  c_pid=""; c_session=""; c_host=""; c_started=""; c_label=""; c_branch=""; c_epoch=""; c_touched=""
   [ -f "$CLAIM" ] || return 1
   while IFS='=' read -r k v; do
     case "$k" in
@@ -71,19 +71,83 @@ read_claim() {
       host)    c_host="$v" ;;
       started) c_started="$v" ;;
       epoch)   c_epoch="$v" ;;
+      touched) c_touched="$v" ;;
       label)   c_label="$v" ;;
       branch)  c_branch="$v" ;;
     esac
   done < "$CLAIM"
   [ -n "$c_pid" ] || return 1
+  # A claim written before `touched` existed has only `epoch`. Treat the claim instant as the last
+  # activity rather than as unknown: it is the truth for a claim that was taken and never used again,
+  # which is exactly the shape this expiry is for.
+  [ -n "$c_touched" ] || c_touched="$c_epoch"
   return 0
 }
+
+# Human-readable age, so a number a person can judge appears wherever a claim is described.
+human_age() {                          # $1 = epoch seconds
+  [ -n "${1:-}" ] || { printf 'unknown'; return; }
+  _s=$(( $(date +%s) - $1 ))
+  [ "$_s" -lt 0 ] && _s=0
+  if   [ "$_s" -lt 90 ];    then printf '%ss ago' "$_s"
+  elif [ "$_s" -lt 5400 ];  then printf '%dm ago' $(( _s / 60 ))
+  elif [ "$_s" -lt 172800 ]; then printf '%dh ago' $(( _s / 3600 ))
+  else printf '%dd ago' $(( _s / 86400 )); fi
+}
+
+# ── A CLAIM IS KEPT ALIVE BY WORKING, AND OTHERWISE EXPIRES ──────────────────────────────────────
+#
+# THE BUG THIS FIXES (2026-09-17). The claim was taken as a side effect of a transient act — one
+# commit — and released never. Liveness was `kill -0` on CLAUDE_PID, which keeps passing for as long
+# as the session is open, and FOREIGN_HOST_STALE_HOURS only sweeps claims from OTHER machines. So a
+# same-host claim had no staleness at all: a session that committed once at 19:48 still owned the
+# repo at 10:23 the next morning.
+#
+# Measured that morning: ONE hub session was holding greencross-command-center, gx-theme, sales and
+# crew — four repos, up to 24 hours, all long finished. The Crew chat sat read-only for FOURTEEN
+# HOURS and twice reported to Sky that Crew was locked, once inside a recommendation to defer a
+# feature. A subagent inherits its parent's CLAUDE_PID so its claim outlives it, but the plain-commit
+# path does the same thing, which is why "it is a subagent problem" undersells it.
+#
+# WHY THE FIX IS A TTL AND NOT AN IDLENESS TEST. The mismatch is the whole bug: taken by a transient
+# act, released never. Renew on every gated action and expire past the TTL, and a session that is
+# genuinely working keeps its claim BY WORKING while one that committed once last night drops it with
+# nobody deciding anything. One rule covers the commit path and the subagent path, because both
+# already route through `check`.
+#
+# THE COSTS ARE ASYMMETRIC AND USED TO POINT THE WRONG WAY. A false refusal is silent, permanent and
+# self-confirming — the tool never once suggested the claim might be dead, so the Crew session
+# believed it and repeated it as fact. A false release is loud, rare, and recoverable through the
+# reflog. When the call is close, bias toward releasing. (Reasoning from the Crew session, 2026-09-17;
+# the first draft of this fix tried to measure idleness, which is a harder question this need not ask.)
+#
+# 90 MINUTES, AND WHY THAT IS SAFE. This lock protects HISTORY — commits, pushes, branch changes —
+# not the working tree, which is gxtreeguard.sh's job. A session that has not performed a gated action
+# in 90 minutes is not mid-`checkout -b`. The 2026-09-02 incident that justifies the whole mechanism
+# played out in MINUTES, and a live TTL still refuses that case exactly as before.
+#
+# RENEWED BY THE HOLDER'S OWN `who`/`status` TOO, not only by gated actions. A working session checks
+# constantly — this one ran `who` dozens of times in a day — and that is good liveness. It is
+# holder-only on purpose: if a FOREIGN session's `who` renewed the claim, the stuck state would
+# rebuild itself, and the sessions most likely to poll `who` are the ones being refused.
+#
+# kill -0 IS KEPT as well. A closed session still frees its repo immediately rather than in 90
+# minutes; the TTL is the backstop for a session that is alive but finished.
+CLAIM_IDLE_TTL_MIN=90
 
 # 0 = a live claim exists (fills c_*), 1 = no claim / stale (and stale ones are removed)
 live_claim() {
   read_claim || return 1
   if [ "$c_host" = "$HOST" ]; then
-    if kill -0 "$c_pid" 2>/dev/null; then return 0; fi
+    # A closed session frees the repo at once. A session that is alive but has done nothing gated
+    # for CLAIM_IDLE_TTL_MIN frees it too — see the long note above CLAIM_IDLE_TTL_MIN.
+    if kill -0 "$c_pid" 2>/dev/null; then
+      _idle=$(( $(date +%s) - ${c_touched:-0} ))
+      if [ -n "${c_touched:-}" ] && [ "$_idle" -gt $(( CLAIM_IDLE_TTL_MIN * 60 )) ]; then
+        rm -f "$CLAIM"; return 1
+      fi
+      return 0
+    fi
     rm -f "$CLAIM"; return 1
   fi
   # different machine: age it out rather than probe a pid that means nothing here
@@ -131,14 +195,42 @@ write_claim() {                        # $1 = label
     echo "host=$HOST"
     echo "started=$(date '+%Y-%m-%d %H:%M')"
     echo "epoch=$(date +%s)"
+    echo "touched=$(date +%s)"
     echo "branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
     echo "label=${1:-}"
   } > "$CLAIM"
 }
 
+# Renew the claim — ONLY when the caller is the holder. A foreign session's touch would rebuild the
+# stuck state this expiry exists to remove, and the sessions most likely to poll are the refused ones.
+# Rewrites via a temp file so a reader never sees a half-written claim.
+touch_claim() {
+  [ -n "$ME" ] || return 0
+  read_claim || return 0
+  [ "$c_pid" = "$ME" ] || return 0
+  umask 077
+  {
+    echo "pid=$c_pid"
+    echo "session=$c_session"
+    echo "host=$c_host"
+    echo "started=$c_started"
+    echo "epoch=$c_epoch"
+    echo "touched=$(date +%s)"
+    echo "branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "${c_branch:-?}")"
+    echo "label=$c_label"
+  } > "$CLAIM.tmp" 2>/dev/null && mv -f "$CLAIM.tmp" "$CLAIM" 2>/dev/null
+  return 0
+}
+
 describe_holder() {
   _who="session ${c_session:+$(short_session "$c_session")}"
   [ -n "$c_label" ] && _who="$_who — \"$c_label\""
+  # The AGE goes in every description, because the refusal is the only message most sessions ever
+  # see — the Crew session never ran `who`, it read the hook output and stopped. "held by session
+  # 928b0ddd" invites belief; "claimed 14h ago · last action 14h ago" invites a second look.
+  _who="$_who · claimed $(human_age "${c_epoch:-}")"
+  [ -n "${c_touched:-}" ] && [ "${c_touched:-0}" != "${c_epoch:-0}" ] \
+    && _who="$_who · last action $(human_age "$c_touched")"
   printf '%s' "$_who"
 }
 
@@ -183,7 +275,10 @@ case "$CMD" in
       # reported the same refused-then-"free" sequence. So the first gated action (commit, push,
       # branch change) by a session in an unclaimed checkout takes the claim, whatever held it before.
       # (An earlier version of this comment blamed old chats still open. There were none.)
-      live_claim || write_claim ""
+      # THE RENEWAL. Every gated action by the holder pushes the claim's expiry out, so a session
+      # that is genuinely working keeps its claim by working. This is the whole mechanism — see the
+      # note above CLAIM_IDLE_TTL_MIN. write_claim already stamps `touched`, so the two paths agree.
+      live_claim && touch_claim || write_claim ""
       exit 0
     fi
     if [ "${GX_CLAIM_OK:-0}" = "1" ]; then
@@ -201,8 +296,22 @@ case "$CMD" in
       echo "   held by: $(describe_holder)"
       echo "   since:   ${c_started:-unknown}${c_branch:+   on branch $c_branch}"
       echo
-      echo "   What to do: finish in the other chat first, or work in a different repo."
-      echo "   If that session is definitely closed:   sh ./gxclaim.sh release --force"
+      # A claim past two thirds of the TTL is more likely finished than busy. Say so, rather than
+      # handing the judgement to the party with the least information — which is what "if that
+      # session is definitely closed" did, and why one sat refused for fourteen hours.
+      _stalish=0
+      [ -n "${c_touched:-}" ] && [ $(( $(date +%s) - c_touched )) -gt $(( CLAIM_IDLE_TTL_MIN * 40 )) ] && _stalish=1
+      if [ "$_stalish" = "1" ]; then
+        echo "   ⚠ That session has done nothing in this repo for $(human_age "$c_touched" | sed 's/ ago//')."
+        echo "     It has most likely finished and simply not let go. Freeing it is safe if its"
+        echo "     working tree is clean — check with: git status"
+        echo "         sh ./gxclaim.sh release --force"
+        echo
+        echo "   Otherwise: finish in the other chat first, or work in a different repo."
+      else
+        echo "   What to do: finish in the other chat first, or work in a different repo."
+        echo "   If that session is definitely closed:   sh ./gxclaim.sh release --force"
+      fi
       echo "   To override this one command:           GX_CLAIM_OK=1 <your command>"
       echo
     } >&2
@@ -222,7 +331,29 @@ case "$CMD" in
     ;;
 
   who)
-    if live_claim; then echo "$REPO: held by $(describe_holder) since ${c_started:-?}"
+    # ─── SAY WHEN THE HOLDER IS YOU ───────────────────────────────────────────────────────────────
+    # `who` printed "held by session 928b0ddd" whether that session was somebody else or the caller
+    # itself, and `who` is the command the suite CLAUDE.md tells everyone to run. A session reading
+    # its own claim back has no way to tell — a SUBAGENT especially, because it shares its parent's
+    # CLAUDE_PID (so the claim genuinely is its own) while knowing nothing about its parent's session
+    # id. The observed cost is a session standing down from a tree it already holds, waiting for a
+    # handover that will never come because there is nobody to hand over.
+    #
+    # `check` was never wrong about this — held_by_other() has always compared c_pid to ME, so the
+    # GATE has always let a session through its own claim. Only the advisory line was ambiguous,
+    # which is why this presented as sessions politely refusing to work rather than as a hard failure.
+    # Sky, 2026-09-16: "we keep having an issue where a session thinks its locked, but it's seeing
+    # the lock from it's own session."
+    #
+    # Exit code stays 0 in every branch on purpose. Nothing can depend on a non-zero today, so adding
+    # one would be a silent behavior change to every caller for the sake of a line they can read.
+    if live_claim; then
+      _mine=""
+      # Holder-only renewal: a working session checks `who` constantly and that is good liveness.
+      # It must not renew for a FOREIGN caller — that would rebuild the stuck state, and the sessions
+      # most likely to poll `who` are precisely the ones being refused. touch_claim enforces it too.
+      [ -n "$ME" ] && [ "$c_pid" = "$ME" ] && { touch_claim; _mine=" — THIS SESSION. You already hold it; go ahead."; }
+      echo "$REPO: held by $(describe_holder) since ${c_started:-?}$_mine"
     else
       _others="$(others_here)"
       if [ -n "$_others" ]; then
