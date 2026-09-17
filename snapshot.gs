@@ -227,7 +227,9 @@ function getStoreForDate_(store, dateStr) {
 
   // onShift = employees who transacted that day, sorted by sales descending
   var _excluded = getExcluded_();
-  var _nicks    = getNicknames_();
+  // Scoped to THIS store, same rule as the live board: an initial is only added when two people at
+  // the same store read the same (Sky, 2026-09-17). A historical card must say what the board said.
+  var _nicks    = getNicknames_(store);
   var onShift = Object.values(agg.byEmployee)
     .filter(function(emp) { return !_excluded.has(nameToKey_(emp.name)); })
     .sort(function(a, b) { return b.sales - a.sales; })
@@ -338,7 +340,11 @@ function backfillDateRange_(fromDateStr, toDateStr) {
 
   // Load lookup tables once — avoids a ScriptProperty read per iteration
   var _excluded = getExcluded_();
-  var _nicks    = getNicknames_();
+  /* ONE NICKNAME MAP PER STORE, built once for the whole backfill. The disambiguating initial is
+     counted within a store (Sky, 2026-09-17), so this can no longer be a single chain-wide map —
+     but calling getNicknames_ inside the date loop would walk the roster 30 x 6 times per chunk. */
+  var _nicksByStore = {};
+  STORES.forEach(function (s_) { _nicksByStore[s_.slug] = getNicknames_(s_); });
 
   var CHUNK_DAYS = 30;   // 30 days × 6 stores = 180 parallel requests per fetchAll
   var newRows = [];      // rows to append in one batch write
@@ -404,7 +410,7 @@ function backfillDateRange_(fromDateStr, toDateStr) {
           .map(function(emp) {
             return {
               initials:     emp.initials,
-              name:         applyNickname_(emp.name, _nicks),
+              name:         applyNickname_(emp.name, _nicksByStore[store.slug] || {}),
               status:       'on',
               sales:        Math.round(emp.sales),
               transactions: emp.transactions || 0,

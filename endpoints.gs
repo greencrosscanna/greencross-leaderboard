@@ -1493,7 +1493,7 @@ function getStoreToday(store, params) {
   //
   // getNicknames_ already answers the question, and answers it better: it compares against the live
   // roster suite-wide rather than against whoever happens to sell at one store.
-  const _tickerNicks = getNicknames_();
+  const _tickerNicks = getNicknames_(store);
 
   // Goal: use yesterday's DOW when pre-open so % reflects how yesterday did
   // vs yesterday's target. Pre-open DOW: (today.dow + 6) % 7 (e.g. Mon→Sun).
@@ -1608,7 +1608,7 @@ function getStoreToday(store, params) {
 
   // Build shift strip: active employees (have transactions today) + known
   // roster employees who haven't transacted yet (shown as off-shift).
-  const _shiftNicks = getNicknames_();
+  const _shiftNicks = getNicknames_(store);
   const activeEmps = Object.values(agg.byEmployee)
     .filter(emp => !gxIsExcluded_(emp))
     .sort((a, b) => b.sales - a.sales)
@@ -1962,7 +1962,7 @@ function getStoreLeaderboard(store, params) {
   const empTargets  = computeEmpTargets_(store.slug, dailyGoal);
   const fallbackTgt = dailyGoal > 0 ? Math.round(dailyGoal / 4) : 0;
 
-  const _storeNicknames = getNicknames_();
+  const _storeNicknames = getNicknames_(store);
 
   // SPIFF sell-through for this store's crew, joined on the Dutchie employee id that both
   // sides already carry. Wrapped: SPIFF is a separate app and this is the all-staff kiosk —
@@ -2184,7 +2184,7 @@ function getStoreBadges(store, params) {
   });
 
   // Apply nicknames to all badge winners
-  const _badgeNicks = getNicknames_();
+  const _badgeNicks = getNicknames_(store);
   badges.forEach(function(b) {
     if (b.winner) b.winner = applyNickname_(b.winner, _badgeNicks);
   });

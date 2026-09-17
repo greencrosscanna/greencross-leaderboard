@@ -311,7 +311,13 @@ function gxIsExcluded_(emp) {
  * trophy that silently vanishes because a lookup was cold is a worse one nobody can see.
  */
 function gxBelongsToStore_(emp, store) {
-  const rec = gxRecForEmp_(emp);
+  return gxRecBelongsToStore_(gxRecForEmp_(emp), store);
+}
+
+/* The same rule, for a caller that already HOLDS the record — getNicknames_ walks the whole roster
+ * and going back through gxRecForEmp_ per key would re-resolve every one of them by name. One
+ * definition, two entry points, rather than the store translation written out twice. */
+function gxRecBelongsToStore_(rec, store) {
   if (!rec || !rec.homeStore) return true;
 
   // home_store is a Core store_id ('hillsboro'); this app's slug is its display name ('baseline').

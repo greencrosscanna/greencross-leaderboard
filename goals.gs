@@ -40,11 +40,26 @@ function getStorePlans_() {
  * Falls back to preferredName where short_name is absent -- an older pinned library version does not
  * derive it, and bare first names are the behavior we already had, not a new failure.
  */
-function getNicknames_() {
+function getNicknames_(store) {
   var out = {};
   try {
     var recs = gxAllRecs_();
     var keys = Object.keys(recs);
+
+    /* THE COLLISION IS COUNTED AT ONE STORE, NOT ACROSS THE CHAIN (Sky, 2026-09-17: "we only need
+     * to add the last initial if two people have the same name at the same store, so at Baseline we
+     * have two Zach's, we need it, at Century we only have one Nate, don't need it").
+     *
+     * It used to count all 42 live people, so Nate Wydick wore an initial at Century because a
+     * different Nate works at Baseline — two people who can never appear on the same screen. A
+     * kiosk shows ONE store, and the disambiguator exists for the room on that board, so the room
+     * is what it should be measuring.
+     *
+     * NO STORE MEANS THE CHAIN, deliberately: the director's staff table and the badge strip list
+     * every store at once, and there two Nates genuinely do sit together. The caller says which
+     * question it is asking rather than one answer trying to serve both.
+     */
+    var scoped = !!(store && store.slug);
 
     // How many DISTINCT LIVE people answer to each casual name. Distinct matters: gxAllRecs_ files
     // one person under several name keys (legal name and display name both), so counting keys would
@@ -54,6 +69,10 @@ function getNicknames_() {
     keys.forEach(function (k) {
       var rec = recs[k];
       if (!gxIsLive_(rec.status)) return;
+      // gxRecBelongsToStore_ translates Crew's home_store id through the registry, and answers TRUE
+      // when it cannot judge (no home store, or a cold registry) — so an unknown never silently
+      // removes somebody from the count and un-disambiguates a name that needs it.
+      if (scoped && !gxRecBelongsToStore_(rec, store)) return;
       var id = rec.employeeId || k;
       if (seen[id]) return;
       seen[id] = true;

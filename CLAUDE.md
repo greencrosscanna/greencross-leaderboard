@@ -204,11 +204,34 @@ has no chrome, so a popup nobody can dismiss is the board gone for the shift.
 ## The name on a tile is DERIVED, and only disambiguates when it has to (2026-09-15)
 
 A kiosk tile has no room for a surname, so the board shows first names — **except** where two people
-on the live roster would read the same, and those get GX Core's `short_name` ("Nate S", "Zach B").
-Sky's call over initials for all 42. The comparison is on the **casual** form, which is `short_name`
-with Core's trailing initial taken back off; grouping on `preferred_name` instead would see "Zach B"
-and "Zach R" as two different names and find no collision at all. A name can therefore change when
+would read the same, and those get GX Core's `short_name` ("Nate S", "Zach B"). Sky's call over
+initials for all 42. The comparison is on the **casual** form, which is `short_name` with Core's
+trailing initial taken back off; grouping on `preferred_name` instead would see "Zach B" and
+"Zach R" as two different names and find no collision at all. A name can therefore change when
 somebody ELSE is hired or leaves — that is the point, not a bug.
+
+**THE COLLISION IS COUNTED AT ONE STORE, NOT ACROSS THE CHAIN (Sky, 2026-09-17.)** *"we only need to
+add the last initial if two people have the same name at the same store, so at Baseline we have two
+Zach's, we need it, at Century we only have one Nate, don't need it."* It counted all 42 live people
+until then, so Nate Wydick wore an initial at Century because a different Nate works at Portland —
+two people who can never appear on the same board. `getNicknames_(store)` scopes it;
+`getNicknames_()` with no argument still counts the chain, which is right for the director's staff
+table and the badge strip because those list every store at once. **The caller says which question
+it is asking** rather than one answer trying to serve both.
+
+Scoping is by **home store**, through `gxRecBelongsToStore_` (the rec-taking half of
+`gxBelongsToStore_`, split out so the roster walk does not re-resolve every key by name). It answers
+TRUE when it cannot judge — no home store, or a cold registry — so an unknown never quietly drops
+somebody from the count and un-disambiguates a name that needed it. **The edge it does not cover:**
+two same-named people from different stores both covering a shift at a third store would show two
+identical tiles. Home store is what "at the same store" means for a roster, and the board's set is
+really home crew ∪ today's sellers; closing that would mean passing the day's sellers into the name
+derivation. Not done, and worth knowing before someone reports it.
+
+Guarded per surface, because they do not share a function: the **tiles** come from
+`getStoreLeaderboard`, the **ticker** and **shift strip** from `getStoreToday`, and the director
+table from `getDirectorStaff`. The first pass at guarding the scoping covered the ticker and the
+strip and left the tiles — the surface Sky was actually looking at — passing while un-scoped.
 
 **Why it is not simply `preferred_name`.** Before a short form existed the disambiguator was written
 INTO the nickname — "Zach B" for Zachary Babcock — which is right here and wrong in every app that

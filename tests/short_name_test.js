@@ -95,7 +95,9 @@ const rosterProps = {
 
 /** Load the shipped source with GX Core answering `rows`. */
 function app(rows, extraExports) {
-  return H.load(['gx_roster.gs', 'dutchie_proxy.gs', 'endpoints.gs', 'dutchie_fetch.gs', 'goals.gs', 'auth.gs', 'discounts.gs'], {
+  // spiff.gs is here for getStoreLeaderboard's spiffShowEnabled_ — the staff TILES come from that
+  // function, and they are the surface the disambiguated name exists for.
+  return H.load(['gx_roster.gs', 'dutchie_proxy.gs', 'endpoints.gs', 'dutchie_fetch.gs', 'goals.gs', 'auth.gs', 'discounts.gs', 'spiff.gs'], {
     extraExports: extraExports || '',
     stubs: {
       PropertiesService: {
@@ -233,16 +235,50 @@ function test_tickerSaysTheSameNameAsTheCard_() {
     _eq_('the ticker keeps the initial', (one.ticker || []).map(function (t) { return t.who; }), ['Zach R']);
     _eq_('and the card agrees with it',  card && card.name, 'Zach R');
 
-    // The other half: a store where the twin does not work at all. The card says "Nate S" because
-    // the collision is a fact about the COMPANY; the old ticker said "Nate" because it was only
-    // ever a fact about this store.
+    /* The other half, and SKY REVERSED IT ON 2026-09-17: "we only need to add the last initial if
+       two people have the same name at the same store, so at Baseline we have two Zach's, we need
+       it, at Century we only have one Nate, don't need it."
+       Nathaniel Schneider covers a shift at Century; his twin works at Portland. He used to wear
+       "Nate S" there because the collision was counted across all 42 live people — an initial
+       telling him apart from somebody who cannot appear on that board. Now it is counted within
+       the store, so Century reads the plain nickname.
+       WHAT MUST STILL HOLD is that the card and the ticker AGREE. They disagreed once before, in
+       the other direction, and that is the bug this test was written for — not the scope. */
     H.setNow(Date.UTC(2026, 7, 31, 16 + 7, 0, 0));
     S.resetCaches();
     S.setTxns([txn(13, 90, '903', 'Nathaniel Schneider')]);
     const away = S.getStoreToday({ slug: 'century', name: 'Century' }, {});
     const awayCard = (away.onShift || []).filter(function (e) { return /Nate/.test(e.name); })[0];
-    _eq_('not truncated to "Nate"', (away.ticker || []).map(function (t) { return t.who; }), ['Nate S']);
-    _eq_('and the card agrees',     awayCard && awayCard.name, 'Nate S');
+    _eq_('one Nate at this store, so no initial', (away.ticker || []).map(function (t) { return t.who; }), ['Nate']);
+    _eq_('and the card still agrees with the ticker', awayCard && awayCard.name, 'Nate');
+
+    // And at the store where BOTH Nates work, the initial is still required and still on both.
+    H.setNow(Date.UTC(2026, 7, 31, 16 + 7, 0, 0));
+    S.resetCaches();
+    S.setTxns([txn(14, 90, '903', 'Nathaniel Schneider'), txn(15, 80, '904', 'Robert Wydick')]);
+    const home = S.getStoreToday({ slug: 'portland', name: 'Portland' }, {});
+    const homeWho = (home.ticker || []).map(function (t) { return t.who; }).sort();
+    _eq_('two Nates at one store still get initials', homeWho, ['Nate S', 'Nate W']);
+
+    /* THE STAFF CARDS, which are the surface Sky was actually looking at ("i'm in Century and
+       looking at Nate W"). They come from getStoreLeaderboard, NOT getStoreToday — a different
+       function with its own nickname map, and the first pass at guarding this scoping left it
+       uncovered: removing the store argument there kept every assertion green. The ticker and the
+       shift strip are not a proxy for the tile. */
+    H.setNow(Date.UTC(2026, 7, 31, 16 + 7, 0, 0));
+    S.resetCaches();
+    S.setTxns([txn(16, 90, '903', 'Nathaniel Schneider')]);
+    const cenLb = S.getStoreLeaderboard({ slug: 'century', name: 'Century' }, {});
+    const cenTile = (cenLb.staff || []).filter(function (e) { return /Nate/.test(e.name); })[0];
+    _eq_('the Century TILE reads the plain nickname', cenTile && cenTile.name, 'Nate');
+
+    H.setNow(Date.UTC(2026, 7, 31, 16 + 7, 0, 0));
+    S.resetCaches();
+    S.setTxns([txn(17, 90, '903', 'Nathaniel Schneider'), txn(18, 80, '904', 'Robert Wydick')]);
+    const porLb = S.getStoreLeaderboard({ slug: 'portland', name: 'Portland' }, {});
+    const porTiles = (porLb.staff || []).filter(function (e) { return /Nate/.test(e.name); })
+      .map(function (e) { return e.name; }).sort();
+    _eq_('and the Portland tiles keep both initials', porTiles, ['Nate S', 'Nate W']);
   } finally {
     H.setNow(null);
   }
