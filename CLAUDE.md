@@ -109,7 +109,59 @@ being blocked, what about an overlay that is acting like a popup"). *Corrected 2
 "Leaderboard renders none of it", which stopped being true the same day it was written.* SPIFF's page
 is the fallback now, not the destination — `spiffPanelHasSpiffCopy_` hands over to Leaderboard's own
 panel the moment every program in the payload carries a product or tips, so **the data flips it, not a
-deploy**, and a kiosk picks it up on its next 5-minute refresh. **The frame is loaded at
+deploy**, and a kiosk picks it up on its next 5-minute refresh.
+
+**And the panel is now SPIFF's redesigned board, drawn here (Sky's decision, 2026-09-16).** SPIFF
+redesigned `store.html`, then found no kiosk was drawing it — the copy had arrived, so
+`spiffPanelHasSpiffCopy_` was already true everywhere and the framed page had stopped being
+reachable. Sky's call was to ADOPT the redesign in our panel rather than go back to framing, and
+the reason is coupling: `store.html` calls SPIFF's engine for its own data, so framing it puts
+SPIFF's uptime in front of the most visible screen in the company. **The panel reads Core's
+published copy, which AGES rather than dies** — and `spiff.gs` already refuses a scope older than
+the watchdog threshold, so it cannot go quietly stale either. Publish, don't proxy, applied to the
+popup and not only to the numbers.
+
+**The source of truth for the LOOK is SPIFF's handoff bundle**,
+`greencross-spiff/design_handoff_spiff_kiosk_board/README.md` — not this repo's CSS and not
+`store.css`. Three stacked cards: the program (vendor, name, what to sell, and three figures — what
+it pays, units to hit your bonus, days left), then the BOARD as the centerpiece, then Tawny's tips.
+Four things about it that are not guessable from the code:
+
+- **The board was a footnote and is now the point.** Ranked by units descending with rank numbers,
+  46px rows, and everyone at the store on it *including everyone at zero* — a board listing only
+  sellers cannot tell you whether you are behind or simply not in this one.
+- **No earnings per person, and that fixed something real.** The old panel printed "· +$25" beside
+  anyone who had hit. A kiosk is a shared screen a customer can read over the counter, which is why
+  SPIFF's own `storeView` returns no earnings, cost, investment or ROI at all. The figure is still
+  on our payload; it no longer reaches the screen.
+- **The bars went green and are clamped at the goal.** They used to be the staff cards' own bars —
+  gold on a hit, plus a hash showing by how much the target was beaten. The handoff specifies green,
+  and the overshoot is already stated in words one column right ("11/8"), so the hash carried
+  nothing the row did not say. **Gold still means money on the cards; on this panel it is reserved
+  for days left at three or fewer** — the one thing here that is running out. A per-unit program has
+  no goal to be a fraction of, so its bars scale against the LEADER, which makes the bar a
+  comparison rather than a promise.
+- **The store-attainment track takes the store's live registry color**, through the
+  `--store-<slug>` var `GC.loadStoreColors()` has already overlaid with GX Core values — so a
+  Command Center edit reaches the wall without a deploy and a seventh store inherits its own color
+  instead of nothing. The slug comes off the URL hash and goes inside a style attribute, so it is
+  whitelisted to the shape a slug can have rather than escaped: `--store-<anything>` is a var name,
+  and an escaper built for text is the wrong tool for one.
+
+**The page-level store name and the "as of" stamp are gone**, which also closed Sky's bug of
+2026-09-16 ("we can remove the top header text Century 1 program running since this is embedded in
+Century's kiosk"). The popup's own bar already says SPIFF and names the store. `measuredAt` still
+arrives on the payload and is simply not drawn.
+
+**The iframe fallback was deliberately LEFT IN**, though SPIFF's note makes deleting it our call and
+`index.html`'s own comment asks for it. It is already unreachable on the normal path, and removing
+it also removes the net under a redesign that is one day old on six wall screens. What it still
+costs is SPIFF's 10-minute refresh running in a warmed frame nobody opens — worth closing out, as
+its own change.
+
+Gated by `tests/spiff_panel_test.js` and `tests/spiff_sidecar_contract_test.js`, which drive the
+shipped `GC.spiffPanel`; all eight new guards were proven red individually, including the one that
+matters most for a wall screen — that nobody's pay can reach it. **The frame is loaded at
 kiosk paint and left loaded** — `storeView` takes ~4s over JSONP, and lazy loading meant every tap
 bought a blank card ("the data takes too long to load"). The cost is SPIFF's own 10-minute refresh
 running on six wall screens all day; that trade is deliberate and SPIFF has been told. One permanent token per store, held in GX Core kv as
