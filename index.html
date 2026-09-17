@@ -3811,7 +3811,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
   document.head.appendChild(s);
 })();
 </script>
-<script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-client.js"></script>
+<script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-client.js" data-app="performance"></script>
 <!-- Shared chrome: GXAvatar builds the avatar (DiceBear + the _gchat overlay, ported from this
      app) and GXTopNav builds the user chip + menu, so no app hand-writes that markup and the
      menus cannot drift apart between apps. -->
@@ -5603,6 +5603,17 @@ GC.api = (function() {
   // Deployed GAS web app URL.
   var GAS_URL = 'https://script.google.com/macros/s/AKfycbxXqtL-rKjuzFQkyADWnHGEoM2ZSYp9g4t1J6vhyDTgHcfkEuQocYrN9DXV7_84Masuqg/exec';
 
+  /* THIS APP'S KEY IN GX CORE — and note it is `performance`, not `leaderboard`. That mapping is not
+     derivable from the repo name, which is why nothing tries to guess it anywhere in the suite.
+     WHY THIS PATH NEEDS ITS OWN COPY. gx-client.js now stamps every call it makes with the app from
+     its <script data-app>, but THIS file does not route the kiosk through gx-client — the board, the
+     ticker and the badge calls all go through the local jsonp() below. So the shared fix does not
+     reach the busiest caller in the suite: the wall screens. On 2026-09-16 the cockpit's load panel
+     read 80.6% of execution time as unattributed, and the kiosks are the likeliest bulk of it.
+     Tagging one place and not the other would have left the panel looking fixed while still being
+     unable to answer the only question it exists for. */
+  var APP_KEY = 'performance';
+
   // Fixtures base path (relative to index.html)
   var FX = 'src/fixtures/';
 
@@ -5727,7 +5738,9 @@ GC.api = (function() {
         resolve(data);
       };
 
-      var qs = Object.assign({ callback: cbName }, params || {});
+      /* APP_KEY goes on FIRST so an explicit params.app still wins — a call made on another app's
+         behalf has to keep saying so. See APP_KEY for why this path needs its own copy at all. */
+      var qs = Object.assign({ callback: cbName, app: APP_KEY }, params || {});
       var qStr = Object.keys(qs).map(function(k) {
         return encodeURIComponent(k) + '=' + encodeURIComponent(qs[k]);
       }).join('&');
