@@ -1741,13 +1741,13 @@ body.kiosk-bg {
   background: rgba(10,14,13,0.88);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
-  padding: 8px 18px;
+  padding: 3px 8px;
   display: flex;
   align-items: center;
   gap: 8px;
   overflow-x: auto;
   overflow-y: hidden;
-  max-height: 48px;
+  max-height: 28px;
 }
 .ss-chips-bar::-webkit-scrollbar { height: 4px; }
 .ss-chips-bar::-webkit-scrollbar-track { background: transparent; }
@@ -3685,7 +3685,7 @@ body.kiosk-bg {
   color: #0a0e0d;
   border: none;
   border-radius: 6px;
-  padding: 8px 18px;
+  padding: 3px 8px;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
@@ -4404,21 +4404,22 @@ GC.slideshow = (function() {
       var color = store.color || 'var(--green)';
       var name = store.name || storeSlug;
       var isActive = storeSlug === slug ? ' active' : '';
-      var escapedSlug = storeSlug.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-      html += '<button class="ss-chip' + isActive + '" data-slug="' + escapedSlug + '">'
+      
+      html += '<div class="ss-chip-store' + isActive + '" data-slug="' + storeSlug + '">'
            + '<span class="ss-chip-dot" style="background:' + color + '"></span>'
-           + '<span>' + GC.esc(name) + '</span>'
-           + '</button>';
+           + '<span class="ss-chip-name">' + GC.esc(name) + '</span>'
+           + '</div>';
     });
 
     chipsBar.innerHTML = html;
-    chipsBar.querySelectorAll('.ss-chip').forEach(function(btn) {
+    chipsBar.querySelectorAll('.ss-chip-store').forEach(function(btn) {
       btn.addEventListener('click', function() {
         navigateTo(btn.dataset.slug);
       });
     });
     document.body.appendChild(chipsBar);
   }
+
 
   function navigateTo(slug) {
     var idx = _slugs.indexOf(slug);
