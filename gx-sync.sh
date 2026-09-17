@@ -123,6 +123,17 @@ fetch serve.js           serve.js 755 || true
 fetch gx-preflight.sh    gx-preflight.sh 755 || true
 fetch gxengine.sh        gxengine.sh 755 || true
 fetch gx-deadcode.sh     gx-deadcode.sh 755 || true
+# The exit-scrub test. SYNCED RATHER THAN HAND-COPIED, because hand-copying is what went wrong: six
+# sessions each adopted it by copying, over an evening in which it was corrected three times, so two
+# repos ended up running a version whose matcher missed the commonest way Apps Script wraps a reply —
+# passing vacuously on files that had a real unscrubbed exit. That is the failure mode the test exists
+# to end, reproduced by its own distribution. It is safe to sync now because every app has adopted it
+# and cleared its exits; had it been added an evening earlier it would have turned five push gates red
+# at once for work nobody had scheduled.
+# 755, not 644: it carries a `#!/usr/bin/env node` shebang, and the mode gate here refuses to fetch
+# an executable without one — the same rule that caught deploy.sh and serve.py landing 0600 in four
+# repos after a sync, which left every push failing with Permission denied.
+fetch gx-exit-scrub-test.js tests/exit_scrub_test.js 755 || true
 # chmod each file individually with an explicit mode. "chmod +x a b c" is subject to umask and skips
 # the whole list if it errors early, and mktemp+mv lands these at 0600 -- which silently left deploy.sh
 # non-executable in some repos after a sync.

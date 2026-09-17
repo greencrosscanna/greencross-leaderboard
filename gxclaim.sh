@@ -49,7 +49,34 @@ CMD="${1:-status}"
 [ $# -gt 0 ] && shift
 
 GITDIR="$(git rev-parse --git-dir 2>/dev/null)" || { echo "gxclaim: not a git repository" >&2; exit 2; }
-CLAIM="$GITDIR/gx-claim"
+
+# ─── ONE REPO, ONE CLAIM, ONE SET OF HOOKS — resolved against the COMMON git dir ─────────────────
+# `--git-dir` is PER-WORKTREE: .git in a main checkout, .git/worktrees/<name> inside a linked
+# worktree. Until 2026-09-17 both the claim file and the hook install used it, which split this gate
+# two ways and made both halves lie confidently.
+#
+#   THE CLAIM. claim, who, release and release --force all acted on a different file depending on
+#   where they ran, and none could see the other. Found live in greencross-spiff on 2026-09-16:
+#   a session in a worktree held the MAIN checkout's claim, was asked to release it, ran release from
+#   its worktree, removed the worktree-local file and reported "released" in good faith — while the
+#   main checkout still held the claim and refused the other session's commit. Both sessions were
+#   reading true answers about two different files. The dangerous direction is the other one: a
+#   worktree session that arms at session start writes its claim where nobody looks, so a second
+#   session in the main folder sees "free" and edits the same tree. That is exactly the
+#   two-sessions-one-tree failure this script was written for after GX Core v284 shipped unreviewed.
+#
+#   THE HOOKS, and this half was not in the report. Git reads hooks from the COMMON dir — measured,
+#   not assumed: `git rev-parse --git-path hooks` inside a worktree returns <common>/hooks, a
+#   pre-commit placed there fires in the worktree, and one placed at the worktree git-dir NEVER RUNS.
+#   So `install` from a worktree wrote all three gates to a path git ignores and printed success. The
+#   SessionStart hook re-runs install every session precisely because this filesystem drops
+#   executable bits, so in a worktree that re-arming silently armed nothing.
+#
+# --path-format=absolute keeps this honest regardless of cwd; --git-common-dir alone can come back
+# relative. The fallback matters for an ancient git, not for ours.
+COMMONDIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+[ -n "$COMMONDIR" ] || COMMONDIR="$GITDIR"
+CLAIM="$COMMONDIR/gx-claim"
 REPO="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
 HOST="$(hostname -s 2>/dev/null || echo unknown)"
 ME="${CLAUDE_PID:-}"
@@ -365,7 +392,7 @@ case "$CMD" in
     ;;
 
   install)
-    HOOKS="$GITDIR/hooks"
+    HOOKS="$COMMONDIR/hooks"   # NOT $GITDIR — git reads hooks from the common dir; see the header
     mkdir -p "$HOOKS"
 
     # pre-push already exists in every GX repo and runs that repo's test/preflight gate. Keep whatever
@@ -431,7 +458,7 @@ HOOK_EOF
     ;;
 
   status)
-    HOOKS="$GITDIR/hooks"
+    HOOKS="$COMMONDIR/hooks"   # NOT $GITDIR — status must report on the hooks git will actually run
     echo "gxclaim — $REPO"
     if live_claim; then
       _mine=""

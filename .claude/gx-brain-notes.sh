@@ -86,10 +86,16 @@ GXCORE="https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6P
 SECRET=$(cat .gx_deploy_secret)
 
 # Retry-aware GET → prints a JSON object, or nothing after 4 tries. $1=action  $2=status
+#
+# WHY 20s AND NOT 6. Six seconds was inside the normal range for a slow library read, not a generous
+# timeout — GX Core measured 6-30s on getBrands this month. On 2026-09-16 a spiff session opened with a
+# pending ask in its inbox and this hook printed NOTHING: Core answered neither call inside six seconds,
+# four times. The same two calls by hand at --max-time 10 and 20 returned immediately. Reported by spiff;
+# the silent half is fixed below, in the renderer.
 gx_fetch() {
   _i=1
   while [ "$_i" -le 4 ]; do
-    _r=$(curl -sL --max-time 6 -G "$GXCORE" \
+    _r=$(curl -sL --max-time 20 -G "$GXCORE" \
       --data-urlencode "action=$1" --data-urlencode "secret=$SECRET" \
       --data-urlencode "app=$APP" --data-urlencode "status=$2" 2>/dev/null)
     case "$_r" in \{*) printf '%s' "$_r"; return 0 ;; esac   # accept only a JSON object; the flake is HTML
@@ -106,14 +112,27 @@ gx_fetch() {
 # "asked, nothing there" from "could not ask" instead of printing an all-clear over an unread inbox.
 _NOTES=$(gx_fetch notes open)
 _BUGS=$(gx_fetch bugs '')
-printf '{"notes_doc":%s,"bugs_doc":%s}' "${_NOTES:-null}" "${_BUGS:-null}" | python3 -c '
+printf '{"app":"%s","notes_doc":%s,"bugs_doc":%s}' "$APP" "${_NOTES:-null}" "${_BUGS:-null}" | python3 -c '
 import sys, json
 try: d = json.load(sys.stdin)
 except Exception: sys.exit(0)
-nd = d.get("notes_doc") or {}
-bd = d.get("bugs_doc") or {}
+nd_raw = d.get("notes_doc")
+bd_raw = d.get("bugs_doc")
+nd = nd_raw or {}
+bd = bd_raw or {}
 notes = nd.get("notes") or []
 bugs = bd.get("bugs") or []
+app = d.get("app") or nd.get("app") or bd.get("app") or "this app"
+# SAY SO WHEN IT COULD NOT ASK. The fetcher is careful to pass null rather than empty on a failed
+# call, precisely so these two cases stay distinguishable — and then, until 2026-09-17, the very next
+# line collapsed both into a silent exit. A session opened, saw nothing, and correctly concluded
+# nothing needed it. That is the failure this suite keeps paying for: a doorbell whose silence means
+# both "all clear" and "I could not reach the door". The distinction was already computed; it just
+# needed printing. Reported by spiff (note_mu5v8xfb_fizf) after a real ask went unseen.
+unreachable = [w for w, v in (("brain notes", nd_raw), ("the bug board", bd_raw)) if v is None]
+if unreachable:
+    print("⚠️  Could not reach GX Core — %s NOT checked for %s." % (" and ".join(unreachable), app))
+    print("      Silence below is not an all-clear. Re-run: sh .claude/gx-brain-notes.sh")
 if not notes and not bugs: sys.exit(0)
 # ASKS FIRST, IN FULL. FYIs collapse to a list of subjects.
 # The board grew faster than it drained because most notes were acknowledgments — they still had to be
@@ -141,7 +160,6 @@ blocked = [n for n in notes if str(n.get("status", "")).strip().lower() == "bloc
 rest = [n for n in notes if n not in blocked]
 asks = [n for n in rest if not is_fyi(n)]
 fyis = [n for n in rest if is_fyi(n)]
-app = nd.get("app") or bd.get("app") or "this app"
 if asks:
     print("\U0001F4CB Brain notes — %d NEEDING YOU for %s%s:" % (
         len(asks), app, (" (+%d done, below)" % len(fyis)) if fyis else ""))
