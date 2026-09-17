@@ -1070,9 +1070,18 @@ function daysOfRange_(range) {
   while (dStr <= lastStr && guard++ < 400) {
     const startMs = ptDateToUtcMs_(dStr);
     const endMs   = startMs + DAY - 1;
+    const sliceFrom = Math.max(startMs, fromMs);
+    const sliceTo   = Math.min(endMs, toMs);
     days.push({ dateStr: dStr,
-      fromUTC: new Date(Math.max(startMs, fromMs)).toISOString(),
-      toUTC:   new Date(Math.min(endMs, toMs)).toISOString() });
+      fromUTC: new Date(sliceFrom).toISOString(),
+      toUTC:   new Date(sliceTo).toISOString(),
+      /* WHETHER THIS SLICE IS THE WHOLE DAY. byStoreAggCached_ caches a settled day under a key
+         that names only the DATE, so a caller asking for part of a day would otherwise write a
+         part-day aggregate under the whole-day key and every later reader — month-to-date, the
+         rate benchmark, the historical store cards — would silently get a short day.
+         Nothing sliced a settled day until the KPI comparison window started ending at the current
+         time of day (2026-09-17); this is the guard that makes that safe rather than a trap. */
+      whole: sliceFrom <= startMs && sliceTo >= endMs });
     dStr = Utilities.formatDate(new Date(startMs + DAY + 12 * 3600000), STORE_TZ, 'yyyy-MM-dd');
   }
   return days;
@@ -1105,7 +1114,11 @@ function byStoreAggCached_(range, hardRefresh) {
   // measured as the bulk of the time a refresh spent that was not Dutchie.
   const cells = [];
   days.forEach(function(d) {
-    const settled = d.dateStr <= settledThru;
+    /* A PART-DAY IS NEVER "SETTLED", however old it is. `settled` gates both the cache READ and the
+       cache WRITE, and the key names only the date — so a part-day treated as settled would both
+       answer from a whole-day entry (too much) and overwrite one (too little). It is re-fetched
+       live every time instead, which is one store-day per build for the aligned window's last day. */
+    const settled = d.dateStr <= settledThru && d.whole !== false;
     STORES.forEach(function(s) {
       cells.push({ slug: s.slug, settled: settled, d: d,
                    key: 'GC_DAYAGG_v2_' + s.slug + '_' + d.dateStr });   // v2: discretionary-basis discountRate + registry-classified discountsBdt

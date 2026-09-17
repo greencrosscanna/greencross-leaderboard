@@ -5080,8 +5080,12 @@ GC.renderKpiBlock = function(summary, periodLabel) {
   var cmp        = summary.comparison || {};
   var priorNoun  = periodLabel === 'MTD' ? 'last month' : 'last period';
   var partial    = cmp.totalsDays && cmp.periodDays && cmp.totalsDays < cmp.periodDays;
+  /* "to this time" is the answer to Sky's question of 2026-09-17 — "is that evaluating compared to
+     day 4 of last period, or day 4 at the same time last period?" It is the latter now, and a card
+     that does not say so leaves a total that climbs through the day looking like a fault. */
+  var toTime     = cmp.totalsToTime ? ', to this time' : '';
   var totalsLabel = partial
-    ? 'vs. first ' + cmp.totalsDays + (cmp.totalsDays === 1 ? ' day' : ' days') + ' of ' + priorNoun
+    ? 'vs. first ' + cmp.totalsDays + (cmp.totalsDays === 1 ? ' day' : ' days') + ' of ' + priorNoun + toTime
     : 'vs. ' + priorNoun;
   var rateLabel  = (cmp.rateDays && cmp.periodDays && cmp.rateDays < cmp.periodDays)
     ? 'vs. first ' + cmp.rateDays + (cmp.rateDays === 1 ? ' day' : ' days') + ' of ' + priorNoun
@@ -5091,19 +5095,28 @@ GC.renderKpiBlock = function(summary, periodLabel) {
   /* A delta with no basis under it is the thing being fixed, so `basis` is passed, never assumed.
      It is dropped only where there is no delta to explain (Flagged/Active Staff, which carry a
      breakdown line of their own instead). */
-  function kpiCard(small, label, value, deltaHtml, basis, colorClass) {
+  /* THE ARROW SAYS WHICH WAY, THE COLOR SAYS WHETHER THAT IS GOOD — and for discounts those are
+     opposite. `.kpi-delta.up` is green and `.down` is red, and the class was picked purely off the
+     arrow glyph, so discounting MORE than last period rendered as a green ▲ on both Total
+     Discounts and Discount Rate. On a screen whose whole point is that discounting is the thing to
+     watch, that is the one direction it must not congratulate. `invert` swaps the color and leaves
+     the arrow alone: ▲ still means it went up, it is just no longer green. */
+  function kpiCard(small, label, value, deltaHtml, basis, colorClass, invert) {
+    var dir = deltaHtml && deltaHtml.indexOf('▲') === 0 ? 'up'
+            : deltaHtml && deltaHtml.indexOf('▼') === 0 ? 'down' : '';
+    var tone = invert ? (dir === 'up' ? 'down' : dir === 'down' ? 'up' : '') : dir;
     return '<div class="kpi' + (small ? ' small' : '') + '">'
       + '<div class="kpi-label">' + GC.esc(label) + '</div>'
       + '<div class="kpi-value' + (colorClass ? ' ' + colorClass : '') + '">' + value + '</div>'
-      + (deltaHtml ? '<div class="kpi-delta ' + (deltaHtml.indexOf('▲') === 0 ? 'up' : deltaHtml.indexOf('▼') === 0 ? 'down' : '') + '">' + deltaHtml + '</div>' : '')
+      + (deltaHtml ? '<div class="kpi-delta ' + tone + '">' + deltaHtml + '</div>' : '')
       + (deltaHtml && basis ? '<div class="kpi-basis">' + GC.esc(basis) + '</div>' : '')
       + '</div>';
   }
   function bigKpi(label, value, deltaHtml, basis, colorClass) {
     return kpiCard(false, label, value, deltaHtml, basis, colorClass);
   }
-  function smallKpi(label, value, deltaHtml, basis, colorClass) {
-    return kpiCard(true, label, value, deltaHtml, basis, colorClass);
+  function smallKpi(label, value, deltaHtml, basis, colorClass, invert) {
+    return kpiCard(true, label, value, deltaHtml, basis, colorClass, invert);
   }
 
   var bigRow = '<div class="kpi-row large">'
@@ -5122,22 +5135,27 @@ GC.renderKpiBlock = function(summary, periodLabel) {
     ? summary.flaggedStaffBreakdown.repeat + ' repeat · ' + summary.flaggedStaffBreakdown.new + ' new'
     : '';
 
+  /* ORDER: the four trade numbers, then the two STAFF cards last (Sky, 2026-09-17: "move Sales /
+     Hour left next to discount rate, so the 2 staff cards will be the right two"). Sales / Hour
+     used to sit after Flagged and Active Staff, which split the money numbers around the people
+     numbers. The two discount cards pass `invert` — see kpiCard for why a green ▲ on a discount
+     was wrong. */
   var smallRow = '<div class="kpi-row small">'
     + smallKpi('Avg UPT',         GC.fmtDecimal(summary.avgUPT),
         GC.fmtDeltaDecimal(d.avgUPT), rateLabel)
     + smallKpi('Total Discounts', GC.fmtCurrencyFull(summary.totalDiscounts),
-        GC.fmtDeltaCurrency(d.totalDiscounts), totalsLabel, 'v-amber')
+        GC.fmtDeltaCurrency(d.totalDiscounts), totalsLabel, 'v-amber', true)
     + smallKpi('Discount Rate',   GC.fmtPct(summary.discountRate),
-        discDelta, rateLabel, 'v-amber')
-    + smallKpi('Flagged Staff',   String(summary.flaggedStaff),            flagSub, '', 'v-red')
-    + smallKpi('Active Staff',    String(summary.activeStaff),
-        (summary.sellingStaff != null ? summary.sellingStaff + ' with sales · ' : 'across ') + summary.storeCount + ' stores', '')
+        discDelta, rateLabel, 'v-amber', true)
     // Sales / Hour is a rate, but it is compared on the ALIGNED window rather than the whole prior
     // period — and in a pay period that is the better comparison, not a compromise. A period is a
     // whole number of weeks, so the first three days of this one are the same three weekdays as the
     // first three of the last; the full-period average would fold in two weekends.
     + smallKpi('Sales / Hour',    '$' + GC.fmtNum(summary.salesPerHour),
         GC.fmtDeltaNum(d.salesPerHour, '$'), totalsLabel)
+    + smallKpi('Flagged Staff',   String(summary.flaggedStaff),            flagSub, '', 'v-red')
+    + smallKpi('Active Staff',    String(summary.activeStaff),
+        (summary.sellingStaff != null ? summary.sellingStaff + ' with sales · ' : 'across ') + summary.storeCount + ' stores', '')
     + '</div>';
 
   return bigRow + smallRow;

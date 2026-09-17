@@ -182,6 +182,120 @@ console.log('\nDirection');
   ok('a flat period prints no signed zeros', !/[+−−]\s*\$?0(\.0+)?( pts)?(?![.\d])/.test(flat));
 }
 
+/* ── DISCOUNTING MORE IS NOT GOOD NEWS ───────────────────────────────────────────────────────────
+ * The delta's class was picked purely off the arrow glyph, and .up is green — so a period that
+ * discounted MORE than the one before rendered a green ▲ on Total Discounts and Discount Rate, on
+ * the screen whose entire purpose is that discounting is the thing to watch. The ARROW still says
+ * which way it moved; only the color is inverted for those two. Sky, 2026-09-17, asking for an
+ * up/down on Discount Rate is what sent us looking at it.
+ */
+console.log('\nDiscount direction reads as bad news, not good');
+{
+  const rising = GC.renderKpiBlock({
+    totalSales: 412000, transactions: 8100, avgOrderValue: 50.9, avgUPT: 2.4,
+    totalDiscounts: 19000, discountRate: 0.046, flaggedStaff: 0, activeStaff: 42,
+    sellingStaff: 38, storeCount: 6, salesPerHour: 940,
+    deltas: { totalSalesPct: 0.03, transactions: 260, avgOrderValue: 1.4,
+              avgUPT: 0.3, totalDiscounts: 412, discountRatePts: 0.004, salesPerHour: 37 },
+  }, 'PP');
+
+  const cardOf = (label) => {
+    const i = rising.indexOf('>' + label + '<');
+    return i < 0 ? '' : rising.slice(i, rising.indexOf('</div></div>', i) + 12);
+  };
+  const discTotal = cardOf('Total Discounts');
+  const discRate  = cardOf('Discount Rate');
+  const sales     = cardOf('Total Sales · PP');
+
+  ok('Total Discounts found',  !!discTotal);
+  ok('Discount Rate found',    !!discRate);
+
+  ok('discounts UP still shows an up arrow',   discTotal.indexOf('▲ +$412.00') > -1);
+  ok('but is NOT coloured as good news',       discTotal.indexOf('kpi-delta up') === -1);
+  ok('it is coloured as bad news',             discTotal.indexOf('kpi-delta down') > -1);
+
+  ok('the discount RATE up shows an up arrow', discRate.indexOf('▲ +0.4 pts') > -1);
+  ok('and is not green either',                discRate.indexOf('kpi-delta up') === -1);
+  ok('it is red',                              discRate.indexOf('kpi-delta down') > -1);
+
+  // And nothing else was inverted by accident — sales up is still good news.
+  ok('sales up is still green', sales.indexOf('kpi-delta up') > -1);
+
+  // The other direction: discounting LESS is the good outcome and must read that way.
+  const falling = GC.renderKpiBlock({
+    totalSales: 412000, transactions: 8100, avgOrderValue: 50.9, avgUPT: 2.4,
+    totalDiscounts: 19000, discountRate: 0.046, flaggedStaff: 0, activeStaff: 42,
+    sellingStaff: 38, storeCount: 6, salesPerHour: 940,
+    deltas: { totalSalesPct: 0.03, transactions: 260, avgOrderValue: 1.4,
+              avgUPT: 0.3, totalDiscounts: -412, discountRatePts: -0.004, salesPerHour: 37 },
+  }, 'PP');
+  const fellTotal = (() => { const i = falling.indexOf('>Total Discounts<');
+    return falling.slice(i, falling.indexOf('</div></div>', i) + 12); })();
+  ok('discounting LESS keeps its down arrow', fellTotal.indexOf('▼ −$412.00') > -1);
+  ok('and is coloured as the good news it is', fellTotal.indexOf('kpi-delta up') > -1);
+}
+
+/* ── THE STAFF CARDS ARE THE LAST TWO ────────────────────────────────────────────────────────────
+ * Sky, 2026-09-17: "move Sales / Hour left next to discount rate, so the 2 staff cards will be the
+ * right two." Sales / Hour used to sit after them, splitting the money numbers around the people
+ * numbers. Asserted as an ORDER rather than by eye, because a reorder is exactly the kind of edit a
+ * later change undoes without noticing.
+ */
+/* ── THE CARD SAYS IT IS COMPARING TO THIS TIME OF DAY ───────────────────────────────────────────
+ * Sky asked the question directly — "is that evaluating compared to day 4 of last period, or day 4
+ * at the same time last period?" — which is the question a card that does not answer it produces.
+ * It is the latter, and without the label a total that climbs through the day reads as a fault.
+ */
+console.log('\nThe basis line answers "compared to when?"');
+{
+  const base = {
+    totalSales: 412000, transactions: 8100, avgOrderValue: 50.9, avgUPT: 2.4,
+    totalDiscounts: 19000, discountRate: 0.046, flaggedStaff: 0, activeStaff: 42,
+    sellingStaff: 38, storeCount: 6, salesPerHour: 940,
+    deltas: { totalSalesPct: 0.03, transactions: 260, avgOrderValue: 1.4,
+              avgUPT: 0.3, totalDiscounts: 412, discountRatePts: 0.004, salesPerHour: 37 },
+  };
+  const midPeriod = GC.renderKpiBlock(Object.assign({}, base, {
+    comparison: { currentDays: 4, totalsDays: 4, rateDays: 14, periodDays: 14, totalsToTime: true },
+  }), 'PP');
+  ok('it names the part of the period',  midPeriod.indexOf('vs. first 4 days of last period') > -1);
+  ok('AND that it stops at this time',   midPeriod.indexOf('vs. first 4 days of last period, to this time') > -1);
+
+  // An evening or closed-period read is whole days, and must not claim a time cut it did not make.
+  const wholeDays = GC.renderKpiBlock(Object.assign({}, base, {
+    comparison: { currentDays: 4, totalsDays: 4, rateDays: 14, periodDays: 14, totalsToTime: false },
+  }), 'PP');
+  ok('whole-day comparison still names the days', wholeDays.indexOf('vs. first 4 days of last period') > -1);
+  ok('and does NOT claim a time cut',             wholeDays.indexOf('to this time') === -1);
+
+  // A completed period compares whole to whole and says so plainly.
+  const complete = GC.renderKpiBlock(Object.assign({}, base, {
+    comparison: { currentDays: 14, totalsDays: 14, rateDays: 14, periodDays: 14, totalsToTime: false },
+  }), 'PP');
+  ok('a finished period is just "vs. last period"', complete.indexOf('vs. last period') > -1);
+  ok('with no day count',                            complete.indexOf('vs. first 14 days') === -1);
+
+  // The rates keep their own basis — the whole prior period — and never borrow the time cut.
+  ok('rates still benchmark on the full period', midPeriod.indexOf('vs. last period avg') > -1);
+}
+
+console.log('\nSmall-row order');
+{
+  const html = GC.renderKpiBlock({
+    totalSales: 412000, transactions: 8100, avgOrderValue: 50.9, avgUPT: 2.4,
+    totalDiscounts: 19000, discountRate: 0.046, flaggedStaff: 2, activeStaff: 42,
+    sellingStaff: 38, storeCount: 6, salesPerHour: 940,
+    deltas: { totalSalesPct: 0.03, transactions: 260, avgOrderValue: 1.4,
+              avgUPT: 0.3, totalDiscounts: 412, discountRatePts: 0.004, salesPerHour: 37 },
+  }, 'PP');
+  const at = (label) => html.indexOf('>' + label + '<');
+  ok('Sales / Hour sits after Discount Rate', at('Sales / Hour') > at('Discount Rate'));
+  ok('and BEFORE Flagged Staff',              at('Sales / Hour') < at('Flagged Staff'));
+  ok('Flagged then Active are the last two',
+     at('Flagged Staff') < at('Active Staff') &&
+     at('Active Staff') > at('Sales / Hour') && at('Active Staff') > at('Avg UPT'));
+}
+
 // ── Nothing hand-rolls it any more ───────────────────────────────────────────────────────────────
 // A grep, deliberately: the six copies are gone and a seventh must not appear. This is the ONLY
 // assertion here that reads the file rather than running it, and it is the one that stops the fix

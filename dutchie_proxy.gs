@@ -413,6 +413,40 @@ function ptDateToUtcMs_(ptDateStr) {
 }
 
 /**
+ * UTC ms for a PT WALL-CLOCK time on a PT date — 'YYYY-MM-DD' plus hour/minute.
+ *
+ * NOT `ptDateToUtcMs_(dateStr) + hours * 3600000`. That is the DST trap one level down from the one
+ * ptDateShift_ exists for, and it bit the time-of-day comparison window on its first attempt: the
+ * fall-back day (Nov 1) is 25 hours long, so adding 11 hours of ms to its midnight lands at 10:00
+ * PT, not 11:00. An hour of trade is not a rounding error on a day the board compares you against.
+ *
+ * IT ROUND-TRIPS RATHER THAN CORRECTING BY AN OFFSET. PT is either UTC-7 or UTC-8, so both
+ * candidates are built and the one that FORMATS BACK to the date and hour asked for wins. An
+ * earlier version here guessed the day's midnight offset and then nudged by (wanted - got) hours;
+ * that cannot cross a day boundary, and for 00:00 on a spring-forward date it answered with the
+ * PREVIOUS DAY. Verified across four transition dates at hours 0-23 before and after.
+ *
+ * The two edges, both deliberate:
+ *   · The ambiguous fall-back hour (01:30 happens twice on the November date) resolves to the
+ *     FIRST occurrence, which is what "01:30 that morning" means to anyone reading a board.
+ *   · The spring-forward gap (02:30 never happens) has no matching instant, so it resolves to the
+ *     first real instant after the gap rather than throwing. A window edge has to land somewhere,
+ *     and landing an hour late on a day that lost an hour loses no trade.
+ */
+function ptDateTimeToUtcMs_(ptDateStr, hour, minute) {
+  const [y, mo, d] = ptDateStr.split('-').map(Number);
+  const h  = Math.max(0, Math.min(23, Number(hour) || 0));
+  const mi = Math.max(0, Math.min(59, Number(minute) || 0));
+  const base = Date.UTC(y, mo - 1, d, h, mi);
+  const wantStr = ptDateStr + ' ' + (h < 10 ? '0' + h : String(h));
+  const pdt = base + 7 * 3600000;   // UTC-7
+  const pst = base + 8 * 3600000;   // UTC-8
+  if (Utilities.formatDate(new Date(pdt), STORE_TZ, 'yyyy-MM-dd HH') === wantStr) return pdt;
+  if (Utilities.formatDate(new Date(pst), STORE_TZ, 'yyyy-MM-dd HH') === wantStr) return pst;
+  return Math.max(pdt, pst);
+}
+
+/**
  * Shift a PT calendar date by whole days. 'YYYY-MM-DD' in, 'YYYY-MM-DD' out.
  *
  * Date.UTC arithmetic on the y/m/d parts never touches a wall clock, so it cannot drift across a

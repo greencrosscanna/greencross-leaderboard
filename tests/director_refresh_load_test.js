@@ -149,6 +149,47 @@ function test_settledDaysReadInOneBatch_() {
   _eq_('warm: no per-day cache.put', cacheLog.put, 0);
 }
 
+/* A PART-DAY MUST NEVER ENTER THE DAY CACHE — the highest-stakes consequence of the KPI window
+ * starting to end at the current time of day (2026-09-17).
+ *
+ * The cache key names only the DATE (GC_DAYAGG_v2_<slug>_<yyyy-mm-dd>), so a caller asking for
+ * part of an old day would write a part-day aggregate under the whole-day key. Every later reader
+ * of that day — month-to-date, the whole-period rate benchmark, the historical store cards — would
+ * then get a short day, silently, for the six hours the entry lives. Nothing sliced a settled day
+ * before, so nothing caught this; `whole` on the day slice is what makes it safe.
+ *
+ * Asserted from BOTH sides: the part-day is not written, and a whole-day entry already in the
+ * cache is not answered from for a part-day request either (which would give too MUCH).
+ */
+function test_aPartDayIsNeverCachedUnderTheWholeDayKey_() {
+  reset_();
+  Object.keys(store).forEach(function (k) { delete store[k]; });
+
+  // The 13th and 14th are settled. Ask for the 13th whole, then the 14th only up to noon PT.
+  const whole = { fromUTC: '2026-09-13T07:00:00.000Z', toUTC: '2026-09-14T06:59:59.999Z' };
+  S.byStoreAggCached_(whole, false);
+  const wholeKeys = Object.keys(store).filter(function (k) { return k.indexOf('GC_DAYAGG') === 0; });
+  _ok_('a whole settled day IS cached', wholeKeys.length === S.STORES.length);
+  _ok_('and it is keyed by that date', wholeKeys.every(function (k) { return /_2026-09-13$/.test(k); }));
+
+  reset_();
+  const partial = { fromUTC: '2026-09-14T07:00:00.000Z', toUTC: '2026-09-14T19:00:00.000Z' };  // to noon PT
+  S.byStoreAggCached_(partial, false);
+  _eq_('the part-day is fetched live for every store', wire.urls.length, S.STORES.length);
+  _ok_('and NOT written under the 14th\'s whole-day key',
+       !Object.keys(store).some(function (k) { return /GC_DAYAGG.*_2026-09-14$/.test(k); }));
+
+  // The read side. Seed the 14th as a whole day, then ask for part of it again.
+  reset_();
+  S.byStoreAggCached_({ fromUTC: '2026-09-14T07:00:00.000Z', toUTC: '2026-09-15T06:59:59.999Z' }, false);
+  _ok_('now the 14th is cached whole',
+       Object.keys(store).some(function (k) { return /GC_DAYAGG.*_2026-09-14$/.test(k); }));
+  reset_();
+  S.byStoreAggCached_(partial, false);
+  _eq_('a part-day request still goes to the wire rather than reading the whole day',
+       wire.urls.length, S.STORES.length);
+}
+
 function test_sameRangeTwiceInABuildIsAssembledOnce_() {
   reset_();
   const range = { fromUTC: '2026-09-15T07:00:00.000Z', toUTC: '2026-09-16T06:59:59.999Z' };
@@ -200,6 +241,7 @@ H.run('director-refresh-load', {
   test_nestedScopeDoesNotCloseTheOuterOne_,
   test_aFailureIsRetriedAndStillReported_,
   test_settledDaysReadInOneBatch_,
+  test_aPartDayIsNeverCachedUnderTheWholeDayKey_,
   test_sameRangeTwiceInABuildIsAssembledOnce_,
   test_unavailableStoreIsReplayedFromTheMemo_,
   test_refreshLeavesAtOnceWhenOneIsRunning_,

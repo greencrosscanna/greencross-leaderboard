@@ -337,13 +337,61 @@ one, the rates fall back to the aligned window and `rateDays` reports that, so a
 is labeled rather than silent — going and fetching would put a live Dutchie call inside a path whose
 contract is "I already have the data".
 
-Gated by `tests/kpi_comparison_window_test.js`: the windows, the DST close instant (a window
-containing the fall-back must end at PT midnight, not an hour early), the February clamp, the
-registry-driven period length, and the summary end to end with numbers chosen so each basis gives a
-different answer. Nine guards, each proven red alone. Note the two places a wrong divisor passes by
-accident — the Sales/Hour divisor only differs from `daysElapsed` when the window is **clamped**,
-and `toLocal` survives naive ms arithmetic because PT midnight is 07:00/08:00 UTC either way. The
-first version of this suite missed both.
+Gated by `tests/kpi_comparison_window_test.js`: the windows, the DST close instant, the February
+clamp, the registry-driven period length, and the summary end to end with numbers chosen so each
+basis gives a different answer. Each guard proven red alone. Note the two places a wrong divisor
+passes by accident — the Sales/Hour divisor only differs from `daysElapsed` when the window is
+**clamped**, and `toLocal` survives naive ms arithmetic because PT midnight is 07:00/08:00 UTC
+either way. The first version of this suite missed both.
+
+### …AND AT THE SAME TIME OF DAY (2026-09-17)
+
+Aligning on whole days was only half of it. Sky, the next morning: *"Is the +/- calculating for the
+full day, or percentage of the day, so if total sales is $66,389k and it's showing we're down -29.2%
+is that evaluating compared to day 4 of last period, or day 4 at the same time last period?"* It was
+day 4 **complete** against day 4 **so far** — so every total still opened each morning deeply
+negative and climbed back through the day. Same shape as the bug fixed the day before, one level
+down: the clock, not the business.
+
+**`getPriorRange_` now ends at the same wall-clock instant on its last day.** Three things about it
+that are not guessable:
+
+- **`ptDateTimeToUtcMs_` exists because midnight-plus-elapsed-ms is wrong**, and wrong in a way the
+  existing DST guard caught on the first attempt. It ROUND-TRIPS — builds both the UTC-7 and UTC-8
+  candidates and keeps the one that formats back to the date and hour asked for. The ambiguous
+  fall-back hour resolves to its first occurrence; the spring-forward gap resolves forward.
+  **At 11am the naive form gives the same answer**, so the 11am DST test cannot be the guard for it —
+  the discriminating cases are the first three hours of a transition day, and they have their own
+  test. A board IS read at 1am: the kiosks run all night and reload at 04:00.
+- **A PART-DAY MUST NEVER ENTER THE DAY CACHE.** `GC_DAYAGG_v2_<slug>_<date>` names only the date, so
+  slicing a settled day would write a short day under the whole-day key and every later reader —
+  month-to-date, the rate benchmark, the historical store cards — would get it silently. Nothing
+  sliced a settled day before this change. `daysOfRange_` now marks each slice `whole`, and
+  `byStoreAggCached_` refuses to treat a part-day as settled, for the read as well as the write.
+- **Sales / Hour divides by the open hours that have HAPPENED**, and each side still keeps its own
+  span. Both were counting today as a full 14 hours from the moment it began — at 11am that is off
+  by a factor of four on that day. Collapsing to one shared divisor is tempting and wrong: it is
+  correct only while the windows are equal, and they are NOT when the prior window is **clamped**
+  (30 days into March against a 28-day February). That clamp is the only case that catches it.
+
+**The card says `, to this time`** on the totals basis line when the cut is live. A total that
+climbs through the day with no label reads as a fault.
+
+**Discounting more is no longer green.** The delta's color class was picked off the arrow glyph and
+`.up` is green, so a period that discounted MORE rendered a green ▲ on both Total Discounts and
+Discount Rate — on the screen whose whole purpose is that discounting is the thing to watch. The
+arrow still says which way; `invert` flips only the color. Found while answering Sky's "we should
+have an up/down for Discount rate".
+
+**One discrepancy recorded rather than fixed:** `ptDateToUtcMs_` probes the offset at noon UTC, so on
+the November fall-back date it reports midnight an hour late (08:00Z; the day begins at 07:00Z). One
+hour, once a year, 00:00–01:00 PT — the stores open at 8am, so no transaction has ever fallen in it.
+Left alone deliberately: that helper sets the day boundary for the whole app including every cache
+key, and moving it to chase an hour with no trade is a far larger blast radius. Asserted in the test
+so it is a known quantity.
+
+Small-row order is now the four trade numbers then the two staff cards (Sky: *"move Sales / Hour
+left next to discount rate, so the 2 staff cards will be the right two"*), asserted as an order.
 
 ## Sync with the brain — run `/gxbrain` (or say "brain sync")
 

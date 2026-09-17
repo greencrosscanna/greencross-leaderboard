@@ -120,9 +120,21 @@ function getDateRange_(period, ptPinned) {
  * not distorted by how long you measure it, and the full prior period is the steadier benchmark.
  * Sky's own read, same report: "AOV seems to make sense that it compares to the average AOV over
  * the last period, that sets the benchmark." Totals are the ones that need like-for-like.
+ *
+ * AND IT IS ALIGNED TO THE TIME OF DAY, NOT JUST THE DAY (Sky, 2026-09-17: "is that evaluating
+ * compared to day 4 of last period, or day 4 at the same time last period?"). It was the former,
+ * and that is a second structural bias on top of the one fixed the day before. Aligning on whole
+ * days put day 1-4 COMPLETE up against day 1-3 complete plus however much of day 4 has happened —
+ * so every total opened each morning deeply negative and climbed back through the day, which is
+ * the clock, not the business. On day 4 at 11am roughly a fifth of the compared trade had not
+ * happened yet, which is the order of the -29.2% he was looking at.
+ *
+ * So the aligned window ends at the same wall-clock instant on its last day. Note this makes
+ * Sales / Hour fair for free: once both windows span the same elapsed time, they divide by the
+ * same hours, and the divisor stops being a third place to get this wrong.
  */
 function getPriorRange_(currentRange) {
-  return priorWindow_(currentRange, currentRange.daysElapsed);
+  return priorWindow_(currentRange, currentRange.daysElapsed, true);
 }
 
 /** The WHOLE period before this one — the benchmark for rates (AOV, UPT, discount rate). */
@@ -136,7 +148,7 @@ function getPriorFullRange_(currentRange) {
  * contains a DST change is a whole number of calendar days but not a whole number of 24-hour spans,
  * and ms arithmetic lands an hour off midnight and formats back to the wrong date. Same rule, and
  * the same reason, as ptDateShift_/ppShift_ in dutchie_proxy.gs. */
-function priorWindow_(currentRange, wantDays) {
+function priorWindow_(currentRange, wantDays, alignToClock) {
   const DAY_MS    = 24 * 60 * 60 * 1000;
   const startStr  = priorPeriodStartStr_(currentRange);
   const startMs   = ptDateToUtcMs_(startStr);
@@ -149,13 +161,37 @@ function priorWindow_(currentRange, wantDays) {
     ? periodDays
     : Math.max(1, Math.min(Math.round(wantDays), periodDays));
   const endStr = ptDateShift_(startStr, days - 1);
+
+  /* CUT THE LAST DAY AT THE SAME CLOCK TIME AS NOW, so a part-day is compared against the same
+     part-day. `elapsedToday` is ms since PT midnight, taken from the formatted wall clock rather
+     than ms arithmetic for the same reason the day shifts are: a DST day is not 24 hours.
+     Only when the current window's last day is TODAY and today is still running — a closed period
+     asked for historically has nothing partial about it and keeps whole days. */
+  const nowPt   = ptNow_();
+  const isLive  = ptDateShift_(currentRange.fromLocal, days - 1) === nowPt.dateStr;
+  const clock   = ptHourNow_();
+  const elapsedToday = (clock.hour * 60 + clock.minute) * 60000;
+  const cutToClock   = !!alignToClock && isLive && elapsedToday > 0;
+  /* The same WALL CLOCK time on the aligned day, via ptDateTimeToUtcMs_ — never that day's midnight
+     plus elapsed ms. The aligned day can be a 25-hour DST day while today is not, and the offset
+     arithmetic lands an hour early on it. The existing DST guard in
+     tests/kpi_comparison_window_test.js caught exactly that on the first attempt here. */
+  const toMs = cutToClock
+    ? ptDateTimeToUtcMs_(endStr, clock.hour, clock.minute) - 1
+    : ptDateToUtcMs_(ptDateShift_(startStr, days)) - 1;
+
   return {
     fromUTC:    new Date(startMs).toISOString(),
-    toUTC:      new Date(ptDateToUtcMs_(ptDateShift_(startStr, days)) - 1).toISOString(),
+    toUTC:      new Date(toMs).toISOString(),
     fromLocal:  startStr,
     toLocal:    endStr,
     days:       days,          // how many days this window actually covers
     periodDays: periodDays,    // how long the whole prior period is
+    /* Whether the last day is a part-day, and how far into it. The card SAYS this (see
+       renderKpiBlock) rather than leaving somebody to wonder why a total moved overnight, and
+       getDirectorSummary divides Sales / Hour by it so the two sides use one number. */
+    partialLastDay: cutToClock,
+    elapsedMsToday: cutToClock ? elapsedToday : 0,
     period:     currentRange.period,
   };
 }
@@ -580,16 +616,35 @@ function getDirectorSummary(params, pre) {
   const _discRed      = discountRedLineDec_();   // 2× the discount target
   const flaggedEmps   = allEmps.filter(e => e.discountRate > _discRed);
 
-  // Sales per hour: total sales ÷ (elapsed days × store open hours).
-  // The prior side divides by ITS OWN day count, not this period's. It used to divide the prior
-  // window's sales by `range.daysElapsed` — fourteen days of takings over three days of open hours
-  // — which is not a comparison anyone could have read correctly.
-  const salesPerHour  = range.daysElapsed > 0
-    ? Math.round(curr.sales / (range.daysElapsed * STORE_HOURS))
-    : 0;
-  const prevSPH       = prior.days > 0
-    ? Math.round(prev.sales / (prior.days * STORE_HOURS))
-    : 0;
+  /* SALES PER HOUR, over the OPEN HOURS THAT HAVE ACTUALLY HAPPENED.
+   *
+   * This has now been wrong twice in two days, in two different ways, and the second one is the
+   * reason the divisor is computed once here and shared. It used to divide the prior window's
+   * sales by `range.daysElapsed` — fourteen days of takings over three days of open hours. That
+   * was fixed by giving each side its own day count. But BOTH sides then counted today as a whole
+   * day of trading hours from the moment it began, so every morning the chain read hundreds of
+   * dollars an hour light and climbed all day. At 11am on a 14-hour day only 3 of today's hours
+   * have happened, so a whole-day divisor is off by a factor of four on that day.
+   *
+   * EACH SIDE STILL DIVIDES BY ITS OWN SPAN, and it is tempting to collapse them now that the
+   * windows are clock-aligned — they are equal whenever the alignment holds. They are NOT equal
+   * when the prior window is CLAMPED: thirty days into March compares against a 28-day February,
+   * and one shared divisor then flatters whichever period is shorter. That clamp is the only case
+   * where the two differ, which is exactly why it is the case that catches a wrong divisor.
+   *
+   * `elapsedHoursToday` clamps to [0, STORE_HOURS]: before opening it contributes nothing, after
+   * close a full day, so an evening or historical read is whole days and unchanged. */
+  const clockNow = ptHourNow_();
+  const elapsedHoursToday = Math.max(0, Math.min(
+    clockNow.hour + clockNow.minute / 60 - STORE_OPEN_HOUR, STORE_HOURS));
+  const currHours = prior.partialLastDay
+    ? Math.max(0, range.daysElapsed - 1) * STORE_HOURS + elapsedHoursToday
+    : range.daysElapsed * STORE_HOURS;
+  const prevHours = prior.partialLastDay
+    ? Math.max(0, prior.days - 1) * STORE_HOURS + elapsedHoursToday
+    : prior.days * STORE_HOURS;
+  const salesPerHour  = currHours > 0 ? Math.round(curr.sales / currHours) : 0;
+  const prevSPH       = prevHours > 0 ? Math.round(prev.sales / prevHours) : 0;
 
   return {
     period:    period,
@@ -627,6 +682,10 @@ function getDirectorSummary(params, pre) {
       periodDays:  prior.periodDays,    // how long the prior period was in full
       totalsFrom:  prior.fromLocal,
       totalsTo:    prior.toLocal,
+      /* Whether the last compared day is cut at the current time of day. The card says "to this
+         time" when it is, because otherwise a total that moves as the day goes on looks like a
+         data fault rather than a comparison catching up. */
+      totalsToTime: !!prior.partialLastDay,
     },
     lastUpdated: new Date().toISOString(),
   };

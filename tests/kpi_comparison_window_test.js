@@ -203,16 +203,136 @@ function test_dstDoesNotShiftTheWindowByADay_() {
 // still reads the right day. The instant does not: `startMs + days * DAY_MS - 1` lands an hour
 // early and closes the window at 23:00 PT, dropping the last hour of trade on the longest day of
 // the year. Nothing on screen would say so; the day would just be quietly light.
-function test_dstWindowClosesAtPtMidnightNotAnHourEarly_() {
-  at(2026, 11, 15);   // 7 days into the period from 2026-11-09 → prior window 10-26..11-01
+function test_dstWindowClosesAtTheRightWallClockNotAnHourEarly_() {
+  at(2026, 11, 15);   // 11:00 PT, 7 days into the period from 2026-11-09 → prior window 10-26..11-01
   try {
     const prior = S.getPriorRange_(S.getDateRange_('pp'));
     _eq_('seven elapsed days',              prior.days, 7);
     _eq_('the window contains the change',  prior.fromLocal, '2026-10-26');
     _eq_('and ends on the day it happened', prior.toLocal, '2026-11-01');
-    // PT midnight opening Nov 2 is 08:00Z (PST); the window ends 1ms before it.
-    _eq_('it closes at PT midnight, not 23:00 PT',
-         prior.toUTC, '2026-11-02T07:59:59.999Z');
+    _ok_('the last day is a part-day, aligned to the clock', prior.partialLastDay === true);
+
+    /* THE CUT IS 11:00 PT ON NOV 1, AND NOV 1 IS A 25-HOUR DAY. It begins in PDT (UTC-7) and ends
+       in PST (UTC-8), so 11:00 PT that morning — after the 02:00 fall-back — is 19:00Z, and the
+       window ends 1ms before it. This used to assert PT midnight, which was right when the window
+       was whole days; the day-of alignment moved the instant, not the rule. */
+    _eq_('it closes at 11:00 PT on the DST day',
+         prior.toUTC, '2026-11-01T18:59:59.999Z');
+
+    /* NOTE WHAT THIS CASE DOES *NOT* PROVE, because the first version of this test claimed it did.
+       At 11:00 the naive form — that day's midnight plus elapsed ms — gives the SAME instant, so
+       this assertion cannot tell the two apart. The forms only diverge in the first three hours of
+       a transition day, which is why the discriminating case lives in its own test below rather
+       than being asserted here on a day where it passes by accident. */
+    _eq_('the naive form happens to agree at this hour, so this is not the guard',
+         new Date(S.ptDateToUtcMs_('2026-11-01') + 11 * 3600000 - 1).toISOString(), prior.toUTC);
+
+    // And the whole-period benchmark is untouched by any of this: it keeps whole calendar days.
+    const full = S.getPriorFullRange_(S.getDateRange_('pp'));
+    _eq_('the rate benchmark still closes at PT midnight',
+         full.toUTC, '2026-11-09T07:59:59.999Z');
+    _ok_('and is not a part-day', !full.partialLastDay);
+  } finally { clear(); }
+}
+
+/* THE WINDOW ITSELF, AT AN HOUR WHERE THE NAIVE FORM IS WRONG.
+ *
+ * The DST test above cannot catch a wall-clock regression because at 11am both forms agree. This
+ * one views the board at 01:00 PT, which puts the aligned last day's cut inside the fall-back hour
+ * — the only window of the year where midnight-plus-elapsed-ms and a real wall clock differ. A
+ * board is genuinely read at 1am: the kiosks run all night and the nightly reload is at 04:00.
+ */
+function test_theWindowUsesARealWallClockAtTheTransitionHour_() {
+  at(2026, 11, 15, 9);   // 09:00 UTC = 01:00 PT (PST), 7 days into the period from 2026-11-09
+  try {
+    const range = S.getDateRange_('pp');
+    const prior = S.getPriorRange_(range);
+    _eq_('the aligned last day is the fall-back date', prior.toLocal, '2026-11-01');
+    _ok_('and it is a part-day', prior.partialLastDay === true);
+
+    // 01:00 on Nov 1 happens twice; the first (PDT) is 08:00Z, and the window ends 1ms before it.
+    _eq_('the cut is the FIRST 01:00 of the doubled hour',
+         prior.toUTC, '2026-11-01T07:59:59.999Z');
+
+    /* THE CONTROL, which the 11am test could not provide: midnight-plus-elapsed-ms lands an hour
+       LATE here, because ptDateToUtcMs_ already reads this day's midnight an hour late. An hour of
+       a compared window, from a substitution that looks equivalent. */
+    const naive = new Date(S.ptDateToUtcMs_('2026-11-01') + 1 * 3600000 - 1).toISOString();
+    _eq_('the naive form would be an hour out', naive, '2026-11-01T08:59:59.999Z');
+    _ok_('which is NOT what the window does', naive !== prior.toUTC);
+  } finally { clear(); }
+}
+
+/* THE WALL-CLOCK HELPER, on the hours where the obvious implementation is actually wrong.
+ *
+ * ptDateTimeToUtcMs_ exists because the time-of-day window has to land on a wall clock, and the
+ * form a future edit reaches for — that date's midnight plus elapsed ms — is wrong in the first
+ * three hours of a transition day. It is not wrong at 11am, which is why the DST window test above
+ * cannot be the guard for it: on the day the board actually uses, both forms agree.
+ *
+ * The worst of them is 00:00 on a spring-forward date, where the naive form answers with the
+ * PREVIOUS DAY. A window edge a day out would compare a period against a period plus a day.
+ */
+function test_wallClockHelperIsRightWhereTheNaiveFormIsNot_() {
+  at(2026, 6, 1);   // an ordinary day; the helper takes its date from the argument, not the clock
+  try {
+    const naive = (d, h) => new Date(S.ptDateToUtcMs_(d) + h * 3600000).toISOString();
+    const real  = (d, h) => new Date(S.ptDateTimeToUtcMs_(d, h, 0)).toISOString();
+
+    // Spring forward, 2026-03-08. Midnight PT that day is PST, 08:00Z.
+    _eq_('00:00 on a spring-forward date is that date, in PST', real('2026-03-08', 0), '2026-03-08T08:00:00.000Z');
+    _eq_('the naive form lands on the PREVIOUS DAY',            naive('2026-03-08', 0), '2026-03-08T07:00:00.000Z');
+    _ok_('so they disagree, which is the whole reason the helper exists',
+         real('2026-03-08', 0) !== naive('2026-03-08', 0));
+
+    // The 02:00 hour does not exist that day; the edge resolves forward, never backwards or NaN.
+    _eq_('the spring-forward gap resolves to the first real instant after it',
+         real('2026-03-08', 2), '2026-03-08T10:00:00.000Z');
+
+    // Fall back, 2026-11-01. 01:00 happens twice; the FIRST one (PDT) is what a reader means.
+    _eq_('the ambiguous fall-back hour takes its first occurrence',
+         real('2026-11-01', 1), '2026-11-01T08:00:00.000Z');
+
+    // And on an ordinary day it is simply the offset, with no cleverness.
+    _eq_('an ordinary PDT day', real('2026-06-15', 11), '2026-06-15T18:00:00.000Z');
+    _eq_('an ordinary PST day', real('2026-01-15', 11), '2026-01-15T19:00:00.000Z');
+
+    /* EVERY HOUR OF EVERY TRANSITION DATE MUST LAND INSIDE THAT PT DAY. Asserted as a range
+       against the day's own boundaries rather than by comparing ISO date strings — a PT afternoon
+       is the next date in UTC, so a string compare would be wrong for half of them and is how the
+       first draft of this loop ended up asserting `|| true`. */
+    ['2026-03-08', '2026-11-01', '2027-03-14', '2027-11-07'].forEach(function (d) {
+      const dayStart  = S.ptDateTimeToUtcMs_(d, 0, 0);
+      const nextStart = S.ptDateTimeToUtcMs_(S.ptDateShift_(d, 1), 0, 0);
+      for (let h = 0; h < 24; h++) {
+        const ms = S.ptDateTimeToUtcMs_(d, h, 0);
+        _ok_(d + ' ' + h + ':00 is a real instant', !isNaN(ms));
+        _ok_(d + ' ' + h + ':00 falls inside that PT day', ms >= dayStart && ms < nextStart);
+        /* NON-DECREASING, not strictly increasing. On a spring-forward date 02:00 does not exist
+           and resolves forward to the 03:00 instant, so those two wall-clock hours map to the same
+           ms — the one place in the day where they must be allowed to. Asserting `>` here failed on
+           exactly those two dates, which is the documented behavior working. */
+        if (h > 0) _ok_(d + ' ' + h + ':00 is not before ' + (h - 1) + ':00',
+                        ms >= S.ptDateTimeToUtcMs_(d, h - 1, 0));
+      }
+    });
+
+    /* A DISCREPANCY WORTH RECORDING RATHER THAN PAPERING OVER, found by this test.
+     *
+     * ptDateToUtcMs_ probes the offset at NOON UTC, which on the November fall-back date is
+     * already PST — so it reports that day's midnight as 08:00Z when the day actually begins at
+     * 07:00Z, still PDT. One hour, once a year, and it is 00:00-01:00 PT: the stores open at 8am,
+     * so there has never been a transaction in it and nothing on any screen has been wrong.
+     *
+     * NOT CHANGED HERE ON PURPOSE. ptDateToUtcMs_ sets the day boundary for the whole app,
+     * including the per-day aggregate cache keys, and moving it to chase an hour with no trade in
+     * it is a far larger blast radius than the window this task is fixing. Asserted so the gap is
+     * a known quantity instead of a surprise to whoever next puts the two helpers side by side. */
+    _ok_('the older helper reads the fall-back midnight an hour late — known, and harmless',
+         S.ptDateToUtcMs_('2026-11-01') - S.ptDateTimeToUtcMs_('2026-11-01', 0, 0) === 3600000);
+    _ok_('and the two agree on every ordinary day',
+         S.ptDateToUtcMs_('2026-06-15') === S.ptDateTimeToUtcMs_('2026-06-15', 0, 0) &&
+         S.ptDateToUtcMs_('2026-01-15') === S.ptDateTimeToUtcMs_('2026-01-15', 0, 0));
   } finally { clear(); }
 }
 
@@ -248,10 +368,18 @@ function test_summaryPutsTotalsAndRatesOnTheRightWindows_() {
     _eq_('so does UPT',                                   out.deltas.avgUPT, 0.3);
     _eq_('and the discount rate',                         out.deltas.discountRatePts, 0.02);
 
-    // SALES PER HOUR — aligned, and each side divided by ITS OWN days.
-    _eq_('this period: 9000 over 3 days of open hours',  out.salesPerHour, 214);
-    _eq_('so the over/under is against 7500 over 3 days, not 35000 over 3',
-         out.deltas.salesPerHour, 214 - 179);
+    /* SALES PER HOUR — over the open hours that have actually HAPPENED, not three whole days.
+       `at()` sets 19:00 UTC, which in September is PDT, so the clock is 12:00 PT and four of
+       today's fourteen hours have gone: the window is 2 × 14 + 4 = 32, not 42. Dividing by 42 is
+       the bug Sky saw as the chain reading light all morning and recovering by evening. Both sides
+       use 32 because the windows are clock-aligned.
+       (Note 19:00 UTC is 12:00 PT here but 11:00 PT in the November DST test above — the fixture
+       clock is UTC, so the PT hour it lands on moves with the season.) */
+    _eq_('this period: 9000 over 32 elapsed open hours', out.salesPerHour, 281);
+    _eq_('the prior side uses the SAME 32 hours, so 7500 reads as 234',
+         out.deltas.salesPerHour, 281 - 234);
+    _ok_('and it is not the whole-day divisor, which would have said 214',
+         out.salesPerHour !== 214);
 
     // And the card is told what it is comparing, so it can say so.
     _eq_('how far into the period we are', out.comparison.currentDays, 3);
@@ -303,7 +431,9 @@ H.run('kpi_comparison_window', {
   test_monthToDate_clampsToAShorterPriorMonth_,
   test_payPeriodLengthComesFromTheRegistry_,
   test_dstDoesNotShiftTheWindowByADay_,
-  test_dstWindowClosesAtPtMidnightNotAnHourEarly_,
+  test_dstWindowClosesAtTheRightWallClockNotAnHourEarly_,
+  test_theWindowUsesARealWallClockAtTheTransitionHour_,
+  test_wallClockHelperIsRightWhereTheNaiveFormIsNot_,
   test_summaryPutsTotalsAndRatesOnTheRightWindows_,
   test_totalsAreNeverComparedAgainstAWholePeriod_,
   test_missingRateBenchmarkIsReportedNotFetched_,
