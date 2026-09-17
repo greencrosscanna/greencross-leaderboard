@@ -211,8 +211,8 @@ console.log('\nDiscount direction reads as bad news, not good');
   ok('Discount Rate found',    !!discRate);
 
   ok('discounts UP still shows an up arrow',   discTotal.indexOf('▲ +$412.00') > -1);
-  ok('but is NOT coloured as good news',       discTotal.indexOf('kpi-delta up') === -1);
-  ok('it is coloured as bad news',             discTotal.indexOf('kpi-delta down') > -1);
+  ok('but is NOT colored as good news',       discTotal.indexOf('kpi-delta up') === -1);
+  ok('it is colored as bad news',             discTotal.indexOf('kpi-delta down') > -1);
 
   ok('the discount RATE up shows an up arrow', discRate.indexOf('▲ +0.4 pts') > -1);
   ok('and is not green either',                discRate.indexOf('kpi-delta up') === -1);
@@ -232,7 +232,7 @@ console.log('\nDiscount direction reads as bad news, not good');
   const fellTotal = (() => { const i = falling.indexOf('>Total Discounts<');
     return falling.slice(i, falling.indexOf('</div></div>', i) + 12); })();
   ok('discounting LESS keeps its down arrow', fellTotal.indexOf('▼ −$412.00') > -1);
-  ok('and is coloured as the good news it is', fellTotal.indexOf('kpi-delta up') > -1);
+  ok('and is colored as the good news it is', fellTotal.indexOf('kpi-delta up') > -1);
 }
 
 /* ── THE STAFF CARDS ARE THE LAST TWO ────────────────────────────────────────────────────────────
