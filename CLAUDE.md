@@ -416,6 +416,42 @@ so it is a known quantity.
 Small-row order is now the four trade numbers then the two staff cards (Sky: *"move Sales / Hour
 left next to discount rate, so the 2 staff cards will be the right two"*), asserted as an order.
 
+## The /exec stall rate is a SIX-WIDE number — cite it that way or not at all (2026-09-17)
+
+Four places in this repo lean on Sales' 2026-09-15 measurement of GX Core's `/exec` second hop — the
+cold-start paint and its test, and the one-call kiosk route and its test. **The only citable figure
+is: 6 of 174 requests fired six-wide (3.4%) HANG for 11-60 seconds instead of failing.** Six-wide is
+the shape a kiosk load actually fires, which is why it is the condition that applies to us.
+
+Three limits ride with it, and all three are why a bigger, scarier number keeps trying to form:
+
+- **It was not measured on `libversion`.** All 234 requests in that run were authenticated
+  store-month pulls carrying 2.5-3.5s of Sales' own backend work inside every timing, so the run
+  cannot separate Google's hop from Apps Script executing a query. A fresh six-wide `libversion` run
+  is what would replace 3.4% honestly. Nobody has done one.
+- **The wider sweeps are our own queueing, not a worse hop.** The rest of that run swept 12, 18 and
+  30 wide and stalled more often — but every GX app runs its Apps Script as `sky@`, Google caps
+  simultaneous executions at **30 per account**, and the suite peaked at 114 on 2026-09-15. A
+  30-wide sweep from one machine is at the cap by itself. The stall shapes agree: at 30 wide three
+  of four cluster at 13.3-14.4s, against hangs up to 60s at six-wide. Same cap the randomized
+  retry spread in `retryDelay_` exists for.
+- **The count at 30-wide is a floor.** That sweep printed only its four slowest durations, so the
+  run is `>=4` and the totals are `>=12 of 234`. The true number is unknown without re-running.
+
+**So: never restate this as "10%", and never average the conditions into "3-10%" — that range
+describes neither one.** The apparent 12-30-wide effect tests at p~0.06 (Fisher, one-sided,
+conditioned on the 12 stalls the run actually produced), not the p~0.02 you get by treating the
+six-wide rate as known when it came out of the same run. One evening, unreplicated.
+
+Sales reconciled all of this from the raw per-request timings on 2026-09-17 and filed it here; the
+full ledger — every run, width, count and duration — is in `greencross-sales/CLAUDE.md` under the
+v2.597 heading. Its own doc had said "8 of 234" and "not concurrency", and the error survived two
+days because `8/234` and `6/174` both print as "3.4%": the headline agreed while the counts did not.
+
+Separately and still true: the `~6% of rapid calls 404` figure in `dutchie_fetch.gs` and the
+`16-45s` in `gxdevlogin.sh` are **different measurements of different things**. Don't reconcile them
+with this one.
+
 ## Sync with the brain — run `/gxbrain` (or say "brain sync")
 
 This app is on the shared brain. **`/gxbrain`** loads the shared rules and reconciles this chat with GX Core

@@ -9448,10 +9448,20 @@ var kiosk = (function() {
    * fetchKioskAll caches for 3 minutes, so a load inside that window already paints instantly.
    * Outside it — the 04:00 nightly reload, a TV switched on, a slideshow coming back to a store it
    * has not shown for a while — the first paint waits on the network, and that wait has no useful
-   * ceiling. Sales measured the /exec second hop on 2026-09-15: ~3.4% of requests do not FAIL, they
-   * HANG, 11 to 60 seconds, while their siblings answer in three. Our JSONP timeout is 65s and
-   * deliberately so (a cold GAS cache build takes ~30s). So a stalled first request holds a BLANK
-   * BOARD for over a minute before any failure handler can run.
+   * ceiling. Sales measured the /exec second hop on 2026-09-15: 6 of 174 requests fired SIX-WIDE
+   * (3.4%) do not FAIL, they HANG, 11 to 60 seconds, while their siblings answer in three. Our
+   * JSONP timeout is 65s and deliberately so (a cold GAS cache build takes ~30s). So a stalled
+   * first request holds a BLANK BOARD for over a minute before any failure handler can run.
+   *
+   * CITE IT SIX-WIDE, AND SAY WHAT IT WAS MEASURED ON (Sales reconciled the raw per-request timings
+   * on 2026-09-17; full ledger in greencross-sales/CLAUDE.md under v2.597). Six-wide is the shape a
+   * load fires, so it is the number that applies here — but those 174 were authenticated
+   * store-month pulls, not `libversion`, carrying 2.5-3.5s of Sales' own backend work inside every
+   * timing, so the run cannot separate Google's hop from Apps Script running our query. Wider
+   * sweeps in the same run stalled more often, and that is NOT a second rate to quote: a 30-wide
+   * sweep from one machine is already at the 30-simultaneous-execution cap this account shares (see
+   * retryDelay_), so it is us queueing behind ourselves. Never restate this as "10%", and never
+   * average the two conditions into "3-10%" — that range describes neither.
    *
    * That is why "fall back to cache when the fetch fails" is the wrong shape: the damage is done
    * while everyone waits, and the handler that would repair it runs after the wait, not instead of

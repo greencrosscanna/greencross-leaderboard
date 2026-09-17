@@ -6,8 +6,13 @@
  *  instantly from cache; a load outside it — the 04:00 nightly reload, a TV switched on in the
  *  morning, a slideshow returning to a store it has not shown for a while — waited on the network
  *  with nothing but a loading shell on a wall screen. That wait has no useful ceiling: Sales
- *  measured the /exec second hop on 2026-09-15 and ~3.4% of requests do not FAIL, they HANG, 11 to
- *  60 seconds, while their siblings answer in three. Our JSONP timeout is 65s and deliberately so.
+ *  measured the /exec second hop on 2026-09-15 and 6 of 174 requests fired SIX-WIDE (3.4%) do not
+ *  FAIL, they HANG, 11 to 60 seconds, while their siblings answer in three. Six-wide is the shape a
+ *  load fires, which is why that is the condition quoted; the 174 were authenticated store-month
+ *  pulls rather than `libversion`, and the wider sweeps in the same run were at this account's
+ *  30-execution cap, so neither "10%" nor an averaged "3-10%" is a rate anything should carry.
+ *  (Reconciled from the raw timings 2026-09-17 — ledger in greencross-sales/CLAUDE.md, v2.597.)
+ *  Our JSONP timeout is 65s and deliberately so.
  *  So a blank board for over a minute, and a "fall back to cache on failure" fix cannot help —
  *  the damage is done while everybody waits, and the handler runs after the wait rather than
  *  instead of it.

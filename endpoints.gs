@@ -2214,8 +2214,15 @@ function getStoreBadges(store, params) {
  * Badges are a WIDER window (week to date) so they do not share that download; their saving is the
  * response cache added above, which is the bigger one for them.
  *
- * Sales measured the second hop on 2026-09-15: ~3.4% of /exec requests do not fail, they HANG,
- * 11-60 seconds. Three calls is three rolls of that die per board; this is one.
+ * Sales measured the second hop on 2026-09-15: 6 of 174 requests fired SIX-WIDE (3.4%) do not fail,
+ * they HANG, 11-60 seconds. Three calls is three rolls of that die per board; this is one.
+ *
+ * Six-wide is the right condition to quote here because six-wide is the shape a load fires. It is
+ * also the whole claim: those 174 were authenticated store-month pulls rather than `libversion`, so
+ * Apps Script's own work sits inside every timing, and the wider sweeps in the same run were firing
+ * at this account's 30-simultaneous-execution cap on their own — our queueing, not a higher
+ * per-request loss rate. Do not restate it as "10%" or average it into "3-10%". (Reconciled from
+ * the raw timings 2026-09-17; ledger in greencross-sales/CLAUDE.md under v2.597.)
  *
  * ── A FAILED PART MUST NOT KILL THE BOARD, and this is the sharp edge ───────────────────────────
  * Before this route, a storebadges that threw cost the kiosk its trophy row and nothing else:

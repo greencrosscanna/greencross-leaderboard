@@ -9,8 +9,15 @@
  *  standalone storetoday behind it. Six wall screens mounting a store every 30 seconds made that
  *  the most constant consumer in the suite, and every GX app runs as one Google account capped at
  *  30 simultaneous executions — the cap the suite hit at 114 on 2026-09-15 while every app's
- *  screens queued. Sales also measured ~3.4% of /exec requests HANGING 11-60s rather than
- *  failing; four calls is four rolls of that die per board, one is one.
+ *  screens queued. Sales also measured 6 of 174 /exec requests fired SIX-WIDE (3.4%) HANGING
+ *  11-60s rather than failing; four calls is four rolls of that die per board, one is one.
+ *
+ *  The two facts above are closer together than they look, which is why the rate is quoted
+ *  six-wide and only six-wide. Sales' wider sweeps in that run stalled more often, but a 30-wide
+ *  sweep from one machine is firing at that same 30-execution cap by itself, so the extra stalls
+ *  are the queueing in the first sentence rather than a higher loss rate in the second. Do not
+ *  merge them into "10%" or "3-10%". (Reconciled 2026-09-17; ledger in greencross-sales/CLAUDE.md
+ *  under v2.597. The 174 were authenticated store-month pulls, not `libversion`.)
  *
  *  THE PART THAT IS EASY TO GET WRONG, and what most of this file is about. Bundling three calls
  *  into one makes a failure that used to cost a panel cost the whole board: let a throw out of
