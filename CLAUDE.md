@@ -153,11 +153,34 @@ Four things about it that are not guessable from the code:
 Century's kiosk"). The popup's own bar already says SPIFF and names the store. `measuredAt` still
 arrives on the payload and is simply not drawn.
 
-**The iframe fallback was deliberately LEFT IN**, though SPIFF's note makes deleting it our call and
-`index.html`'s own comment asks for it. It is already unreachable on the normal path, and removing
-it also removes the net under a redesign that is one day old on six wall screens. What it still
-costs is SPIFF's 10-minute refresh running in a warmed frame nobody opens — worth closing out, as
-its own change.
+**The iframe fallback is GONE (2026-09-17), and the paragraph here that kept it was wrong.**
+
+It said the frame was "already unreachable on the normal path" and worth keeping as a net under a
+one-day-old redesign. It was reachable, and it was the net that failed. **`renderSpiffOverlay`
+painted the frame VISIBLE and our panel HIDDEN whenever the store had a token** — the pre-decision
+default, with `openSpiffBoard` correcting it on the way in. So a full re-render while the popup was
+OPEN (`checkRemoteRefresh` → `renderKiosk`) restored that default and put SPIFF's page on a kiosk
+mid-read. Sky caught it the same day: *"after 60 seconds on screen, it reloaded the contents and
+then the layout was wrong."*
+
+**It read as a layout bug, not a wrong-page bug, because SPIFF's page is built from the same
+handoff.** The only tells were their vendor-prefixed title ("Hellavated - Carts & Cloud Bars", from
+their `programLabel()`) and their full names ("Ayla McArthur"), where ours shows the plain program
+name and the kiosk's first names. Worth knowing for next time: **two faithful implementations of one
+design are nearly indistinguishable on a screenshot, so the data is what tells you which you are
+looking at.** The first theory here was that the 5-minute refresh route returned un-nicknamed
+people; both routes were asked live and returned identical payloads, which killed it.
+
+The fix was removal, not a third place that fixes the state — `applySpiffLink`,
+`spiffPanelHasSpiffCopy_`, the iframe, its warming and `.kso-frame` are all gone. **A view chosen in
+three places is wrong in whichever one nobody re-reads.** The store's token is still minted by
+`spiffKioskUrl_` and still in `cfg.spiffKiosk.<core store_id>`, for the direct link Sky or Tawny
+opens by hand; the kiosk no longer reads it. This also ends the cost the old paragraph named —
+SPIFF's page is no longer loaded on six wall screens for a popup nobody framed.
+
+Gated by `tests/spiff_popup_test.js`, rewritten for a one-view popup: it asserts the overlay markup
+contains no second rendering and that the panel is never painted hidden, and both were proven red by
+putting the frame-first markup back.
 
 Gated by `tests/spiff_panel_test.js` and `tests/spiff_sidecar_contract_test.js`, which drive the
 shipped `GC.spiffPanel`; all eight new guards were proven red individually, including the one that

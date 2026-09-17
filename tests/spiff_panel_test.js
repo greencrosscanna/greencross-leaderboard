@@ -339,10 +339,12 @@ const tests = {
     // The boundary matters: "max-height: min(...)" contains "height: min(...)" as a substring, so
     // an unanchored form would flag the ceiling we deliberately want.
     _ok_('and no leftover fixed height', !/(^|[^-])height:\s*min\(/m.test(win));
-    /* The frame has no intrinsic height, so an auto-height window would collapse to its title bar
-       if the fallback branch ever woke up. */
-    _ok_('the iframe fallback still forces a tall card',
-         /\.kso-frame \{[^}]*min-height:/.test(src));
+    /* THE POPUP HAS ONE VIEW. This assertion used to read "the iframe fallback still forces a tall
+       card" — a min-height propping up a branch I had called unreachable. It was reachable, it put
+       SPIFF's page on a kiosk mid-read, and the prop existed because I was keeping a fallback I had
+       argued was dead. The guard is inverted now: there must be no frame to prop. */
+    _ok_('no iframe in the popup at all', src.indexOf('kioskSpiffFrame') === -1);
+    _ok_('and no CSS left styling one', src.indexOf('.kso-frame {') === -1);
   },
 
   namesAreEscaped() {

@@ -1499,11 +1499,9 @@ body.kiosk-bg {
   letter-spacing: 0.5px;
 }
 .kso-close:hover { background: var(--surface-2); }
-/* min-height, because the window is height:auto now: an iframe has no intrinsic content height to
-   hug, so the fallback path would otherwise collapse the card to its title bar. Only reachable if
-   the frame branch is ever taken again — but a dead branch that breaks the layout when it wakes up
-   is worse than one that just sits there. */
-.kso-frame { flex: 1; width: 100%; min-height: min(880px, 82vh); border: 0; background: var(--bg); }
+/* .kso-frame is gone with the iframe it styled (2026-09-17). It had just been given a min-height so
+   an auto-height card would not collapse around a frame with no intrinsic height — a prop for a
+   branch that turned out to be live, and was the bug. */
 
 /* ── SPIFF panel: what the button opens (Sky picked "built into Leaderboard", 2026-09-10) ──
    Same bar language as the SPIFF row on each staff card (gold = hit, a hash left of the end =
@@ -1517,7 +1515,7 @@ body.kiosk-bg {
    sibling would hinge on which of them is present. */
 .kso-ctx  { flex: 1; color: var(--text-dim); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .kso-body { flex: 1; overflow: auto; padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 10px; }
-.kso-body[hidden], .kso-frame[hidden] { display: none; }
+.kso-body[hidden] { display: none; }
 /* ── The SPIFF panel: SPIFF's kiosk-board design, drawn here ────────────────────────────────
    Sky decided on 2026-09-16 that Leaderboard ADOPTS SPIFF's redesigned kiosk board in its own
    panel rather than framing SPIFF's page — so SPIFF's uptime is not the wall screen's uptime.
@@ -9048,9 +9046,10 @@ GC.views.forceKioskRefresh = function() { kiosk.forceRefresh(kioskRouteSlug_());
  * The markup is generated inside the kiosk module and an inline onclick can only reach a global,
  * so these live on GC.views — same reason as forceKioskRefresh.
  *
- * WHAT IT SHOWS: SPIFF's own per-store page (`store.html?t=<token>`), in a frame inside a popup
- * this page draws — see renderSpiffOverlay for why a drawn popup and not window.open, and why the
- * frame is already loaded by the time anybody taps.
+ * WHAT IT SHOWS: Leaderboard's own SPIFF board (GC.spiffPanel), in a popup this page draws — a card
+ * over the dimmed board rather than window.open, which a kiosk browser blocks. It used to frame
+ * SPIFF's `store.html?t=<token>`; that frame is gone (see renderSpiffOverlay), so there is no second
+ * view and nothing to choose between.
  *
  * IT CLOSES ITSELF. A kiosk is a wall screen nobody is standing at. Left to one tap alone, the most
  * visible screen in the company sits on a vendor page for the rest of the shift while the floor
@@ -9104,12 +9103,11 @@ GC.views.applySpiffState = function(lb) {
   }
   if (!_kioskSpiffOpen) return;
   if (!s.on) { GC.views.closeSpiffBoard(); return; }   // switched off while open: nothing to show
+  /* Repaint in place, with no view to choose. This used to have to decide whether to SWAP from the
+     framed page to the panel as SPIFF's copy arrived; the frame is gone, so a refresh is just new
+     numbers under somebody's eyes. */
   var body = document.getElementById('kioskSpiffPanel');
-  /* A refresh that brings SPIFF's copy with it must SWAP the view, not just repaint whichever one
-     is up — otherwise somebody standing at the screen keeps the framed page until they close and
-     reopen. See spiffPanelHasSpiffCopy_. */
-  if (body && body.hidden && spiffPanelHasSpiffCopy_()) GC.views.showSpiffPanel();
-  else if (body && !body.hidden) body.innerHTML = kioskSpiffPanelHtml_();
+  if (body) body.innerHTML = kioskSpiffPanelHtml_();
 };
 
 function kioskSpiffTick_() {
@@ -9119,52 +9117,11 @@ function kioskSpiffTick_() {
   _kioskSpiffLeft--;
 }
 
-/* Point the frame at the link the server just sent, on a screen that is already painted.
- *
- * WHY THIS EXISTS AT ALL: the tokens SPIFF mints are rotatable — that is the whole reason they are
- * config rather than source, and the reason Leaderboard reads them live instead of holding a copy.
- * But reading live server-side bought nothing while the CLIENT held the composed URL in markup that
- * a running kiosk never rebuilds. A rotation reached the screen at the 04:00 nightly reload and not
- * before: up to ~24h, nearly all of it trading hours, with the floor looking at SPIFF's "this link
- * is no longer active" page. Now it is one poll, ~60s.
- *
- * UNDEFINED IS NOT EMPTY. A response that simply does not carry the field — an older engine, a
- * shape we do not recognize — must leave everything exactly as it is. Only an explicit empty string
- * means "this store has no token now", which is what a revoke writes.
- */
-GC.views.applySpiffLink = function(url) {
-  if (url === undefined || url === null) return;      // field absent — not an instruction
-  var next = String(url);
-  var ov   = document.getElementById('kioskSpiffOverlay');
-  var fr   = document.getElementById('kioskSpiffFrame');
-  if (!ov || !fr) return;                             // not on the kiosk view
-
-  var prev = ov.getAttribute('data-src') || '';
-  if (prev === next) return;
-  ov.setAttribute('data-src', next);
-
-  if (next) {
-    // Re-warm immediately rather than on the next open: the point of warming is that a tap is
-    // instant, and a rotation that left a cold frame behind would cost the next person the wait.
-    fr.setAttribute('src', next);
-    fr.hidden = false;
-    var b1 = document.getElementById('kioskSpiffPanel');
-    if (b1) b1.hidden = true;
-  } else {
-    /* Revoked. Do not leave anyone — or the warm frame — on a page that has just been turned off;
-       fall back to the panel, which still has everything Leaderboard knows. */
-    fr.removeAttribute('src');
-    fr.hidden = true;
-    GC.views.showSpiffPanel();
-  }
-};
-
-/** Leaderboard's own summary — the fallback, shown when this store has no SPIFF link to open. */
+/* Leaderboard's own board, painted from data the kiosk already holds. No wait, and nothing to
+ * choose: this is the only view the popup has. */
 GC.views.showSpiffPanel = function() {
   var body = document.getElementById('kioskSpiffPanel');
-  var fr   = document.getElementById('kioskSpiffFrame');
-  if (body) { body.innerHTML = kioskSpiffPanelHtml_(); body.hidden = false; }
-  if (fr) fr.hidden = true;
+  if (body) body.innerHTML = kioskSpiffPanelHtml_();
 };
 
 /* The countdown. Started whenever the popup opens, because that is when the board leaves the wall. */
@@ -9173,58 +9130,25 @@ function startSpiffCountdown_() {
   _kioskSpiffLeft = KIOSK_SPIFF_AUTOCLOSE_S;
   kioskSpiffTick_();
   _kioskSpiffTimer = setInterval(kioskSpiffTick_, 1000);
-  /* A tap INSIDE the frame never reaches the overlay's own pointerdown — the iframe swallows it —
-     but it does move focus off this document, so the window blurs. That is the whole signal, and it
-     costs us nothing inside SPIFF's page. The same reference twice still registers one listener. */
+  /* Kept from the framed era, and still earning its place: a tap that lands on something which
+     does not bubble to the overlay's own pointerdown still blurs the window, so this is a second
+     "somebody is here" signal rather than a duplicate of it. The same reference twice registers
+     one listener. */
   window.addEventListener('blur', GC.views.keepSpiffBoardOpen);
 }
 
-/* WHICH VIEW THE POPUP OPENS ON, and why it is a question at all.
+/* NO WAIT HERE BY DESIGN — the panel is drawn from data the kiosk already holds.
  *
- * Sky wants OUR panel: SPIFF's store-page layout drawn here, in the kiosk's own progress-bar
- * treatment (2026-09-11 — "i want the previously submitted screenshot data inside. I do like this
- * treatment of the progress bars"). But three things on that page are SPIFF's copy and cannot be
- * derived here — the product the program is on, the store-level goal, and Tawny's selling tips —
- * and they only reach us if SPIFF publishes them on the row. They are being added; until they
- * arrive, a panel would be that page with its product line and its tips cut out.
- *
- * SO THE PANEL TAKES OVER THE MOMENT THE COPY IS THERE, and not a moment before. Until then the
- * popup keeps framing SPIFF's page, which is complete. No deploy flips this — the data does — and
- * a kiosk picks it up on its next 5-minute refresh. Neither view is ever a half-empty card, which
- * is the whole point: shipping the treatment early would have traded Tawny's tips for a gradient.
- *
- * WHEN THE COPY IS EVERYWHERE, DELETE THE FALLBACK. The frame, its warming in renderSpiffOverlay,
- * and this branch all exist only for the gap. Leaving them after it closes means carrying a second
- * rendering of the same screen that nobody ever sees and nothing ever checks.
- */
-function spiffPanelHasSpiffCopy_() {
-  var list = GC._kioskSpiff.programs || [];
-  if (!list.length) return false;
-  return list.every(function(p) {
-    return !!(p && (p.product || (p.tips && p.tips.length)));
-  });
-}
-
-/* NO WAIT HERE BY DESIGN. The panel is drawn from data the kiosk already holds, and the frame was
- * loaded at kiosk paint — either way this opens onto something already rendered.
+ * Painted fresh every open, never on numbers from before a pay-period boundary. There is no longer
+ * a branch deciding WHICH view opens: the frame that used to compete with this is gone, along with
+ * spiffPanelHasSpiffCopy_ (which asked whether SPIFF had published enough copy for the panel to be
+ * complete) and applySpiffLink (which re-pointed the frame when a token rotated). Both existed only
+ * for the gap before SPIFF published the program sidecar, and that gap closed.
  */
 GC.views.openSpiffBoard = function() {
   var ov = document.getElementById('kioskSpiffOverlay');
   if (!ov || !GC._kioskSpiff.on) return;   // the button is only hidden, never removed — see renderHeader
-  var src  = ov.getAttribute('data-src') || '';
-  var fr   = document.getElementById('kioskSpiffFrame');
-  var body = document.getElementById('kioskSpiffPanel');
-
-  // Painted fresh every open — never on numbers from before a pay-period boundary.
-  if (src && !spiffPanelHasSpiffCopy_()) {
-    // Normally already warm; this only repairs a frame something else cleared.
-    if (fr && fr.getAttribute('src') !== src) fr.setAttribute('src', src);
-    if (fr) fr.hidden = false;
-    if (body) body.hidden = true;
-  } else {
-    GC.views.showSpiffPanel();
-  }
-
+  GC.views.showSpiffPanel();
   _kioskSpiffOpen = true;
   ov.classList.add('show');
   startSpiffCountdown_();
@@ -9239,9 +9163,9 @@ GC.views.closeSpiffBoard = function() {
   window.removeEventListener('blur', GC.views.keepSpiffBoardOpen);
   var ov = document.getElementById('kioskSpiffOverlay');
   if (ov) ov.classList.remove('show');
-  /* THE FRAME KEEPS ITS src. It used to be dropped here to stop SPIFF's page self-refreshing behind
-     a closed popup — thrift that cost the NEXT person the whole load again. Staying warm is the
-     point now; see renderSpiffOverlay. */
+  /* Nothing to tear down beyond the timer and the listener. The old note here was about keeping
+     SPIFF's framed page warm between taps; with the frame gone there is no load to preserve, and
+     the panel is rebuilt from state on the next open. */
 };
 
 GC.views.renderKiosk = function(slug) {
@@ -10717,7 +10641,7 @@ var kiosk = (function() {
         '</div>',
       '</div>',
       renderRareDrop(),
-      renderSpiffOverlay(storeData.spiffKioskUrl || '', store.name || ''),
+      renderSpiffOverlay(store.name || ''),
     ].join('');
   }
 
@@ -10739,10 +10663,24 @@ var kiosk = (function() {
    * current. One hidden frame per kiosk is a handful of calls an hour, against a wall screen that is
    * instant every time it is tapped.
    */
-  function renderSpiffOverlay(url, storeName) {
+  /* THE POPUP HAS ONE VIEW NOW: our own panel. No iframe, no token branch.
+   *
+   * IT USED TO PAINT SPIFF'S FRAMED PAGE BY DEFAULT whenever the store had a token, and rely on
+   * openSpiffBoard to swap to the panel on the way in. That left the wrong thing in the markup, and
+   * on 2026-09-17 Sky caught what it costs: a full re-render while the popup is OPEN — which
+   * checkRemoteRefresh does through renderKiosk — repainted the overlay in its default state and
+   * put SPIFF's page on the wall mid-read. It looked like "the layout went wrong" precisely because
+   * SPIFF's page is built from the same handoff, so the only visible tells were their
+   * vendor-prefixed title and their full names.
+   *
+   * The lesson is not "add a third place that fixes the state". A view that is chosen in three
+   * places will be wrong in whichever one nobody re-reads. The frame is gone, so there is no state
+   * to choose: the panel is what this renders, and the store's token now only serves the direct
+   * link Sky or Tawny opens by hand.
+   */
+  function renderSpiffOverlay(storeName) {
     // Mounted even when SPIFF is off, for the same reason the button is — see renderHeader.
-    var src = url || '';
-    return '<div id="kioskSpiffOverlay" data-src="' + e(src) + '"'
+    return '<div id="kioskSpiffOverlay"'
       + ' onpointerdown="GC.views.keepSpiffBoardOpen()">'
       + '<div class="kso-scrim" onclick="GC.views.closeSpiffBoard()"></div>'
       + '<div class="kso-win" role="dialog" aria-label="SPIFF">'
@@ -10752,9 +10690,7 @@ var kiosk = (function() {
       +     '<span class="kso-auto" id="kioskSpiffAuto"></span>'
       +     '<button class="kso-close" onclick="GC.views.closeSpiffBoard()">Close</button>'
       +   '</div>'
-      +   '<div class="kso-body" id="kioskSpiffPanel"' + (src ? ' hidden' : '') + '></div>'
-      +   '<iframe class="kso-frame" id="kioskSpiffFrame" title="SPIFF store page"'
-      +     ' referrerpolicy="no-referrer"' + (src ? ' src="' + e(src) + '"' : ' hidden') + '></iframe>'
+      +   '<div class="kso-body" id="kioskSpiffPanel"></div>'
       + '</div></div>';
   }
 
@@ -11535,11 +11471,10 @@ var kiosk = (function() {
           if (!resp || resp.ok === false) { markStale(resp && resp.error); return; }
           _clearStaleBanner();
           checkRemoteRefresh(slug, resp.refreshToken);
-          /* SPIFF's kiosk token is rotatable, so the button's link has to be able to CHANGE on a
-             screen that is already painted. The header is only built by a full render, which a
-             running kiosk never does again — so without this the old link survived until the 04:00
-             nightly reload. See the spiffKioskUrl comment in getStoreToday's delta response. */
-          GC.views.applySpiffLink(resp.spiffKioskUrl);
+          /* The SPIFF token used to be applied here, because the popup framed SPIFF's page and a
+             rotation had to reach a painted screen. The popup draws our own board now, so the token
+             reaches nothing on the kiosk and this poll has nothing to do with it. The engine still
+             mints it (spiffKioskUrl_) for the direct link Sky or Tawny opens by hand. */
 
           if (resp.isUpdate) {
             // Delta response: inject new ticker items + update numbers
