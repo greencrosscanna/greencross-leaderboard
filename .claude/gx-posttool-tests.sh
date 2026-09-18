@@ -39,12 +39,22 @@ esac
 # Locate the repo the edited file belongs to, not the shell's cwd — an agent may be anywhere.
 dir="$(CDPATH= cd -- "$(dirname -- "$file")" 2>/dev/null && pwd)" || exit 0
 repo=""
+# `-e`, not `-d`: in a linked worktree `.git` is a FILE. With `-d` an edit inside
+# greencross-command-center/.claude/worktrees/<name> walked past its own worktree and ran the MAIN
+# checkout's suites — testing code the session had not written, and on 2026-09-17 running an old hub
+# test that locked every spoke as a side effect. Measured, not assumed: this session's own edit did it.
 while [ -n "$dir" ] && [ "$dir" != "/" ]; do
-  if [ -d "$dir/.git" ]; then repo="$dir"; break; fi
+  if [ -e "$dir/.git" ]; then repo="$dir"; break; fi
   dir="$(dirname "$dir")"
 done
 [ -n "$repo" ] || exit 0
 cd "$repo" || exit 0
+
+# Tests must never inherit a caller's GIT_DIR — a test building a throwaway repo would otherwise write
+# into the real one. Full reasoning in gx-preflight.sh, where the same strip sits; this hook runs the
+# same suites, so it needs the same defense.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR GIT_OBJECT_DIRECTORY \
+      GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE 2>/dev/null || true
 
 ls tests/*_test.js >/dev/null 2>&1 || exit 0
 command -v node >/dev/null 2>&1 || exit 0

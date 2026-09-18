@@ -12,6 +12,17 @@
 set -eu
 cd "$(dirname "$0")"
 
+# ── A HOOK HANDS ITS CHILDREN THE REAL REPO — so strip that before any test runs ─────────────────
+# Pushed from a git WORKTREE, git exports an ABSOLUTE GIT_DIR to this hook, and every child inherits
+# it. A test that builds a throwaway repo with `git init .` then `git config user.email t@t.t` does not
+# touch its temp dir under that env: its commands land in the repo GIT_DIR names. From the main
+# checkout GIT_DIR is RELATIVE (".git") and resolves harmlessly, which is why this only bites from a
+# worktree — and task-chip sessions ALWAYS run in one. See the same block in gx-theme's
+# theme-preflight.sh for what it did to that repo on 2026-09-17; the hub fixed its own copy on
+# 2026-09-10 and it was never carried to the shared runners until then.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR GIT_OBJECT_DIRECTORY \
+      GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE 2>/dev/null || true
+
 APP="performance"
 FAIL=0
 
