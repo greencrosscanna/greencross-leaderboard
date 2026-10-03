@@ -110,6 +110,22 @@ fetch gxclaim.sh         gxclaim.sh 755 || true
 # password being typed. It carries the per-app storage key map, which is suite knowledge rather than
 # app knowledge — each app keeps its session under its own key, in its own storage.
 fetch gxdevlogin.sh      gxdevlogin.sh 755 || true
+# gxnote.sh files a brain note from a spoke to another app. It is here because a spoke that CANNOT
+# file a note is a spoke that edits the hub instead — which is the failure the note mechanism exists
+# to prevent, and which cost an unreviewed GX Core library cut on 2026-09-02. Until 2026-10-03 the
+# script existed in greencross-sales alone, so five spokes had no reviewed way to do the one thing
+# their own CLAUDE.md tells them to do.
+#
+# THE SPOKE COPY IS THE WRITE-ONLY ONE, AND THAT IS THE WHOLE POINT. greencross-command-center has a
+# 327-line tool under the SAME NAME that lists, shows, resolves, blocks and unblocks notes across all
+# seven apps. Do not sync that one. This is 68 lines and can only file a note: the secret guard
+# trusts committed repo scripts to read .gx_deploy_secret, and what makes that trust cheap here is
+# that the script has exactly one verb. Giving every spoke the power to close other apps' notes is a
+# different decision, and nobody has made it.
+#
+# Two different scripts with one name is already a documented trap in this suite (gx-sync.sh itself,
+# hub automation vs per-repo pull). Check which one you are reading.
+fetch gxnote.sh          gxnote.sh 755 || true
 fetch deploy.sh          deploy.sh 755 || true
 fetch serve.py           serve.py 755 || true
 # serve.js is a SECOND DOOR, not a replacement — serve.py stays and still works from a terminal, from
@@ -163,7 +179,7 @@ fetch gx-exit-scrub-test.js tests/exit_scrub_test.js 755 || true
 # `sh` for exactly this reason -- gx-preflight, theme-preflight and run-tests alike. Keep it that way:
 # a hook that depends on a mode bit is a hook this filesystem can switch off without telling you.
 _notexec=""
-for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh gx-deadcode.sh gx-usenglish.sh gxclaim.sh gxdevlogin.sh; do
+for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh gx-deadcode.sh gx-usenglish.sh gxclaim.sh gxdevlogin.sh gxnote.sh; do
   [ -f "$f" ] || continue
   chmod 755 "$f" 2>/dev/null || true
   [ -x "$f" ] || _notexec="$_notexec $f"
@@ -184,7 +200,7 @@ done
 # So `update-index` alone does NOT make it stick — 4f01457 proves that; the very next commit undid it.
 # The habit is the fix, which is why the message below leads with the habit.
 _badmode=""
-for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh gx-deadcode.sh gx-usenglish.sh gxclaim.sh gxdevlogin.sh; do
+for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh gx-deadcode.sh gx-usenglish.sh gxclaim.sh gxdevlogin.sh gxnote.sh; do
   [ -f "$f" ] || continue
   case "$(git ls-files -s "$f" 2>/dev/null | awk '{print $1}')" in
     100644) [ -x "$f" ] && _badmode="$_badmode $f" ;;
