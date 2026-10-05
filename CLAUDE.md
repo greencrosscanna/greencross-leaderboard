@@ -452,6 +452,38 @@ Separately and still true: the `~6% of rapid calls 404` figure in `dutchie_fetch
 `16-45s` in `gxdevlogin.sh` are **different measurements of different things**. Don't reconcile them
 with this one.
 
+## The kiosk's figures COUNT UP, and an agent's browser pane cannot watch them (2026-10-05)
+
+**The headline dollars animate from zero.** `document.visibilityState` is **`hidden`** in a Claude
+browser pane, browsers throttle `requestAnimationFrame` in a hidden tab, so the count-up barely
+advances while an agent looks at it. Read the text then and the board says **`$0 SOLD`** — next to
+budtender rows showing **111%** and **142%**, and a `DAILY GOAL HIT` banner.
+
+That exact reading was taken on 2026-10-05 at 16:48 PT and reported to Sky as a display bug on a
+screen staff watch all day. He checked a real kiosk: **it was fine, and had been the whole time.**
+
+**Nothing was wrong at any layer, and all three were verified:** `?action=storetoday` returned
+`revenue 2524.45, pctToGoal 0.613`; `?action=kioskall` — the route the kiosk itself calls — returned
+the same plus `staff[0].sales 1091.32`; and reading the live DOM directly a minute later said
+`$2,524 SOLD` and `Bennett $1,091`.
+
+**The tell was there in the first sample and was missed.** `$0` beside `111%` with `target: 987` is
+self-contradicting: 1091 ÷ 987 **is** 111%, so the percentage was computed from a number the display
+had not finished counting to. Two readings of one fact disagreeing is a reason to re-measure, never
+to report.
+
+- **Measure the DATA, not the pixels.** Call the route the page calls and compare. That is what
+  settled this in one request after an hour of circling it.
+- **Structure is safe to read in a hidden tab; motion is not.** Node counts, mount counts and
+  whether text is present are synchronous. An animated numeric string is not.
+- **This is the second instance in the suite.** `greencross-sales/CLAUDE.md` records it under the
+  v2.573 poll work — an attempt to observe bar re-animation and a chart redraw in the pane
+  "returned zeros on BOTH builds and proved nothing". Knowing the mechanism did not prevent
+  repeating it, which is why it is written here too, against the screen it actually bit.
+
+**Do NOT "fix" the kiosk in response to a `$0` seen this way.** There is nothing to fix, and the
+figures are correct on every real display.
+
 ## Sync with the brain — run `/gxbrain` (or say "brain sync")
 
 This app is on the shared brain. **`/gxbrain`** loads the shared rules and reconciles this chat with GX Core
