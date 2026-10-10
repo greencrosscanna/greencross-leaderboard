@@ -814,11 +814,16 @@ function diagSpiff_(storeSlug) {
  * so that BTs can open a window with the SPIFF details from their Kiosk." SPIFF shipped its half
  * on 2026-09-08 — a per-store page at store.html?t=<token> showing the running program, its
  * window, the store goal, the per-budtender goal, the bounty, the featured product and Tawny's
- * selling tips. Leaderboard's half is to open it.
+ * selling tips. Leaderboard's half was to open it.
  *
- * NOTHING IS RE-RENDERED HERE. We do not read the program, we do not draw the tips, we open
- * SPIFF's own page. A kiosk-shaped copy of a vendor program is a second thing to keep in step
- * with the agreement, and the first time it drifts a screen promises a bounty nobody agreed to.
+ * THE KIOSK NO LONGER OPENS THIS LINK (corrected 2026-10-09). This block said "NOTHING IS
+ * RE-RENDERED HERE … we open SPIFF's own page". Since 2026-09-17 the kiosk's SPIFF button draws
+ * Leaderboard's own board in-page (GC.spiffPanel, opened by GC.views.openSpiffBoard in
+ * index.html) from GX Core's published SPIFF payload — no frame and no fetch — and reads nothing
+ * from the URL built below. The drift risk the old text named is real and is handled differently:
+ * the panel draws only what SPIFF published, and tests/spiff_sidecar_contract_test.js builds that
+ * payload with SPIFF's own code. The link is still minted here for one use: the direct link Sky or
+ * Tawny opens by hand.
  *
  * WHY THE TOKEN IS CONFIG AND NOT SOURCE. One PERMANENT token per store, identifying the SCREEN
  * rather than a program, so the same URL sits in a kiosk forever and resolves at read time to
@@ -850,17 +855,18 @@ var SPIFF_KIOSK_BASE_DEFAULT = 'https://greencrosscanna.github.io/greencross-spi
  * the kiosk polls every 60 seconds, silently replaced the product, the store target and Tawny's
  * selling tips with a card that has none of them, until the next poll happened to succeed.
  *
- * null means "no answer", and the payload OMITS the field entirely rather than sending it — which
- * the client already treats as "change nothing". See GC.views.applySpiffLink, which has drawn that
- * distinction since the day it was written; this function simply never gave it the chance.
+ * null means "no answer", and the payload OMITS the field entirely rather than sending it. The
+ * three answers are still kept apart here, but nothing on the kiosk consumes them any more
+ * (corrected 2026-10-09: this pointed at GC.views.applySpiffLink, which was deleted with the frame
+ * on 2026-09-17 — the kiosk reads no SPIFF URL at all now).
  *
  * (Five bugs in this suite have now had this exact shape: an unknown folded into a falsy. An
  * absence needs its own state.)
  *
- * '' IS THE OFF SWITCH, and it is the default. No key, no button — which is the right state for
- * a store whose link has never been minted, and the state every store is in until the six tokens
- * are pasted into the Command Center. A button that opens a broken page is worse than no button
- * on the most visible screen in the company.
+ * '' MEANS "THIS STORE HAS NO TOKEN", and it is the default for a store whose link has never been
+ * minted. It is NOT a switch for the kiosk's SPIFF button (corrected 2026-10-09: this said
+ * "'' IS THE OFF SWITCH … No key, no button"). The button is decided by Settings → Include SPIFF
+ * alone, since 2026-09-10, and opens Leaderboard's own board whether or not a token exists.
  *
  * Keyed on the GX CORE store_id ('bend', 'river-rd'), not Leaderboard's own slug ('century'),
  * because SPIFF's store_links rows are keyed the same way its progress rows are. coreStoreId_ is

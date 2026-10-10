@@ -375,8 +375,16 @@ the shape a kiosk load actually fires, which is why it is the condition that app
 
 - **It was not measured on `libversion`.** All 234 requests were authenticated store-month pulls
   carrying 2.5-3.5s of Sales' own backend work, so the run cannot separate Google's hop from Apps
-  Script executing a query. A fresh six-wide `libversion` run is what would replace 3.4% honestly.
-  Nobody has done one.
+  Script executing a query.
+- **Six-wide `libversion` runs HAVE been done, and they do not replace 3.4% — they show the stalls are
+  not independent.** Sales ran three (240 requests each): 2026-09-17, 6 stalls (2.5%), all six in ONE
+  round; 2026-09-18 morning, 18 (7.5%), 13 of them in five consecutive rounds; 2026-09-18 evening, 10
+  (4.2%), 9 in one stretch. Stalls arrive in **windows** lasting from ~27 seconds to minutes. "The hop
+  goes away and takes everything in flight" is the extreme case (09-17), not the rule — on 09-18 no
+  round lost all six. Compare those runs with each other, never with the 3.4% store-pull baseline.
+  Three runs is a hint, not a distribution. *Corrected 2026-10-09: this said of such a run "Nobody has
+  done one". Evidence: `greencross-sales/docs/claude-md-history.md` § "THE STALLS ARE NOT INDEPENDENT",
+  and `endpoints.gs` in this repo, which already cited the 09-17 result.*
 - **The wider sweeps are our own queueing, not a worse hop.** Every GX app runs its Apps Script as
   `sky@`, Google caps simultaneous executions at **30 per account**, and the suite peaked at 114 on
   2026-09-15. A 30-wide sweep from one machine is at the cap by itself. Same cap the randomized retry

@@ -9196,11 +9196,12 @@ GC.views.forceKioskRefresh = function() { kiosk.forceRefresh(kioskRouteSlug_());
  * enough to read five selling tips, short enough that a forgotten one costs a minute of board time.
  * The countdown is shown, because a screen that closes with no warning reads as a crash.
  *
- * ANY TOUCH RESTARTS THE CLOCK. Somebody still reading must not be shut out mid-sentence. The frame
- * is same-origin (both apps are on greencrosscanna.github.io), so a listener inside it would work —
- * but this deliberately does NOT reach into SPIFF's document: prodding another app's DOM from here
- * is exactly the coupling this whole consolidation is unwinding. Focus moving into the frame is
- * enough of a signal, and the bar above it stays reachable.
+ * ANY TOUCH RESTARTS THE CLOCK. Somebody still reading must not be shut out mid-sentence. The
+ * overlay's own onpointerdown (see renderSpiffOverlay) resets the countdown, and so does the window
+ * losing focus (see startSpiffCountdown_). There is no frame and no other app's document involved:
+ * the panel is this page's own markup, so the signal is an ordinary listener on our own element.
+ * (Corrected 2026-10-09: this paragraph still described a same-origin frame of SPIFF's page and why
+ * we would not reach into it. That frame was removed on 2026-09-17.)
  */
 var KIOSK_SPIFF_AUTOCLOSE_S = 120;
 var _kioskSpiffTimer = null, _kioskSpiffLeft = 0;
@@ -9682,8 +9683,9 @@ var kiosk = (function() {
       ? '<button class="kiosk-back-btn" onclick="GC.router.navigate(\'#/director\')">← Back</button>'
       : '';
     /* The SPIFF button. ONE SWITCH (Sky, 2026-09-10): it shows exactly when Settings → Include SPIFF
-       is on — the same switch as the card rows — and opens SPIFF's own per-store page in a window
-       (see openSpiffBoard). It used to show only where SPIFF's store link had been configured,
+       is on — the same switch as the card rows — and opens Leaderboard's own SPIFF board, drawn
+       in-page over the dimmed kiosk (see openSpiffBoard; no frame, no fetch, no window — corrected
+       2026-10-09). It used to show only where SPIFF's store link had been configured,
        which was no store at all, so the setting and the button could never agree. Everyone gets it, not just directors: this is what
        a budtender walks up to the screen to look at. On with nothing running still shows it (dimmed,
        no count), and the panel says so — the setting is what decides, not the day's programs. */
@@ -10795,22 +10797,21 @@ var kiosk = (function() {
   }
 
   // ── Render: SPIFF overlay ──────────────────────────────
-  /* What the SPIFF button opens: SPIFF's own per-store page, in a popup this page draws itself.
+  /* What the SPIFF button opens: Leaderboard's own SPIFF board, in a popup this page draws itself.
    *
-   * IT IS SPIFF'S PAGE, NOT OURS (Sky, 2026-09-11 — "the spiff button should open the store
-   * specific SPIFF link supplied by SPIFF"). Bounty text, featured product, the goal, the payout
-   * and Tawny's selling tips all live there, and the staff-level progress is being added to it at
-   * the source. Leaderboard's own panel below is the fallback for a store with no kiosk token, so
-   * a button that Include SPIFF has switched on always opens something.
+   * IT IS OUR PANEL, DRAWN FROM DATA THE KIOSK ALREADY HOLDS (Sky's decision, 2026-09-16). The
+   * program, the store goal, the payout, the board and Tawny's selling tips arrive on GX Core's
+   * published SPIFF payload and GC.spiffPanel renders them; SPIFF's own store.html is not loaded.
+   * A button that Include SPIFF has switched on always opens this, token or no token.
    *
-   * THE FRAME IS LOADED HERE, ON THE KIOSK PAINT, AND LEFT LOADED. That is a deliberate reversal:
-   * this used to set `src` only when the view opened, to avoid loading SPIFF's page "all day for
-   * nobody". The cost of that thrift lands on a person standing at the screen — SPIFF's page fetches
-   * its own data over JSONP and takes several seconds, so every tap bought a blank card and a
-   * "Loading…" (Sky, 2026-09-11: "the data takes too long to load"). Warming it at paint moves the
-   * wait to a moment when nobody is waiting, and the page's own 10-minute refresh then keeps it
-   * current. One hidden frame per kiosk is a handful of calls an hour, against a wall screen that is
-   * instant every time it is tapped.
+   * NOTHING IS LOADED OR WARMED HERE. This function emits an empty shell — the bar and an empty
+   * #kioskSpiffPanel — and openSpiffBoard fills it on each tap, with no wait because there is no
+   * fetch.
+   *
+   * (Corrected 2026-10-09. This comment said the button opens SPIFF's page, that our panel is the
+   * fallback for a store with no kiosk token, and that "the frame is loaded here, on the kiosk
+   * paint, and left loaded". All three described the framed popup removed on 2026-09-17; the
+   * comment below this one records why it went.)
    */
   /* THE POPUP HAS ONE VIEW NOW: our own panel. No iframe, no token branch.
    *
