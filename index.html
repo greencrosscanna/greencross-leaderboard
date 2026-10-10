@@ -1503,9 +1503,11 @@ body.kiosk-bg {
    an auto-height card would not collapse around a frame with no intrinsic height — a prop for a
    branch that turned out to be live, and was the bug. */
 
-/* ── SPIFF panel: what the button opens (Sky picked "built into Leaderboard", 2026-09-10) ──
-   Same bar language as the SPIFF row on each staff card (gold = hit, a hash left of the end =
-   beaten by that much), so the panel reads as the cards' detail view rather than a new widget. */
+/* ── The SPIFF button, and the popup's bar and body (Sky picked "built into Leaderboard",
+   2026-09-10). The panel itself is styled in the block below, from SPIFF's handoff: its bars are
+   green and clamped at the goal, NOT the staff cards' gold-on-hit bar with an overshoot hash.
+   (Corrected 2026-10-09: this said the panel used the "same bar language as the SPIFF row on each
+   staff card (gold = hit, a hash left of the end)". That stopped being true on 2026-09-16.) */
 .kiosk-spiff-btn .ksb-count {
   background: rgba(212,168,71,0.22); border-radius: 10px;
   padding: 2px 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.3px;
@@ -1515,7 +1517,6 @@ body.kiosk-bg {
    sibling would hinge on which of them is present. */
 .kso-ctx  { flex: 1; color: var(--text-dim); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .kso-body { flex: 1; overflow: auto; padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 10px; }
-.kso-body[hidden] { display: none; }
 /* ── The SPIFF panel: SPIFF's kiosk-board design, drawn here ────────────────────────────────
    Sky decided on 2026-09-16 that Leaderboard ADOPTS SPIFF's redesigned kiosk board in its own
    panel rather than framing SPIFF's page — so SPIFF's uptime is not the wall screen's uptime.
@@ -3946,7 +3947,7 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      slideshow bar at 9999, so nothing here contests it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
 <script>
-window.GC = window.GC || {}; GC.VERSION = 'v1.914';
+window.GC = window.GC || {}; GC.VERSION = 'v1.919';
 
 // ── GX Core web-app URL — ONE definition ──
 // This was previously a `var` inside loadChangelogFromGXCore(), i.e. function-scoped, while the
@@ -9206,8 +9207,9 @@ GC.views.forceKioskRefresh = function() { kiosk.forceRefresh(kioskRouteSlug_());
 var KIOSK_SPIFF_AUTOCLOSE_S = 120;
 var _kioskSpiffTimer = null, _kioskSpiffLeft = 0;
 /* Whether the popup is up. Kept as state rather than read back off the overlay's `show` class so
-   that everything which has to react to it — Include SPIFF being switched off mid-view, a token
-   being revoked — asks one question and gets one answer. */
+   that everything which has to react to it — Include SPIFF being switched off mid-view, the
+   5-minute refresh repainting the panel in place — asks one question and gets one answer.
+   (Corrected 2026-10-09: this listed "a token being revoked"; no token reaches the kiosk now.) */
 var _kioskSpiffOpen = false;
 
 /* What the SPIFF button and panel are drawing from. On GC rather than a local so the kiosk render

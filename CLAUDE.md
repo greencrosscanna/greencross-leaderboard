@@ -148,12 +148,13 @@ Hist: "Incentive lives in GX Crew".
 - **The store's token is still minted by `spiffKioskUrl_` (`spiff.gs`) and still in
   `cfg.spiffKiosk.<core store_id>`** (GX Core kv; one permanent token per store, keyed on the GX Core
   `store_id`, not Leaderboard's slug), for the direct link Sky or Tawny opens by hand — SPIFF's own
-  per-store board, `store.html?t=<token>`. The engine still sends it as `spiffKioskUrl` on the store
-  payloads; **the kiosk no longer reads it** — the token reaches nothing on the kiosk, and the
-  60-second poll has nothing to do with it.
+  per-store board, `store.html?t=<token>`. **The kiosk no longer reads it, and since 2026-10-09 the
+  engine no longer sends it:** `spiffKioskUrl` was removed from both kiosk payloads once nothing read
+  it. `spiffKioskUrl_` now feeds only the `spiffdiag` route; the link people open by hand comes from
+  SPIFF's own Settings → Kiosk links, which never went through this app.
 - **`spiffKioskUrl_` has three answers and they are NOT the same:** the URL, `''` when the store has no
-  token, and `null` when it could not find out — in which case the payload OMITS the field rather than
-  emptying it. An unknown folded into a falsy is the bug; an absence needs its own state.
+  token, and `null` when it could not find out. An unknown folded into a falsy is the bug; an absence
+  needs its own state.
 - **Settings → Include SPIFF is the one switch for the button** — the same switch as the staff-card
   rows, so the setting and the button cannot disagree. The token plays no part. The button and the
   overlay are ALWAYS in the markup, hidden when off — not omitted — so the 5-minute refresh can reveal

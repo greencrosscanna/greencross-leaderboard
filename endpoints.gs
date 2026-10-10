@@ -1752,26 +1752,14 @@ function getStoreToday(store, params) {
       // copy that actually does the work: the full response is cached 55s, the delta poll is not,
       // so a kiosk sitting on one store all day sees a bump within one poll. See bumpKioskRefresh_.
       refreshToken:      kioskRefreshToken_(store.slug),
-      /* THE SPIFF LINK RIDES THE DELTA FOR THE SAME REASON, and it is not decoration.
-       *
-       * SPIFF's kiosk tokens are rotatable, and the whole point of reading them live is that a
-       * rotation reaches the screen on its own. It did not: the button lives in the kiosk HEADER,
-       * the header is built only inside a full render, and this 60s poll updates numbers in place
-       * without rebuilding it. So a rotated token sat on a single-store kiosk until the 04:00
-       * nightly reload — up to ~24h, essentially all of it trading hours, pointing the floor at
-       * SPIFF's "this link is no longer active" page. (Raised by SPIFF, 2026-09-09, who asked how
-       * fast a rotation reaches us before deciding whether to keep rotate atomic.)
-       *
-       * On the delta rather than only the full response because the full one is cached 55s and,
-       * more to the point, is not fetched again by a kiosk that is already painted. This is the
-       * only channel that reaches a running screen. */
-      /* OMITTED, NOT EMPTIED, when we could not find out — see spiffKioskUrl_. '' tells the kiosk
-         the token was revoked and drops SPIFF's page; an absent field tells it nothing changed,
-         which is the truth when a config read failed. */
-      spiffKioskUrl:     (function () {
-                           try { return spiffKioskUrl_(store); }
-                           catch (e) { Logger.log('spiffKioskUrl_ failed: ' + e); return null; }
-                         })(),
+      /* NO SPIFF LINK HERE ANY MORE (removed 2026-10-09). This delta used to carry `spiffKioskUrl`
+         so a rotated SPIFF token reached a painted kiosk within one poll — which mattered while
+         the popup FRAMED SPIFF's store.html. The frame went on 2026-09-17: the popup draws
+         Leaderboard's own board from the published SPIFF payload and reads no URL, so the field
+         had no reader left in this repo, its tests or fixtures, or in any other GX repo, and it
+         cost a GX Core kv read on every 60s poll of every kiosk. spiffKioskUrl_ (spiff.gs) still
+         builds the link for the `spiffdiag` route; the link people open by hand comes from
+         SPIFF's own Settings → Kiosk links. */
     };
   }
 
@@ -1814,15 +1802,9 @@ function getStoreToday(store, params) {
     latestTxnTs:        latestTxnTs,
     lastUpdated:        new Date().toISOString(),
     refreshToken:       kioskRefreshToken_(store.slug),
-    /* The SPIFF board's per-store link, or '' when this store has no token in the Command
-       Center — see spiffKioskUrl_. It rides the FULL response only: the header this button
-       lives in is built once per load, and the 30s delta poll does not rebuild it. Wrapped
-       because SPIFF's page is a link, not a dependency; a config read that fails must cost
-       the kiosk a button, never a board. */
-    spiffKioskUrl:      (function () {
-                          try { return spiffKioskUrl_(store); }
-                          catch (e) { Logger.log('spiffKioskUrl_ failed: ' + e); return null; }
-                        })(),
+    /* No `spiffKioskUrl` on this response either (removed 2026-10-09) — see the note on the
+       delta response above. The kiosk's SPIFF button is decided by Settings → Include SPIFF and
+       opens Leaderboard's own board; it never needed a link to exist. */
   };
 
   // Store in GAS cache for 55 seconds (full loads only — sinceTs polls bypass this)
