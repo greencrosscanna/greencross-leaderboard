@@ -45,6 +45,11 @@ fi
 #
 # Silent when green, when gh is missing or signed out, or when offline: this is a doorbell, not a gate.
 # Reads the latest COMPLETED run, so a push still running does not hide a red main — or clear it.
+#
+# A FUNCTION, because it runs alongside the two GX Core reads below instead of ahead of them
+# (2026-10-09). The three waits are independent network calls; in sequence the hook measured 8.7s
+# typical across 15 session starts. Its output is still printed FIRST — see where it is collected.
+gx_ci_red() {
 if command -v gh >/dev/null 2>&1; then
   _REPO=$(git remote get-url origin 2>/dev/null | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')
   if [ -n "$_REPO" ]; then
@@ -79,10 +84,19 @@ print("%s\t%d\t%s\t%s\t%s" % (runs[0]["databaseId"], n, since, runs[0].get("disp
     fi
   fi
 fi
+}
 
 APP="performance"
 GXCORE="https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec"
-[ -f ".gx_deploy_secret" ] || exit 0
+
+# Each background job writes to its own file, so nothing interleaves and the print order below is
+# the same as when these ran one after another. The trap clears the files however the hook exits.
+_T=$(mktemp -d 2>/dev/null) || { _T="${TMPDIR:-/tmp}/gxbn.$$"; mkdir -p "$_T"; }
+trap 'rm -rf "$_T"' EXIT
+gx_ci_red >"$_T/ci" 2>/dev/null &
+
+# No secret means no inbox to ask — but the CI answer is still owed, so wait for it before leaving.
+if [ ! -f ".gx_deploy_secret" ]; then wait; cat "$_T/ci" 2>/dev/null; exit 0; fi
 SECRET=$(cat .gx_deploy_secret)
 
 # Retry-aware GET → prints a JSON object, or nothing after 4 tries. $1=action  $2=status
@@ -110,8 +124,15 @@ gx_fetch() {
 # That is why this file ships only AFTER the Core deploy, never alongside it.
 # Both boards in one banner. A failed fetch becomes null rather than empty, so the renderer can tell
 # "asked, nothing there" from "could not ask" instead of printing an all-clear over an unread inbox.
-_NOTES=$(gx_fetch notes open)
-_BUGS=$(gx_fetch bugs '')
+#
+# Asked TOGETHER, and together with the CI check started above. A fetch that fails writes an empty
+# file, which reads back as an empty string and becomes null below — the same contract as before.
+gx_fetch notes open >"$_T/notes" 2>/dev/null &
+gx_fetch bugs '' >"$_T/bugs" 2>/dev/null &
+wait
+cat "$_T/ci" 2>/dev/null
+_NOTES=$(cat "$_T/notes" 2>/dev/null)
+_BUGS=$(cat "$_T/bugs" 2>/dev/null)
 printf '{"app":"%s","notes_doc":%s,"bugs_doc":%s}' "$APP" "${_NOTES:-null}" "${_BUGS:-null}" | python3 -c '
 import sys, json
 try: d = json.load(sys.stdin)
