@@ -95,7 +95,12 @@ Hist: "Incentive lives in GX Crew".
 - **There is no `spiff_payouts` tab and this app never read one.** It is not in `GX_TABS`, nothing writes
   it, nothing reads it — the claim was invented in documentation. SPIFF keeps its payout data in its own
   sheet. The real Leaderboard↔Core contract is `goal_publications` (Leaderboard publishes, Sales
-  consumes), covered by `tests/cross_app_goals_contract_test.js`.
+  consumes). **This repo is the PRODUCER.** Gated here by `tests/cross_app_contract_test.js`, a wrapper
+  that runs the canonical test in the hub, `greencross-command-center/tests/cross_app_goals_contract_test.js`
+  (which drives the real consumer against the real producer's shape), so this repo's pre-push hook is
+  gated by it too. It prints `SKIP` and passes when the hub is not a sibling checkout — a skip is not
+  coverage. *Corrected 2026-10-09: this said "covered by `tests/cross_app_goals_contract_test.js`", which
+  is the hub's file name; no file of that name exists in this repo's `tests/`.*
 - **There IS a SPIFF contract now, and it is the other direction (2026-09-08).** SPIFF publishes each pay
   period's finished per-employee sell-through and payout to GX Core's **`spiff_publications`** tab after
   every hourly refresh; this app reads it back with `GXCore.publishedSpiffProgress(secret, scope)` and
@@ -125,7 +130,9 @@ Hist: "Incentive lives in GX Crew".
 ## SPIFF — the kiosk popup (one view, drawn here)
 
 - **The kiosk's SPIFF button opens a popup Leaderboard DRAWS** — a card over the dimmed board, not
-  `window.open` (Sky, 2026-09-11).
+  `window.open`, which a kiosk browser blocks (Sky, 2026-09-11). `GC.views.openSpiffBoard` paints
+  `GC.spiffPanel` into `#kioskSpiffPanel` from data the kiosk already holds — no wait, no fetch, and
+  painted fresh on every open.
 - **The panel is SPIFF's redesigned board, drawn here (Sky's decision, 2026-09-16), not a framed
   `store.html`.** `store.html` calls SPIFF's engine for its own data, so framing it puts SPIFF's uptime
   in front of the most visible screen in the company. **The panel reads Core's published copy, which
@@ -138,13 +145,31 @@ Hist: "Incentive lives in GX Crew".
   nobody re-reads.** (`renderSpiffOverlay` painted the frame VISIBLE and our panel HIDDEN whenever the
   store had a token, with `openSpiffBoard` correcting it on the way in — so a full re-render while the
   popup was OPEN, `checkRemoteRefresh` → `renderKiosk`, put SPIFF's page on a kiosk mid-read.)
-- **The store's token is still minted by `spiffKioskUrl_` and still in `cfg.spiffKiosk.<core store_id>`**
-  (GX Core kv; one permanent token per store, all six set), for the direct link Sky or Tawny opens by
-  hand — SPIFF's own per-store board, `store.html?t=<token>`; **the kiosk no longer reads it.**
+- **The store's token is still minted by `spiffKioskUrl_` (`spiff.gs`) and still in
+  `cfg.spiffKiosk.<core store_id>`** (GX Core kv; one permanent token per store, keyed on the GX Core
+  `store_id`, not Leaderboard's slug), for the direct link Sky or Tawny opens by hand — SPIFF's own
+  per-store board, `store.html?t=<token>`. The engine still sends it as `spiffKioskUrl` on the store
+  payloads; **the kiosk no longer reads it** — the token reaches nothing on the kiosk, and the
+  60-second poll has nothing to do with it.
+- **`spiffKioskUrl_` has three answers and they are NOT the same:** the URL, `''` when the store has no
+  token, and `null` when it could not find out — in which case the payload OMITS the field rather than
+  emptying it. An unknown folded into a falsy is the bug; an absence needs its own state.
 - **Settings → Include SPIFF is the one switch for the button** — the same switch as the staff-card
-  rows, so the setting and the button cannot disagree. Not "no token, no button".
-- **The popup must close with the board:** a wall screen has no chrome, so a popup nobody can dismiss is
-  the board gone for the shift.
+  rows, so the setting and the button cannot disagree. The token plays no part. The button and the
+  overlay are ALWAYS in the markup, hidden when off — not omitted — so the 5-minute refresh can reveal
+  them on a painted screen; `GC.views.applySpiffState` owns `hidden`. **Undefined is not off:** an
+  engine that does not send `spiffOn` must leave the screen exactly as it is. Switched off while open,
+  the popup closes.
+- **The popup closes itself, and must always be dismissible:** a wall screen has no chrome, so a popup
+  nobody can dismiss is the board gone for the shift. `KIOSK_SPIFF_AUTOCLOSE_S` (120) counts down on
+  the popup's bar — shown, because a screen that closes with no warning reads as a crash. Any touch
+  restarts the clock; the scrim and the Close button both close it.
+
+*Corrected 2026-10-09, checked against `index.html` and `spiff.gs`. This file said three things that
+stopped being true when the frame was removed on 2026-09-17: "The frame is loaded at kiosk paint and
+left loaded"; "Leaderboard reads the token live on every poll, so a rotation reaches a running kiosk
+in ~60s"; and "The token decides only what the button OPENS". There is no frame, the poll applies the
+token to nothing, and the button opens one thing. They remain in the history file as written.*
 - **Two faithful implementations of one design are nearly indistinguishable on a screenshot, so the data
   is what tells you which you are looking at.** SPIFF's page shows a vendor-prefixed title (their
   `programLabel()`) and full names; ours shows the plain program name and the kiosk's first names.
@@ -180,12 +205,6 @@ Gated by `tests/spiff_popup_test.js` (one-view popup: the overlay markup contain
 the panel is never painted hidden; *named `spiff_store_window_test.js` in older notes — no such file has
 ever existed*), `tests/spiff_panel_test.js` and `tests/spiff_sidecar_contract_test.js`, which drive the
 shipped `GC.spiffPanel`.
-
-*Superseded, kept in history only:* the paragraphs saying the frame is "loaded at kiosk paint and left
-loaded", that Leaderboard "reads the token live on every poll", that "the token decides only what the
-button OPENS", and that `spiffPanelHasSpiffCopy_` means "the data flips it, not a deploy" all describe
-the pre-2026-09-17 two-view popup. They sit in the history file unretracted; the 2026-09-17 removal is
-what is current.
 
 Hist: "The kiosk's SPIFF button opens", "The iframe fallback is GONE".
 
@@ -410,14 +429,21 @@ and deleted): `/gxbrain` reads notes addressed to `to_app=performance`, resolves
 inbox.
 
 App-specific facts for the sync check: app key **`performance`** in GX Core; integrated via bug forwarding
-(`gxIngestBug` + `tab`), changelog read from `version_history`, and auto-record on deploy (central
-`deploy_version` endpoint + shared untracked `.gx_deploy_secret`).
+(`gxIngestBug` + `tab`), and auto-record on deploy (central `deploy_version` endpoint + shared untracked
+`.gx_deploy_secret`).
 
-**The `GXCore` pin: ask the running app (`?action=libversion`), never this line and never
-`appsscript.json`.** `appsscript.json` pinned **v330** when this was written, but a call runs the
-version the live DEPLOYMENT snapshotted. Three times the pin advanced and this line did not (v19, v211,
-v225). `GXCore.setAvatar` — the single avatar write — **does not exist before 225**, so an un-deployed
-re-pin is not a stale note, it is every avatar save on the kiosk throwing.
+**The changelog is read from GX Core's `version_history` ROUTE** — `index.html` calls
+`GXClient(GXCORE).jsonp('version_history', { app: 'performance' })`. `version_history` is a route, not a
+tab: it reads the **`app_versions`** tab, which `deploy_version` writes. *Corrected 2026-10-09: this
+said "changelog read from `version_history`", which read as a tab name.*
+
+**Which `GXCore` version this app runs: ask the running app (`?action=libversion`).** Never this file
+and never `appsscript.json` — a call runs the version the live DEPLOYMENT snapshotted, so a re-pin that
+was not deployed changed nothing. No pinned version number is written here, on purpose: three times
+this line named one and the pin moved on without it. *Corrected 2026-10-09: this said "`appsscript.json`
+pins `GXCore` v330"; the repo had already moved past it.* One floor that is not a pin and still
+matters: `GXCore.setAvatar` — the single avatar write — **does not exist before 225**, so an
+un-deployed re-pin is not a stale note, it is every avatar save on the kiosk throwing.
 
 **What to build next — `/gxwhatsnext`:** run `/gxwhatsnext` in this chat to pull this app's next
 prioritized work — the Command Center's dependency-ordered build sequence, filtered to this app. It
