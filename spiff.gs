@@ -758,15 +758,17 @@ function diagSpiff_(storeSlug) {
     store:           storeSlug,
     showSpiff:       spiffShowEnabled_(),   // the usual answer to "why is there no row"
     coreStoreId:     coreId,
-    /* What the kiosk's SPIFF button actually resolves to for this store, and which of the three
-       answers it is. Exposed because it is unaskable from outside otherwise — the payload that
-       carries it is session-gated, so "is the link empty right now" could only be guessed at from
-       the screen. That guessing is what made the 2026-09-11 fallback take two rounds to find. */
+    /* The hand-opened per-store SPIFF link for this store (SPIFF's own board, store.html?t=<token>),
+       and which of the three answers it is. This is the only place the link is reported: the kiosk
+       payloads stopped carrying it on 2026-10-09 and the kiosk never read it after the frame was
+       removed on 2026-09-17. The kiosk's SPIFF button is decided by `showSpiff` above and by
+       nothing here. (Corrected 2026-10-10: this said the value was "what the kiosk's SPIFF button
+       actually resolves to", and the two messages below described what the KIOSK would do.) */
     kioskUrl:        (function () { try { return spiffKioskUrl_(store); } catch (e) { return null; } })(),
     kioskUrlMeans:   (function () {
                        var u; try { u = spiffKioskUrl_(store); } catch (e) { return 'threw: ' + e; }
-                       return u === null ? 'COULD NOT ASK — field is omitted, kiosk keeps what it has'
-                            : u === ''   ? 'no token configured for ' + coreId + ' — kiosk shows our own panel'
+                       return u === null ? 'COULD NOT ASK GX Core for the token — the hand-opened link is unknown right now; the kiosk is unaffected'
+                            : u === ''   ? 'no token configured for ' + coreId + ' — there is no hand-opened link; the kiosk is unaffected'
                             :              'ok';
                      })(),
     payPeriod:       pp.ppStartStr + ' … ' + pp.ppEndStr,
