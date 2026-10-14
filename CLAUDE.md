@@ -23,10 +23,7 @@ in the suite; ship accordingly.
 | run | `python3 serve.py` → <http://localhost:8181> (`--lan` for a kiosk/phone) |
 | ship | commit → push (Pages) → `./deploy.sh "message"` |
 
-**`deploy.sh` here is this app's OWN full pipeline, not the shared recorder** *(made explicit
-2026-10-09; previously contradicted, not implied, by history § "Stack & local loop", which listed
-`deploy.sh` among the files synced from gx-theme. Source: `deploy.sh`'s own header and the suite
-`CLAUDE.md` correction of 2026-09-17.)*
+**`deploy.sh` here is this app's OWN full pipeline, not the shared recorder.**
 
 - It stamps the version from the **git commit count** (`COUNT=$(git rev-list --count HEAD)`,
   `v$((1 + COUNT/1000)).$(printf %03d $((COUNT % 1000)))`), writes it into `index.html`, pushes to GAS
@@ -40,12 +37,8 @@ in the suite; ship accordingly.
   skip it; never remove that marker.
 
 **The tests gate the push.** `node tests/<name>_test.js` runs one suite; `gx-preflight.sh` (the pre-push
-hook) runs every `tests/*_test.js` and **refuses the push** on a failure. Run them after touching any
-revenue, goal or ranking math:
-
-```bash
-for t in tests/*_test.js; do node "$t"; done
-```
+hook) runs every `tests/*_test.js` and **refuses the push** on a failure. Run the relevant suites, one
+`node` call each, after touching any revenue, goal or ranking math.
 
 Each test loads the shipped `.gs` file **as text** (`tests/_harness.js` → `load()`) with the Apps Script
 globals stubbed, then calls the real function. **Never copy a function into a test** — a test carrying its
@@ -56,8 +49,8 @@ genuine ICU/`Intl` implementation, not a fixture, because every PT date helper d
 Dutchie diagnostics with no pass/fail, run from the editor.
 
 `docs-mocks/` holds design mocks and handoff notes (kiosk hero, standings, EOM card, avatar picker) — read
-them for intent, but they are **not shipped code** and nothing references them. Renamed from `mocks/` on
-2026-08-22. `src/fixtures` backs fixture mode.
+them for intent, but they are **not shipped code** and nothing references them. `src/fixtures` backs
+fixture mode.
 
 The dev server talks to the **live** backend; `gx-dev.js` blocks writes until armed. `gx-preflight.sh` runs
 as a **pre-push hook** and refuses dev leftovers (fixtures on, writes armed, localhost URLs, `@devonly`).
@@ -79,8 +72,8 @@ has read it since `cfg.incentiveEngine` flipped to `gxcore` on 2026-09-01.
   `frozenperiod`, `frozenperiods` and `applydiscounttargets` routes, `getIncentiveData_`,
   `computeIncentivePerf_`, `saveIncentiveInputs_`, the sky/mike access gate and its tests.
 - **The Script Properties themselves were left in place** (`GC_INC_PERF_*`,
-  `GC_INCENTIVE_INPUTS_JSON`) — code only, no pay data deleted. They are closed pay periods: leave them
-  *(made explicit 2026-10-09; previously implied by this section)*. All 28 frozen closed-period
+  `GC_INCENTIVE_INPUTS_JSON`) — code only, no pay data deleted. They are closed pay periods: leave them.
+  All 28 frozen closed-period
   snapshots matched GX Core's `incentive_frozen` archive byte-for-byte (sha256) before removal; the 29th
   key is the superseded v1 snapshot for 2026-06-22.
 - **What stays, and must:** `discounts.gs` (the registry and classification, published to Core kv
@@ -99,13 +92,12 @@ Hist: "Incentive lives in GX Crew".
   that runs the canonical test in the hub, `greencross-command-center/tests/cross_app_goals_contract_test.js`
   (which drives the real consumer against the real producer's shape), so this repo's pre-push hook is
   gated by it too. It prints `SKIP` and passes when the hub is not a sibling checkout — a skip is not
-  coverage. *Corrected 2026-10-09: this said "covered by `tests/cross_app_goals_contract_test.js`", which
-  is the hub's file name; no file of that name exists in this repo's `tests/`.*
+  coverage.
 - **There IS a SPIFF contract now, and it is the other direction (2026-09-08).** SPIFF publishes each pay
   period's finished per-employee sell-through and payout to GX Core's **`spiff_publications`** tab after
   every hourly refresh; this app reads it back with `GXCore.publishedSpiffProgress(secret, scope)` and
   folds it onto the kiosk staff cards. Never call SPIFF's `/exec` directly — `spiff.gs` used to, knowingly
-  app-to-app *(reworded 2026-10-09; original in history § "Incentive lives in GX Crew")*.
+  app-to-app.
 - **Core stores the payload verbatim and never recomputes it**, so a SPIFF that stops publishing does not
   fail — it just gets older, and nothing throws anywhere. `spiff.gs` therefore refuses any scope older
   than `cfg.spiffStaleHours` (GX Core's own watchdog threshold, so the alert and the screen agree) rather
@@ -165,12 +157,6 @@ Hist: "Incentive lives in GX Crew".
   nobody can dismiss is the board gone for the shift. `KIOSK_SPIFF_AUTOCLOSE_S` (120) counts down on
   the popup's bar — shown, because a screen that closes with no warning reads as a crash. Any touch
   restarts the clock; the scrim and the Close button both close it.
-
-*Corrected 2026-10-09, checked against `index.html` and `spiff.gs`. This file said three things that
-stopped being true when the frame was removed on 2026-09-17: "The frame is loaded at kiosk paint and
-left loaded"; "Leaderboard reads the token live on every poll, so a rotation reaches a running kiosk
-in ~60s"; and "The token decides only what the button OPENS". There is no frame, the poll applies the
-token to nothing, and the button opens one thing. They remain in the history file as written.*
 - **Two faithful implementations of one design are nearly indistinguishable on a screenshot, so the data
   is what tells you which you are looking at.** SPIFF's page shows a vendor-prefixed title (their
   `programLabel()`) and full names; ours shows the plain program name and the kiosk's first names.
@@ -203,8 +189,7 @@ the code:
   and names the store. `measuredAt` still arrives on the payload and is simply not drawn.
 
 Gated by `tests/spiff_popup_test.js` (one-view popup: the overlay markup contains no second rendering and
-the panel is never painted hidden; *named `spiff_store_window_test.js` in older notes — no such file has
-ever existed*), `tests/spiff_panel_test.js` and `tests/spiff_sidecar_contract_test.js`, which drive the
+the panel is never painted hidden), `tests/spiff_panel_test.js` and `tests/spiff_sidecar_contract_test.js`, which drive the
 shipped `GC.spiffPanel`.
 
 Hist: "The kiosk's SPIFF button opens", "The iframe fallback is GONE".
@@ -244,8 +229,7 @@ Hist: "The kiosk's SPIFF button opens", "The iframe fallback is GONE".
   right on either side of core-admin's data write, in either order. It goes inert the moment Core strips the repeat itself or the data is
   corrected; it is not load-bearing after that.
 - **One name per person, one place that decides it.** The ticker's own disambiguator is gone;
-  `makeTicker_` uses the name it was given. Do not give any surface its own
-  *(made explicit 2026-10-09; previously implied by this section)*.
+  `makeTicker_` uses the name it was given. Do not give any surface its own.
 - **The initial comes back OFF wherever a surname is shown (2026-09-16).** `gxWithSurname_` in
   `gx_roster.gs` is the one rule, used by `gxDisplayNameOf_` and by the director's staff table (which
   pairs the nickname with the surname **Dutchie** holds, not the one Core holds — two callers, and they
@@ -265,7 +249,7 @@ Hist: "The name on a tile is DERIVED".
 ## A number never reads "+0%" or "−0%" (2026-09-16)
 
 - There is no amount of below-zero that displays as zero. Never decide the sign from the RAW value and
-  then print the ROUNDED one *(reworded 2026-10-09; original in history § "A number never reads")*.
+  then print the ROUNDED one.
 - **`GC.fmtSignedPct(frac, decimals)` is the one definition** — it asks "does this round to zero at
   the precision THIS surface shows?", which no single epsilon could answer, because the gauges round
   to whole percent and the store table to one decimal. Do not hand-roll
@@ -273,8 +257,7 @@ Hist: "The name on a tile is DERIVED".
   the director and kiosk pace gauges, the sparkline badge, the historical store cards, the Sky wall).
 - The same rule in other units: `fmtDeltaNum` judges the rounded value, and the standings rows sign off
   rounded dollars.
-- **Never hardcode `▲ +` in front of a raw number** *(reworded 2026-10-09; original in history § "A
-  number never reads")* — a period that discounted LESS read "▲ +-$412.00". Avg UPT, Total Discounts
+- **Never hardcode `▲ +` in front of a raw number** — a period that discounted LESS read "▲ +-$412.00". Avg UPT, Total Discounts
   and Discount Rate now go through `fmtDeltaDecimal` / `fmtDeltaCurrency` / `fmtDeltaPts`.
 - `tests/signed_zero_test.js` drives every call site and the real `GC.renderKpiBlock`, not just the
   helper — the three prefixes were in the WIRING, and a helper-only assertion would have passed with
@@ -355,8 +338,7 @@ not happened. Comparing that against a full prior period is the calendar, not a 
   the November fall-back date it reports midnight an hour late (08:00Z; the day begins at 07:00Z). Left
   alone deliberately: that helper sets the day boundary for the whole app including every cache key,
   and moving it to chase an hour with no trade is a far larger blast radius. Asserted in the test so it
-  is a known quantity. Do not "fix" it in passing
-  *(made explicit 2026-10-09; previously implied by § "…AND AT THE SAME TIME OF DAY")*.
+  is a known quantity. Do not "fix" it in passing.
 - Small-row order is the four trade numbers then the two staff cards, asserted as an order.
 
 Gated by `tests/kpi_comparison_window_test.js`: the windows, the DST close instant, the February
@@ -383,9 +365,7 @@ the shape a kiosk load actually fires, which is why it is the condition that app
   (4.2%), 9 in one stretch. Stalls arrive in **windows** lasting from ~27 seconds to minutes. "The hop
   goes away and takes everything in flight" is the extreme case (09-17), not the rule — on 09-18 no
   round lost all six. Compare those runs with each other, never with the 3.4% store-pull baseline.
-  Three runs is a hint, not a distribution. *Corrected 2026-10-09: this said of such a run "Nobody has
-  done one". Evidence: `greencross-sales/docs/claude-md-history.md` § "THE STALLS ARE NOT INDEPENDENT",
-  and `endpoints.gs` in this repo, which already cited the 09-17 result.*
+  Three runs is a hint, not a distribution.
 - **The wider sweeps are our own queueing, not a worse hop.** Every GX app runs its Apps Script as
   `sky@`, Google caps simultaneous executions at **30 per account**, and the suite peaked at 114 on
   2026-09-15. A 30-wide sweep from one machine is at the cap by itself. Same cap the randomized retry
@@ -443,14 +423,12 @@ App-specific facts for the sync check: app key **`performance`** in GX Core; int
 
 **The changelog is read from GX Core's `version_history` ROUTE** — `index.html` calls
 `GXClient(GXCORE).jsonp('version_history', { app: 'performance' })`. `version_history` is a route, not a
-tab: it reads the **`app_versions`** tab, which `deploy_version` writes. *Corrected 2026-10-09: this
-said "changelog read from `version_history`", which read as a tab name.*
+tab: it reads the **`app_versions`** tab, which `deploy_version` writes.
 
 **Which `GXCore` version this app runs: ask the running app (`?action=libversion`).** Never this file
 and never `appsscript.json` — a call runs the version the live DEPLOYMENT snapshotted, so a re-pin that
 was not deployed changed nothing. No pinned version number is written here, on purpose: three times
-this line named one and the pin moved on without it. *Corrected 2026-10-09: this said "`appsscript.json`
-pins `GXCore` v330"; the repo had already moved past it.* One floor that is not a pin and still
+this line named one and the pin moved on without it. One floor that is not a pin and still
 matters: `GXCore.setAvatar` — the single avatar write — **does not exist before 225**, so an
 un-deployed re-pin is not a stale note, it is every avatar save on the kiosk throwing.
 
