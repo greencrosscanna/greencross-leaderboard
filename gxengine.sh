@@ -80,6 +80,56 @@ gx_fetch() {   # gx_fetch <curl args...> -> body on stdout; empty only if every 
   return 1
 }
 
+# ── Only engine source may ship, and an app that stops answering must say so ────────────────────
+# `clasp push` ships every .js/.gs/.html/.json under rootDir that .claspignore does not name. In the
+# repos whose rootDir is "." that list is a DENYLIST, so the first script anyone drops in a new
+# folder ships as Apps Script source. Four times that broke a DEPLOY, because the file failed to
+# parse. On 2026-10-13 it broke the APP: a library re-pin pushed sales' scripts/tmp/…js, which
+# PARSED, so the push and the redeploy both said success — and then threw
+# `ReferenceError: require is not defined` at load on every request. Sales answered nothing for
+# eleven minutes at midday. This script's only comment was the warm-instance warning below.
+#
+# TWO GUARDS, because the first can be wrong and the second is what a person actually needs:
+#   BEFORE the push — list what clasp would send and refuse anything that is not engine source: a
+#     .gs or .html directly in rootDir, or the manifest. A .js is never engine source here (every
+#     engine file in the suite is .gs), and a file in a subfolder is never one either. Unknown is
+#     not clear: if the list cannot be read, the push does not happen.
+#   AFTER the deploy — if the pinned version was never confirmed, ask the app once more and READ
+#     THE BODY. An Apps Script exception page is not a warm instance, and gx_fetch above throws
+#     HTML away by design, so nothing here could see one.
+gx_push_scope() {   # stdin: `clasp show-file-status --json`; $1: rootDir; stdout: offenders, one per line
+  python3 -c '
+import json, os, sys
+root = os.path.normpath((sys.argv[1] if len(sys.argv) > 1 else ".") or ".")
+try:
+    files = json.loads(sys.stdin.read())["filesToPush"]
+    assert isinstance(files, list) and files
+except Exception:
+    print("?"); sys.exit(4)
+def ok(f):
+    f = str(f)
+    d, base = os.path.split(f)
+    if os.path.normpath(d or ".") != root: return False
+    return base == "appsscript.json" or base.endswith(".gs") or base.endswith(".html")
+bad = [str(f) for f in files if not ok(f)]
+if bad: print("\n".join(bad)); sys.exit(3)
+' "${1:-.}"
+}
+gx_script_error() {   # stdin: a response body; stdout: the exception text if it is Apps Script error page
+  python3 -c '
+import html, re, sys
+b = sys.stdin.read()
+if "<title>Error</title>" not in b: sys.exit(0)
+m = re.search(r"((?:[A-Za-z]*Error|Exception)\b[^<]{0,300}?\(line \d+, file [^)<]{1,200}\))", b)
+if m: print(html.unescape(m.group(1)).strip()[:300]); sys.exit(0)
+# No line number (e.g. "Script function not found: doGet") is still an app that does not answer.
+t = re.sub(r"(?s)<(style|script)\b.*?</\1>", " ", b)
+t = " ".join(html.unescape(re.sub(r"<[^>]+>", " ", t)).split())
+t = re.sub(r"^Error\s+", "", t)
+print((t or "Apps Script error page, no message")[:300])
+'
+}
+
 APP="performance"
 DEPLOY=0; RECORD_ONLY=0
 for a in "$@"; do
@@ -248,6 +298,26 @@ if [ "$RECORD_ONLY" = "1" ]; then
   # All that is wanted here is the core_pins row, which is the one thing that pipeline does not write.
   echo; echo "Record-only — the push and redeploy were done by ./deploy.sh."
 else
+  _PUSH_ROOT="$(python3 -c "
+import json
+try: print(json.load(open('.clasp.json')).get('rootDir') or '.')
+except Exception: print('.')" 2>/dev/null)"
+  _PUSH_BAD="$(clasp show-file-status --json 2>/dev/null | gx_push_scope "$_PUSH_ROOT")"
+  _PUSH_RC=$?
+  if [ "$_PUSH_RC" -ne 0 ]; then
+    echo
+    if [ "$_PUSH_BAD" = "?" ] || [ -z "$_PUSH_BAD" ]; then
+      echo "✗ could not read what clasp would push (clasp show-file-status --json). Nothing was pushed."
+      echo "  Unknown is not clear. If clasp says invalid_grant or reauth, run: clasp login"
+    else
+      echo "✗ REFUSING TO PUSH — these are not engine source, and clasp would ship them as Apps Script:"
+      printf '%s\n' "$_PUSH_BAD" | sed 's/^/      /'
+      echo "  A file like this that parses still RUNS at load, on every request (sales, 2026-10-13)."
+      echo "  Add its folder to .claspignore — both lines, the bare name and name/** — then re-run."
+      echo "  Nothing was pushed."
+    fi
+    exit 1
+  fi
   echo; echo "Pushing…"
   clasp push --force || { echo "✗ clasp push failed"; exit 1; }
   clasp update-deployment "$TARGET" --description "${GX_NOTES:-deploy ${HEAD_SHA:0:9}}" || { echo "✗ redeploy failed"; exit 1; }
@@ -325,8 +395,27 @@ for k in ('gxcore','lib','lib_version'):
     sleep 5
   done
 fi
+# IS IT ANSWERING AT ALL? Only when the pinned version was never confirmed, and with a bare curl on
+# purpose: gx_fetch keeps JSON and discards HTML, which is right for a delivery miss and blind to
+# this. Three looks, a few seconds apart, because a warm instance can still serve the old snapshot
+# for a while before the new one — the broken one — takes over.
+APP_ERR=""
+if [ -z "$LV" ] && [ -n "$EXEC_URL" ]; then
+  for _ in 1 2 3; do
+    APP_ERR="$(curl -sL --http1.1 --max-time 20 "$EXEC_URL?action=libversion" 2>/dev/null | gx_script_error)"
+    [ -n "$APP_ERR" ] && break
+    sleep 4
+  done
+fi
 ROWS="[{\"app\":\"$APP\",\"deployed_sha\":\"$HEAD_SHA\"$([ -n "$LV" ] && echo ",\"lib_version\":$LV")}]"
-if [ -z "$LV" ]; then
+if [ -n "$APP_ERR" ]; then
+  echo
+  echo "✗✗ $APP IS DOWN — the deployed engine throws on every request:"
+  echo "      $APP_ERR"
+  echo "   This is NOT a warm instance. The push shipped something Apps Script cannot run."
+  echo "   Fix it and redeploy now; staff are seeing errors. The sha is recorded below so the"
+  echo "   record matches what is live, broken or not."
+elif [ -z "$LV" ]; then
   # Name BOTH keys. This message used to blame only cfg.<app>ExecUrl even though the loop above tries
   # cfg.<app>EngineUrl FIRST — so a sales deploy whose EngineUrl was present and correct produced
   # "no cfg.salesExecUrl", and the session reading it concluded a config key was missing and asked
@@ -385,6 +474,13 @@ for r in rows if isinstance(rows, list) else []:
     [ -n "$_seen" ] && [ "${_seen}" = "${HEAD_SHA}" ] && _pin_ok=1
     ;;
 esac
+
+# A down app is a failed deploy whatever the record says. No ✓ line, and a non-zero exit, so
+# neither a person nor a script reading the last line can take this for a clean ship.
+if [ -n "$APP_ERR" ]; then
+  echo "✗ $APP deployed at ${HEAD_SHA:0:9} and IS NOT ANSWERING — see the exception above."
+  exit 1
+fi
 
 if [ "$_pin_ok" = "1" ]; then
   if [ "$RECORD_ONLY" = "1" ]; then
