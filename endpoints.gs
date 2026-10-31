@@ -2370,7 +2370,74 @@ function getAvatarConfigs_() {
 }
 
 /**
- * Save one employee's avatar config.
+ * THE ONLY ROUTED AVATAR WRITE: check the person's own OLCC permit with GX Core, then write — one
+ * server call, one employee_id for both. Decided 2026-10-30 (Sky) after a face was changed from the
+ * kiosk without its owner knowing.
+ *
+ * body: { nameKey, config (JSON string; '' or missing = remove the face), permit }
+ *
+ * The employee_id verified IS the employee_id written: it is resolved here from nameKey, once, so
+ * someone cannot unlock with their own permit and write another person's face. Nothing is cached and
+ * the browser is handed no token — only state, attempts_left and minutes.
+ *
+ * Anything but { ok:true, state:'match' } refuses, including a throw. ok:false from Core means NOTHING
+ * WAS DECIDED: say "couldn't check", never "wrong number" (code 'unavailable', no guess spent).
+ * The typed value is passed to Core and nowhere else: not logged, not stored, not in any error text.
+ */
+function avatarWriteWithPermit_(body) {
+  var nameKey = String((body && body.nameKey) || '');
+  if (!nameKey) return { ok: false, error: 'nameKey required' };
+  var configStr = (body && body.config) ? String(body.config) : '';
+  if (configStr) {
+    try { JSON.parse(configStr); } catch (e) { return { ok: false, error: 'Invalid config JSON' }; }
+  }
+  var typed = String((body && body.permit) || '').trim();
+  if (!typed) return { ok: false, code: 'permit_missing', error: 'Enter the permit number first.' };
+
+  var rec = (gxRoster_().byKey || {})[nameKey];
+  if (!rec || !rec.employeeId) {
+    return { ok: false, error: 'No GX Core employee matches "' + nameKey + '". Avatars are stored ' +
+             'on the employee record now; ask Crew to add this person to the roster.' };
+  }
+  var secret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+  if (!secret) return { ok: false, code: 'unavailable', error: 'Couldn\'t check the permit, try again.' };
+
+  var v;
+  try {
+    v = GXCore.verifyPermit(secret, rec.employeeId, typed, { by: 'performance' });
+  } catch (e) {
+    v = null;   // never echo e: it could carry the request
+  }
+  if (!v || v.ok !== true) {
+    return { ok: false, code: 'unavailable', error: 'Couldn\'t check the permit, try again.' };
+  }
+  if (v.state === 'match') {
+    // by names the person, per Core's contract; gxWriteAvatarToCore_ passes 'performance'.
+    return gxWriteAvatarToCore_(nameKey, configStr);
+  }
+  if (v.state === 'no_match') {
+    var left = Math.max(0, Number(v.attempts_left) || 0);
+    if (v.locked_until_ms) return permitLockedReply_(v.locked_until_ms);
+    return { ok: false, code: 'no_match', attempts_left: left,
+             error: 'That permit number doesn\'t match. ' + left + (left === 1 ? ' try' : ' tries') + ' left.' };
+  }
+  if (v.state === 'locked') return permitLockedReply_(v.locked_until_ms);
+  if (v.state === 'no_permit') {
+    return { ok: false, code: 'no_permit',
+             error: 'No permit is on file for this person. A manager should check Crew.' };
+  }
+  return { ok: false, code: 'unavailable', error: 'Couldn\'t check the permit, try again.' };
+}
+
+function permitLockedReply_(untilMs) {
+  var mins = Math.max(1, Math.ceil((Number(untilMs) - Date.now()) / 60000));
+  return { ok: false, code: 'locked', minutes: mins,
+           error: 'Too many wrong tries. Locked for ' + mins + (mins === 1 ? ' minute.' : ' minutes.') };
+}
+
+/**
+ * UNCHECKED avatar save. Not routed: doGet refuses saveavatar and doPost goes through
+ * avatarWriteWithPermit_. Kept as the inner step so tests can reach it; do not call it from a route.
  * Expects params.nameKey (string) and params.config (JSON string of avatar config object).
  */
 function saveAvatarConfig_(params) {
