@@ -35,6 +35,9 @@ const EMPLOYEES = [
     home_store: 'portland-rd', dutchie_employee_id: '101', status: 'active', avatar_config: '' },
   { employee_id: 'jamie_cruz', employee_number: '', full_name: 'Jamie Cruz', preferred_name: '',
     home_store: 'river-rd', dutchie_employee_id: '505', status: 'active', avatar_config: '' },
+  // Corporate: never rings a sale, so absent from the 30-day sales roster. Core name vs display name differ.
+  { employee_id: 'sky', employee_number: '00', full_name: 'Skyler Pinnick', preferred_name: 'Sky',
+    home_store: 'river-rd', dutchie_employee_id: '', status: 'active', avatar_config: '' },
 ];
 
 let SET = [], VERIFY = [], LOGS = [];
@@ -67,8 +70,8 @@ const S = H.load(['gx_roster.gs', 'dutchie_proxy.gs', 'endpoints.gs', 'dutchie_f
 const TYPED = 'ZZ9Q77-SECRETTYPED';
 const CFG = JSON.stringify({ top: 'shortFlat' });
 function fresh(reply) { SET = []; VERIFY = []; LOGS = []; S.resetRosterMemo(); verifyReply = reply; }
-function write(extra) {
-  return S.avatarWriteWithPermit_(Object.assign({ nameKey: 'casey_nguyen', config: CFG, permit: TYPED }, extra || {}));
+function write(extra, auth) {
+  return S.avatarWriteWithPermit_(Object.assign({ nameKey: 'casey_nguyen', config: CFG, permit: TYPED }, extra || {}), auth);
 }
 
 const tests = {
@@ -202,12 +205,48 @@ const tests = {
     _eq_('only the permit path (and the unrouted inner writers) reach setAvatar', callers.sort(), allowed.sort());
   },
 
+  // Staff outside the sales roster (Sky, Tawny, Mike) change their own face from the top-right chip,
+  // keyed on the DISPLAY name ("sky_pinnick"), while Core holds "Skyler Pinnick".
+  test_corporateStaffAreReachable_() {
+    ['sky_pinnick', 'skyler_pinnick'].forEach(function (k) {
+      fresh({ ok: true, state: 'match' });
+      const res = write({ nameKey: k }, { user: 'sky' });
+      _eq_(k + ': saves', res.ok, true);
+      _eq_(k + ': the employee verified is the one written', SET[0].ref + '|' + VERIFY[0].id, 'sky|sky');
+    });
+    fresh({ ok: true, state: 'no_permit' });
+    const r = write({ nameKey: 'sky_pinnick' }, { user: 'sky' });
+    _eq_('no permit on file says so rather than bypassing', r.code, 'no_permit');
+    _eq_('and writes nothing', SET.length, 0);
+  },
+
+  test_byNamesTheUnlockNotThePermit_() {
+    fresh({ ok: true, state: 'match' });
+    write({}, { user: 'dean' });
+    _eq_('by says whose permit and which login', SET[0].by, 'permit:casey_nguyen via dean');
+    _ok_('and never carries the typed value', SET[0].by.indexOf(TYPED) < 0);
+    fresh({ ok: true, state: 'match' });
+    write({}, { user: 'we ird/<x>' });
+    _eq_('a login is sanitized before it is recorded', SET[0].by, 'permit:casey_nguyen via weirdx');
+    fresh({ ok: true, state: 'match' });
+    write({});
+    _eq_('no login: still names the unlock', SET[0].by, 'permit:casey_nguyen');
+  },
+
+  test_chipSaveUsesThePermitPath_() {
+    const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    const at = html.indexOf('avatarEdit: (session.token');
+    const blk = html.slice(at, html.indexOf('items: [', at));
+    _ok_('the top-right Avatar menu passes its own save', /save:\s*function \(c\)/.test(blk));
+    _ok_('which goes through the permit prompt', /GC\.avatarPermitSave\(name, nameKey, c\)/.test(blk));
+  },
+
   test_postDoorChecksSessionThenPermit_() {
     const src = fs.readFileSync(path.join(__dirname, '..', 'dutchie_proxy.gs'), 'utf8');
     const at = src.indexOf('function doPost(e)');
     const body = src.slice(at, src.indexOf('\n}\n', at));
     const authed = body.indexOf('requireAuth_(body)');
-    const w = body.indexOf('avatarWriteWithPermit_(body)');
+    const w = body.indexOf('avatarWriteWithPermit_(body, auth)');
     _ok_('session is checked before the avatar write', authed >= 0 && w > authed);
     _ok_('the permit is never read from a GET', !/params\.permit|e\.parameter\.permit/.test(src));
   },

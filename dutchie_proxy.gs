@@ -1433,7 +1433,7 @@ function doPost(e) {
       // Same write-grant chokepoint doGet applies, then the permit check and the write in ONE call.
       var grant = gxCheckWriteGrant_(auth, 'saveavatar');
       if (!grant.ok) return jsonOut(grant);
-      return jsonOut(avatarWriteWithPermit_(body));
+      return jsonOut(avatarWriteWithPermit_(body, auth));
     }
     return jsonOut(handleBugReport_(body));
   } catch (err) {

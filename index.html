@@ -6989,6 +6989,13 @@ var director = (function() {
         // re-stamps the real employee_number seed on the first save either way.
         seed:   (cfg && cfg.seed) || nameKey,
         config: cfg,
+        // ONE WRITE PATH, ONE RULE: this app signs its own session tokens, so GX Core's default
+        // set_my_avatar cannot verify them ("Invalid session"), and it has no permit check anyway.
+        // A face change goes through the permit prompt and our own server like every other.
+        save: function (c) {
+          try { return GC.avatarPermitSave(name, nameKey, c); }
+          catch (e) { return Promise.reject(e); }
+        },
         onSaved: function (c) {
           _selfAvatarCfg = (c || null);
           // Keep the fetched map in step so every OTHER surface painted from it agrees.

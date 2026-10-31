@@ -2384,7 +2384,7 @@ function getAvatarConfigs_() {
  * WAS DECIDED: say "couldn't check", never "wrong number" (code 'unavailable', no guess spent).
  * The typed value is passed to Core and nowhere else: not logged, not stored, not in any error text.
  */
-function avatarWriteWithPermit_(body) {
+function avatarWriteWithPermit_(body, auth) {
   var nameKey = String((body && body.nameKey) || '');
   if (!nameKey) return { ok: false, error: 'nameKey required' };
   var configStr = (body && body.config) ? String(body.config) : '';
@@ -2394,12 +2394,15 @@ function avatarWriteWithPermit_(body) {
   var typed = String((body && body.permit) || '').trim();
   if (!typed) return { ok: false, code: 'permit_missing', error: 'Enter the permit number first.' };
 
-  var rec = (gxRoster_().byKey || {})[nameKey];
+  // byKey is only the 30-day SALES roster; corporate staff who never ring a sale (Sky, Tawny, Mike)
+  // are in byCoreKey, indexed under both their legal and their display name.
+  var roster = gxRoster_();
+  var rec = (roster.byKey || {})[nameKey] || (roster.byCoreKey || {})[nameKey];
   if (!rec || !rec.employeeId) {
     return { ok: false, error: 'No GX Core employee matches "' + nameKey + '". Avatars are stored ' +
              'on the employee record now; ask Crew to add this person to the roster.' };
   }
-  var secret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+  var secret =PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
   if (!secret) return { ok: false, code: 'unavailable', error: 'Couldn\'t check the permit, try again.' };
 
   var v;
@@ -2412,8 +2415,10 @@ function avatarWriteWithPermit_(body) {
     return { ok: false, code: 'unavailable', error: 'Couldn\'t check the permit, try again.' };
   }
   if (v.state === 'match') {
-    // by names the person, per Core's contract; gxWriteAvatarToCore_ passes 'performance'.
-    return gxWriteAvatarToCore_(nameKey, configStr);
+    // by records that this person's permit unlocked the change and which login was used. The login
+    // name only: never the permit value.
+    var login = String((auth && auth.user) || '').replace(/[^a-zA-Z0-9_.@-]/g, '').slice(0, 40);
+    return gxWriteAvatarToCore_(nameKey, configStr, rec, 'permit:' + rec.employeeId + (login ? ' via ' + login : ''));
   }
   if (v.state === 'no_match') {
     var left = Math.max(0, Number(v.attempts_left) || 0);
@@ -2490,8 +2495,9 @@ function clearAvatarConfig_(params) {
  * field is empty. The defense moved; it was not dropped. The pin still matters — setAvatar does not
  * exist before v225 — so re-pin AND deploy before assuming this call resolves.
  */
-function gxWriteAvatarToCore_(nameKey, configStr) {
-  var rec = (gxRoster_().byKey || {})[nameKey];
+function gxWriteAvatarToCore_(nameKey, configStr, verifiedRec, by) {
+  // verifiedRec is the record whose permit was just checked: write THAT employee, never a second lookup.
+  var rec = verifiedRec || (gxRoster_().byKey || {})[nameKey];
   if (!rec || !rec.employeeId) {
     return { ok: false, error: 'No GX Core employee matches "' + nameKey + '". Avatars are stored ' +
              'on the employee record now; ask Crew to add this person to the roster.' };
@@ -2501,7 +2507,7 @@ function gxWriteAvatarToCore_(nameKey, configStr) {
     // employee_id, not the nameKey: setAvatar accepts either, but our roster already resolved this
     // person on the Dutchie id join, which a name match cannot get wrong. '' clears — setAvatar owns
     // the clear= mechanics and the verification, so do not special-case it here.
-    r = GXCore.setAvatar(rec.employeeId, configStr || '', 'performance');
+    r = GXCore.setAvatar(rec.employeeId, configStr || '', by || 'performance');
   } catch (e) {
     return { ok: false, error: 'GX Core write failed: ' + (e && e.message || e) };
   }
