@@ -31,7 +31,12 @@ function test_getDateRange_() {
   var pp = S.getDateRange_('pp');
   // The RANGE is correct: end-of-day-14 minus start-of-day-1 = 14 days − 1 ms.
   var spanMs = new Date(pp.toUTC).getTime() - new Date(pp.fromUTC).getTime();
-  _approx_('pp UTC span = 14 days', spanMs, 14 * 24 * 60 * 60 * 1000 - 1, 2);
+  // A pay period that contains a clock change is an hour longer (fall back) or shorter (spring
+  // forward) in UTC, so this ran red for the whole fortnight ending 2026-11-01 -- the test read
+  // "today". Allow exactly one hour of either sign; anything else is a real range bug.
+  var fourteenDays = 14 * 24 * 60 * 60 * 1000 - 1, hour = 60 * 60 * 1000;
+  _ok_('pp UTC span = 14 days (+/- one DST hour)', Math.abs(spanMs - fourteenDays) <= 2 ||
+       Math.abs(Math.abs(spanMs - fourteenDays) - hour) <= 2);
   _ok_('pp from <= to',     pp.fromLocal <= pp.toLocal);
   _eq_('pp period label',   pp.period, 'pp');
   _eq_('pp totalDays = 14', pp.totalDays, 14);   // off-by-one fixed (was 15)
