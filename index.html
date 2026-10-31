@@ -5831,6 +5831,66 @@ GC.auth = (function() {
   return { save: save, load: load, clear: clear, isAuthenticated: isAuthenticated, homeRoute: homeRoute, startHeartbeat: startHeartbeat };
 })();
 
+// ── Check-in: tells GX Core this screen is open ───────────
+// A kiosk renews its session forever, so "signed in" says nothing about whether the screen is on,
+// and it polls this app's backend, so GX Core never sees it in traffic. This is what feeds the
+// Command Center's "Who's on now" panel. Purely a report: one try, no retry, every failure ignored,
+// and nothing on this page ever reads the answer, so it cannot affect what a kiosk shows.
+GC.presence = (function() {
+  var EVERY_MS = 5 * 60 * 1000;
+  var CID_KEY = 'gc_presence_cid';
+  var _memCid = '';
+
+  // One id per browser, kept across reloads so a kiosk's nightly reload stays the same row.
+  function cid() {
+    var id = '';
+    try { id = localStorage.getItem(CID_KEY) || ''; } catch (e) {}
+    if (id) return id;
+    id = _memCid || ('s' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+    _memCid = id;
+    try { localStorage.setItem(CID_KEY, id); } catch (e) {}
+    return id;
+  }
+
+  // The route says which screen this is. A director looking at a store's kiosk is on that store's
+  // kiosk, whatever their own session's home store is.
+  function payload(session, hash) {
+    var parts = String(hash || '').replace(/^#\/?/, '').split('/');
+    var onKiosk = parts[0] === 'store' && !!parts[1];
+    return {
+      app: 'performance',
+      cid: cid(),
+      user: session.user || '',
+      store: onKiosk ? parts[1] : (session.storeSlug || ''),
+      screen: onKiosk ? 'kiosk' : (parts[0] || 'home'),
+      version: String(GC.VERSION || '').replace(/^v/, ''),
+      visible: document.hidden ? '0' : '1'
+    };
+  }
+
+  function ping() {
+    try {
+      var session = GC.auth.load();
+      if (!session) return;                    // the sign-in screen is not somebody being on
+      var core = GC.gxCore();
+      if (!core) return;
+      core.jsonp('presence_ping', payload(session, window.location.hash), { retries: 0, timeoutMs: 20000, lastTimeoutMs: 20000 })
+        .catch(function() {});
+    } catch (e) {}
+  }
+
+  function start() {
+    // A local preview is not a store screen.
+    if (/^(localhost|127\.)/.test(window.location.hostname)) return;
+    // Spread over the first minute: a release reloads every screen at once.
+    setTimeout(ping, Math.random() * 60000);
+    setInterval(ping, EVERY_MS);
+  }
+
+  return { start: start, ping: ping, payload: payload, cid: cid };
+})();
+GC.presence.start();
+
 </script>
 <script>
 // ============================================================
