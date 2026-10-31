@@ -12855,6 +12855,73 @@ var settings = (function() {
 
 window.GC = window.GC || {};
 
+/* CHANGING A FACE NEEDS THAT PERSON'S OWN OLCC PERMIT (Sky, 2026-10-30). The browser only collects
+   what was typed and sends it by POST (never a URL) to avatarwrite, where the server verifies it with
+   GX Core and saves in the same call. The browser never holds a permit number from the server and
+   never stores or logs what was typed. Retries: none automatic, so a slow answer can't spend a try.
+   Only { ok:true } from the server means saved; anything else keeps the prompt open or cancels. */
+GC.avatarPermitSave = function(displayName, nameKey, cfg) {
+  return new Promise(function(resolve) {
+    var ov = document.createElement('div');
+    ov.setAttribute('role', 'dialog');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.72);display:flex;' +
+      'align-items:center;justify-content:center;padding:16px';
+    ov.innerHTML =
+      '<div style="background:var(--surface,#1b1d1a);color:var(--text,#f2f3f0);max-width:420px;width:100%;' +
+      'border-radius:14px;padding:22px;font-family:inherit">' +
+      '<div style="font-size:18px;font-weight:700;margin-bottom:6px">Confirm it\'s you</div>' +
+      '<div style="font-size:14px;opacity:.8;margin-bottom:14px">Enter ' + GC.esc(displayName || 'your') +
+      '\'s OLCC permit number, exactly as printed on the permit.</div>' +
+      '<input id="gcPermitInput" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" ' +
+      'style="width:100%;box-sizing:border-box;font-size:20px;padding:12px;border-radius:8px;' +
+      'border:1px solid #555;background:#111;color:inherit;-webkit-text-security:disc">' +
+      '<div id="gcPermitMsg" style="min-height:20px;margin:10px 0;font-size:14px;color:#ef4444"></div>' +
+      '<div style="display:flex;gap:10px;justify-content:flex-end">' +
+      '<button id="gcPermitCancel" type="button" style="padding:10px 16px;border-radius:8px">Cancel</button>' +
+      '<button id="gcPermitGo" type="button" style="padding:10px 16px;border-radius:8px;font-weight:700">Save face</button>' +
+      '</div></div>';
+    document.body.appendChild(ov);
+    var inp = ov.querySelector('#gcPermitInput'), msg = ov.querySelector('#gcPermitMsg'),
+        go = ov.querySelector('#gcPermitGo'), cancel = ov.querySelector('#gcPermitCancel');
+    var busy = false;
+    function done(res) { ov.remove(); resolve(res); }
+    function submit() {
+      if (busy) return;                       // a double tap must not spend two tries
+      var typed = inp.value;
+      if (!String(typed).trim()) { msg.textContent = 'Enter the permit number first.'; return; }
+      busy = true; go.disabled = true; cancel.disabled = true; inp.disabled = true;
+      go.textContent = 'Checking…'; msg.textContent = '';
+      var token = '';
+      try { token = (GC.auth.load() || {}).token || ''; } catch (e) {}
+      var body = { action: 'avatarwrite', token: token, nameKey: nameKey,
+                   config: cfg === null ? '' : JSON.stringify(cfg), permit: typed };
+      var call;
+      try { if (window.GXDev) window.GXDev.check('saveavatar');   // dev guard: blocked until writes are armed
+            call = window.GXClient(GC.api.GAS_URL).postJSON('avatarwrite', body, { retries: 0 }); }
+      catch (e) { call = Promise.reject(e); }
+      call.then(function(res) {
+        typed = null; body.permit = null;
+        if (res && res.ok === true) return done(res);
+        // Not saved. Say why, keep the prompt open, and never call a failed CHECK a wrong number.
+        msg.textContent = (res && res.code === 'unavailable') || !res || !res.error
+          ? 'Couldn\'t check the permit, try again.' : res.error;
+        if (res && (res.code === 'locked' || res.code === 'no_permit')) {
+          inp.value = ''; go.hidden = true;             // nothing more to try here
+        }
+      }).catch(function() {
+        msg.textContent = 'Couldn\'t check the permit, try again.';
+      }).then(function() {
+        busy = false; cancel.disabled = false; inp.disabled = false; go.disabled = false;
+        go.textContent = 'Save face'; inp.value = ''; inp.focus();
+      });
+    }
+    go.addEventListener('click', submit);
+    inp.addEventListener('keydown', function(ev) { if (ev.key === 'Enter') submit(); });
+    cancel.addEventListener('click', function() { done({ ok: false, error: 'Cancelled — face not changed.' }); });
+    setTimeout(function() { inp.focus(); }, 0);
+  });
+};
+
 GC.views.renderAvatar = (function() {
 
   var handle = null;   // at most one live picker; the router repaints #app on every route change
@@ -12980,9 +13047,7 @@ GC.views.renderAvatar = (function() {
             // localhost. Hand it back as a rejection so the picker reports it and re-enables the
             // button, instead of the throw escaping and leaving "Saving…" stuck forever.
             try {
-              return (cfg === null)
-                ? GC.api.gasCall('clearavatar', { nameKey: nameKey })
-                : GC.api.gasCall('saveavatar', { nameKey: nameKey, config: JSON.stringify(cfg) });
+              return GC.avatarPermitSave(r.emp.name, nameKey, cfg);
             } catch (e) {
               return Promise.reject(e);
             }

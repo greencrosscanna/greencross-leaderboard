@@ -1317,11 +1317,12 @@ function doGet(e) {
     // (getEomCurrent_) still honors the old GC_EOM_KEY property, but only if Crew has never
     // written cfg.eom -- which it now has.
 
-    if (params.action === 'saveavatar') {
-      return jsonOut(saveAvatarConfig_(params), params.callback);
-    }
-    if (params.action === 'clearavatar') {
-      return jsonOut(clearAvatarConfig_(params), params.callback);
+    // Changing a face needs that person's own OLCC permit, and a permit must never ride in a URL, so
+    // the GET/JSONP door REFUSES both writes. The only way in is doPost 'avatarwrite', which verifies
+    // and writes in one call. Do not route these back to saveAvatarConfig_/clearAvatarConfig_.
+    if (params.action === 'saveavatar' || params.action === 'clearavatar') {
+      return jsonOut({ ok: false, code: 'permit_required',
+        error: 'Changing a face needs the person\'s own permit number. Reload the kiosk and try again.' }, params.callback);
     }
     // Lightweight endpoint for the avatar picker — all authenticated roles.
     // Returns the employee roster + avatar config map without computing goals.
@@ -1423,9 +1424,17 @@ function doPost(e) {
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}') || {}; }
   catch (err) { return jsonOut({ ok: false, error: 'Request body is not JSON' }); }
   try {
-    if (body.action !== 'bugreport') return jsonOut({ ok: false, error: 'Unknown action: ' + body.action });
+    if (body.action !== 'bugreport' && body.action !== 'avatarwrite') {
+      return jsonOut({ ok: false, error: 'Unknown action: ' + body.action });
+    }
     var auth = requireAuth_(body);
     if (!auth.ok) return jsonOut(auth);
+    if (body.action === 'avatarwrite') {
+      // Same write-grant chokepoint doGet applies, then the permit check and the write in ONE call.
+      var grant = gxCheckWriteGrant_(auth, 'saveavatar');
+      if (!grant.ok) return jsonOut(grant);
+      return jsonOut(avatarWriteWithPermit_(body));
+    }
     return jsonOut(handleBugReport_(body));
   } catch (err) {
     Logger.log('doPost error: ' + scrubSecrets_((err && err.message) || err));

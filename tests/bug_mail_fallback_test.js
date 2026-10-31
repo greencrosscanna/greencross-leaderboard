@@ -350,8 +350,12 @@ const tests = {
     // scrubSecrets_ is allowed and is not a door: it FORMATS the error on the way out, taking a
     // secret back out of an exception message before it reaches a screen (2026-09-15). The list is
     // the point — anything that ROUTES or ACTS still fails this.
+    // avatarWriteWithPermit_ is the second door (2026-10-30): the permit travels in a POST body, never
+    // a URL. tests/avatar_permit_test.js owns what it does; gxCheckWriteGrant_ is the same write-grant
+    // chokepoint doGet applies.
     _eq_('and no other handler is reachable from it', (body.match(/\b[a-zA-Z]+_\(/g) || [])
-      .filter(function (f) { return ['requireAuth_(', 'handleBugReport_(', 'scrubSecrets_('].indexOf(f) < 0; }), []);
+      .filter(function (f) { return ['requireAuth_(', 'handleBugReport_(', 'scrubSecrets_(',
+        'avatarWriteWithPermit_(', 'gxCheckWriteGrant_('].indexOf(f) < 0; }), []);
   },
 };
 
