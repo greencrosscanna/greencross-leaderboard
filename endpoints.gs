@@ -2066,6 +2066,9 @@ function getStoreLeaderboard(store, params) {
  */
 var STORE_BADGES_TTL_S = 600;   // 10 minutes
 
+/** The key aggregateTransactions_ files an employee under; a trophy carries it so a drill-down can find the same person. */
+function badgeEmpKey_(name) { return String(name || '').toLowerCase().replace(/\s+/g, '_'); }
+
 function getStoreBadges(store, params) {
   const period = (params && params.period) || 'week';
 
@@ -2118,6 +2121,7 @@ function getStoreBadges(store, params) {
   badges.push({
     id: 'aov-avenger', icon: '💰', label: 'AOV Avenger', type: 'gold',
     winner: aovKing.name,   // full name — frontend matches by name, not first name
+    winnerKey: badgeEmpKey_(aovKing.name),
     detail: '$' + aovKing.avgOrderValue + ' avg ticket',
   });
 
@@ -2126,6 +2130,7 @@ function getStoreBadges(store, params) {
   badges.push({
     id: 'upsell-king', icon: '👑', label: 'Upsell King', type: 'gold',
     winner: uptKing.name,
+    winnerKey: badgeEmpKey_(uptKing.name),
     detail: uptKing.avgUPT + ' items/ticket',
   });
 
@@ -2136,6 +2141,7 @@ function getStoreBadges(store, params) {
     badges.push({
       id: 'cleanest', icon: '🧼', label: 'Cleanest Receipts', type: 'silver',
       winner: cleanest.name,
+    winnerKey: badgeEmpKey_(cleanest.name),
       detail: Math.round(cleanest.discountRate * 100) + '% discount rate',
     });
   }
@@ -2145,6 +2151,7 @@ function getStoreBadges(store, params) {
   badges.push({
     id: 'top-sales', icon: '🔥', label: 'Top Sales', type: 'gold',
     winner: topSales.name,
+    winnerKey: badgeEmpKey_(topSales.name),
     detail: '$' + Math.round(topSales.sales).toLocaleString() + ' this week',
   });
 
@@ -2153,6 +2160,7 @@ function getStoreBadges(store, params) {
   badges.push({
     id: 'the-closer', icon: '🤝', label: 'The Closer', type: 'silver',
     winner: closer.name,
+    winnerKey: badgeEmpKey_(closer.name),
     detail: closer.transactions + ' tickets',
   });
 
@@ -2162,6 +2170,7 @@ function getStoreBadges(store, params) {
   badges.push({
     id: 'txn-king', icon: '🎯', label: 'Transaction King', type: 'silver',
     winner: volumeKing.name,
+    winnerKey: badgeEmpKey_(volumeKing.name),
     detail: volumeKing.items + ' items sold',
   });
 
@@ -2178,6 +2187,64 @@ function getStoreBadges(store, params) {
     badges:      badges,
     lastUpdated: new Date().toISOString(),
   });
+}
+
+/* ── TROPHY DRILL-DOWN (Mike Kettler, 2026-11-02) ────────────────────────────────────────────────
+ * "Is it 3 transactions or 30?" Tapping a trophy shows the holder's week, day by day and ticket by
+ * ticket, so the number on the trophy can be checked before anyone sends congratulations.
+ *
+ * The headline is recomputed by aggregateTransactions_ over the SAME retail-only, week-to-date rows
+ * the trophy was picked from, so the drill-down cannot disagree with the trophy by construction.
+ * No customer data and no pay: net ticket, item count and discount only, the same things the
+ * trophies are built from.
+ */
+var BADGE_DETAIL_MAX_TICKETS = 150;
+
+function buildBadgeDetail_(txns, empKey, badgeId) {
+  var mine = (txns || []).filter(function (tx) { return badgeEmpKey_(txEmployee_(tx).name) === empKey; });
+  var agg  = aggregateTransactions_(mine);
+  var me   = agg.byEmployee[empKey] || { name: '', transactions: 0, sales: 0, items: 0, avgOrderValue: 0, avgUPT: 0, discountRate: 0 };
+  var metrics = {
+    'aov-avenger': { label: 'Average ticket',   value: '$' + me.avgOrderValue },
+    'upsell-king': { label: 'Items per ticket', value: String(me.avgUPT) },
+    'cleanest':    { label: 'Discount rate',    value: Math.round(me.discountRate * 100) + '%' },
+    'top-sales':   { label: 'Sales this week',  value: '$' + Math.round(me.sales).toLocaleString('en-US') },
+    'the-closer':  { label: 'Tickets',          value: String(me.transactions) },
+    'txn-king':    { label: 'Items sold',       value: String(me.items) },
+  };
+  var rows = mine.map(function (tx) {
+    var ts = String(tx.transactionDateLocalTime || tx.transactionDate || '');
+    return { date: ts.substring(0, 10), time: ts.substring(11, 16),
+             net: r2_(txTotal_(tx)), items: txItems_(tx), discount: r2_(txDiscountBudtender_(tx)) };
+  }).sort(function (a, b) { return (b.date + b.time) < (a.date + a.time) ? -1 : 1; });
+  var byDay = {};
+  rows.forEach(function (r) {
+    var d = byDay[r.date] || (byDay[r.date] = { date: r.date, tickets: 0, sales: 0, items: 0 });
+    d.tickets += 1; d.sales = r2_(d.sales + r.net); d.items += r.items;
+  });
+  var days = Object.keys(byDay).sort().reverse().map(function (k) { return byDay[k]; });
+  return {
+    ok: true, badgeId: badgeId, holder: me.name,
+    metric: metrics[badgeId] || null,
+    tickets: me.transactions, sales: r2_(me.sales), items: me.items,
+    days: days, txns: rows.slice(0, BADGE_DETAIL_MAX_TICKETS), truncated: rows.length > BADGE_DETAIL_MAX_TICKETS,
+  };
+}
+
+function getBadgeDetail(store, params) {
+  var empKey  = badgeEmpKey_(params && params.emp);
+  var badgeId = String((params && params.badge) || '');
+  if (!empKey) return { ok: false, error: 'emp required' };
+  var cache = CacheService.getScriptCache();
+  var key   = 'badgeDetail:' + store.slug + ':' + empKey + ':' + badgeId;
+  var hit   = cache.get(key);
+  if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+  var range = getDateRange_('wtd');
+  var out   = buildBadgeDetail_(fetchStoreTransactions_(store.slug, range.fromUTC, range.toUTC), empKey, badgeId);
+  var nicks = getNicknames_(store);
+  out.holder = applyNickname_(out.holder, nicks);
+  try { cache.put(key, JSON.stringify(out), STORE_BADGES_TTL_S); } catch (e) {}
+  return out;
 }
 
 /* ── ONE CALL FOR THE WHOLE KIOSK BOARD ──────────────────────────────────────────────────────────

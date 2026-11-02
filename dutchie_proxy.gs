@@ -971,6 +971,10 @@ function doGet(e) {
       lbRes.eomKey = (getEomCurrent_() || {}).employeeKey || null;
       return jsonOut(lbRes, params.callback);
     }
+    if (params.action === 'badgedetail') {
+      const bdStore = requireStore_(auth, params.store);
+      return jsonOut(getBadgeDetail(bdStore, params), params.callback);
+    }
     if (params.action === 'storebadges') {
       const store = requireStore_(auth, params.store);
       return jsonOut(getStoreBadges(store, params), params.callback);
