@@ -2769,6 +2769,25 @@ body.kiosk-bg {
   flex: 1;
   align-content: space-between;
 }
+.badge-item.tap { cursor: pointer; }
+.badge-item.tap:active { filter: brightness(1.15); }
+#badgeDetail { position: fixed; inset: 0; z-index: 9000; display: none; align-items: center; justify-content: center; }
+#badgeDetail.show { display: flex; }
+#badgeDetail .bd-scrim { position: absolute; inset: 0; background: rgba(0,0,0,0.65); }
+#badgeDetail .bd-card { position: relative; width: min(560px, 94vw); max-height: 86vh; overflow: auto;
+  background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 12px; padding: 18px 20px; }
+#badgeDetail .bd-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+#badgeDetail .bd-title { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; opacity: .7; }
+#badgeDetail .bd-name { font-size: 22px; font-weight: 700; }
+#badgeDetail .bd-close { background: transparent; color: inherit; border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+#badgeDetail .bd-sum { display: flex; gap: 22px; margin: 14px 0; }
+#badgeDetail .bd-sum b { display: block; font-size: 22px; }
+#badgeDetail .bd-sum span { font-size: 12px; opacity: .65; }
+#badgeDetail table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 6px; }
+#badgeDetail th { text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; opacity: .6; padding: 4px 6px; }
+#badgeDetail td { padding: 4px 6px; border-top: 1px solid var(--border-strong); }
+#badgeDetail td.n, #badgeDetail th.n { text-align: right; }
+#badgeDetail h4 { margin: 14px 0 2px; font-size: 12px; text-transform: uppercase; opacity: .6; }
 .badge-item {
   border: 1px solid var(--border-strong);
   border-radius: 8px;
@@ -5925,7 +5944,7 @@ GC.api = (function() {
     'directorsummary', 'discountsettings', 'getavatardata', 'getsettings', 'gxstores', 'kioskall',
     'kioskbust',
     'historicaldir', 'leaderboardstaff', 'login', 'renew', 'standings',
-    'storebadges', 'storeleaderboard', 'storetoday',
+    'storebadges', 'badgedetail', 'storeleaderboard', 'storetoday',
     // version_history feeds the What's New / changelog modal. It is a READ, and it was missing:
     // opening the changelog on localhost threw an uncaught GXDev block. Found by opening the
     // changelog from the new user tray -- the guard was right, the declaration was incomplete.
@@ -9377,6 +9396,56 @@ GC.views.closeSpiffBoard = function() {
      the panel is rebuilt from state on the next open. */
 };
 
+/* ── TROPHY DRILL-DOWN ──────────────────────────────────────────────────────────────────────────
+   Tap a trophy → the holder's week behind it: day by day and ticket by ticket (route badgedetail).
+   Built on <body> on demand, not inside the kiosk markup, so the 5-minute re-render can't wipe it.
+   Closes itself after BD_AUTOCLOSE_S like the SPIFF popup — a wall screen must never be left covered. */
+var BD_AUTOCLOSE_S = 60, _bdTimer = null;
+GC.views.closeBadgeDetail = function() {
+  clearTimeout(_bdTimer); _bdTimer = null;
+  var ov = document.getElementById('badgeDetail');
+  if (ov) ov.classList.remove('show');
+};
+GC.views.paintBadgeDetail_ = function(d, title) {
+  var esc = GC.esc, money = function(n) { return '$' + Number(n || 0).toFixed(2); };
+  if (!d || d.ok === false) return '<p>Couldn\'t load the history. Try again in a moment.</p>';
+  var dayRows = (d.days || []).map(function(x) {
+    return '<tr><td>' + esc(x.date) + '</td><td class="n">' + x.tickets + '</td><td class="n">' + x.items + '</td><td class="n">' + money(x.sales) + '</td></tr>';
+  }).join('');
+  var txRows = (d.txns || []).map(function(x) {
+    return '<tr><td>' + esc(x.date) + ' ' + esc(x.time) + '</td><td class="n">' + x.items + '</td><td class="n">' + money(x.discount) + '</td><td class="n">' + money(x.net) + '</td></tr>';
+  }).join('');
+  return '<div class="bd-sum">'
+    + (d.metric ? '<div><b>' + esc(d.metric.value) + '</b><span>' + esc(d.metric.label) + '</span></div>' : '')
+    + '<div><b>' + d.tickets + '</b><span>tickets this week</span></div>'
+    + '<div><b>' + money(d.sales) + '</b><span>net sales</span></div></div>'
+    + '<h4>By day</h4><table><tr><th>Day</th><th class="n">Tickets</th><th class="n">Items</th><th class="n">Sales</th></tr>' + dayRows + '</table>'
+    + '<h4>Every ticket' + (d.truncated ? ' (latest ' + (d.txns || []).length + ')' : '') + '</h4>'
+    + '<table><tr><th>When</th><th class="n">Items</th><th class="n">Discount</th><th class="n">Net</th></tr>' + txRows + '</table>';
+};
+GC.views.openBadgeDetail = function(slug, badgeId, key) {
+  var ov = document.getElementById('badgeDetail');
+  if (!ov) {
+    ov = document.createElement('div'); ov.id = 'badgeDetail';
+    ov.innerHTML = '<div class="bd-scrim" onclick="GC.views.closeBadgeDetail()"></div><div class="bd-card"></div>';
+    document.body.appendChild(ov);
+  }
+  var card = ov.querySelector('.bd-card');
+  var head = function(name, sub) {
+    return '<div class="bd-head"><div><div class="bd-title">' + GC.esc(sub) + '</div><div class="bd-name">' + GC.esc(name) + '</div></div>'
+      + '<button class="bd-close" onclick="GC.views.closeBadgeDetail()">Close</button></div>';
+  };
+  card.innerHTML = head('Loading…', 'This week') + '<div class="bd-body"></div>';
+  ov.classList.add('show');
+  clearTimeout(_bdTimer); _bdTimer = setTimeout(GC.views.closeBadgeDetail, BD_AUTOCLOSE_S * 1000);
+  GC.api.gasCall('badgedetail', { store: slug, badge: badgeId, emp: key }).then(function(d) {
+    if (!ov.classList.contains('show')) return;   // closed while loading
+    card.innerHTML = head((d && d.holder) || '', 'This week · trophy history') + GC.views.paintBadgeDetail_(d);
+  }).catch(function() {
+    card.innerHTML = head('', 'This week') + GC.views.paintBadgeDetail_(null);
+  });
+};
+
 GC.views.renderKiosk = function(slug) {
   var app = document.getElementById('app');
   if (!app) return;
@@ -10430,7 +10499,12 @@ var kiosk = (function() {
       var statParts = (b.stat || '').trim().split(/\s+(.*)/);
       var statVal   = statParts[0] || '';
       var statLabel = SHORT_STAT_LABEL[b.type] || statParts[1] || '';
-      return '<div class="badge-item ' + e(b.type) + '">'
+      // A trophy with a holderKey opens the week behind it (Mike Kettler, 2026-11-02: "3 transactions or 30?").
+      // No key (fixtures, a cached payload from before the key existed) = plain tile, not a dead button.
+      var tapAttrs = (b.holderKey && b.id)
+        ? ' role="button" tabindex="0" onclick="GC.views.openBadgeDetail(\'' + e(_slug) + '\',\'' + e(b.id) + '\',\'' + e(b.holderKey) + '\')"'
+        : '';
+      return '<div class="badge-item ' + e(b.type) + (tapAttrs ? ' tap' : '') + '"' + tapAttrs + '>'
           + '<div class="badge-icon">' + b.icon + '</div>'
           + '<div class="badge-info">'
           + '  <div class="badge-title">' + e(b.title) + '</div>'
@@ -11463,6 +11537,7 @@ var kiosk = (function() {
         icon:       BADGE_ICON_MAP[b.id]   || b.icon  || '',
         title:      BADGE_SHORT_MAP[b.id]  || b.label || b.title || '',
         holder:     b.winner || b.holder   || '',
+        holderKey:  b.winnerKey || '',
         stat:       b.detail || b.stat     || '',
         type:       BADGE_TYPE_MAP[b.id]   || b.type  || '',
       };
