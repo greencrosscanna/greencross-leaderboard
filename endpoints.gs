@@ -1950,7 +1950,9 @@ function getStoreLeaderboard(store, params) {
   // sides already carry. Wrapped: SPIFF is a separate app and this is the all-staff kiosk —
   // if it is down, cards render without a SPIFF row rather than not rendering at all.
   let _spiff = { ok: false, byId: {}, programs: [] };
-  try { _spiff = spiffForStore_(store); } catch (e) { Logger.log('spiffForStore_ failed: ' + e); }
+  // Today's sales go in too, so SPIFF units rung since SPIFF's last hourly count show now. Pre-open
+  // these are YESTERDAY's sales, which SPIFF has long since counted, so they are not passed.
+  try { _spiff = spiffForStore_(store, isPreOpen ? null : txns); } catch (e) { Logger.log('spiffForStore_ failed: ' + e); }
 
   // The SPIFF panel names people the way their cards do: nickname applied, joined on the Dutchie
   // id. Roster first, then today's sellers, so someone in a program who has not rung a sale today
