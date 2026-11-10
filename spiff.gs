@@ -202,17 +202,22 @@ function spiffFetchRaw_() {
     var rows    = [];
     var programs = [];
     var freshest = '';
+    var newestPub = '';
     scopes.forEach(function (s) {
       if (!s.used) return;
       rows = rows.concat(s.rows || []);
       programs = programs.concat(s.programs || []);
       if (s.refreshed_at > freshest) freshest = s.refreshed_at;
+      if (s.published_at > newestPub) newestPub = s.published_at;
     });
     out = {
       ok: true,
       rows: rows,
       programs: programs,
       refreshed_at: freshest,
+      // The newest official publish. The live add refuses a product list older than this — see
+      // spiffLiveUnits_ — because its cut-off would then sit before sales the official count has.
+      published_at: newestPub,
       maxAgeMinutes: maxAge,
       // Kept on the cached object so diagSpiff_ answers "why is this card empty" from the
       // SAME read the kiosk did, rather than re-running one that might succeed differently.
@@ -530,7 +535,7 @@ function spiffProgramsForStore_(rows, sidecar, coreStoreId, payloadRefreshedAt) 
  * aggregateTransactions_ puts on each employee record and JS object keys are strings
  * anyway — comparing 44905 to '44905' is exactly the silent miss this join exists to avoid.
  */
-function spiffForStore_(store) {
+function spiffForStore_(store, todayTxns) {
   // Off means OFF: return before the fetch, so a disabled toggle costs nothing per kiosk poll
   // and doubles as the kill switch if SPIFF ever starts misbehaving.
   if (!spiffShowEnabled_()) return { ok: false, error: 'SPIFF row disabled in Settings', byId: {}, programs: [] };
@@ -542,6 +547,21 @@ function spiffForStore_(store) {
   // Closed programs first, then this store's window — order is irrelevant to the result
   // but this way the store filter never has to reason about staleness.
   var rows = spiffFilterRows_(spiffActiveRows_(raw.rows), coreStoreId_(store), pp.ppStartStr, pp.ppEndStr);
+
+  /* LIVE UNITS ON TOP OF THE OFFICIAL COUNT (Sky, 2026-11-09). Applied to the ROWS, before either
+     the cards or the panel are built from them, so the two cannot disagree. Only when the caller
+     hands us today's transactions — it already fetched them, and this adds no Dutchie call. */
+  var live = { applied: false, reason: 'no transactions passed' };
+  if (todayTxns) {
+    try {
+      var lv = spiffLiveUnits_(todayTxns, spiffFetchLive_(), coreStoreId_(store), raw.published_at || '');
+      live = { applied: lv.ok, reason: lv.reason || '', units: lv.total || 0 };
+      if (lv.ok) rows = spiffApplyLive_(rows, lv.byKey, raw.programs, coreStoreId_(store));
+    } catch (e) {
+      // Never let the live add cost the kiosk its official numbers.
+      live = { applied: false, reason: 'live add threw: ' + String((e && e.message) || e) };
+    }
+  }
   var idx  = spiffIndexByEmployee_(rows);   // cards: SELLERS only -- a zero row must not put a SPIFF line on every card
 
   var byId = Object.create(null);
@@ -563,6 +583,7 @@ function spiffForStore_(store) {
   return {
     ok:           true,
     refreshed_at: raw.refreshed_at || '',
+    live:         live,
     ppStart:      pp.ppStartStr,
     ppEnd:        pp.ppEndStr,
     byId:         byId,
@@ -574,6 +595,174 @@ function spiffForStore_(store) {
                                        spiffStoreRoster_(coreStoreId_(store)), pp.ppStartStr, pp.ppEndStr)),
       raw.programs, coreStoreId_(store), raw.refreshed_at),
   };
+}
+
+/* ─── LIVE SPIFF UNITS BETWEEN SPIFF'S HOURLY COUNTS (Sky, 2026-11-09) ───────────────────────────
+ * TJ (River Rd) asked for SPIFF numbers that move sooner than once an hour. Sky's design: we already
+ * pull every sale with its line items for the kiosk, and SPIFF knows which products each program
+ * counts — so add the matching sales ourselves between SPIFF's counts, and let each hourly count
+ * replace ours (which also corrects anything we got wrong).
+ *
+ * WE DO NOT DECIDE WHAT COUNTS. SPIFF publishes, per running program and per store, the exact list of
+ * Dutchie product ids its rules match (GX Core resolves Tawny's brand/category/phrase rules against
+ * each store's catalog — one definition, the one pay uses). We only check "is this line's productId
+ * in that list". Rebuilding the rules here would be a second answer to what counts, and the wall and
+ * payroll would drift apart.
+ *
+ * DISPLAY ONLY. Nothing here is written anywhere, nothing reaches pay, and `hit` / `earned` stay
+ * SPIFF's: a person pushed over target by live units sees a full bar, but no dollar figure until
+ * SPIFF's own count confirms it (GC.spiffRow prints a payout only when earned > 0).
+ *
+ * The publication (SPIFF, hourly, right after its main publish):
+ *   { pay_period, programs:[{ program_id, from, to, rules_hash,
+ *       stores:{ <core store_id>:{ counted_through:<ISO UTC>, product_ids:[string] } } }], unit_rule }
+ * counted_through is the instant SPIFF's sales pull for that store STARTED: every sale after it is
+ * ours to add, every sale before it is already in the official count.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────── */
+var SPIFF_LIVE_CACHE_KEY = 'gc_spiff_live_v1';
+var SPIFF_LIVE_TTL       = 300;   // the lists change hourly; 5 minutes keeps the Core read rare
+
+/* ITS OWN PRODUCER ('spiff-live'), read through its own library function — never a second scope
+ * under 'spiff'. Readers that ask Core for SPIFF's newest publication without naming a scope take
+ * the lexically newest one, and '2026-11-09:live' sorts after '2026-11-09': Crew's pay screen would
+ * have read a list of product ids as its counts. Guarded with typeof, so a GXCore pin that predates
+ * the function adds nothing rather than throwing on every kiosk refresh. */
+
+/** The live product lists for the current pay period, from Core. NEVER THROWS; cached. */
+function spiffFetchLive_() {
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get(SPIFF_LIVE_CACHE_KEY);
+  if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+
+  var out;
+  var secret = PropertiesService.getScriptProperties().getProperty('GX_DEPLOY_SECRET');
+  if (!secret) {
+    out = { ok: false, reason: 'GX_DEPLOY_SECRET is not set on this script' };
+  } else {
+    var scope = currentPPStart_().ppStartStr;
+    var res = null;
+    if (typeof GXCore === 'undefined' || typeof GXCore.publishedSpiffLive !== 'function') {
+      res = { ok: false, error: 'the pinned GXCore has no publishedSpiffLive yet' };
+    } else {
+      try { res = GXCore.publishedSpiffLive(secret, scope); }
+      catch (e) { res = { ok: false, error: 'GX Core threw: ' + String((e && e.message) || e) }; }
+    }
+    if (!res || !res.ok) {
+      out = { ok: false, reason: (res && res.error) || 'GX Core refused' };
+    } else if (res.age_minutes == null || Number(res.age_minutes) > spiffStaleMinutes_()) {
+      // Same freshness rule as the official payload: an old list must not keep adding sales.
+      out = { ok: false, reason: 'live list stale or undated (age ' + res.age_minutes + ' min)' };
+    } else {
+      var p = res.payload || {};
+      out = { ok: true, published_at: String(res.published_at || ''),
+              programs: Object.prototype.toString.call(p.programs) === '[object Array]' ? p.programs : [] };
+    }
+  }
+  try { cache.put(SPIFF_LIVE_CACHE_KEY, JSON.stringify(out), out.ok ? SPIFF_LIVE_TTL : SPIFF_TTL_FAIL); }
+  catch (e) {}
+  return out;
+}
+
+/** A UTC instant as PT local wall time 'yyyy-MM-ddTHH:mm:ss' — the format of transactionDateLocalTime. */
+function spiffPtLocal_(isoUtc) {
+  var ms = Date.parse(String(isoUtc || ''));
+  if (!isFinite(ms)) return '';
+  // Two plain patterns joined, not one with a quoted 'T': no escaping for any formatter to get wrong.
+  var d = new Date(ms);
+  return Utilities.formatDate(d, 'America/Los_Angeles', 'yyyy-MM-dd') + 'T'
+       + Utilities.formatDate(d, 'America/Los_Angeles', 'HH:mm:ss');
+}
+
+/**
+ * Units sold since SPIFF's last count, per program and Dutchie employee id, at one store.
+ *
+ * @param {Array}  txns          today's retail transactions for this store (already fetched)
+ * @param {Object} live          spiffFetchLive_()
+ * @param {string} coreStoreId   GX Core store_id
+ * @param {string} officialPubAt newest official publish (ISO). A list OLDER than it is refused: its
+ *                               cut-off would sit before sales the official count already holds, and
+ *                               every one of them would be counted twice.
+ * @return {{ ok:boolean, reason:string, total:number, byKey:Object }}  byKey['<program_id>|<emp id>']
+ */
+function spiffLiveUnits_(txns, live, coreStoreId, officialPubAt) {
+  var none = function (why) { return { ok: false, reason: why, total: 0, byKey: {} }; };
+  if (!live || !live.ok) return none((live && live.reason) || 'no live list');
+  if (officialPubAt && String(live.published_at || '') < String(officialPubAt)) {
+    return none('live list is older than the official count');
+  }
+  var storeId = String(coreStoreId == null ? '' : coreStoreId).trim();
+  var byKey = Object.create(null), total = 0;
+
+  (live.programs || []).forEach(function (pg) {
+    if (!pg || pg.program_id == null) return;
+    var st = pg.stores && pg.stores[storeId];
+    if (!st || Object.prototype.toString.call(st.product_ids) !== '[object Array]') return;
+    var cut = spiffPtLocal_(st.counted_through);
+    if (!cut) return;   // no cut-off means we cannot tell new sales from counted ones: add nothing
+    var ids = Object.create(null);
+    st.product_ids.forEach(function (id) { if (id != null && id !== '') ids[String(id)] = true; });
+    var from = String(pg.from || '').slice(0, 10), to = String(pg.to || '').slice(0, 10);
+
+    (txns || []).forEach(function (tx) {
+      if (!isRetailSale_(tx) || tx.isReturn) return;
+      var ts = String(tx.transactionDateLocalTime || '');
+      if (ts.length < 19 || ts.slice(0, 19) <= cut) return;   // already in SPIFF's count
+      var day = ts.slice(0, 10);
+      if ((from && day < from) || (to && day > to)) return;
+      var emp = String(tx.employeeId == null ? '' : tx.employeeId).trim();
+      if (!emp) return;
+      (tx.items || []).forEach(function (it) {
+        if (!it || it.isReturned || it.productId == null || !ids[String(it.productId)]) return;
+        var q = Number(it.quantity != null ? it.quantity : 1);
+        var n = isFinite(q) && q > 0 ? q : 1;
+        var k = String(pg.program_id) + '|' + emp;
+        byKey[k] = (byKey[k] || 0) + n;
+        total += n;
+      });
+    });
+  });
+  return { ok: true, reason: '', total: total, byKey: byKey };
+}
+
+/**
+ * Fold live units into the official rows. Returns NEW rows; the inputs are not touched.
+ *
+ * A person already on SPIFF's board gets the units added. A person with live sales and no row yet
+ * (their first unit since the last count) gets a row built from SPIFF's program sidecar — but only
+ * for a program the sidecar says is ACTIVE, at the per-budtender goal it sets for this store.
+ * `hit` and `earned` are left as SPIFF published them: see the header.
+ */
+function spiffApplyLive_(rows, byKey, sidecar, coreStoreId) {
+  var storeId = String(coreStoreId == null ? '' : coreStoreId).trim();
+  var left = Object.create(null);
+  Object.keys(byKey || {}).forEach(function (k) { left[k] = byKey[k]; });
+
+  var out = (rows || []).map(function (r) {
+    var k = String(r.program_id) + '|' + String(r.employee_id == null ? '' : r.employee_id).trim();
+    if (!left[k]) return r;
+    var n = left[k];
+    delete left[k];
+    return Object.assign({}, r, { units: (Number(r.units) || 0) + n, live_units: n });
+  });
+
+  var meta = Object.create(null);
+  (sidecar || []).forEach(function (m) { if (m && m.program_id != null) meta[String(m.program_id)] = m; });
+  Object.keys(left).forEach(function (k) {
+    var bar = k.indexOf('|');
+    var pid = k.slice(0, bar), emp = k.slice(bar + 1);
+    var m = meta[pid];
+    if (!m || String(m.status || '').toLowerCase() !== 'active') return;
+    var goal = m.bt_goals && storeId ? Number(m.bt_goals[storeId]) || 0 : 0;
+    var empNum = Number(emp);
+    out.push({
+      program_id: m.program_id, store_id: storeId,
+      employee_id: isFinite(empNum) && String(empNum) === emp ? empNum : emp,
+      name: '', units: left[k], live_units: left[k], target: goal, hit: false, earned: 0,
+      vendor: m.vendor || '', program_name: m.program_name || '',
+      start_date: m.start_date || '', end_date: m.end_date || '', status: 'active',
+    });
+  });
+  return out;
 }
 
 /* ─── EVERYONE AT THE STORE, NOT ONLY THE SELLERS (Sky, 2026-09-14) ──────────────────────────────
@@ -795,6 +984,26 @@ function diagSpiff_(storeSlug) {
                        return c;
                      })(),
     rowsThisStore:   rows.length,
+    /* The live add, answered off the same list the kiosk reads and today's real sales: "I sold one
+       ten minutes ago and the wall didn't move" is the question this exists for. */
+    live:            (function () {
+                       var lv = spiffFetchLive_();
+                       var lists = (lv.programs || []).map(function (pg) {
+                         var st = (pg && pg.stores && pg.stores[coreId]) || null;
+                         return { program_id: pg && pg.program_id, countedThrough: st ? st.counted_through : null,
+                                  productIds: st && st.product_ids ? st.product_ids.length : 0 };
+                       });
+                       var add;
+                       try {
+                         var r = getDateRange_('today');
+                         add = spiffLiveUnits_(fetchStoreTransactions_(storeSlug, r.fromUTC, r.toUTC),
+                                               lv, coreId, raw.published_at || '');
+                       } catch (e) { add = { ok: false, reason: 'threw: ' + String((e && e.message) || e) }; }
+                       return { listOk: !!lv.ok, listReason: lv.reason || '', listPublishedAt: lv.published_at || '',
+                                officialPublishedAt: raw.published_at || '', lists: lists,
+                                applied: !!add.ok, reason: add.reason || '', units: add.total || 0,
+                                byProgramAndEmployee: add.byKey || {} };
+                     })(),
     peopleWithSpiff: Object.keys(res.byId).length,
     matchedToRoster: matched,
     notOnRoster:     orphan,
