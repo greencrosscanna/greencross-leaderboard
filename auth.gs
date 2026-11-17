@@ -226,6 +226,54 @@ function loginUser(params) {
 }
 
 /**
+ * OPENED FROM A STAFF-PORTAL TILE — POST { action: 'handoff_login', code }.
+ *
+ * The portal hands this page a 60-second, single-use code (GX Core handoff_code). Every other app
+ * trades it at GX Core directly and keeps the GX Core token it gets back. This one cannot: a GX Core
+ * token here is a second-class session (no renew; a store manager is refused store routes), because
+ * this app speaks its own role words and places people on its own store slugs. So the code is traded
+ * HERE, server to server, and the result goes through EXACTLY the translation a password sign-in gets
+ * (gxSessionUsable_) and comes back as an ordinary Leaderboard session with this app's own token.
+ *
+ * GX Core does every security check (expiry, single use, wrong app, grant re-read at exchange time;
+ * see its tests/handoff_test.js). This route adds none and loosens none: it always asks for
+ * app=performance, so a code minted for another app is refused there as wrong_app.
+ */
+var HANDOFF_CODE_RE_ = /^h1\.[A-Za-z0-9_-]{40,64}$/;
+function handoffLogin_(params) {
+  var code = String((params && params.code) || '').trim();
+  if (!HANDOFF_CODE_RE_.test(code)) return { ok: false, code: 'invalid_code', error: 'That sign-in link is not valid.' };
+  // doPost does not run doGet's prelude, and gxSessionUsable_ places people with the live store list.
+  try { refreshStoreRegistry_(); } catch (e) {}
+  var g;
+  try {
+    var resp = UrlFetchApp.fetch(GXCORE_EXEC_KEYS_, {
+      method: 'post', contentType: 'text/plain', muteHttpExceptions: true, followRedirects: true,
+      payload: JSON.stringify({ action: 'handoff_exchange', code: code, app: 'performance' }),
+    });
+    g = JSON.parse(resp.getContentText() || 'null');
+  } catch (e) {
+    Logger.log('[handoff] GX Core unreachable: ' + ((e && e.message) || e));
+    return { ok: false, code: 'core_unreachable', error: 'Sign-in is unavailable right now because GX Core could not be reached.' };
+  }
+  if (!g || !g.ok) {
+    var c = String((g && g.code) || 'invalid_code');
+    Logger.log('[handoff/REFUSED] GX Core said ' + c);
+    return { ok: false, code: c, error: c === 'no_access'
+      ? 'Your access to Leaderboard has been removed. Ask Sky to restore it.'
+      : String((g && g.error) || 'That sign-in link has already been used or is not valid.') };
+  }
+  var mapped = gxSessionUsable_(g);
+  if (!mapped) {
+    Logger.log('[handoff/UNUSABLE] ' + g.user + ' (role=' + g.role + ', store="' + (g.store || '') + '")');
+    return { ok: false, code: 'core_unusable',
+             error: 'Your Leaderboard access is not fully set up (a manager needs a home store). Ask Sky to set it in the Command Center.' };
+  }
+  Logger.log('[handoff] ' + mapped.user + ' via the staff portal (role=' + mapped.role + ', store=' + (mapped.storeSlug || 'all') + ')');
+  return mapped;
+}
+
+/**
  * Own-key map lookup. A LOOKUP TABLE IS NOT A WHITELIST.
  *
  * Every plain object inherits constructor, __proto__, toString, valueOf, hasOwnProperty and
