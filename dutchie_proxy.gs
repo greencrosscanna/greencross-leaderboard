@@ -1428,6 +1428,8 @@ function doPost(e) {
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}') || {}; }
   catch (err) { return jsonOut({ ok: false, error: 'Request body is not JSON' }); }
   try {
+    // Public, like login: the code IS the credential, and GX Core checks it (see handoffLogin_).
+    if (body.action === 'handoff_login') return jsonOut(handoffLogin_(body));
     if (body.action !== 'bugreport' && body.action !== 'avatarwrite') {
       return jsonOut({ ok: false, error: 'Unknown action: ' + body.action });
     }

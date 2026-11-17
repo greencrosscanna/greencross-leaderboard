@@ -3949,6 +3949,9 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
   document.head.appendChild(s);
 })();
 </script>
+<!-- gx-handoff.js FIRST: it takes a portal sign-in code (#gxcode=) out of the address bar before the hash
+     router sees it (an unknown hash would be rewritten to #/login and the code lost). -->
+<script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-handoff.js"></script>
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-client.js" data-app="performance"></script>
 <!-- Shared chrome: GXAvatar builds the avatar (DiceBear + the _gchat overlay, ported from this
      app) and GXTopNav builds the user chip + menu, so no app hand-writes that markup and the
@@ -13513,6 +13516,19 @@ GC.nightlyRefresh = (function() {
 })();
 
 document.addEventListener('DOMContentLoaded', function() {
+  /* Opened from a staff-portal tile (#gxcode=, already wiped from the address bar by gx-handoff.js).
+     Traded through THIS app's backend (handoff_login), not GX Core directly: a GX Core token is a
+     second-class session here, so the backend maps it exactly as a password sign-in is mapped and
+     returns an ordinary Leaderboard session, saved by GC.auth.save like every sign-in. */
+  if (window.GXHandoff && GXHandoff.code) GXHandoff.run({
+    app: 'performance',
+    exchange: function (code) {
+      return window.GXClient(GC.api.GAS_URL).postJSON('handoff_login', { action: 'handoff_login', code: code },
+        { retries: 0, timeoutMs: 30000 });   // single-use: never re-sent
+    },
+    save: function (r) { GC.auth.save(r); },
+    current: function () { return (GC.auth.load() || {}).user || null; },
+  });
   GC.router.init();
   GC.loadStoreColors();     // overlay live GX Core store colors (single source)
   GC.loadAppUrls();         // overlay live GX Core sibling-app URLs (single source)

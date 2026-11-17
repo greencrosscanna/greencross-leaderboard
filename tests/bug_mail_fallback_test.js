@@ -353,9 +353,12 @@ const tests = {
     // avatarWriteWithPermit_ is the second door (2026-10-30): the permit travels in a POST body, never
     // a URL. tests/avatar_permit_test.js owns what it does; gxCheckWriteGrant_ is the same write-grant
     // chokepoint doGet applies.
+    // handoffLogin_ is the third (2026-11-16): a staff-portal tile's one-time code travels in a POST
+    // body, never a URL. It is public like login — the code IS the credential and GX Core checks it.
+    // tests/handoff_login_test.js owns what it does.
     _eq_('and no other handler is reachable from it', (body.match(/\b[a-zA-Z]+_\(/g) || [])
       .filter(function (f) { return ['requireAuth_(', 'handleBugReport_(', 'scrubSecrets_(',
-        'avatarWriteWithPermit_(', 'gxCheckWriteGrant_('].indexOf(f) < 0; }), []);
+        'avatarWriteWithPermit_(', 'gxCheckWriteGrant_(', 'handoffLogin_('].indexOf(f) < 0; }), []);
   },
 };
 
