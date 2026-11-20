@@ -219,7 +219,7 @@ const repo = process.cwd();
 const SHARED = new Set([
   'serve.js', 'gx-deadcode.js', 'gx-dev.js', 'gx-client.js', 'gx-topnav.js', 'gx-avatar.js',
   'gx-avatar-picker.js', 'gx-session.js', 'gx-stores.js', 'gx-changelog.js', 'gx-bugreport.js',
-  'gx-maintenance.js', 'gx-updatecheck.js',
+  'gx-maintenance.js', 'gx-updatecheck.js', 'gx-jointloader.js',
 ]);
 
 const owned = [];
