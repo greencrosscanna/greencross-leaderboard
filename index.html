@@ -3968,6 +3968,9 @@ GC.LOGO_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0YAAABmCAYAAADvYIG
      first) and leaves the bug reporter reachable underneath. This app's highest z-index is the
      slideshow bar at 9999, so nothing here contests it. -->
 <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
+<!-- Burning-joint loading screen. Optional: a missing/blocked file must never break the kiosk, so every
+     use below is guarded with `window.GXJointLoader &&`. -->
+<script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-jointloader.js?v=1"></script>
 <script>
 window.GC = window.GC || {}; GC.VERSION = 'v1.945';
 
@@ -9449,6 +9452,33 @@ GC.views.openBadgeDetail = function(slug, badgeId, key) {
   });
 };
 
+/* The joint loading cover: the FIRST cold kiosk load of a page session only (nothing cached to paint,
+   so the board would otherwise be the plain loading shell). Never on refresh, the 60s poll, slideshow
+   rotation or a revisit — those either paint stale instantly or are already warm. Always removed on
+   success, failure, route change (cancel) and a hard 12s timeout, so the kiosk cannot get stuck behind it.
+   Optional: no loader script, no cover. */
+var _jointCover = null, _jointCoverUsed = false, _jointCoverTimer = null;
+GC.views.jointCoverStart_ = function(slug) {
+  if (_jointCoverUsed || !window.GXJointLoader) return;
+  _jointCoverUsed = true;
+  try {
+    _jointCover = GXJointLoader.screen({ appName: 'Leaderboard', lines: ['waking up the board…', 'counting today’s sales…', 'almost lit…'] });
+    _jointCoverTimer = setTimeout(GC.views.jointCoverCancel_, 12000);
+  } catch (e) { _jointCover = null; }
+};
+GC.views.jointCoverCancel_ = function() {
+  clearTimeout(_jointCoverTimer);
+  var c = _jointCover; _jointCover = null;
+  try { if (c) c.cancel(); } catch (e) {}
+};
+GC.views.jointCoverDone_ = function() {
+  clearTimeout(_jointCoverTimer);
+  var c = _jointCover; _jointCover = null;
+  if (!c) return;
+  try { c.done().catch(function(){}); } catch (e) { try { c.cancel(); } catch (e2) {} }
+  setTimeout(function() { try { c.cancel(); } catch (e) {} }, 3000);   // belt and braces
+};
+
 GC.views.renderKiosk = function(slug) {
   var app = document.getElementById('app');
   if (!app) return;
@@ -9463,7 +9493,10 @@ GC.views.renderKiosk = function(slug) {
   // loading shell, and then it is the honest thing to show.
   var cacheWasWarm = GC.api.hasKioskCache(slug);
   if (!cacheWasWarm) {
-    if (!kiosk.paintStale(slug)) app.innerHTML = kiosk.renderLoading(slug);
+    if (!kiosk.paintStale(slug)) {
+      app.innerHTML = kiosk.renderLoading(slug);
+      if (GC.views.jointCoverStart_) GC.views.jointCoverStart_(slug);
+    }
   }
 
   // No onFresh callback — the 60-second sinceTs poll already updates numbers/hourly
@@ -9471,7 +9504,7 @@ GC.views.renderKiosk = function(slug) {
   // (once from cache, once when the background network request landed 2-5s later).
   GC.api.fetchKioskAll(slug)
     .then(function(rawData) {
-      if (kioskRouteSlug_() !== slug) return;      // slideshow moved on — this paint is for a store we left
+      if (kioskRouteSlug_() !== slug) { if (GC.views.jointCoverCancel_) GC.views.jointCoverCancel_(); return; }      // slideshow moved on — this paint is for a store we left
       /* BOTH FAILURE BRANCHES END UP IN THE SAME PLACE, and they must. A backend answering
          { ok:false } is the commoner wobble by far — an expired session, a Dutchie outage — and it
          RESOLVES, so the .catch below never sees it. showUnavailable is what keeps them together:
@@ -9479,10 +9512,11 @@ GC.views.renderKiosk = function(slug) {
          the stale label instead of wiping it. Fix one branch only and the morning power-on still
          goes blank on the commoner one. */
       var bad = kioskDataError_(rawData);
-      if (bad) { kiosk.showUnavailable(slug, bad); return; }
+      if (bad) { if (GC.views.jointCoverCancel_) GC.views.jointCoverCancel_(); kiosk.showUnavailable(slug, bad); return; }
       var data = kiosk.normalize(rawData);
       app.innerHTML = kiosk.render(data, slug);
       kiosk.init(data, slug);
+      if (GC.views.jointCoverDone_) GC.views.jointCoverDone_();
       /* Fast-path the by-hour chart: a standalone storetoday (~4s, cache-warm) fills in hour
          targets and fresher hours so the bars don't sit "maxed" until the 60s poll.
          ONLY WHEN THE BOARD WE JUST PAINTED CAME OUT OF THE CLIENT CACHE. The comment here used
@@ -9503,7 +9537,8 @@ GC.views.renderKiosk = function(slug) {
     })
     .catch(function(err) {
       console.error('[kiosk] fetch failed:', err);
-      if (kioskRouteSlug_() !== slug) return;      // do not paint one store's failure over another store
+      if (GC.views.jointCoverCancel_) GC.views.jointCoverCancel_();   // before anything else: never leave a cover over an error
+      if (kioskRouteSlug_() !== slug) return;    // do not paint one store's failure over another store
       kiosk.showUnavailable(slug, (err && err.message) || 'Could not reach the server');
     });
 };
