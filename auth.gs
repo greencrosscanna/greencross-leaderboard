@@ -57,7 +57,7 @@ function validateSessionToken_(token) {
  *   - a Core store_manager is REFUSED store routes: nothing here can place them on a store, and a
  *     guess puts a manager on another shop's numbers
  *   - writes need Core's canEdit, so the viewer stays read-only whatever the write-grant mode says
- *   - renew is refused, so a 2-hour dev session cannot be exchanged for a 7-day token of ours
+ *   - renew is refused, so a 2-hour dev session cannot be exchanged for a 30-day token of ours
  *
  * Only reached when OUR signature fails, so a normal request never pays for the library call.
  */
@@ -124,7 +124,8 @@ function requireStore_(auth, slug) {
 }
 
 /**
- * The heartbeat's renewal. Re-issues a 7-day token -- ONLY while the person still has access.
+ * The heartbeat's renewal. Re-issues a 30-day token (GC_SESSION_TTL_MS) -- ONLY while the person
+ * still has access.
  *
  * THE HOLE (closed 2026-09-14, found by Sales in its own copy). The client renews every 6 hours once
  * within 48h of expiry, and this used to mint a fresh token for any valid signature. So a session
@@ -135,7 +136,7 @@ function requireStore_(auth, slug) {
  *   - roleForApp THROWS        -> renewed anyway. A Core bounce on the wrong six-hour tick must not
  *     sign a wall screen out mid-shift; the next tick asks again.
  *   - a Core-signed session    -> never renewed here. It is not ours to extend, and renewing would
- *     trade a short dev session for a 7-day token of ours that skips every Core re-check.
+ *     trade a short dev session for a 30-day token of ours that skips every Core re-check.
  *
  * Safe to ship blind in a way the login fallback was not: writegrantaudit showed every local user
  * resolves to a Core role (10 of 10 on 2026-09-14), so no current signed-in person is refused.
@@ -174,7 +175,7 @@ function renewSession_(auth) {
  *
  * THE TRADE, stated plainly: if GX Core is DOWN, nobody can sign in to Leaderboard until it is back.
  * People already signed in are unaffected -- their token is ours, and role checks fall back to the
- * last roster GX Core gave us (lbCoreRoster_). Wall screens hold 7-day tokens that renew through a
+ * last roster GX Core gave us (lbCoreRoster_). Wall screens hold 30-day tokens that renew through a
  * Core bounce (renewSession_), so an outage does not blank the floor.
  *
  * WHY GX CORE IS NOT SIMPLY TRUSTED
@@ -586,8 +587,9 @@ function gxWriteGrantEnforcing_() {
  * Re-check that the caller still has a `performance` grant in GX Core before letting a write land.
  *
  * WHY THIS EXISTS. validateSessionToken_ proves WHO you are -- it checks an HMAC signature and an
- * expiry. It does not prove you still have ACCESS. Our session TTL is 7 days, so without this a
- * revocation in GX Core was advisory for up to a week on this app.
+ * expiry. It does not prove you still have ACCESS. Our session TTL is 30 days (it was 7 when
+ * this was written), so without this a revocation in GX Core would be advisory for up to a month
+ * on this app.
  *
  * WHY GXCore.roleForApp AND NOT verifySession. verifySession validates a CORE-SIGNED token. Even
  * when GXCore.login authenticates the user we mint our OWN token with issueSessionToken_ and

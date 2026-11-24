@@ -6176,7 +6176,7 @@ GC.api = (function() {
         if (!u) return resolve({ ok: false, error: 'Invalid username or password' });
         var expectedPass = (key === 'sky') ? DIRECTOR_PASSWORD : FIXTURE_PASSWORD;
         if (pass !== expectedPass) return resolve({ ok: false, error: 'Invalid username or password' });
-        var exp = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        var exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();   // matches GC_SESSION_TTL_MS
         resolve({
           ok: true,
           token: 'fixture-token-' + key,
