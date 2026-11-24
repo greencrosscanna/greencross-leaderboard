@@ -6,7 +6,7 @@
 //    1. A GX Core token was rejected outright ("Invalid session"), because this app signs with
 //       its OWN key. So the suite's read-only dev session could not open Leaderboard at all.
 //       It is now accepted -- and must stay NARROW: read-only unless Core says canEdit, no store
-//       routes for a manager nothing here can place, and never renewable into a 7-day token of ours.
+//       routes for a manager nothing here can place, and never renewable into a 30-day token of ours.
 //
 //    2. When GX Core REFUSED a sign-in, the local list was consulted anyway, so someone removed
 //       in the Command Center still got in on an old password. That is now recorded

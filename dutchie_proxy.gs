@@ -25,7 +25,15 @@
 
 // ── Constants ─────────────────────────────────────────────────
 const GC_SESSION_SECRET_KEY = 'GC_PERF_SESSION_SECRET';
-const GC_SESSION_TTL_MS     = 7 * 24 * 60 * 60 * 1000;
+// 30 days (was 7). Sky, 2026-11-23: "my computers are private, 30 days is okay" -- signing in to the
+// director/history screens weekly was friction with no matching risk. GX Core moves to 30 days
+// separately. This one constant sets every token we mint (login, portal handoff, renew) AND the
+// expiresAt the browser trusts, so nothing else needs to change. Kiosks are unaffected: they renew
+// within 48h of expiry either way, so they still never sign out. Removing someone's access does not
+// wait on this clock: role-gated routes re-read GX Core's roster (requireRole_ -> lbRosterUser_,
+// 5-minute cache), renewals ask GX Core (renewSession_), and writes re-check the grant when
+// cfg.lbWriteGrantCheck is on (gxCheckWriteGrant_). Tested in tests/session_ttl_test.js.
+const GC_SESSION_TTL_MS     = 30 * 24 * 60 * 60 * 1000;
 const GC_STORE_PLANS_KEY    = 'GC_STORE_PLANS_JSON';
 const GC_STREAKS_KEY        = 'GC_STREAKS_JSON';
 const GC_EMPLOYEES_KEY      = 'GC_STORE_EMPLOYEES_JSON';
