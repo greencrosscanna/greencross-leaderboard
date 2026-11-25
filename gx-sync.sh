@@ -106,6 +106,8 @@ fetch gx-usenglish.sh    gx-usenglish.sh 755 || true
 # mitigation ("do not edit the hub from a spoke chat") says nothing about two sessions in one spoke.
 # The SessionStart hook re-installs its git hooks each session, so syncing the script is enough.
 fetch gxclaim.sh         gxclaim.sh 755 || true
+# ...and the SessionEnd hook that releases it when a chat ends (merged into settings.json below).
+fetch gx-session-end.sh  .claude/gx-session-end.sh 755 || true
 # gxdevlogin.sh mints the READ-ONLY dev session that gets past an app's sign-in screen without a
 # password being typed. It carries the per-app storage key map, which is suite knowledge rather than
 # app knowledge — each app keeps its session under its own key, in its own storage.
@@ -179,7 +181,7 @@ fetch gx-exit-scrub-test.js tests/exit_scrub_test.js 755 || true
 # `sh` for exactly this reason -- gx-preflight, theme-preflight and run-tests alike. Keep it that way:
 # a hook that depends on a mode bit is a hook this filesystem can switch off without telling you.
 _notexec=""
-for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh gx-deadcode.sh gx-usenglish.sh gxclaim.sh gxdevlogin.sh gxnote.sh; do
+for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh .claude/gx-session-end.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh gx-deadcode.sh gx-usenglish.sh gxclaim.sh gxdevlogin.sh gxnote.sh; do
   [ -f "$f" ] || continue
   chmod 755 "$f" 2>/dev/null || true
   [ -x "$f" ] || _notexec="$_notexec $f"
@@ -200,7 +202,7 @@ done
 # So `update-index` alone does NOT make it stick — 4f01457 proves that; the very next commit undid it.
 # The habit is the fix, which is why the message below leads with the habit.
 _badmode=""
-for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh gx-deadcode.sh gx-usenglish.sh gxclaim.sh gxdevlogin.sh gxnote.sh; do
+for f in .claude/gx-brain-notes.sh .claude/gx-posttool-tests.sh .claude/gx-session-end.sh deploy.sh serve.py serve.js gx-preflight.sh gxengine.sh gx-deadcode.sh gx-usenglish.sh gxclaim.sh gxdevlogin.sh gxnote.sh; do
   [ -f "$f" ] || continue
   case "$(git ls-files -s "$f" 2>/dev/null | awk '{print $1}')" in
     100644) [ -x "$f" ] && _badmode="$_badmode $f" ;;
@@ -307,25 +309,26 @@ if [ -d .git ]; then
   fi
 fi
 
-# Ensure the SessionStart hook is wired — create a minimal settings.json, never clobber an existing one.
-if [ ! -f .claude/settings.json ]; then
+# Ensure the shared hooks are wired: SessionStart (brain notes + claim), PostToolUse (tests) and
+# SessionEnd (release the claim). settings.json is PER REPO and is never replaced — gx-settings-hooks.js
+# ADDS whichever shared hooks are missing and leaves every other hook, matcher and key as it was.
+# Until 2026-11-24 this block only created a missing file and otherwise printed advice, so a new shared
+# hook (SessionEnd) could not reach a single existing repo. Fetched to a temp path, run, deleted.
+_merge="$(mktemp)"
+if curl -fsSL "$BASE/gx-settings-hooks.js" > "$_merge" 2>/dev/null && [ -s "$_merge" ] && command -v node >/dev/null 2>&1; then
   mkdir -p .claude
-  cat > .claude/settings.json <<'JSON'
-{
-  "hooks": {
-    "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "sh .claude/gx-brain-notes.sh" } ] }
-    ],
-    "PostToolUse": [
-      { "matcher": "Edit|Write",
-        "hooks": [ { "type": "command", "command": "sh .claude/gx-posttool-tests.sh" } ] }
-    ]
-  }
-}
-JSON
-  echo "  ✓ .claude/settings.json (created)"
+  [ -f .claude/settings.json ] || _created=1
+  if _added="$(node "$_merge" .claude/settings.json)"; then
+    if [ -n "${_created:-}" ]; then echo "  ✓ .claude/settings.json (created)"
+    elif [ -n "$_added" ]; then echo "  ✓ .claude/settings.json — $(printf '%s' "$_added" | tr '\n' ',' | sed 's/,$//; s/,/, /g') (commit it)"
+    else echo "  ✓ .claude/settings.json (shared hooks already wired)"; fi
+  else
+    echo "  ✗ .claude/settings.json could not be merged — left untouched (see the message above)"
+  fi
 else
-  echo "  • .claude/settings.json exists — leave it; ensure SessionStart runs 'sh .claude/gx-brain-notes.sh'"
-  echo "    and PostToolUse (matcher Edit|Write) runs 'sh .claude/gx-posttool-tests.sh'"
+  echo "  ✗ .claude/settings.json not checked (could not fetch gx-settings-hooks.js, or no node). Make sure"
+  echo "    SessionStart runs 'sh .claude/gx-brain-notes.sh', PostToolUse (Edit|Write) runs"
+  echo "    'sh .claude/gx-posttool-tests.sh', and SessionEnd runs 'sh .claude/gx-session-end.sh'."
 fi
+rm -f "$_merge"
 echo "Done. (gx-sync.sh keeps itself up to date from here on.)"

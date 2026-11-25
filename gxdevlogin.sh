@@ -124,9 +124,11 @@ SECRET="$(cat .gx_deploy_secret)"
 # ─── where each app keeps its session ───────────────────────────────────────────────────────────
 # Read out of each app's own source, not invented here — inventory's LS.AUTH, Leaderboard's GC.auth, sales' GC_SALES_AUTH,
 # Price Cards' PC_AUTH_KEY, spiff's session(), crew's TOKEN_KEY, Master Control's AUTH_KEY. They
-# genuinely differ, including WHICH storage: spiff and crew use sessionStorage on purpose (a
-# credentialed admin session on a machine that may not be the user's), and crew stores a bare token
-# string plus a separate user string rather than one JSON object.
+# genuinely differ in key and shape: crew stores a bare token string plus a separate user string
+# rather than one JSON object. Every app now uses localStorage — spiff and crew moved off
+# sessionStorage on 2026-11-23 (Sky: "my computers are private, 30 days is okay"); both still read
+# an old sessionStorage copy once and move it over, but a localStorage session always wins, so a
+# dev session written to sessionStorage would be silently ignored.
 #
 # READ THE VALUE, NOT THE VARIABLE THAT HOLDS IT. Sales' wrapper object is called GC_SALES_AUTH and
 # the key it writes is `gc_sales_token`; the earlier note here recorded the wrapper's name, which
@@ -138,8 +140,8 @@ case "$APP" in
   inventory)  STORE=localStorage;   KEY=gc_inv_auth ;;     # LS.AUTH in index.html
   sales)      STORE=localStorage;   KEY=gc_sales_token ;;  # the KEY inside GC_SALES_AUTH, not that name
   pricecards) STORE=localStorage;   KEY=gx_pricecards_auth ;;
-  spiff)      STORE=sessionStorage; KEY=spiff_session ;;
-  crew)       STORE=sessionStorage; KEY=gx_crew_token ;;   # plus gx_crew_user — handled below
+  spiff)      STORE=localStorage;   KEY=spiff_session ;;
+  crew)       STORE=localStorage;   KEY=gx_crew_token ;;   # plus gx_crew_user — handled below
   core-admin) STORE=localStorage;   KEY=gx_mc_auth ;;
   performance) STORE=localStorage;  KEY=GC_PERF_SESSION ;; # GC.auth SESSION_KEY in index.html
 esac
@@ -233,8 +235,8 @@ if app == "performance":
 
 if app == "crew":
     # crew keeps a bare token string and a separate user string, not one JSON blob.
-    snippet = "sessionStorage.setItem(%s,%s);sessionStorage.setItem(%s,%s);location.reload()" % (
-        json.dumps(key), json.dumps(r["token"]), json.dumps("gx_crew_user"), json.dumps(r["user"]))
+    snippet = "%s.setItem(%s,%s);%s.setItem(%s,%s);location.reload()" % (
+        store, json.dumps(key), json.dumps(r["token"]), store, json.dumps("gx_crew_user"), json.dumps(r["user"]))
 else:
     snippet = "%s.setItem(%s,%s);location.reload()" % (store, json.dumps(key), json.dumps(json.dumps(sess)))
 

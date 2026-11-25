@@ -32,7 +32,8 @@
  *
  * ── WHAT COUNTS AS AN EXIT ──────────────────────────────────────────────────────────────────────
  * ContentService.createTextOutput (what a route says back) and MailApp/GmailApp.sendEmail (what it
- * mails). Those are the two that carried real credentials this week.
+ * mails). Those are the two that carried real credentials this week. GmailApp.createDraft counts as
+ * mail too (added 2026-11-24): a draft is sent with .send(), so it leaves the same way.
  *
  * NOT stored values, deliberately, and this is the known gap: crew's Script Property held an
  * un-scrubbed error for weeks with no reader, until it turned out to have one. A store is only a
@@ -88,6 +89,10 @@ const EXITS = [
   { kind: 'reply', keyword: 'createTextOutput', re: /createTextOutput\s*\(\s*[^)\s]/ },
   { kind: 'reply', keyword: 'setContent', re: /setContent\s*\(\s*[^)\s]/ },
   { kind: 'mail', keyword: 'sendEmail', re: /\b(?:MailApp|GmailApp)\s*\.\s*sendEmail\s*\(/ },
+  /* GmailApp.createDraft(...).send() is a send too, and it returns the sent message, which is why
+     GX Core's send_mail route moved to it (2026-11-24, v386). Until this line it was invisible here:
+     an unscrubbed draft send would have passed. The hub's one is inside its scrubbing gxSendMail_. */
+  { kind: 'mail', keyword: 'createDraft', re: /\bGmailApp\s*\.\s*createDraft\s*\(/ },
 ];
 /* MATCHED OVER A SMALL WINDOW, NOT ONE LINE, because Apps Script source wraps in at least three ways
  * and each one has hidden an exit in this suite:
